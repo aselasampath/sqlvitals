@@ -1,0 +1,35 @@
+namespace SqlPulse.Engine.Models;
+
+public record ServerHealthKpi(
+    DateTime ServerStartTime,
+    DateTime CaptureTime,
+    int UptimeHours,
+    int UptimeDays,
+    int LogicalCPUs,
+    int HyperthreadRatio,
+    long PhysicalMemoryMB,
+    long VirtualMemoryMB,
+    long CommittedMemMB,
+    long TargetMemMB,
+    int ActiveUserSessions,
+    int BlockedRequests,
+    int RunningRequests,
+    int WaitingRequests,
+    double GlobalSignalWaitPct,
+    double BufferCacheHitRatio,
+    long PageLifeExpectancy,
+    long BatchRequestsPerSec,
+    string CPUPressureStatus,
+    string CPUStatusColor,
+    double MemoryUtilizationPct,
+    string PLEStatus,
+    // ── New counters ────────────────────────────────────────────────
+    long   SQLCompilationsPerSec,
+    long   SQLRecompilationsPerSec,
+    long   TotalServerMemKB,
+    long   TargetServerMemKB,
+    long   LockWaitsPerSec,
+    long   DeadlocksPerSec,
+    long   TransactionsPerSec,
+    int    MemoryGrantsPending
+);

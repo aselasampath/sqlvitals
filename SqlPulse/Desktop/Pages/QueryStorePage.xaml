@@ -1,0 +1,54 @@
+<Page x:Class="SqlPulse.Desktop.Pages.QueryStorePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="{StaticResource BgDeep}" Title="Query Store">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+        <StackPanel>
+            <TextBlock Text="Query Store — Top CPU Queries" Style="{StaticResource SectionHeader}"
+                       FontSize="20" Margin="0,0,0,18" />
+
+            <!-- Health status card -->
+            <Border x:Name="HealthCard" Style="{StaticResource KpiCard}" Margin="0,0,0,20">
+                <WrapPanel x:Name="HealthPanel" />
+            </Border>
+
+            <!-- Top queries DataGrid -->
+            <Border Style="{StaticResource KpiCard}">
+                <StackPanel>
+                    <TextBlock Text="Top 20 Queries by CPU (last 24 h)" Style="{StaticResource SectionHeader}" />
+                    <DataGrid x:Name="QueriesGrid" MaxHeight="540">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Query ID"       Binding="{Binding QueryId}"                         Width="80">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Stable identifier for the query in sys.query_store_query. Use to correlate across refreshes or track plan changes over time."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Executions"     Binding="{Binding TotalExecutions, StringFormat=N0}" Width="90">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Total number of times this query was executed in the last 24 hours. High execution count with high CPU = top optimization candidate."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Total CPU ms"   Binding="{Binding TotalCpuMs, StringFormat=N0}"      Width="105">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Sum of CPU time (milliseconds) consumed by all executions in the window. The primary sort key — queries at the top consume the most CPU server-wide."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Avg CPU ms"     Binding="{Binding AvgCpuMs, StringFormat=N1}"        Width="95">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average CPU per execution. High avg CPU with low execution count = expensive individual query. Compare with Total CPU to distinguish expensive-but-rare vs cheap-but-frequent."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Total Reads"    Binding="{Binding TotalLogicalReads, StringFormat=N0}" Width="100">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Total logical reads (buffer pool page accesses) across all executions. High logical reads drive both CPU pressure and memory contention. Missing indexes typically show here."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Avg Duration ms" Binding="{Binding AvgDurationMs, StringFormat=N1}"  Width="115">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average wall-clock duration per execution (milliseconds). Reflects user-perceived latency. A query with low CPU but high duration may be blocked or waiting on I/O."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Forced Plan"    Binding="{Binding IsForcedPlan}"                     Width="90">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Whether a specific execution plan is forced for this query via sp_query_store_force_plan. Forced plans bypass the optimizer — review after schema or statistics changes."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Last Executed"  Binding="{Binding LastExecutionTimeUtc, StringFormat=\{0:yyyy-MM-dd HH:mm\}}" Width="140">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="UTC timestamp of the most recent execution. Queries not executed recently may have stale statistics or belong to deprecated code paths."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Status"         Binding="{Binding Severity}"                        Width="80">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Derived health classification: Critical = very high CPU or reads; Warning = elevated; Info = normal range."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

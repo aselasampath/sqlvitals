@@ -1,0 +1,188 @@
+<Page x:Class="SqlPulse.Desktop.Pages.IndexHealthPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="{StaticResource BgDeep}" Title="Index Health">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+        <StackPanel>
+            <TextBlock Text="Index Health" Style="{StaticResource SectionHeader}"
+                       FontSize="20" Margin="0,0,0,18" />
+
+            <TabControl Background="{StaticResource BgDeep}"
+                        BorderBrush="{StaticResource Border}"
+                        Foreground="{StaticResource TextPrimary}">
+
+                <!-- Missing Indexes tab -->
+                <TabItem Header="Missing Indexes">
+                    <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Recommended Missing Indexes" Style="{StaticResource SectionHeader}" />
+                            <DataGrid x:Name="MissingGrid" MaxHeight="480"
+                                      IsReadOnly="True" CanUserAddRows="False"
+                                      ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Database"       Binding="{Binding DatabaseName}"                  Width="100" />
+                                    <DataGridTextColumn Header="Schema"         Binding="{Binding SchemaName}"                    Width="80" />
+                                    <DataGridTextColumn Header="Table"          Binding="{Binding TableName}"                     Width="140" />
+                                    <DataGridTextColumn Header="Impact Score"   Binding="{Binding ImpactScore, StringFormat=N1}"  Width="100">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="SQL Server's estimated performance improvement if this index were created: avg_total_user_cost × avg_user_impact × (user_seeks + user_scans). Higher = more beneficial. Treat as relative ranking, not an absolute guarantee."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Seeks"          Binding="{Binding UserSeeks, StringFormat=N0}"    Width="80">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Number of times the optimizer would have used this index for a seek operation since the last server restart. High seeks = the workload is actively calling for this index."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Scans"          Binding="{Binding UserScans, StringFormat=N0}"    Width="80">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Number of times the optimizer would have used this index for a scan. High scans with low seeks may indicate the suggested index would only partially satisfy predicates."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Equality Cols"  Binding="{Binding EqualityColumns}"               Width="150">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Columns that appear in equality predicates (WHERE col = value). These become the leading key columns in the suggested index."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Include Cols"   Binding="{Binding IncludeColumns}"                Width="150">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Columns suggested as INCLUDE columns to make the index covering — i.e., all columns needed by the SELECT are in the index, eliminating key lookups."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Severity"       Binding="{Binding Severity}"                      Width="80">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Derived priority: Critical = Impact Score > 100,000; Warning = > 10,000; Info = lower impact. Focus on Critical first."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="CREATE Statement" Binding="{Binding CreateIndexStatement}"        Width="*">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Ready-to-run CREATE INDEX statement generated from the DMV data. Review before executing: validate column order, consider existing indexes, and test on a non-production environment first."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </TabItem>
+
+                <!-- Unused Indexes tab -->
+                <TabItem Header="Unused Indexes">
+                    <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Unused Indexes (zero reads since last restart)" Style="{StaticResource SectionHeader}" />
+                            <DataGrid x:Name="UnusedGrid" MaxHeight="480">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Database"       Binding="{Binding DatabaseName}"                  Width="100" />
+                                    <DataGridTextColumn Header="Schema"         Binding="{Binding SchemaName}"                    Width="80" />
+                                    <DataGridTextColumn Header="Table"          Binding="{Binding TableName}"                     Width="140" />
+                                    <DataGridTextColumn Header="Index Name"     Binding="{Binding IndexName}"                     Width="200" />
+                                    <DataGridTextColumn Header="Index Type"     Binding="{Binding IndexType}"                     Width="100" />
+                                    <DataGridTextColumn Header="User Seeks"     Binding="{Binding UserSeeks, StringFormat=N0}"    Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Number of seek operations on this index since the last SQL Server restart. Zero seeks + zero scans = the index has never been used for reads — pure maintenance overhead."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="User Scans"     Binding="{Binding UserScans, StringFormat=N0}"    Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Number of full or range scan operations on this index since the last restart. Combined with User Seeks, represents total read usage. Zero scans = index is not contributing to any queries."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="User Lookups"   Binding="{Binding UserLookups, StringFormat=N0}"  Width="100">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Key lookups back to the clustered index triggered by this nonclustered index. High lookups mean the index is used but not covering — consider adding INCLUDE columns to eliminate lookups."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="User Updates"   Binding="{Binding UserUpdates, StringFormat=N0}"  Width="100">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Number of INSERT/UPDATE/DELETE operations that had to maintain this index. High updates with zero reads = pure write overhead with no read benefit. Strong DROP candidate after confirming no off-hours usage."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </TabItem>
+
+                <!-- Index Usage tab -->
+                <TabItem Header="Index Usage">
+                    <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Index reads, writes and health assessment since last SQL Server restart"
+                                       Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+                            <DataGrid x:Name="UsageGrid" MaxHeight="660" CanUserAddRows="False"
+                                      IsReadOnly="True" AutoGenerateColumns="False"
+                                      RowBackground="{StaticResource BgDeep}"
+                                      AlternatingRowBackground="{StaticResource BgSidebar}"
+                                      Foreground="{StaticResource TextPrimary}"
+                                      BorderBrush="{StaticResource Border}" GridLinesVisibility="Horizontal"
+                                      HorizontalGridLinesBrush="{StaticResource Border}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Database"   Binding="{Binding DatabaseName}"                Width="100">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database the index belongs to."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Table"      Binding="{Binding TableName}"                   Width="160">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Table the index is on."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Index Name" Binding="{Binding IndexName}"                   Width="200">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Name of the index. NULL = heap or unknown."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Type"       Binding="{Binding IndexType}"                   Width="130">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Index type: CLUSTERED, NONCLUSTERED, XML, etc."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Seeks"      Binding="{Binding UserSeeks, StringFormat=N0}"  Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Seek operations — efficient point or range lookups using the index key. High seeks = index is well-used for selective queries."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Scans"      Binding="{Binding UserScans, StringFormat=N0}"  Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Full or range scans. High scans relative to seeks may indicate missing predicates or poorly selective key columns."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Lookups"    Binding="{Binding UserLookups, StringFormat=N0}" Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Key lookups back to the clustered index. High lookups = the nonclustered index is not covering — add INCLUDE columns to eliminate them."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Updates"    Binding="{Binding UserUpdates, StringFormat=N0}" Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Write operations (INSERT/UPDATE/DELETE) that maintained this index. High updates with zero reads = pure overhead — strong DROP candidate."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Health"     Binding="{Binding IndexHealth}"                  Width="170">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Health: Healthy = seeks dominate; Mostly Scanned - Review = scans exceed seeks, may not be selective enough; Unused = zero reads, drop candidate."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Last Seek"  Binding="{Binding LastUserSeek, StringFormat='yyyy-MM-dd'}" Width="100"/>
+                                    <DataGridTextColumn Header="Last Scan"  Binding="{Binding LastUserScan, StringFormat='yyyy-MM-dd'}" Width="100"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </TabItem>
+
+                <!-- Fragmentation tab -->
+                <TabItem Header="Fragmentation">
+                    <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Fragmentation Criteria" Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0,0,20,0" />
+                                <TextBlock Text="Min Page Count:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+                                <TextBox x:Name="TxtMinPageCount" Text="1000" Width="60" Margin="0,0,15,0" Padding="2" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}" />
+                                <TextBlock Text="Min Frag %:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+                                <TextBox x:Name="TxtMinFragPct" Text="10" Width="40" Margin="0,0,15,0" Padding="2" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}" />
+                            </StackPanel>
+                            
+                            <DataGrid x:Name="FragGrid" MaxHeight="660" CanUserAddRows="False"
+                                      IsReadOnly="True" AutoGenerateColumns="False"
+                                      RowBackground="{StaticResource BgDeep}"
+                                      AlternatingRowBackground="{StaticResource BgSidebar}"
+                                      Foreground="{StaticResource TextPrimary}"
+                                      BorderBrush="{StaticResource Border}" GridLinesVisibility="Horizontal"
+                                      HorizontalGridLinesBrush="{StaticResource Border}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Database"      Binding="{Binding DatabaseName}"                                      Width="110">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database containing the fragmented index."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Table"         Binding="{Binding TableName}"                                         Width="160">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Table the fragmented index belongs to."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Index Name"    Binding="{Binding IndexName}"                                         Width="200">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Name of the fragmented index."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Type"          Binding="{Binding IndexType}"                                         Width="130">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Index structure type from dm_db_index_physical_stats."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Fragmentation %" Binding="{Binding FragmentationPercent, StringFormat=F1}"           Width="130">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="avg_fragmentation_in_percent: logical fragmentation of leaf pages. &lt;10% = OK; 10-30% = Reorganize; &gt;30% = Rebuild. Less critical on SSD than spinning disk."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Pages"         Binding="{Binding PageCount, StringFormat=N0}"                        Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Number of 8 KB pages in the index. Small indexes (&lt;1,000 pages) filtered out — fragmentation is negligible on them."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Page Density %" Binding="{Binding AvgPageSpaceUsed, StringFormat=F1}"                Width="120">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average page fill percentage. Low density means many half-empty pages, increasing storage and I/O. Rebuild with FILLFACTOR to reclaim density."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Records"       Binding="{Binding RecordCount, StringFormat=N0}"                      Width="100">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Approximate row count in the index. Combine with Pages to estimate average row size."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Action"        Binding="{Binding RecommendedAction}"                                 Width="160">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="No Action Needed (&lt;10%); Reorganize (10-30%): online, low-impact; Rebuild (&gt;30%): more thorough but locks table (unless ONLINE=ON)."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </TabItem>
+
+            </TabControl>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

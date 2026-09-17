@@ -1,0 +1,335 @@
+<Page x:Class="SqlPulse.Desktop.Pages.DatabaseStoragePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="{StaticResource BgDeep}" Title="Database Storage">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />   <!-- Title -->
+            <RowDefinition Height="Auto" />   <!-- KPI strip -->
+            <RowDefinition Height="*"    />   <!-- Tab content -->
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="24,20,24,8">
+            <TextBlock Text="🗄️  Database Storage &amp; Configuration"
+                       Style="{StaticResource SectionHeader}" FontSize="20"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- KPI strip -->
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled" Margin="24,0,24,12">
+            <StackPanel Orientation="Horizontal">
+
+                <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="Total DB Size" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="11" />
+                        <TextBlock x:Name="KpiTotalSize" Text="—"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        <TextBlock Text="All ONLINE databases" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="Data Files" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="11" />
+                        <TextBlock x:Name="KpiDataSize" Text="—"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        <TextBlock Text="ROWS type files" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="Log Files" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="11" />
+                        <TextBlock x:Name="KpiLogSize" Text="—"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        <TextBlock Text="LOG type files" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="TempDB Size" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="11" />
+                        <TextBlock x:Name="KpiTempDbSize" Text="—"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        <TextBlock Text="All tempdb files" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="Max DOP" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="11" />
+                        <TextBlock x:Name="KpiMaxDop" Text="—"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        <TextBlock Text="max degree of parallelism" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Cost Threshold" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="11" />
+                        <TextBlock x:Name="KpiCostThreshold" Text="—"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        <TextBlock Text="cost threshold for parallelism" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Sub-tab strip + content -->
+        <Grid Grid.Row="2" Margin="24,0,24,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*"    />
+            </Grid.RowDefinitions>
+
+            <!-- Sub-tab buttons -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                <Button x:Name="TabBtnFiles"   Content="📂  Database Files"
+                        Style="{StaticResource NavButtonActive}"
+                        Height="32" Padding="14,0" FontSize="12"
+                        Click="SubTab_Click" Tag="Files" />
+                <Button x:Name="TabBtnTempDb"  Content="🌡️  TempDB Files"
+                        Style="{StaticResource NavButton}"
+                        Height="32" Padding="14,0" FontSize="12" Margin="4,0,0,0"
+                        Click="SubTab_Click" Tag="TempDb" />
+                <Button x:Name="TabBtnConfig"  Content="⚙️  Server Config"
+                        Style="{StaticResource NavButton}"
+                        Height="32" Padding="14,0" FontSize="12" Margin="4,0,0,0"
+                        Click="SubTab_Click" Tag="Config" />
+                <Button x:Name="TabBtnTables"  Content="📋  Top Tables"
+                        Style="{StaticResource NavButton}"
+                        Height="32" Padding="14,0" FontSize="12" Margin="4,0,0,0"
+                        Click="SubTab_Click" Tag="Tables" />
+            </StackPanel>
+
+            <!-- ── Database Files panel ──────────────────────────── -->
+            <Border x:Name="PanelFiles" Grid.Row="1" Style="{StaticResource KpiCard}" Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*"    />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="All ONLINE database files (data + log)"
+                               Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
+                               FontSize="11" Margin="12,10,0,8" />
+                    <DataGrid x:Name="GridFiles" Grid.Row="1"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              Background="Transparent" RowBackground="Transparent"
+                              AlternatingRowBackground="#0AFFFFFF"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{StaticResource Border}"
+                              BorderThickness="0"
+                              Foreground="{StaticResource TextPrimary}"
+                              FontFamily="Segoe UI" FontSize="11">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background"   Value="#1AFFFFFF" />
+                                <Setter Property="Foreground"   Value="{StaticResource TextMuted}" />
+                                <Setter Property="FontFamily"   Value="Segoe UI" />
+                                <Setter Property="FontSize"     Value="11" />
+                                <Setter Property="Padding"      Value="10,6" />
+                                <Setter Property="BorderBrush"  Value="{StaticResource Border}" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Padding" Value="10,5" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"     Width="140" />
+                            <DataGridTextColumn Header="State"       Binding="{Binding State}"            Width="70"  />
+                            <DataGridTextColumn Header="Recovery"    Binding="{Binding RecoveryModel}"    Width="80"  />
+                            <DataGridTextColumn Header="Compat"      Binding="{Binding CompatibilityLevel}" Width="60" />
+                            <DataGridTextColumn Header="File Type"   Binding="{Binding FileType}"         Width="70"  />
+                            <DataGridTextColumn Header="Logical Name" Binding="{Binding LogicalFileName}" Width="130" />
+                            <DataGridTextColumn Header="Size MB"     Binding="{Binding FileSizeMB,   StringFormat=N2}" Width="80"  />
+                            <DataGridTextColumn Header="Used MB"     Binding="{Binding SpaceUsedMB,  StringFormat=N2}" Width="80"  />
+                            <DataGridTextColumn Header="Free MB"     Binding="{Binding FreeSpaceMB,  StringFormat=N2}" Width="80"  />
+                            <DataGridTextColumn Header="Max MB"      Binding="{Binding MaxSizeMBDisplay}"  Width="80"  />
+                            <DataGridTextColumn Header="Auto-Growth" Binding="{Binding AutoGrowth}"    Width="90"  />
+                            <DataGridTextColumn Header="Auto-Shrink" Binding="{Binding AutoShrinkDisplay}" Width="80" />
+                            <DataGridTextColumn Header="QS On"       Binding="{Binding QueryStoreOnDisplay}" Width="60" />
+                            <DataGridTextColumn Header="Encrypted"   Binding="{Binding EncryptedDisplay}"  Width="70" />
+                            <DataGridTextColumn Header="Physical Path" Binding="{Binding PhysicalPath}"  Width="300" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <!-- ── TempDB Files panel ──────────────────────────────── -->
+            <Border x:Name="PanelTempDb" Grid.Row="1" Style="{StaticResource KpiCard}"
+                    Padding="0" Visibility="Collapsed">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*"    />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="TempDB data and log files"
+                               Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
+                               FontSize="11" Margin="12,10,0,8" />
+                    <DataGrid x:Name="GridTempDb" Grid.Row="1"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              Background="Transparent" RowBackground="Transparent"
+                              AlternatingRowBackground="#0AFFFFFF"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{StaticResource Border}"
+                              BorderThickness="0"
+                              Foreground="{StaticResource TextPrimary}"
+                              FontFamily="Segoe UI" FontSize="11">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#1AFFFFFF" />
+                                <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                <Setter Property="Padding"    Value="10,6" />
+                                <Setter Property="BorderBrush" Value="{StaticResource Border}" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Padding" Value="10,5" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="File Name"  Binding="{Binding FileName}"  Width="180" />
+                            <DataGridTextColumn Header="Type"       Binding="{Binding FileType}"  Width="80"  />
+                            <DataGridTextColumn Header="Size MB"    Binding="{Binding SizeMB,  StringFormat=N2}" Width="90" />
+                            <DataGridTextColumn Header="Used MB"    Binding="{Binding UsedMB,  StringFormat=N2}" Width="90" />
+                            <DataGridTextColumn Header="Free MB"    Binding="{Binding FreeMB,  StringFormat=N2}" Width="90" />
+                            <DataGridTextColumn Header="Physical Path" Binding="{Binding PhysicalPath}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <!-- ── Server Config panel ──────────────────────────────── -->
+            <Border x:Name="PanelConfig" Grid.Row="1" Style="{StaticResource KpiCard}"
+                    Padding="0" Visibility="Collapsed">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*"    />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Key server configuration parameters (sp_configure)"
+                               Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
+                               FontSize="11" Margin="12,10,0,8" />
+                    <DataGrid x:Name="GridConfig" Grid.Row="1"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              Background="Transparent" RowBackground="Transparent"
+                              AlternatingRowBackground="#0AFFFFFF"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{StaticResource Border}"
+                              BorderThickness="0"
+                              Foreground="{StaticResource TextPrimary}"
+                              FontFamily="Segoe UI" FontSize="11">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#1AFFFFFF" />
+                                <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                <Setter Property="Padding"    Value="10,6" />
+                                <Setter Property="BorderBrush" Value="{StaticResource Border}" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Padding" Value="10,5" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Parameter"     Binding="{Binding ParameterName}" Width="260" />
+                            <DataGridTextColumn Header="Current Value" Binding="{Binding CurrentValue}"  Width="110" />
+                            <DataGridTextColumn Header="Min"           Binding="{Binding MinValue}"      Width="80"  />
+                            <DataGridTextColumn Header="Max"           Binding="{Binding MaxValue}"      Width="100" />
+                            <DataGridTextColumn Header="Dynamic"       Binding="{Binding IsDynamicDisplay}" Width="70" />
+                            <DataGridTextColumn Header="Description"   Binding="{Binding Description}"   Width="*"   />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <!-- ── Top Tables panel ─────────────────────────────────── -->
+            <Border x:Name="PanelTables" Grid.Row="1" Style="{StaticResource KpiCard}"
+                    Padding="0" Visibility="Collapsed">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*"    />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Top 20 tables by total storage size (current database context)"
+                               Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
+                               FontSize="11" Margin="12,10,0,8" />
+                    <DataGrid x:Name="GridTables" Grid.Row="1"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              Background="Transparent" RowBackground="Transparent"
+                              AlternatingRowBackground="#0AFFFFFF"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{StaticResource Border}"
+                              BorderThickness="0"
+                              Foreground="{StaticResource TextPrimary}"
+                              FontFamily="Segoe UI" FontSize="11">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#1AFFFFFF" />
+                                <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                <Setter Property="Padding"    Value="10,6" />
+                                <Setter Property="BorderBrush" Value="{StaticResource Border}" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Padding" Value="10,5" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Schema"       Binding="{Binding SchemaName}"   Width="90"  />
+                            <DataGridTextColumn Header="Table"        Binding="{Binding TableName}"    Width="200" />
+                            <DataGridTextColumn Header="Row Count"    Binding="{Binding RowCount, StringFormat=N0}" Width="100" />
+                            <DataGridTextColumn Header="Data MB"      Binding="{Binding DataSizeMB,  StringFormat=N3}" Width="90" />
+                            <DataGridTextColumn Header="Index MB"     Binding="{Binding IndexSizeMB, StringFormat=N3}" Width="90" />
+                            <DataGridTextColumn Header="Total MB"     Binding="{Binding TotalSizeMB, StringFormat=N3}" Width="90" />
+                            <DataGridTextColumn Header="Used MB"      Binding="{Binding UsedSizeMB,  StringFormat=N3}" Width="90" />
+                            <DataGridTextColumn Header="Unused MB"    Binding="{Binding UnusedSizeMB,StringFormat=N3}" Width="90" />
+                            <DataGridTextColumn Header="Indexes"      Binding="{Binding IndexCount}"  Width="70"  />
+                            <DataGridTextColumn Header="Type"         Binding="{Binding TableType}"   Width="80"  />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+        </Grid>
+    </Grid>
+</Page>

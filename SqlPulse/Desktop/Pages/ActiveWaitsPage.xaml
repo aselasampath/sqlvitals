@@ -1,0 +1,30 @@
+<Page x:Class="SqlPulse.Desktop.Pages.ActiveWaitsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="{StaticResource BgDeep}" Title="Active Waits">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Active Waits" Style="{StaticResource SectionHeader}" FontSize="20" Margin="0,0,0,14" />
+        <Border Grid.Row="1" Style="{StaticResource KpiCard}">
+            <DataGrid x:Name="ActiveGrid">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Session"     Binding="{Binding SessionId}"          Width="65" />
+                    <DataGridTextColumn Header="Blocking"    Binding="{Binding BlockingSessionId}"  Width="65" />
+                    <DataGridTextColumn Header="Wait Type"   Binding="{Binding WaitType}"           Width="180" />
+                    <DataGridTextColumn Header="Category"    Binding="{Binding WaitCategory}"       Width="100" />
+                    <DataGridTextColumn Header="Wait (sec)"  Binding="{Binding WaitTimeSec, StringFormat=N2}" Width="80" />
+                    <DataGridTextColumn Header="Severity"    Binding="{Binding WaitSeverity}"       Width="80" />
+                    <DataGridTextColumn Header="Status"      Binding="{Binding RequestStatus}"      Width="80" />
+                    <DataGridTextColumn Header="Command"     Binding="{Binding Command}"            Width="120" />
+                    <DataGridTextColumn Header="Login"       Binding="{Binding LoginName}"          Width="100" />
+                    <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"       Width="120" />
+                    <DataGridTextColumn Header="CPU (ms)"    Binding="{Binding CpuTimeMs}"          Width="80" />
+                    <DataGridTextColumn Header="Logical Reads" Binding="{Binding LogicalReads}"     Width="95" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</Page>

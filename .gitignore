@@ -1,0 +1,22 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.dll
+*.pdb
+
+## Node
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Claude Code local settings
+.claude/settings.local.json

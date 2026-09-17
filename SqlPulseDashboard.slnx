@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SqlPulse/Desktop/SqlPulse.Desktop.csproj" />
+  <Project Path="SqlPulse/Engine/SqlPulse.Engine.csproj" />
+  <Project Path="SqlPulse/Engine.Tests/SqlPulse.Engine.Tests.csproj" />
+</Solution>
