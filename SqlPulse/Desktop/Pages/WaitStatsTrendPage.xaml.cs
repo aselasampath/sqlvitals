@@ -8,6 +8,7 @@ using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
+using SqlPulse.Desktop.Helpers;
 using SqlPulse.Engine.Models;
 using SqlPulse.Engine.Repositories;
 
@@ -242,8 +243,8 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             };
         }).ToArray();
 
-        var axisColor = SKColor.Parse("#94A3B8");
-        var gridColor = SKColor.Parse("#2D2D44");
+        var axisColor = ChartTheme.MutedAxisColor;
+        var gridColor = ChartTheme.GridColor;
 
         TrendChart.Series = series;
         TrendChart.XAxes  = new[]

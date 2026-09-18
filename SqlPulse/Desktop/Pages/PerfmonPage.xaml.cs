@@ -10,6 +10,7 @@ using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
+using SqlPulse.Desktop.Helpers;
 using SqlPulse.Engine.Repositories;
 
 namespace SqlPulse.Desktop.Pages;
@@ -176,9 +177,6 @@ public partial class PerfmonPage : Page, IRefreshable
         Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
     private static string IntervalLabel(int s) =>
         s < 60 ? $"{s}s" : $"{s / 60}m {s % 60:00}s";
-
-    private static readonly SKColor ColAxis = SKColors.White;
-    private static readonly SKColor ColGrid = SKColor.Parse("#334155");
 
     public PerfmonPage(IWaitStatsRepository repo)
     {
@@ -370,8 +368,8 @@ public partial class PerfmonPage : Page, IRefreshable
         {
             new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
             {
-                LabelsPaint     = new SolidColorPaint(ColAxis) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ColGrid) { StrokeThickness = 1 },
+                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 11,
             }
         };
@@ -381,8 +379,8 @@ public partial class PerfmonPage : Page, IRefreshable
             new Axis
             {
                 Name            = "Value",
-                LabelsPaint     = new SolidColorPaint(ColAxis) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ColGrid) { StrokeThickness = 1 },
+                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 11,
                 MinLimit        = 0,
             }

@@ -44,7 +44,7 @@ public partial class MainWindow : Window
         var config = configBuilder.Build();
 
         Repo       = new WaitStatsRepository(config);
-        _activeNav = BtnOverview;
+        _activeNav = BtnLiveMetrics;
 
         // Display server and database from the resolved connection string
         ApplyConnectionLabel(userSettings.ConnectionString);
@@ -52,7 +52,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) =>
         {
             await DisableTempDbIfAzureSqlAsync();
-            await NavigateTo("Overview");
+            await NavigateTo("LiveMetrics");
         };
     }
 
@@ -137,16 +137,14 @@ public partial class MainWindow : Window
     private async System.Threading.Tasks.Task NavigateTo(string tag)
     {
         // Update nav button styles
-        foreach (var btn in new[] { BtnOverview, BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnRecommend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
         {
-            "LiveMetrics"     => BtnLiveMetrics,
             "TopWaits"        => BtnTopWaits,
             "ActiveWaits"     => BtnActiveWaits,
             "WaitTrend"       => BtnWaitTrend,
-            "Recommendations" => BtnRecommend,
             "TempDb"          => BtnTempDb,
             "Memory"          => BtnMemory,
             "QueryStore"      => BtnQueryStore,
@@ -160,7 +158,7 @@ public partial class MainWindow : Window
             "Perfmon"        => BtnPerfmon,
             "Export"          => BtnExport,
             "Settings"        => BtnSettings,
-            _                 => BtnOverview,
+            _                 => BtnLiveMetrics,
         };
         active.Style = (Style)FindResource("NavButtonActive");
 
@@ -179,7 +177,6 @@ public partial class MainWindow : Window
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "WaitTrend"       => new WaitStatsTrendPage(Repo),
-            "Recommendations" => new RecommendationsPage(Repo),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
             "QueryStore"      => new QueryStorePage(Repo),
@@ -192,7 +189,7 @@ public partial class MainWindow : Window
             "AppConnections" => new ApplicationConnectionsPage(Repo),
             "Perfmon"        => new PerfmonPage(Repo),
             "Export"          => new ExportPage(Repo),
-            _                 => new OverviewPage(Repo),
+            _                 => new LiveMetricsDashboardPage(Repo),
         };
 
         MainFrame.Navigate(page);

@@ -7,9 +7,9 @@
     <Page.Resources>
         <!-- Tab-button RadioButton style -->
         <Style x:Key="MemTab" TargetType="RadioButton">
-            <Setter Property="Background"   Value="#1E1E3A" />
-            <Setter Property="Foreground"   Value="#94A3B8" />
-            <Setter Property="BorderBrush"  Value="#3B3B6B" />
+            <Setter Property="Background"   Value="{StaticResource BgSidebar}" />
+            <Setter Property="Foreground"   Value="{StaticResource TextMuted}" />
+            <Setter Property="BorderBrush"  Value="{StaticResource Border}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding"      Value="14,5" />
             <Setter Property="FontSize"     Value="12" />
@@ -26,12 +26,12 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background"  Value="#2D2D70" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#60A5FA" />
-                                <Setter Property="Foreground" Value="#F1F5F9" />
+                                <Setter TargetName="Bd" Property="Background"  Value="#337C3AED" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentLight}" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#2A2A55" />
+                                <Setter TargetName="Bd" Property="Background" Value="#15808080" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -48,65 +48,65 @@
         </Grid.RowDefinitions>
 
         <!-- ─── Row 0: KPI Strip ──────────────────────────────────── -->
-        <Border Grid.Row="0" Background="#0D0D1F" Padding="18,10"
-                BorderBrush="#2D2D50" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="{StaticResource BgCard}" Padding="18,10"
+                BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
             <WrapPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Physical Memory" Foreground="#64748B" FontSize="10" />
-                    <TextBlock x:Name="KpiPhysical" Text="--" Foreground="#F1F5F9"
+                    <TextBlock Text="Physical Memory" Foreground="{StaticResource TextMuted}" FontSize="10" />
+                    <TextBlock x:Name="KpiPhysical" Text="--" Foreground="{StaticResource TextPrimary}"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="SQL Server Memory" Foreground="#64748B" FontSize="10" />
+                    <TextBlock Text="SQL Server Memory" Foreground="{StaticResource TextMuted}" FontSize="10" />
                     <TextBlock x:Name="KpiTotal" Text="--" Foreground="#38BDF8"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Target Memory" Foreground="#64748B" FontSize="10" />
+                    <TextBlock Text="Target Memory" Foreground="{StaticResource TextMuted}" FontSize="10" />
                     <TextBlock x:Name="KpiTarget" Text="--" Foreground="#60A5FA"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Buffer Pool" Foreground="#64748B" FontSize="10" />
+                    <TextBlock Text="Buffer Pool" Foreground="{StaticResource TextMuted}" FontSize="10" />
                     <TextBlock x:Name="KpiBuffer" Text="--" Foreground="#34D399"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Plan Cache" Foreground="#64748B" FontSize="10" />
+                    <TextBlock Text="Plan Cache" Foreground="{StaticResource TextMuted}" FontSize="10" />
                     <TextBlock x:Name="KpiPlanCache" Text="--" Foreground="#A78BFA"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Available Physical" Foreground="#64748B" FontSize="10" />
-                    <TextBlock x:Name="KpiAvailPhys" Text="--" Foreground="#F1F5F9"
+                    <TextBlock Text="Available Physical" Foreground="{StaticResource TextMuted}" FontSize="10" />
+                    <TextBlock x:Name="KpiAvailPhys" Text="--" Foreground="{StaticResource TextPrimary}"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Total Page File" Foreground="#64748B" FontSize="10" />
-                    <TextBlock x:Name="KpiPageFile" Text="--" Foreground="#CBD5E1"
+                    <TextBlock Text="Total Page File" Foreground="{StaticResource TextMuted}" FontSize="10" />
+                    <TextBlock x:Name="KpiPageFile" Text="--" Foreground="{StaticResource TextPrimary}"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="Available Page File" Foreground="#64748B" FontSize="10" />
-                    <TextBlock x:Name="KpiAvailPage" Text="--" Foreground="#CBD5E1"
+                    <TextBlock Text="Available Page File" Foreground="{StaticResource TextMuted}" FontSize="10" />
+                    <TextBlock x:Name="KpiAvailPage" Text="--" Foreground="{StaticResource TextPrimary}"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel Margin="0,0,28,0">
-                    <TextBlock Text="System Memory State" Foreground="#64748B" FontSize="10" />
+                    <TextBlock Text="System Memory State" Foreground="{StaticResource TextMuted}" FontSize="10" />
                     <TextBlock x:Name="KpiMemState" Text="--" Foreground="#34D399"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Memory Model" Foreground="#64748B" FontSize="10" />
-                    <TextBlock x:Name="KpiMemModel" Text="--" Foreground="#CBD5E1"
+                    <TextBlock Text="Memory Model" Foreground="{StaticResource TextMuted}" FontSize="10" />
+                    <TextBlock x:Name="KpiMemModel" Text="--" Foreground="{StaticResource TextPrimary}"
                                FontSize="20" FontWeight="Bold" />
                 </StackPanel>
             </WrapPanel>
         </Border>
 
         <!-- ─── Row 1: Tab strip + (Overview) toolbar ─────────────── -->
-        <Border Grid.Row="1" Background="#12122A" Padding="12,7"
-                BorderBrush="#2D2D50" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Background="{StaticResource BgCard}" Padding="12,7"
+                BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="False">
 
                 <!-- Sub-tabs on the left -->
@@ -126,11 +126,11 @@
                 <StackPanel x:Name="OverviewToolbar" DockPanel.Dock="Right"
                             Orientation="Horizontal" VerticalAlignment="Center">
 
-                    <TextBlock Text="Interval:" Foreground="#94A3B8" FontSize="12"
+                    <TextBlock Text="Interval:" Foreground="{StaticResource TextMuted}" FontSize="12"
                                VerticalAlignment="Center" Margin="0,0,6,0" />
                     <ComboBox x:Name="CmbInterval" Width="75" Height="26" FontSize="11"
-                              Background="#1E1E3A" Foreground="#CBD5E1"
-                              BorderBrush="#3B3B6B" VerticalContentAlignment="Center"
+                              Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
+                              BorderBrush="{StaticResource Border}" VerticalContentAlignment="Center"
                               Margin="0,0,10,0">
                         <ComboBox.ItemContainerStyle>
                             <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
@@ -143,16 +143,16 @@
 
                     <ToggleButton x:Name="BtnAutoRefresh"
                                   Content="▶  Start" Width="78" Height="26" FontSize="11"
-                                  Background="#2D2D50" Foreground="#93C5FD"
-                                  BorderBrush="#3B3B6B" BorderThickness="1"
+                                  Background="#1A93C5FD" Foreground="#93C5FD"
+                                  BorderBrush="#93C5FD" BorderThickness="1"
                                   Checked="BtnAutoRefresh_Checked"
                                   Unchecked="BtnAutoRefresh_Unchecked"
                                   Margin="0,0,8,0" />
 
-                    <Border Background="#1E1E3A" BorderBrush="#3B3B6B" BorderThickness="1"
+                    <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="1"
                             CornerRadius="4" Padding="10,3" Height="26">
                         <TextBlock x:Name="TxtCountdown" Text="--"
-                                   Foreground="#7C3AED" FontSize="12"
+                                   Foreground="{StaticResource Accent}" FontSize="12"
                                    VerticalAlignment="Center" />
                     </Border>
                 </StackPanel>
@@ -170,7 +170,7 @@
                                     LegendPosition="Bottom" />
                 <TextBlock x:Name="TxtNoData"
                            Text="Press ▶ Start to begin memory trending"
-                           Foreground="#475569" FontSize="14"
+                           Foreground="{StaticResource TextMuted}" FontSize="14"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            Visibility="Visible" />
             </Grid>

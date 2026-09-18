@@ -114,7 +114,6 @@ src/
 │   │   │   ├── MemoryGrant.cs
 │   │   │   ├── PlanCacheData.cs
 │   │   │   ├── QueryStoreData.cs
-│   │   │   ├── Recommendation.cs
 │   │   │   ├── ResourceIntensiveQuery.cs
 │   │   │   ├── ServerHealthKpi.cs
 │   │   │   ├── SignalVsResourceWait.cs
@@ -250,12 +249,10 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 
 | Nav Button | Tag string | Page class | Repository method(s) |
 |---|---|---|---|
-| Overview | `Overview` | `OverviewPage` | `GetServerHealthKpiAsync`, `GetWaitCategorySummaryAsync`, `GetSignalVsResourceAsync` |
 | Live Metrics | `LiveMetrics` | `LiveMetricsDashboardPage` | Live snapshot methods |
 | Top Waits | `TopWaits` | `TopWaitsPage` | `GetTopWaitTypesAsync`, `GetCumulativeWaitsAsync` |
 | Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods |
-| Recommendations | `Recommendations` | `RecommendationsPage` | `GetRecommendationsAsync` |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` |
 | Query Store | `QueryStore` | `QueryStorePage` | `GetQueryStoreAsync` |
@@ -520,7 +517,6 @@ directly in SSMS or Azure Data Studio for testing.
 | `03_WaitCategorySummary.sql` | Category aggregation | `sys.dm_os_wait_stats` |
 | `04_SignalVsResourceWaits.sql` | CPU pressure signal | `sys.dm_os_wait_stats` |
 | `05_TopWaitTypes.sql` | Top 25 waits | `sys.dm_os_wait_stats` |
-| `06_Recommendations.sql` | Tuning advice | Multiple DMVs |
 | `07_ServerHealthKPIs.sql` | Header KPIs | `sys.dm_os_sys_info`, `sys.dm_os_performance_counters` |
 | `08_TempDB_Pressure.sql` | TempDB file + session usage | `sys.dm_db_task_space_usage` |
 | `09_MemoryGrants.sql` | Memory grant waits | `sys.dm_exec_query_memory_grants` |
@@ -639,11 +635,9 @@ fetch them all **concurrently**, and write a structured plain-text file (default
 ### Group constants
 
 ```csharp
-public const string G_OVERVIEW         = "Server Overview (KPIs)";
 public const string G_TOP_WAITS        = "Top Wait Types";
 public const string G_CATEGORIES       = "Wait Category Summary";
 public const string G_ACTIVE_WAITS     = "Active Waits (live)";
-public const string G_RECOMMENDATIONS  = "Recommendations";
 public const string G_SIGNAL_VS_RES    = "Signal vs Resource Wait";
 public const string G_TEMPDB           = "TempDB Pressure";
 public const string G_MEMORY_GRANTS    = "Memory Grants";

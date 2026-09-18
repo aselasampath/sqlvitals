@@ -13,9 +13,7 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
     Task<IEnumerable<ActiveWait>>          GetActiveWaitsAsync();
     Task<SignalVsResourceWait?>            GetSignalVsResourceAsync();
     Task<IEnumerable<TopWaitType>>         GetTopWaitTypesAsync();
-    Task<IEnumerable<Recommendation>>      GetRecommendationsAsync();
-    Task<ServerHealthKpi?>                 GetServerHealthKpiAsync();
-    
+
     // ── New counters ────────────────────────────────────────────────
     Task<(IEnumerable<MemoryGrant> Grants, IEnumerable<MemoryClerk> Clerks, IEnumerable<MemoryCounter> Counters)>   GetMemoryGrantsAsync();
 
@@ -55,7 +53,4 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
 
     // ── Memory KPI snapshot (for trend chart + KPI strip) ────────────
     Task<MemorySnapshot> GetMemorySnapshotAsync();
-
-    // ── CPU + Memory utilization summary (for Overview utilization panel) ─
-    Task<UtilizationKpi?> GetUtilizationKpiAsync();
 }

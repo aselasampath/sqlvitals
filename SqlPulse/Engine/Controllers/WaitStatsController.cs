@@ -45,26 +45,6 @@ public class WaitStatsController(IWaitStatsRepository repo) : ControllerBase
         catch (Exception ex) { return QueryError(ex); }
     }
 
-    /// <summary>Tuning recommendations based on current wait patterns.</summary>
-    [HttpGet("recommendations")]
-    public async Task<IActionResult> GetRecommendations()
-    {
-        try { return Ok(await repo.GetRecommendationsAsync()); }
-        catch (Exception ex) { return QueryError(ex); }
-    }
-
-    /// <summary>Server health KPIs: sessions, PLE, buffer cache, signal wait %.</summary>
-    [HttpGet("health")]
-    public async Task<IActionResult> GetHealth()
-    {
-        try
-        {
-            var data = await repo.GetServerHealthKpiAsync();
-            return data is null ? NotFound() : Ok(data);
-        }
-        catch (Exception ex) { return QueryError(ex); }
-    }
-
     /// <summary>Application connections grouped by program_name.</summary>
     [HttpGet("application-connections")]
     public async Task<IActionResult> GetApplicationConnections()

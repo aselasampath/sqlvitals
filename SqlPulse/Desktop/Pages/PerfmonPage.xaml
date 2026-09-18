@@ -10,7 +10,7 @@
         <Style x:Key="FlatBtn" TargetType="Button">
             <Setter Property="Height"           Value="24"/>
             <Setter Property="Padding"          Value="10,0"/>
-            <Setter Property="Background"       Value="#2A2A3E"/>
+            <Setter Property="Background"       Value="{StaticResource BgCard}"/>
             <Setter Property="Foreground"       Value="{StaticResource TextPrimary}"/>
             <Setter Property="BorderBrush"      Value="{StaticResource Border}"/>
             <Setter Property="BorderThickness"  Value="1"/>
@@ -55,7 +55,7 @@
                 <!-- Group preset dropdown -->
                 <ComboBox x:Name="CmbGroup" DockPanel.Dock="Top"
                           Height="28" Margin="0,0,0,8"
-                          Background="#1E1E2E" Foreground="{StaticResource TextPrimary}"
+                          Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                           BorderBrush="{StaticResource Border}"
                           FontFamily="Segoe UI" FontSize="12"
                           SelectionChanged="CmbGroup_SelectionChanged">
@@ -78,7 +78,7 @@
                 <!-- Search box -->
                 <TextBox x:Name="TxtSearch" DockPanel.Dock="Top"
                          Height="26" Margin="0,0,0,8"
-                         Background="#1E1E2E" Foreground="{StaticResource TextPrimary}"
+                         Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                          CaretBrush="{StaticResource TextPrimary}"
                          BorderBrush="{StaticResource Border}" BorderThickness="1"
                          Padding="6,2" FontFamily="Segoe UI" FontSize="11"
@@ -126,7 +126,7 @@
                                VerticalAlignment="Center" Margin="0,0,6,0"
                                FontFamily="Segoe UI" FontSize="12"/>
                     <ComboBox x:Name="CmbInterval" Width="80" Height="26"
-                              Background="#1E1E2E" Foreground="{StaticResource TextPrimary}"
+                              Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                               BorderBrush="{StaticResource Border}"
                               FontFamily="Segoe UI" FontSize="12"
                               SelectionChanged="CmbInterval_SelectionChanged">
@@ -136,12 +136,12 @@
                     </ComboBox>
                     <ToggleButton x:Name="BtnAutoRefresh" Content="Start" Width="58" Height="26"
                                   Margin="6,0,0,0" Padding="6,0"
-                                  Background="#1E3A1E" BorderBrush="#44AA44"
-                                  Foreground="#66DD66"
+                                  Background="#1A22C55E" BorderBrush="{StaticResource Success}"
+                                  Foreground="{StaticResource Success}"
                                   FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
                                   Checked="BtnAutoRefresh_Checked"
                                   Unchecked="BtnAutoRefresh_Unchecked"/>
-                    <Border Margin="8,0,0,0" Background="#1A1A2E"
+                    <Border Margin="8,0,0,0" Background="{StaticResource BgCard}"
                             BorderBrush="{StaticResource Border}" BorderThickness="1"
                             CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center">
                         <TextBlock x:Name="TxtCountdown" Text="--"
@@ -155,7 +155,7 @@
 
             <!-- Chart -->
             <Border Grid.Row="1" Margin="16,0,16,6"
-                    Background="#0D0D1A"
+                    Background="{StaticResource BgCard}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
                     CornerRadius="6">
                 <Grid>
@@ -174,7 +174,7 @@
 
             <!-- Status bar -->
             <Border Grid.Row="2" Margin="16,0,16,10"
-                    Background="#1A1A2E"
+                    Background="{StaticResource BgCard}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
                     CornerRadius="3" Padding="10,4">
                 <DockPanel>

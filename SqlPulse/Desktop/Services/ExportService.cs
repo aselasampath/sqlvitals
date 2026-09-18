@@ -12,10 +12,8 @@ namespace SqlPulse.Desktop.Services;
 public class ExportService(IWaitStatsRepository repo)
 {
     // ── Public counter group names (match checkboxes in ExportPage) ───
-    public const string G_OVERVIEW         = "Server Overview (KPIs)";
     public const string G_TOP_WAITS        = "Top Wait Types";
     public const string G_ACTIVE_WAITS     = "Active Waits (live)";
-    public const string G_RECOMMENDATIONS  = "Recommendations";
     public const string G_SIGNAL_VS_RES    = "Signal vs Resource Wait";
     public const string G_TEMPDB           = "TempDB Pressure";
     public const string G_MEMORY_GRANTS    = "Memory Grants";
@@ -30,8 +28,8 @@ public class ExportService(IWaitStatsRepository repo)
 
     public static readonly string[] AllGroups =
     [
-        G_OVERVIEW, G_TOP_WAITS, G_ACTIVE_WAITS,
-        G_RECOMMENDATIONS, G_SIGNAL_VS_RES, G_TEMPDB, G_MEMORY_GRANTS,
+        G_TOP_WAITS, G_ACTIVE_WAITS,
+        G_SIGNAL_VS_RES, G_TEMPDB, G_MEMORY_GRANTS,
         G_QUERY_STORE, G_INDEX_HEALTH, G_RESOURCE_QUERIES, G_INDEX_USAGE,
         G_INDEX_FRAG, G_IMPLICIT_CONV, G_STALE_STATS, G_DB_STORAGE,
     ];
@@ -48,10 +46,8 @@ public class ExportService(IWaitStatsRepository repo)
         // Fire all selected queries concurrently
         var tasks = new List<(string Group, Task<string> Work)>();
 
-        if (groups.Contains(G_OVERVIEW))         tasks.Add((G_OVERVIEW,         FetchOverview()));
         if (groups.Contains(G_TOP_WAITS))        tasks.Add((G_TOP_WAITS,        FetchTopWaits()));
         if (groups.Contains(G_ACTIVE_WAITS))     tasks.Add((G_ACTIVE_WAITS,     FetchActiveWaits()));
-        if (groups.Contains(G_RECOMMENDATIONS))  tasks.Add((G_RECOMMENDATIONS,  FetchRecommendations()));
         if (groups.Contains(G_SIGNAL_VS_RES))    tasks.Add((G_SIGNAL_VS_RES,    FetchSignalVsResource()));
         if (groups.Contains(G_TEMPDB))           tasks.Add((G_TEMPDB,           FetchTempDb()));
         if (groups.Contains(G_MEMORY_GRANTS))    tasks.Add((G_MEMORY_GRANTS,    FetchMemoryGrants()));
@@ -139,34 +135,6 @@ public class ExportService(IWaitStatsRepository repo)
     }
 
     // ── Fetch methods ──────────────────────────────────────────────────
-    private async Task<string> FetchOverview()
-    {
-        var sb = new StringBuilder(Section(G_OVERVIEW));
-        try
-        {
-            var kpi = await repo.GetServerHealthKpiAsync();
-            if (kpi is null) { sb.AppendLine("  (no data)"); return sb.ToString(); }
-            sb.AppendLine(Kv("CPU Pressure Status",      kpi.CPUPressureStatus));
-            sb.AppendLine(Kv("Memory Utilization %",     $"{kpi.MemoryUtilizationPct:F1}%"));
-            sb.AppendLine(Kv("PLE Status",               kpi.PLEStatus));
-            sb.AppendLine(Kv("Active User Sessions",     kpi.ActiveUserSessions));
-            sb.AppendLine(Kv("Blocked Requests",         kpi.BlockedRequests, kpi.BlockedRequests > 0 ? "ALERT" : null));
-            sb.AppendLine(Kv("Uptime (days)",            kpi.UptimeDays));
-            sb.AppendLine(Kv("Buffer Cache Hit Ratio %", $"{kpi.BufferCacheHitRatio:F1}%", kpi.BufferCacheHitRatio < 95 ? "below 95% threshold" : null));
-            sb.AppendLine(Kv("Batch Requests/sec",       kpi.BatchRequestsPerSec));
-            sb.AppendLine(Kv("SQL Compilations/sec",     kpi.SQLCompilationsPerSec));
-            sb.AppendLine(Kv("SQL Recompilations/sec",   kpi.SQLRecompilationsPerSec));
-            sb.AppendLine(Kv("Lock Waits/sec",           kpi.LockWaitsPerSec,      kpi.LockWaitsPerSec > 0 ? "ALERT" : null));
-            sb.AppendLine(Kv("Deadlocks/sec",            kpi.DeadlocksPerSec,      kpi.DeadlocksPerSec > 0 ? "ALERT" : null));
-            sb.AppendLine(Kv("Transactions/sec",         kpi.TransactionsPerSec));
-            sb.AppendLine(Kv("Memory Grants Pending",    kpi.MemoryGrantsPending,  kpi.MemoryGrantsPending > 0 ? "ALERT" : null));
-            sb.AppendLine(Kv("Total Server Memory (GB)", $"{kpi.TotalServerMemKB / 1024.0 / 1024.0:N1}"));
-            sb.AppendLine(Kv("Target Server Memory (GB)", $"{kpi.TargetServerMemKB / 1024.0 / 1024.0:N1}"));
-        }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
-        return sb.ToString();
-    }
-
     private async Task<string> FetchTopWaits()
     {
         var sb = new StringBuilder(Section(G_TOP_WAITS));
@@ -203,25 +171,6 @@ public class ExportService(IWaitStatsRepository repo)
                 ("DB",        r => r.DatabaseName),
                 ("Login",     r => r.LoginName),
                 ("Query",     r => r.QueryText?.Substring(0, Math.Min(80, r.QueryText?.Length ?? 0)))));
-        }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
-        return sb.ToString();
-    }
-
-    private async Task<string> FetchRecommendations()
-    {
-        var sb = new StringBuilder(Section(G_RECOMMENDATIONS));
-        try
-        {
-            var rows = (await repo.GetRecommendationsAsync()).ToList();
-            if (rows.Count == 0) { sb.AppendLine("  (no recommendations)"); return sb.ToString(); }
-            foreach (var r in rows)
-            {
-                sb.AppendLine($"  [{r.Severity}] {r.Title}");
-                sb.AppendLine($"    Description: {r.Description}");
-                sb.AppendLine($"    Action:      {r.Action}");
-                sb.AppendLine();
-            }
         }
         catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
         return sb.ToString();

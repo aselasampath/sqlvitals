@@ -5,6 +5,7 @@ using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
+using SqlPulse.Desktop.Helpers;
 using SqlPulse.Engine.Repositories;
 
 namespace SqlPulse.Desktop.Pages;
@@ -45,8 +46,8 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable
         var top = data.OrderByDescending(d => d.CurrentConnections).Take(15).ToList();
         if (top.Count > 0)
         {
-            var axisColor = SKColor.Parse("#94A3B8");
-            var gridColor = SKColor.Parse("#2D2D44");
+            var axisColor = ChartTheme.MutedAxisColor;
+            var gridColor = ChartTheme.GridColor;
 
             ConnectionsChart.Series = new ISeries[]
             {

@@ -5,6 +5,7 @@ using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
+using SqlPulse.Desktop.Helpers;
 using SqlPulse.Engine.Repositories;
 
 namespace SqlPulse.Desktop.Pages;
@@ -55,8 +56,8 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable
             var usedVals = fileList.Select(f => (double)f.SpaceUsedMB).ToArray();
             var freeVals = fileList.Select(f => (double)f.FreeSpaceMB).ToArray();
 
-            var axisColor = SKColor.Parse("#94A3B8");
-            var gridColor = SKColor.Parse("#2D2D44");
+            var axisColor = ChartTheme.MutedAxisColor;
+            var gridColor = ChartTheme.GridColor;
 
             FileChart.Series = new ISeries[]
             {

@@ -7,6 +7,7 @@ using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
+using SqlPulse.Desktop.Helpers;
 using SqlPulse.Engine.Models;
 using SqlPulse.Engine.Repositories;
 
@@ -126,8 +127,8 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
     // ── build series once (uses the same shared ObservableCollections) ─
     private void BuildInitialChart()
     {
-        var axisColor = SKColor.Parse("#94A3B8");
-        var gridColor = SKColor.Parse("#2D2D44");
+        var axisColor = ChartTheme.MutedAxisColor;
+        var gridColor = ChartTheme.GridColor;
 
         MemChart.Series = new ISeries[]
         {
@@ -178,8 +179,8 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
     private void BuildClerksChart(List<MemoryClerk> clerks)
     {
         if (clerks.Count == 0) return;
-        var axisColor = SKColor.Parse("#94A3B8");
-        var gridColor = SKColor.Parse("#2D2D44");
+        var axisColor = ChartTheme.MutedAxisColor;
+        var gridColor = ChartTheme.GridColor;
 
         ClerksChart.Series = new ISeries[]
         {

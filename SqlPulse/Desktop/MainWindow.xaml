@@ -43,12 +43,10 @@
                               HorizontalScrollBarVisibility="Disabled"
                               Background="Transparent">
                     <StackPanel Margin="0,0,0,0">
-                        <Button x:Name="BtnOverview"     Content="⬛  Overview"        Style="{DynamicResource NavButtonActive}" Click="Nav_Click" Tag="Overview" />
-                        <Button x:Name="BtnLiveMetrics"  Content="💓  Live Metrics"    Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="LiveMetrics" />
+                        <Button x:Name="BtnLiveMetrics"  Content="💓  Live Metrics"    Style="{DynamicResource NavButtonActive}" Click="Nav_Click" Tag="LiveMetrics" />
                         <Button x:Name="BtnTopWaits"     Content="📊  Top Waits"       Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="TopWaits" />
                         <Button x:Name="BtnActiveWaits"  Content="⚡  Active Waits"    Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="ActiveWaits" />
                         <Button x:Name="BtnWaitTrend"    Content="📈  Wait Trend"      Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="WaitTrend" />
-                        <Button x:Name="BtnRecommend"    Content="💡  Recommendations" Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Recommendations" />
                         <Button x:Name="BtnTempDb"       Content="🗄️  TempDB"          Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="TempDb" />
                         <Button x:Name="BtnMemory"       Content="🧠  Memory Grants"   Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Memory" />
                         <Button x:Name="BtnQueryStore"   Content="📋  Query Store"     Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="QueryStore" />

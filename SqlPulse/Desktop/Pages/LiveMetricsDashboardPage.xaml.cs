@@ -14,6 +14,7 @@ using SkiaSharp;
 using SqlPulse.Engine.Models;
 using SqlPulse.Engine.Repositories;
 using SqlPulse.Desktop.Controls;
+using SqlPulse.Desktop.Helpers;
 
 namespace SqlPulse.Desktop.Pages;
 
@@ -72,8 +73,6 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private ProcessMapControl? _activeProcessMap;
 
     // ?? SkiaSharp colours ?????????????????????????????????????????????
-    private static readonly SKColor ColAxis  = SKColors.White; // Pure white for max contrast
-    private static readonly SKColor ColGrid  = SKColor.Parse("#334155"); // Slightly lighter grid
     private static readonly SKColor ColCpu   = SKColor.Parse("#FF4444");
     private static readonly SKColor ColIo    = SKColor.Parse("#FFA62B");
     private static readonly SKColor ColLock  = SKColor.Parse("#FF4560");
@@ -511,8 +510,8 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         {
             new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
             {
-                LabelsPaint     = new SolidColorPaint(ColAxis) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ColGrid) { StrokeThickness = 1 },
+                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 14,
             }
         };
@@ -524,13 +523,13 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             new Axis
             {
                 Name            = "Count / %",
-                NamePaint       = new SolidColorPaint(ColAxis) { IsAntialias = true },
-                LabelsPaint     = new SolidColorPaint(ColAxis) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ColGrid) { StrokeThickness = 1 },
+                NamePaint       = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 14,
                 Position        = LiveChartsCore.Measure.AxisPosition.Start
             },
-            // Axis 1: PLE — format label as h:mm or Xd depending on magnitude
+            // Axis 1: PLE ï¿½ format label as h:mm or Xd depending on magnitude
             new Axis
             {
                 Name            = "PLE (sec)",
@@ -629,17 +628,17 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         {
             new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
             {
-                LabelsPaint     = new SolidColorPaint(ColAxis) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ColGrid) { StrokeThickness = 1 },
+                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 14,
             }
         };
         var yAxis = new Axis
         {
             Name            = yLabel,
-            NamePaint       = new SolidColorPaint(ColAxis) { IsAntialias = true },
-            LabelsPaint     = new SolidColorPaint(ColAxis) { IsAntialias = true },
-            SeparatorsPaint = new SolidColorPaint(ColGrid) { StrokeThickness = 1 },
+            NamePaint       = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+            LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+            SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
             TextSize        = 14,
         };
         if (yMin.HasValue) yAxis.MinLimit = yMin;
@@ -655,7 +654,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         var titleBlock = new TextBlock
         {
             Text       = title,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xF9)),
+            Foreground = ChartTheme.PanelTitleColor,
             FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
             FontSize   = 12,
             FontWeight = FontWeights.SemiBold,

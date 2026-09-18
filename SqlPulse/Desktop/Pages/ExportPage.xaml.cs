@@ -39,10 +39,8 @@ public partial class ExportPage : Page, IRefreshable
     // Friendly one-line descriptions for each group
     private static readonly Dictionary<string, string> Descriptions = new()
     {
-        [ExportService.G_OVERVIEW]         = "CPU / memory / blocking KPIs",
         [ExportService.G_TOP_WAITS]        = "Top 25 wait types by total wait time",
         [ExportService.G_ACTIVE_WAITS]     = "Currently waiting sessions",
-        [ExportService.G_RECOMMENDATIONS]  = "Automated tuning recommendations",
         [ExportService.G_SIGNAL_VS_RES]    = "Signal (CPU) vs resource wait split",
         [ExportService.G_TEMPDB]           = "TempDB contention & space usage",
         [ExportService.G_MEMORY_GRANTS]    = "Pending / executing memory grant requests",
