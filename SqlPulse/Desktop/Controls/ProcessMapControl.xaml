@@ -72,7 +72,7 @@
                 <TextBlock Text="Search SPID:" Foreground="{DynamicResource TextMuted}"
                            VerticalAlignment="Center" Margin="0,0,6,0" FontFamily="Segoe UI" FontSize="12"/>
                 <TextBox x:Name="TxtProcSearch" Width="100" Height="26"
-                         Background="#1E1E2E" Foreground="{DynamicResource TextPrimary}"
+                         Background="{DynamicResource BgCard}" Foreground="{DynamicResource TextPrimary}"
                          BorderBrush="{DynamicResource Border}" BorderThickness="1"
                          Padding="4,2" FontFamily="Segoe UI" FontSize="12"
                          TextChanged="TxtProcSearch_TextChanged" VerticalContentAlignment="Center"/>
@@ -86,7 +86,7 @@
 
         <!-- Legend (collapsed by default) -->
         <Border Grid.Row="1" x:Name="ProcLegendPanel" Visibility="Collapsed"
-                Background="#1A1A2E" BorderBrush="{DynamicResource Border}"
+                Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
                 BorderThickness="1" CornerRadius="4" Padding="12,8" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                 <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
@@ -141,7 +141,7 @@
         </Border>
 
         <!-- Canvas -->
-        <Border Grid.Row="2" Background="#12122A" BorderBrush="{DynamicResource Border}"
+        <Border Grid.Row="2" Background="{DynamicResource BgSidebar}" BorderBrush="{DynamicResource Border}"
                 BorderThickness="1" CornerRadius="4" ClipToBounds="True">
             <Grid>
                 <ScrollViewer x:Name="ProcessScrollViewer"
