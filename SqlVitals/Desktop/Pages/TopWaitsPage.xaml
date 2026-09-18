@@ -1,0 +1,37 @@
+<Page x:Class="SqlVitals.Desktop.Pages.TopWaitsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      Background="{StaticResource BgDeep}" Title="Top Waits">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="280" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Top Wait Types" Style="{StaticResource SectionHeader}" FontSize="20" Margin="0,0,0,14" />
+
+        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,14">
+            <DataGrid x:Name="WaitsGrid">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Rank"       Binding="{Binding WaitRank}"           Width="50" />
+                    <DataGridTextColumn Header="Wait Type"  Binding="{Binding WaitType}"           Width="200" />
+                    <DataGridTextColumn Header="Category"   Binding="{Binding WaitCategory}"       Width="100" />
+                    <DataGridTextColumn Header="Wait (sec)" Binding="{Binding WaitTimeSec, StringFormat=N1}" Width="90" />
+                    <DataGridTextColumn Header="Avg ms/task" Binding="{Binding AvgWaitMsPerTask, StringFormat=N2}" Width="90" />
+                    <DataGridTextColumn Header="Tasks"      Binding="{Binding WaitingTasksCount}"  Width="70" />
+                    <DataGridTextColumn Header="% of Total" Binding="{Binding PctOfTotal, StringFormat=N1}" Width="80" />
+                    <DataGridTextColumn Header="Cumul %"    Binding="{Binding CumulativePct, StringFormat=N1}" Width="80" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+            <StackPanel>
+                <TextBlock Text="Top 15 — Wait Time (sec)" Style="{StaticResource SectionHeader}" />
+                <lvc:CartesianChart x:Name="TopChart" Height="210" TooltipPosition="Top" LegendPosition="Hidden" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Page>

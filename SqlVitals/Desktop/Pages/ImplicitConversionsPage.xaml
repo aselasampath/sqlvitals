@@ -1,0 +1,56 @@
+<Page x:Class="SqlVitals.Desktop.Pages.ImplicitConversionsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="{StaticResource BgDeep}" Title="Implicit Conversions">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Implicit Conversions" Style="{StaticResource SectionHeader}"
+                   FontSize="20" Margin="0,0,0,6" />
+        <Border Grid.Row="1" Background="#1AFBBF24" BorderBrush="#FBBF24" BorderThickness="1"
+                CornerRadius="6" Padding="12,8" Margin="0,0,0,16">
+            <TextBlock TextWrapping="Wrap" Foreground="#FBBF24" FontFamily="Segoe UI" FontSize="11">
+                ⚠  Implicit conversions occur when SQL Server must cast one type to another at runtime.
+                This often prevents index seeks and forces scans. Common causes: VARCHAR vs NVARCHAR mismatches,
+                INT vs DECIMAL comparisons, or application code sending incorrect parameter types.
+                Fix by aligning column types with parameter types in the application or query.
+            </TextBlock>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+            <StackPanel>
+                <TextBlock Text="Cached plans containing CONVERT_IMPLICIT — sorted by execution count"
+                           Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+                <DataGrid x:Name="ConvGrid" MaxHeight="600" CanUserAddRows="False"
+                          IsReadOnly="True" AutoGenerateColumns="False"
+                          RowBackground="{StaticResource BgDeep}"
+                          AlternatingRowBackground="{StaticResource BgSidebar}"
+                          Foreground="{StaticResource TextPrimary}"
+                          BorderBrush="{StaticResource Border}" GridLinesVisibility="Horizontal"
+                          HorizontalGridLinesBrush="{StaticResource Border}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"                Width="120">
+                            <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database context of the cached plan."/></Style></DataGridTextColumn.HeaderStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Object"      Binding="{Binding ObjectName}"                  Width="160">
+                            <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Stored procedure or function name if applicable. Blank = ad-hoc query."/></Style></DataGridTextColumn.HeaderStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Executions"  Binding="{Binding ExecutionCount, StringFormat=N0}" Width="100">
+                            <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="How many times this plan was used (usecounts). Higher = more urgent to fix because every execution is affected by the implicit conversion."/></Style></DataGridTextColumn.HeaderStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Plan KB"     Binding="{Binding PlanSizeKB, StringFormat=N0}"  Width="90">
+                            <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Size of the compiled plan in KB. Large plans may consume significant procedure cache memory."/></Style></DataGridTextColumn.HeaderStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"                    Width="*">
+                            <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query text from the plan cache. Look for WHERE clauses comparing columns of different types or joining mismatched columns."/></Style></DataGridTextColumn.HeaderStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Page>
