@@ -1,0 +1,6 @@
+@SqlVitals.Engine_HostAddress = http://localhost:5236
+
+GET {{SqlVitals.Engine_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

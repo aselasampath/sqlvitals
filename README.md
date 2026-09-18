@@ -1,4 +1,4 @@
-# SqlPulse — WPF Desktop Application
+# SqlVitals — WPF Desktop Application
 
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
@@ -30,7 +30,7 @@ Current version: **2.0**
 
 ## Overview
 
-SqlPulse connects **directly** to a SQL Server or Azure SQL database and surfaces
+SqlVitals connects **directly** to a SQL Server or Azure SQL database and surfaces
 live diagnostic data across the app's monitoring screens:
 
 - Wait statistics (cumulative, active, categories, top types)
@@ -51,7 +51,7 @@ live diagnostic data across the app's monitoring screens:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                  SqlPulse.Desktop (WPF)                   │
+│                  SqlVitals.Desktop (WPF)                   │
 │                                                           │
 │   MainWindow                                             │
 │   ├── Sidebar navigation                                 │
@@ -69,7 +69,7 @@ live diagnostic data across the app's monitoring screens:
                         │  Project reference (no HTTP)
                         ▼
 ┌──────────────────────────────────────────────────────────┐
-│         SqlPulse.Engine (Microsoft.NET.Sdk.Web library)   │
+│         SqlVitals.Engine (Microsoft.NET.Sdk.Web library)   │
 │                                                           │
 │   Repositories/                                          │
 │   ├── IWaitStatsRepository  (interface)                  │
@@ -84,10 +84,10 @@ live diagnostic data across the app's monitoring screens:
               SQL Server / Azure SQL Database
 ```
 
-> **Key design decision:** `SqlPulse.Desktop` references `SqlPulse.Engine` as a
+> **Key design decision:** `SqlVitals.Desktop` references `SqlVitals.Engine` as a
 > **project reference**, not via HTTP. The repository is instantiated directly in
 > `MainWindow`. This means zero network latency and no background web server needed.
-> `SqlPulse.Engine` also contains a `Program.cs` / `ApiHost.cs` (and `Controllers/`) for
+> `SqlVitals.Engine` also contains a `Program.cs` / `ApiHost.cs` (and `Controllers/`) for
 > running as a standalone REST API if needed in future, but the desktop app doesn't use it.
 > Everything the app needs — models, repositories, and the optional REST surface — lives
 > in this single project; there is no separate data-access project.
@@ -98,11 +98,11 @@ live diagnostic data across the app's monitoring screens:
 
 ```
 src/
-├── SqlPulseDashboard.slnx                 ← Solution file (open this in Visual Studio)
+├── SqlVitalsDashboard.slnx                 ← Solution file (open this in Visual Studio)
 │
-├── SqlPulse/
+├── SqlVitals/
 │   ├── Engine/                            ← Class library + optional web API
-│   │   ├── SqlPulse.Engine.csproj
+│   │   ├── SqlVitals.Engine.csproj
 │   │   ├── appsettings.json               ← Connection string + query settings ← EDIT THIS
 │   │   ├── Models/                        ← C# record types for every query result
 │   │   │   ├── ActiveWait.cs
@@ -136,7 +136,7 @@ src/
 │   │   └── wwwroot/                       ← Static assets for standalone API mode
 │   │
 │   └── Desktop/                           ← WPF application
-│       ├── SqlPulse.Desktop.csproj
+│       ├── SqlVitals.Desktop.csproj
 │       ├── App.xaml / App.xaml.cs
 │       ├── MainWindow.xaml                ← Shell: sidebar + frame + status bar
 │       ├── MainWindow.xaml.cs             ← Navigation logic + Repo instantiation
@@ -159,11 +159,11 @@ src/
 
 | Package | Version | Used in | Purpose |
 |---|---|---|---|
-| `Dapper` | 2.1.72 | `SqlPulse.Engine` | Micro-ORM — maps SQL results to C# records |
-| `Microsoft.Data.SqlClient` | 5.2.2 | `SqlPulse.Engine` | SQL Server / Azure SQL driver |
-| `Microsoft.AspNetCore.OpenApi` | 8.0.23 | `SqlPulse.Engine` | Swagger (API mode only) |
-| `Swashbuckle.AspNetCore` | 6.6.2 | `SqlPulse.Engine` | Swagger UI (API mode only) |
-| `LiveChartsCore.SkiaSharpView.WPF` | 2.0.0-rc4.5 | `SqlPulse.Desktop` | Charts (bar, pie, line) |
+| `Dapper` | 2.1.72 | `SqlVitals.Engine` | Micro-ORM — maps SQL results to C# records |
+| `Microsoft.Data.SqlClient` | 5.2.2 | `SqlVitals.Engine` | SQL Server / Azure SQL driver |
+| `Microsoft.AspNetCore.OpenApi` | 8.0.23 | `SqlVitals.Engine` | Swagger (API mode only) |
+| `Swashbuckle.AspNetCore` | 6.6.2 | `SqlVitals.Engine` | Swagger UI (API mode only) |
+| `LiveChartsCore.SkiaSharpView.WPF` | 2.0.0-rc4.5 | `SqlVitals.Desktop` | Charts (bar, pie, line) |
 
 **Target framework:** `net8.0-windows` (WPF) / `net8.0` (Engine, `Microsoft.NET.Sdk.Web`)
 
@@ -171,7 +171,7 @@ src/
 
 ## Configuration
 
-Edit **`src/SqlPulse/Engine/appsettings.json`** before running:
+Edit **`src/SqlVitals/Engine/appsettings.json`** before running:
 
 ```json
 {
@@ -194,11 +194,11 @@ Edit **`src/SqlPulse/Engine/appsettings.json`** before running:
 > **Azure SQL:** Use `TrustServerCertificate=false` and `Encrypt=true` (default).
 > **On-premises:** Set `TrustServerCertificate=true` for self-signed certs.
 
-The file is linked into `SqlPulse/Desktop/bin/Debug/net8.0-windows/appsettings.json`
+The file is linked into `SqlVitals/Desktop/bin/Debug/net8.0-windows/appsettings.json`
 automatically by the `.csproj` `<None Update>` entry — you only need to edit it once.
 
 Connection settings entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
-to `%AppData%\SqlPulse\settings.dat` and override the connection string from `appsettings.json`.
+to `%AppData%\SqlVitals\settings.dat` and override the connection string from `appsettings.json`.
 
 ---
 
@@ -223,22 +223,22 @@ GRANT VIEW DATABASE STATE TO [your_login];
 ```powershell
 # From repo root — build and run
 cd src
-dotnet build SqlPulseDashboard.slnx --nologo
-Start-Process "SqlPulse\Desktop\bin\Debug\net8.0-windows\SqlPulse.Desktop.exe"
+dotnet build SqlVitalsDashboard.slnx --nologo
+Start-Process "SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.exe"
 ```
 
 ### Kill old instance + rebuild + relaunch (use this when already running)
 
 ```powershell
-Get-Process -Name "SqlPulse.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "SqlVitals.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 1
-dotnet build "src\SqlPulse\Desktop\SqlPulse.Desktop.csproj" --nologo
-Start-Process "src\SqlPulse\Desktop\bin\Debug\net8.0-windows\SqlPulse.Desktop.exe"
+dotnet build "src\SqlVitals\Desktop\SqlVitals.Desktop.csproj" --nologo
+Start-Process "src\SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.exe"
 ```
 
 ### Visual Studio
 
-Open `src/SqlPulseDashboard.slnx`, set `SqlPulse.Desktop` as startup project, press **F5**.
+Open `src/SqlVitalsDashboard.slnx`, set `SqlVitals.Desktop` as startup project, press **F5**.
 
 ---
 
@@ -268,7 +268,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Settings | `Settings` | `SettingsPage` | *(connection settings only — no repository)* |
 
 > The table above reflects the nav tags wired up in `MainWindow.xaml.cs`. See
-> `SqlPulse/Engine/Repositories/IWaitStatsRepository.cs` for the full, current method list —
+> `SqlVitals/Engine/Repositories/IWaitStatsRepository.cs` for the full, current method list —
 > it has grown well past the methods shown here as pages were added.
 
 Every page implements `IRefreshable`:
@@ -296,10 +296,10 @@ Keep it compatible with both Azure SQL and on-premises (see [compatibility notes
 
 ### 2. Create the C# model
 
-Add `src/SqlPulse/Engine/Models/YourFeature.cs`:
+Add `src/SqlVitals/Engine/Models/YourFeature.cs`:
 
 ```csharp
-namespace SqlPulse.Engine.Models;
+namespace SqlVitals.Engine.Models;
 
 public record YourFeatureRow(
     string  SomeColumn,
@@ -312,7 +312,7 @@ Use `record` types — Dapper maps columns by name automatically (case-insensiti
 
 ### 3. Add the interface method
 
-In `src/SqlPulse/Engine/Repositories/IWaitStatsRepository.cs`:
+In `src/SqlVitals/Engine/Repositories/IWaitStatsRepository.cs`:
 
 ```csharp
 Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync();
@@ -349,10 +349,10 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 
 ### 5. Create the WPF page
 
-`src/SqlPulse/Desktop/Pages/YourFeaturePage.xaml`:
+`src/SqlVitals/Desktop/Pages/YourFeaturePage.xaml`:
 
 ```xml
-<Page x:Class="SqlPulse.Desktop.Pages.YourFeaturePage"
+<Page x:Class="SqlVitals.Desktop.Pages.YourFeaturePage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid Margin="20">
@@ -378,9 +378,9 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 `YourFeaturePage.xaml.cs`:
 
 ```csharp
-using SqlPulse.Engine.Repositories;
+using SqlVitals.Engine.Repositories;
 
-namespace SqlPulse.Desktop.Pages;
+namespace SqlVitals.Desktop.Pages;
 
 public partial class YourFeaturePage : System.Windows.Controls.Page, IRefreshable
 {
@@ -454,7 +454,7 @@ Add a description entry in `ExportPage.xaml.cs` in the `_descriptions` dictionar
 
 ## Repository Pattern
 
-`WaitStatsRepository` (in `SqlPulse.Engine.Repositories`) is the single class that executes
+`WaitStatsRepository` (in `SqlVitals.Engine.Repositories`) is the single class that executes
 all SQL against the database.
 
 ### Connection
@@ -533,13 +533,13 @@ directly in SSMS or Azure Data Studio for testing.
 
 > This list reflects the original feature set. Several pages (Live Metrics, Perfmon,
 > Application Connections, Plan Cache Health, Wait Trend) were added afterward — see
-> `SqlPulse/Engine/Repositories/WaitStatsRepository.cs` for their queries.
+> `SqlVitals/Engine/Repositories/WaitStatsRepository.cs` for their queries.
 
 ---
 
 ## Data Models
 
-All models are C# `record` types in `SqlPulse.Engine.Models`. Dapper maps SQL column
+All models are C# `record` types in `SqlVitals.Engine.Models`. Dapper maps SQL column
 aliases to record constructor parameters by name (case-insensitive). See the
 `Models/` folder in [Solution Structure](#solution-structure) for the current full list.
 
@@ -621,7 +621,7 @@ CAST(ISNULL(CAST(value AS NVARCHAR(256)),'') AS NVARCHAR(MAX)) AS Description
 
 `ExportPage` + `ExportService` let users select any combination of data groups,
 fetch them all **concurrently**, and write a structured plain-text file (default name
-`SqlPulse_Report.txt`) for pasting into an AI assistant.
+`SqlVitals_Report.txt`) for pasting into an AI assistant.
 
 ### How it works
 
@@ -655,7 +655,7 @@ public const string G_DB_STORAGE       = "Database Storage & Configuration";
 
 ## Styling & Themes
 
-The app uses a **dark theme** defined in XAML resource dictionaries under `SqlPulse/Desktop/Styles/`.
+The app uses a **dark theme** defined in XAML resource dictionaries under `SqlVitals/Desktop/Styles/`.
 
 Key style resource keys used across pages:
 
@@ -691,12 +691,12 @@ var accent    = SKColor.Parse("#A855F7");
 
 ## Common Errors & Fixes
 
-### Build error: "file locked by SqlPulse.Desktop process"
+### Build error: "file locked by SqlVitals.Desktop process"
 
 The app is already running. Kill it before rebuilding:
 
 ```powershell
-Get-Process -Name "SqlPulse.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "SqlVitals.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
 ### Runtime: "Invalid object name 'sys.master_files'"
@@ -725,5 +725,5 @@ Use the full expression: `ORDER BY SUM(a.total_pages) DESC` instead of `ORDER BY
 
 ### IDE shows "type not found" errors for Models
 
-False-positive from stale Roslyn/IntelliSense cache. The `using SqlPulse.Engine.Models`
+False-positive from stale Roslyn/IntelliSense cache. The `using SqlVitals.Engine.Models`
 is already present. Run an actual `dotnet build` to confirm — it will show `0 Error(s)`.

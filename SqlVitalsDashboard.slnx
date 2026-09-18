@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SqlVitals/Desktop/SqlVitals.Desktop.csproj" />
+  <Project Path="SqlVitals/Engine/SqlVitals.Engine.csproj" />
+  <Project Path="SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj" />
+</Solution>

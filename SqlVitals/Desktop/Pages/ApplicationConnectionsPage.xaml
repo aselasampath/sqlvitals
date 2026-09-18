@@ -1,0 +1,114 @@
+<Page x:Class="SqlVitals.Desktop.Pages.ApplicationConnectionsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      Background="{StaticResource BgDeep}" Title="Application Connections">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+        <StackPanel>
+            <TextBlock Text="Application Connections" Style="{StaticResource SectionHeader}"
+                       FontSize="20" Margin="0,0,0,4" />
+            <TextBlock x:Name="TxtSummary" Text="" Foreground="{StaticResource TextMuted}"
+                       FontSize="12" Margin="0,0,0,18" />
+
+            <!-- KPI cards -->
+            <WrapPanel x:Name="KpiPanel" Margin="0,0,0,20" />
+
+            <!-- Connections DataGrid -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Connections by Application" Style="{StaticResource SectionHeader}" />
+                    <DataGrid x:Name="ConnectionsGrid" MaxHeight="420">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Application" Binding="{Binding ApplicationName}" Width="280" />
+                            <DataGridTextColumn Header="Connections" Binding="{Binding CurrentConnections, StringFormat=N0}" Width="95">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Active Requests" Binding="{Binding ActiveRequests, StringFormat=N0}" Width="110">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="CPU Time (ms)" Binding="{Binding TotalCpuTimeMs, StringFormat=N0}" Width="105">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="ToolTip" Value="Total CPU time consumed by all sessions from this application since login." />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Memory (KB)" Binding="{Binding TotalMemoryKB, StringFormat=N0}" Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="ToolTip" Value="Total memory pages (8 KB each) used by all sessions from this application." />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Logical Reads" Binding="{Binding TotalLogicalReads, StringFormat=N0}" Width="105">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="ToolTip" Value="Total logical reads (buffer pool page accesses) by all sessions from this application." />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Reads" Binding="{Binding TotalReads, StringFormat=N0}" Width="80">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="ToolTip" Value="Total physical reads performed by all sessions from this application." />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Writes" Binding="{Binding TotalWrites, StringFormat=N0}" Width="80">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="ToolTip" Value="Total physical writes performed by all sessions from this application." />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="First Login" Binding="{Binding FirstLoginTime, StringFormat='yyyy-MM-dd HH:mm'}" Width="130" />
+                            <DataGridTextColumn Header="Last Request" Binding="{Binding LastRequestTime, StringFormat='yyyy-MM-dd HH:mm'}" Width="130" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+            <!-- Connections bar chart -->
+            <Border Style="{StaticResource KpiCard}">
+                <StackPanel>
+                    <TextBlock Text="Connections by Application" Style="{StaticResource SectionHeader}" />
+                    <lvc:CartesianChart x:Name="ConnectionsChart" Height="260"
+                                        TooltipPosition="Top" LegendPosition="Hidden" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
