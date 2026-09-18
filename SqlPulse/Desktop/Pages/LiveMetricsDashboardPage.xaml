@@ -96,7 +96,7 @@
                            VerticalAlignment="Center" Margin="0,0,6,0"
                            FontFamily="Segoe UI" FontSize="12"/>
         <ComboBox x:Name="CmbInterval" Width="90" Height="26"
-                          Background="#1E1E2E" Foreground="{StaticResource TextPrimary}"
+                          Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                           BorderBrush="{StaticResource Border}"
                           FontFamily="Segoe UI" FontSize="12"
                           SelectionChanged="CmbInterval_SelectionChanged">
@@ -112,7 +112,7 @@
                               Checked="BtnAutoRefresh_Checked"
                               Unchecked="BtnAutoRefresh_Unchecked"/>
         <!-- Countdown -->
-        <Border Margin="8,0,0,0" Background="#1A1A2E"
+        <Border Margin="8,0,0,0" Background="{StaticResource BgCard}"
                         BorderBrush="{StaticResource Border}" BorderThickness="1"
                         CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center">
           <TextBlock x:Name="TxtCountdown" Text="--"
@@ -125,7 +125,7 @@
     </DockPanel>
 
     <!-- ?? Chart selection chips ?????????????????????????????????? -->
-    <Border Grid.Row="1" Background="#1A1A2E" BorderBrush="{StaticResource Border}"
+    <Border Grid.Row="1" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}"
                 BorderThickness="1" CornerRadius="4" Padding="10,7" Margin="0,0,0,10">
       <WrapPanel Orientation="Horizontal">
         <TextBlock Text="Charts:" Foreground="{StaticResource TextMuted}"
@@ -140,28 +140,28 @@
                               Checked="Chip_Changed" Unchecked="Chip_Changed"/>
         <ToggleButton x:Name="ChipCpu"        Content="CPU Usage"
                               Tag="Cpu"
-                              IsChecked="True"
+                              IsChecked="False"
                               Background="#2A1A1A" BorderBrush="#CC4444"
                               Foreground="#FF8888"
                               Style="{StaticResource ChipButton}"
                               Checked="Chip_Changed" Unchecked="Chip_Changed"/>
         <ToggleButton x:Name="ChipThroughput" Content="SQL Throughput"
                               Tag="Throughput"
-                              IsChecked="True"
+                              IsChecked="False"
                               Background="#1A2A1A" BorderBrush="#44AA44"
                               Foreground="#88FF88"
                               Style="{StaticResource ChipButton}"
                               Checked="Chip_Changed" Unchecked="Chip_Changed"/>
         <ToggleButton x:Name="ChipPhysicalIO" Content="Physical R/W"
                               Tag="PhysicalIO"
-                              IsChecked="True"
+                              IsChecked="False"
                               Background="#2A2A1A" BorderBrush="#AAAA44"
                               Foreground="#FFFF88"
                               Style="{StaticResource ChipButton}"
                               Checked="Chip_Changed" Unchecked="Chip_Changed"/>
         <ToggleButton x:Name="ChipMemory"     Content="Memory"
                               Tag="Memory"
-                              IsChecked="True"
+                              IsChecked="False"
                               Background="#2A1A2A" BorderBrush="#AA44AA"
                               Foreground="#FF88FF"
                               Style="{StaticResource ChipButton}"

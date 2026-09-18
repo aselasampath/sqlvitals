@@ -2,7 +2,7 @@ namespace SqlPulse.Desktop;
 
 public partial class App : System.Windows.Application
 {
-    public bool IsDarkTheme { get; private set; } = true;
+    public bool IsDarkTheme { get; private set; } = false;
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
