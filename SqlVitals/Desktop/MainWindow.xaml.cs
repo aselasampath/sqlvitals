@@ -10,9 +10,11 @@ namespace SqlVitals.Desktop;
 
 public partial class MainWindow : Window
 {
-    internal readonly IWaitStatsRepository Repo;
+    // Replaced when the user saves new connection settings, so pages created after that
+    // point pick up the new server without restarting the app.
+    internal IWaitStatsRepository Repo { get; private set; }
     internal readonly ConnectionSettingsService SettingsService;
-    private Button _activeNav;
+    private bool _isConnectionConfigured;
 
     public MainWindow()
     {
@@ -23,14 +25,33 @@ public partial class MainWindow : Window
         AppVersionText.Text = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
 
         SettingsService = new ConnectionSettingsService();
+        Repo = BuildRepository(SettingsService.Load());
 
-        // Build config: start from appsettings.json then overlay encrypted user settings
+        Loaded += async (_, _) =>
+        {
+            if (!_isConnectionConfigured)
+            {
+                // First run (or settings cleared): send the user straight to Settings
+                // instead of letting every page fail against an empty connection string.
+                await NavigateTo("Settings",
+                    "Welcome to SqlVitals! Enter a SQL Server connection string below, then click Save & Connect.");
+                return;
+            }
+
+            await DisableTempDbIfAzureSqlAsync();
+            await NavigateTo("LiveMetrics");
+        };
+    }
+
+    // Builds config from appsettings.json overlaid with the encrypted user settings, and
+    // refreshes the connection labels in the header.
+    private IWaitStatsRepository BuildRepository(ConnectionSettings userSettings)
+    {
         var configBuilder = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false);
 
-        var userSettings = SettingsService.Load();
-        var overrides    = new Dictionary<string, string?>();
+        var overrides = new Dictionary<string, string?>();
 
         if (!string.IsNullOrWhiteSpace(userSettings.ConnectionString))
             overrides["ConnectionStrings:SqlServer"] = userSettings.ConnectionString;
@@ -42,18 +63,36 @@ public partial class MainWindow : Window
             configBuilder.AddInMemoryCollection(overrides);
 
         var config = configBuilder.Build();
+        var resolvedConnectionString = config.GetConnectionString("SqlServer") ?? string.Empty;
 
-        Repo       = new WaitStatsRepository(config);
-        _activeNav = BtnLiveMetrics;
+        _isConnectionConfigured = !string.IsNullOrWhiteSpace(resolvedConnectionString);
+        ApplyConnectionLabel(resolvedConnectionString);
 
-        // Display server and database from the resolved connection string
-        ApplyConnectionLabel(userSettings.ConnectionString);
+        return new WaitStatsRepository(config);
+    }
 
-        Loaded += async (_, _) =>
+    /// <summary>
+    /// Swaps in a repository for newly saved settings and, when the server is reachable,
+    /// opens the dashboard — so a new connection works without restarting the app.
+    /// </summary>
+    internal async System.Threading.Tasks.Task ApplyConnectionSettingsAsync(ConnectionSettings settings, bool navigateToDashboard)
+    {
+        var previous = Repo;
+        Repo = BuildRepository(settings);
+
+        // Best effort: a trace session started against the old connection shouldn't be
+        // left running on that server.
+        _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            await DisableTempDbIfAzureSqlAsync();
+            try { await previous.StopTraceAsync(); } catch { /* old server may be unreachable */ }
+        });
+
+        BtnTempDb.IsEnabled = true;
+        BtnTempDb.ToolTip = null;
+        await DisableTempDbIfAzureSqlAsync();
+
+        if (navigateToDashboard)
             await NavigateTo("LiveMetrics");
-        };
     }
 
     // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database
@@ -61,6 +100,9 @@ public partial class MainWindow : Window
     // tab up front instead of letting the user hit a query error after navigating to it.
     private async System.Threading.Tasks.Task DisableTempDbIfAzureSqlAsync()
     {
+        if (!_isConnectionConfigured)
+            return;
+
         try
         {
             if (await Repo.IsAzureSqlDatabaseAsync())
@@ -71,7 +113,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            // Edition check failed (e.g. connection not yet configured) — leave the tab enabled.
+            // Edition check failed (e.g. server unreachable) — leave the tab enabled.
         }
     }
 
@@ -124,6 +166,9 @@ public partial class MainWindow : Window
 
     private void ApplyConnectionLabel(string connectionString)
     {
+        TxtServerName.Text   = "—";
+        TxtDatabaseName.Text = "—";
+
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
 
@@ -164,8 +209,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private async System.Threading.Tasks.Task NavigateTo(string tag)
+    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null)
     {
+        // Without a connection every data page would just fail — point the user at Settings.
+        if (!_isConnectionConfigured && tag != "Settings")
+        {
+            tag = "Settings";
+            settingsMessage ??= "No SQL Server connection is configured yet. Enter a connection string below, then click Save & Connect.";
+        }
+
         // Update nav button styles
         foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
@@ -196,9 +248,9 @@ public partial class MainWindow : Window
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(new SettingsPage(SettingsService));
+            MainFrame.Navigate(new SettingsPage(SettingsService, ApplyConnectionSettingsAsync, settingsMessage));
             BtnRefresh.IsEnabled = false;
-            TxtStatus.Text = "Settings";
+            TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;
         }
 
@@ -236,7 +288,9 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             TxtStatus.Text = FormatErrorStatus(ex);
-            MessageBox.Show(FormatErrorDetail(ex), "Data Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(
+                FormatErrorDetail(ex) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
+                "Data Error", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally { BtnRefresh.IsEnabled = true; }
     }
