@@ -29,6 +29,10 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     private readonly PlanCacheHealthRepository _planHealth = new(configuration);
 
+    // Stateful across polls (dedup window + previous DMV snapshot), so it must be a single
+    // long-lived instance rather than created per call.
+    private readonly SpTraceRepository _spTrace = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1730,4 +1734,23 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
         IEnumerable<SqlVitals.Engine.Models.SkewedParallelQuery> SkewedParallelQueries,
         IEnumerable<SqlVitals.Engine.Models.PlanGuide> PlanGuides
     )> GetPlanCacheHealthAsync() => _planHealth.GetPlanCacheHealthAsync();
+
+    // ── Live SP trace (delegated to SpTraceRepository) ────────────────
+    public Task<SqlVitals.Engine.Models.TraceSessionStatus> StartTraceAsync(SqlVitals.Engine.Models.SpTraceOptions options)
+        => _spTrace.StartTraceAsync(options);
+
+    public Task<SqlVitals.Engine.Models.TraceSessionStatus> StopTraceAsync()
+        => _spTrace.StopTraceAsync();
+
+    public Task<SqlVitals.Engine.Models.TraceSessionStatus> GetTraceStatusAsync()
+        => _spTrace.GetTraceStatusAsync();
+
+    public Task<IReadOnlyList<SqlVitals.Engine.Models.SpTraceEvent>> PollTraceEventsAsync()
+        => _spTrace.PollTraceEventsAsync();
+
+    public Task<IReadOnlyList<SqlVitals.Engine.Models.SpAggregateRow>> PollProcedureStatsAsync()
+        => _spTrace.PollProcedureStatsAsync();
+
+    public Task<IReadOnlyList<SqlVitals.Engine.Models.SpAggregateRow>> GetProcedureStatsTotalsAsync(int topN = 25)
+        => _spTrace.GetProcedureStatsTotalsAsync(topN);
 }

@@ -75,6 +75,36 @@ public partial class MainWindow : Window
         }
     }
 
+    // Last line of defence for the live SP trace: SpTracePage drops its event session when
+    // the user navigates away, but closing the window while that page is open does not
+    // raise Unloaded reliably. Without this the session keeps collecting on the monitored
+    // server after the app is gone.
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        try
+        {
+            // Stop the page's poll timer first. Each poll holds the trace repository's gate
+            // for a full server round trip, so leaving it running eats the budget below and
+            // the session survives the app — which is what it did before this call existed.
+            if (MainFrame.Content is SpTracePage tracePage)
+                tracePage.PrepareForShutdown();
+
+            // Task.Run keeps the await continuations off the UI thread — blocking on them
+            // here with a live SynchronizationContext would deadlock. The budget covers a
+            // cold connection to a remote server (Azure SQL routinely needs several
+            // seconds) plus the DROP itself.
+            System.Threading.Tasks.Task.Run(() => Repo.StopTraceAsync())
+                .Wait(TimeSpan.FromSeconds(20));
+        }
+        catch
+        {
+            // Shutting down regardless. A session left behind is dropped by name on the
+            // next Start Trace.
+        }
+
+        base.OnClosing(e);
+    }
+
     // Returns a compact one-line status bar string, e.g. "Error [WaitStatsRepository.GetCumulativeWaitsAsync]: Timeout"
     private static string FormatErrorStatus(Exception ex) =>
         ex is WaitStatsException wse
@@ -137,7 +167,7 @@ public partial class MainWindow : Window
     private async System.Threading.Tasks.Task NavigateTo(string tag)
     {
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
@@ -156,6 +186,7 @@ public partial class MainWindow : Window
             "DbStorage"       => BtnDbStorage,
             "AppConnections" => BtnAppConn,
             "Perfmon"        => BtnPerfmon,
+            "SpTrace"         => BtnSpTrace,
             "Export"          => BtnExport,
             "Settings"        => BtnSettings,
             _                 => BtnLiveMetrics,
@@ -188,6 +219,7 @@ public partial class MainWindow : Window
             "DbStorage"       => new DatabaseStoragePage(Repo),
             "AppConnections" => new ApplicationConnectionsPage(Repo),
             "Perfmon"        => new PerfmonPage(Repo),
+            "SpTrace"         => new SpTracePage(Repo),
             "Export"          => new ExportPage(Repo),
             _                 => new LiveMetricsDashboardPage(Repo),
         };

@@ -58,6 +58,7 @@
                         <Button x:Name="BtnDbStorage"    Content="🗄️  DB Storage"       Style="{DynamicResource NavButton}"      Click="Nav_Click" Tag="DbStorage" />
                         <Button x:Name="BtnAppConn"      Content="🔌  App Connections"  Style="{DynamicResource NavButton}"      Click="Nav_Click" Tag="AppConnections" />
                         <Button x:Name="BtnPerfmon"      Content="📈  Perfmon"          Style="{DynamicResource NavButton}"      Click="Nav_Click" Tag="Perfmon" />
+                        <Button x:Name="BtnSpTrace"      Content="🛰️  SP Trace"         Style="{DynamicResource NavButton}"      Click="Nav_Click" Tag="SpTrace" />
                         <Separator Background="{DynamicResource NavSeparator}" Margin="12,6" />
                         <Button x:Name="BtnExport"       Content="📤  Export / AI"     Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Export" />
                         <Separator Background="{DynamicResource NavSeparator}" Margin="12,6" />

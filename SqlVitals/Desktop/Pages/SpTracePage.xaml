@@ -1,0 +1,254 @@
+<Page x:Class="SqlVitals.Desktop.Pages.SpTracePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="{StaticResource BgDeep}" Title="SP Trace"
+      Unloaded="Page_Unloaded">
+
+    <Page.Resources>
+        <Style x:Key="TraceFlatBtn" TargetType="Button">
+            <Setter Property="Height"          Value="26"/>
+            <Setter Property="Padding"         Value="10,0"/>
+            <Setter Property="Background"      Value="{StaticResource BgCard}"/>
+            <Setter Property="Foreground"      Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush"     Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily"      Value="Segoe UI"/>
+            <Setter Property="FontSize"        Value="11"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+
+        <Style x:Key="TraceLabel" TargetType="TextBlock">
+            <Setter Property="Foreground"          Value="{StaticResource TextMuted}"/>
+            <Setter Property="FontFamily"          Value="Segoe UI"/>
+            <Setter Property="FontSize"            Value="11"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+            <Setter Property="Margin"              Value="10,0,5,0"/>
+        </Style>
+
+        <Style x:Key="TraceInput" TargetType="TextBox">
+            <Setter Property="Height"          Value="26"/>
+            <Setter Property="Background"      Value="{StaticResource BgCard}"/>
+            <Setter Property="Foreground"      Value="{StaticResource TextPrimary}"/>
+            <Setter Property="CaretBrush"      Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush"     Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"         Value="6,3"/>
+            <Setter Property="FontFamily"      Value="Segoe UI"/>
+            <Setter Property="FontSize"        Value="11"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+    </Page.Resources>
+
+    <Grid Margin="16,12,16,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- title -->
+            <RowDefinition Height="Auto"/>
+            <!-- toolbar -->
+            <RowDefinition Height="Auto"/>
+            <!-- status strip -->
+            <RowDefinition Height="*"/>
+            <!-- tabs -->
+        </Grid.RowDefinitions>
+
+        <!-- ── Title ──────────────────────────────────────────────── -->
+        <TextBlock Grid.Row="0" Text="Live SP Trace"
+                   Style="{StaticResource SectionHeader}" FontSize="20"
+                   Margin="0,0,0,12"/>
+
+        <!-- ── Toolbar ────────────────────────────────────────────── -->
+        <Border Grid.Row="1" Background="{StaticResource BgCard}"
+                BorderBrush="{StaticResource Border}" BorderThickness="1"
+                CornerRadius="4" Padding="10,7" Margin="0,0,0,8">
+            <WrapPanel Orientation="Horizontal">
+                <ToggleButton x:Name="BtnTrace" Content="● Start Trace"
+                              Width="104" Height="26" Padding="6,0"
+                              Background="#1A22C55E" BorderBrush="{StaticResource Success}"
+                              Foreground="{StaticResource Success}"
+                              FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
+                              Checked="BtnTrace_Checked" Unchecked="BtnTrace_Unchecked"/>
+
+                <TextBlock Text="Min duration (ms):" Style="{StaticResource TraceLabel}"/>
+                <TextBox x:Name="TxtMinDuration" Text="0" Width="56"
+                         Style="{StaticResource TraceInput}"
+                         ToolTip="Only capture calls at least this slow. Raise this on a busy server to cut trace overhead."/>
+
+                <TextBlock Text="App filter:" Style="{StaticResource TraceLabel}"/>
+                <TextBox x:Name="TxtAppFilter" Width="110"
+                         Style="{StaticResource TraceInput}"
+                         TextChanged="Filter_TextChanged"
+                         ToolTip="Client application name contains…"/>
+
+                <TextBlock Text="Search:" Style="{StaticResource TraceLabel}"/>
+                <TextBox x:Name="TxtSearch" Width="150"
+                         Style="{StaticResource TraceInput}"
+                         TextChanged="Filter_TextChanged"
+                         ToolTip="Match procedure name or statement text"/>
+
+                <TextBlock Text="Poll:" Style="{StaticResource TraceLabel}"/>
+                <ComboBox x:Name="CmbInterval" Width="64" Height="26"
+                          Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
+                          BorderBrush="{StaticResource Border}"
+                          FontFamily="Segoe UI" FontSize="11"
+                          SelectionChanged="CmbInterval_SelectionChanged">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
+
+                <Border Margin="6,0,0,0" Background="{StaticResource BgDeep}"
+                        BorderBrush="{StaticResource Border}" BorderThickness="1"
+                        CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtCountdown" Text="--"
+                               Foreground="{StaticResource TextMuted}"
+                               VerticalAlignment="Center" FontFamily="Consolas" FontSize="11"
+                               MinWidth="26" TextAlignment="Center"/>
+                </Border>
+
+                <ToggleButton x:Name="BtnAutoScroll" Content="Auto-scroll" IsChecked="True"
+                              Height="26" Padding="8,0" Margin="10,0,0,0"
+                              Background="{StaticResource BgDeep}" BorderBrush="{StaticResource Border}"
+                              Foreground="{StaticResource TextMuted}"
+                              FontFamily="Segoe UI" FontSize="11" Cursor="Hand"/>
+
+                <Button x:Name="BtnClear" Content="Clear" Margin="6,0,0,0"
+                        Style="{StaticResource TraceFlatBtn}" Click="BtnClear_Click"/>
+            </WrapPanel>
+        </Border>
+
+        <!-- ── Status strip ───────────────────────────────────────── -->
+        <Border Grid.Row="2" Background="{StaticResource BgCard}"
+                BorderBrush="{StaticResource Border}" BorderThickness="1"
+                CornerRadius="3" Padding="10,5" Margin="0,0,0,8">
+            <DockPanel>
+                <Border x:Name="ModeBadge" DockPanel.Dock="Left"
+                        Background="#1A38BDF8" BorderBrush="{StaticResource Accent}"
+                        BorderThickness="1" CornerRadius="3" Padding="7,1"
+                        VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock x:Name="TxtModeBadge" Text="Idle"
+                               Foreground="{StaticResource Accent}"
+                               FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"/>
+                </Border>
+                <TextBlock x:Name="TxtTraceStatus"
+                           Text="Trace is not running. Press Start Trace to begin capturing stored-procedure calls."
+                           Foreground="{StaticResource TextMuted}"
+                           FontFamily="Segoe UI" FontSize="11"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            </DockPanel>
+        </Border>
+
+        <!-- ── Tabs ───────────────────────────────────────────────── -->
+        <TabControl x:Name="TraceTabs" Grid.Row="3"
+                    Background="Transparent" BorderThickness="0">
+
+            <!-- Live calls -->
+            <TabItem x:Name="TabLiveCalls" Header="Live Calls">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" MinHeight="140"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Style="{StaticResource KpiCard}" Margin="0,8,0,0">
+                        <Grid>
+                            <DataGrid x:Name="CallsGrid" IsReadOnly="True"
+                                      AutoGenerateColumns="False"
+                                      SelectionChanged="CallsGrid_SelectionChanged">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time"      Binding="{Binding EventTime, StringFormat=HH:mm:ss.fff}" Width="92"/>
+                                    <DataGridTextColumn Header="Procedure" Binding="{Binding ObjectName}"    Width="230"/>
+                                    <DataGridTextColumn Header="Dur (ms)"  Binding="{Binding DurationMs, StringFormat=N0}"   Width="75"/>
+                                    <DataGridTextColumn Header="CPU (ms)"  Binding="{Binding CpuTimeMs, StringFormat=N0}"    Width="75"/>
+                                    <DataGridTextColumn Header="Reads"     Binding="{Binding LogicalReads, StringFormat=N0}" Width="85"/>
+                                    <DataGridTextColumn Header="Writes"    Binding="{Binding Writes, StringFormat=N0}"       Width="70"/>
+                                    <DataGridTextColumn Header="Rows"      Binding="{Binding RowsReturned, StringFormat=N0}" Width="70"/>
+                                    <DataGridTextColumn Header="SPID"      Binding="{Binding SessionId}"      Width="55"/>
+                                    <DataGridTextColumn Header="Login"     Binding="{Binding LoginName}"      Width="110"/>
+                                    <DataGridTextColumn Header="Application" Binding="{Binding ClientAppName}" Width="140"/>
+                                    <DataGridTextColumn Header="Host"      Binding="{Binding ClientHostName}" Width="110"/>
+                                    <DataGridTextColumn Header="Event"     Binding="{Binding EventName}"      Width="120"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <TextBlock x:Name="TxtNoCalls"
+                                       Text="No calls captured yet."
+                                       Foreground="{StaticResource TextMuted}"
+                                       FontFamily="Segoe UI" FontSize="12"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{StaticResource Border}" Margin="0,4"/>
+
+                    <!-- Detail pane -->
+                    <Border Grid.Row="2" Style="{StaticResource KpiCard}" Height="176">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                <Button x:Name="BtnViewPlan" Content="View Plan"
+                                        DockPanel.Dock="Right" Width="80"
+                                        Style="{StaticResource TraceFlatBtn}"
+                                        IsEnabled="False" Click="BtnViewPlan_Click"
+                                        ToolTip="Show the cached execution plan for this procedure"/>
+                                <Button x:Name="BtnCopyStatement" Content="Copy"
+                                        DockPanel.Dock="Right" Width="60" Margin="0,0,6,0"
+                                        Style="{StaticResource TraceFlatBtn}"
+                                        IsEnabled="False" Click="BtnCopyStatement_Click"/>
+                                <TextBlock x:Name="TxtDetailHeader" Text="Statement"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+
+                            <TextBox x:Name="TxtStatement" Grid.Row="1"
+                                     IsReadOnly="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Background="{StaticResource BgDeep}"
+                                     Foreground="{StaticResource TextPrimary}"
+                                     BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                     FontFamily="Consolas" FontSize="11" Padding="6"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Aggregates -->
+            <TabItem x:Name="TabByProcedure" Header="By Procedure">
+                <Border Style="{StaticResource KpiCard}" Margin="0,8,0,0">
+                    <Grid>
+                        <DataGrid x:Name="AggregateGrid" IsReadOnly="True"
+                                  AutoGenerateColumns="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Procedure"    Binding="{Binding FullName}"        Width="260"/>
+                                <DataGridTextColumn Header="Database"     Binding="{Binding DatabaseName}"    Width="130"/>
+                                <DataGridTextColumn Header="Executions"   Binding="{Binding ExecCount, StringFormat=N0}"        Width="85"/>
+                                <DataGridTextColumn Header="Avg (ms)"     Binding="{Binding AvgDurationMs, StringFormat=N1}"    Width="80"/>
+                                <DataGridTextColumn Header="Total (ms)"   Binding="{Binding TotalDurationMs, StringFormat=N0}"  Width="90"/>
+                                <DataGridTextColumn Header="Max ever (ms)" Binding="{Binding MaxDurationMs, StringFormat=N0}"   Width="100"/>
+                                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{Binding AvgCpuMs, StringFormat=N1}"         Width="95"/>
+                                <DataGridTextColumn Header="Avg Reads"    Binding="{Binding AvgLogicalReads, StringFormat=N0}"  Width="95"/>
+                                <DataGridTextColumn Header="Last Run"     Binding="{Binding LastExecutionTime, StringFormat=HH:mm:ss}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock x:Name="TxtNoAggregates"
+                                   Text="No procedure activity in the last poll window.&#10;This view shows what ran between polls — start the trace, or press Refresh again to sample another window."
+                                   TextAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsHitTestVisible="False"/>
+                    </Grid>
+                </Border>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Page>

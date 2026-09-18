@@ -34,6 +34,27 @@ public abstract class BaseRepository(IConfiguration configuration)
         }
     }
 
+    /// <summary>
+    /// Executes a non-query statement. Unlike <see cref="Q"/> this does not prepend the
+    /// isolation-level hint, which is invalid ahead of DDL such as CREATE EVENT SESSION.
+    /// </summary>
+    protected async Task<int> Exec(
+        IDbConnection conn,
+        string sql,
+        object? param = null,
+        int? commandTimeout = null,
+        [CallerMemberName] string caller = "")
+    {
+        try
+        {
+            return await conn.ExecuteAsync(sql, param, commandTimeout: commandTimeout ?? _timeoutSec);
+        }
+        catch (Exception ex) when (ex is not WaitStatsException)
+        {
+            throw new WaitStatsException(GetType().Name, caller, ex);
+        }
+    }
+
     protected async Task<dynamic?> QFirst(
         IDbConnection conn,
         string sql,
