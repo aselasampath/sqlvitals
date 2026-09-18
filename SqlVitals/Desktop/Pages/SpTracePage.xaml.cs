@@ -34,10 +34,25 @@ public partial class SpTracePage : Page, IRefreshable
     private int  _remainingSec;
     private bool _polling;
 
+    /// <summary>First item of every filter combo; selecting it disables that filter.</summary>
+    private const string AllOption = "(All)";
+
+    // False during InitializeComponent (XAML-set IsChecked raises Checked before the grid
+    // exists) and while combo items are being rebuilt.
+    private bool _filtersReady;
+
     public SpTracePage(IWaitStatsRepository repo)
     {
         _repo = repo;
         InitializeComponent();
+
+        foreach (var combo in FilterCombos)
+        {
+            combo.Items.Add(AllOption);
+            combo.SelectedIndex = 0;
+        }
+        _filtersReady = true;
+        ApplyFilter();
 
         var darkItemStyle = (Style)FindResource("DarkComboItem");
         foreach (var sec in Intervals)
@@ -191,6 +206,7 @@ public partial class SpTracePage : Page, IRefreshable
             {
                 _allCalls.AddRange(fresh);
                 TrimHistory();
+                RefreshFilterChoices();
                 ApplyFilter();
             }
 
@@ -222,22 +238,122 @@ public partial class SpTracePage : Page, IRefreshable
 
     // ── Filtering ────────────────────────────────────────────────────────
 
+    private ComboBox[] FilterCombos => [CmbDatabase, CmbLogin, CmbApp, CmbHost, CmbEvent];
+
     private void Filter_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+
+    private void FilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyFilter();
+
+    private void FilterCheck_Changed(object sender, RoutedEventArgs e) => ApplyFilter();
+
+    private void BtnClearFilters_Click(object sender, RoutedEventArgs e)
+    {
+        _filtersReady = false;
+        try
+        {
+            TxtSearch.Text         = string.Empty;
+            TxtSpidFilter.Text     = string.Empty;
+            TxtMinDurFilter.Text   = string.Empty;
+            TxtMinCpuFilter.Text   = string.Empty;
+            TxtMinReadsFilter.Text = string.Empty;
+            ChkHideResets.IsChecked = true;   // back to the default, not "show everything"
+            foreach (var combo in FilterCombos) combo.SelectedIndex = 0;
+        }
+        finally
+        {
+            _filtersReady = true;
+        }
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// Rebuilds each combo's choices from the distinct values in the retained history,
+    /// keeping the current selection even if its value has since aged out.
+    /// </summary>
+    private void RefreshFilterChoices()
+    {
+        _filtersReady = false;
+        try
+        {
+            SetChoices(CmbDatabase, _allCalls.Select(c => c.DatabaseName));
+            SetChoices(CmbLogin,    _allCalls.Select(c => c.LoginName));
+            SetChoices(CmbApp,      _allCalls.Select(c => c.ClientAppName));
+            SetChoices(CmbHost,     _allCalls.Select(c => c.ClientHostName));
+            SetChoices(CmbEvent,    _allCalls.Select(c => c.EventName));
+        }
+        finally
+        {
+            _filtersReady = true;
+        }
+    }
+
+    private static void SetChoices(ComboBox combo, IEnumerable<string?> values)
+    {
+        var selected = combo.SelectedItem as string ?? AllOption;
+
+        var choices = values
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v!)
+            .Append(selected)
+            .Where(v => v != AllOption)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Prepend(AllOption)
+            .ToList();
+
+        // Skip the rebuild when nothing changed — clearing Items closes an open dropdown.
+        if (combo.Items.Cast<string>().SequenceEqual(choices)) return;
+
+        combo.Items.Clear();
+        foreach (var choice in choices) combo.Items.Add(choice);
+        combo.SelectedItem = selected;
+    }
+
+    private static string? SelectedValue(ComboBox combo) =>
+        combo.SelectedItem is string s && s != AllOption ? s : null;
+
+    private static long? ReadLong(TextBox box) =>
+        long.TryParse(box.Text.Trim(), out var n) && n >= 0 ? n : null;
+
+    private static bool EqualsIgnoreCase(string? a, string b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     private void ApplyFilter()
     {
-        var app    = TxtAppFilter.Text.Trim();
-        var search = TxtSearch.Text.Trim();
+        if (!_filtersReady) return;
+
+        var search   = TxtSearch.Text.Trim();
+        var database = SelectedValue(CmbDatabase);
+        var login    = SelectedValue(CmbLogin);
+        var app      = SelectedValue(CmbApp);
+        var host     = SelectedValue(CmbHost);
+        var evt      = SelectedValue(CmbEvent);
+        var spid     = ReadLong(TxtSpidFilter);
+        var minDur   = ReadLong(TxtMinDurFilter);
+        var minCpu   = ReadLong(TxtMinCpuFilter);
+        var minReads = ReadLong(TxtMinReadsFilter);
+        var hideResets = ChkHideResets.IsChecked == true;
 
         IEnumerable<SpTraceEvent> query = _allCalls;
-
-        if (app.Length > 0)
-            query = query.Where(c => c.ClientAppName?.Contains(app, StringComparison.OrdinalIgnoreCase) == true);
 
         if (search.Length > 0)
             query = query.Where(c =>
                 c.ObjectName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
                 c.Statement? .Contains(search, StringComparison.OrdinalIgnoreCase) == true);
+
+        if (database is not null) query = query.Where(c => EqualsIgnoreCase(c.DatabaseName,   database));
+        if (login    is not null) query = query.Where(c => EqualsIgnoreCase(c.LoginName,      login));
+        if (app      is not null) query = query.Where(c => EqualsIgnoreCase(c.ClientAppName,  app));
+        if (host     is not null) query = query.Where(c => EqualsIgnoreCase(c.ClientHostName, host));
+        if (evt      is not null) query = query.Where(c => EqualsIgnoreCase(c.EventName,      evt));
+
+        if (spid     is not null) query = query.Where(c => c.SessionId    == spid);
+        if (minDur   is not null) query = query.Where(c => c.DurationMs   >= minDur);
+        if (minCpu   is not null) query = query.Where(c => c.CpuTimeMs    >= minCpu);
+        if (minReads is not null) query = query.Where(c => c.LogicalReads >= minReads);
+
+        if (hideResets)
+            query = query.Where(c => c.ObjectName?.EndsWith("sp_reset_connection", StringComparison.OrdinalIgnoreCase) != true);
 
         // Newest first — the interesting row on a live trace is the one that just arrived.
         var filtered = query.OrderByDescending(c => c.EventTime).ToList();
@@ -245,7 +361,14 @@ public partial class SpTracePage : Page, IRefreshable
         _visibleCalls.Clear();
         foreach (var call in filtered) _visibleCalls.Add(call);
 
+        TxtNoCalls.Text = _allCalls.Count == 0
+            ? "No calls captured yet."
+            : "No captured calls match the current filters.";
         TxtNoCalls.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        TxtFilterCount.Text = filtered.Count == _allCalls.Count
+            ? $"{_allCalls.Count:N0} calls"
+            : $"Showing {filtered.Count:N0} of {_allCalls.Count:N0}";
 
         if (BtnAutoScroll.IsChecked == true && filtered.Count > 0)
             CallsGrid.ScrollIntoView(filtered[0]);
@@ -263,6 +386,7 @@ public partial class SpTracePage : Page, IRefreshable
     private void BtnClear_Click(object sender, RoutedEventArgs e)
     {
         _allCalls.Clear();
+        RefreshFilterChoices();
         ApplyFilter();
         ClearDetail();
     }

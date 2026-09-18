@@ -37,6 +37,20 @@
             <Setter Property="FontSize"        Value="11"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
+
+        <Style x:Key="TraceFilterCombo" TargetType="ComboBox">
+            <Setter Property="Height"      Value="26"/>
+            <Setter Property="Background"  Value="{StaticResource BgCard}"/>
+            <Setter Property="Foreground"  Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+            <Setter Property="FontFamily"  Value="Segoe UI"/>
+            <Setter Property="FontSize"    Value="11"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Page.Resources>
 
     <Grid Margin="16,12,16,12">
@@ -72,18 +86,6 @@
                 <TextBox x:Name="TxtMinDuration" Text="0" Width="56"
                          Style="{StaticResource TraceInput}"
                          ToolTip="Only capture calls at least this slow. Raise this on a busy server to cut trace overhead."/>
-
-                <TextBlock Text="App filter:" Style="{StaticResource TraceLabel}"/>
-                <TextBox x:Name="TxtAppFilter" Width="110"
-                         Style="{StaticResource TraceInput}"
-                         TextChanged="Filter_TextChanged"
-                         ToolTip="Client application name contains…"/>
-
-                <TextBlock Text="Search:" Style="{StaticResource TraceLabel}"/>
-                <TextBox x:Name="TxtSearch" Width="150"
-                         Style="{StaticResource TraceInput}"
-                         TextChanged="Filter_TextChanged"
-                         ToolTip="Match procedure name or statement text"/>
 
                 <TextBlock Text="Poll:" Style="{StaticResource TraceLabel}"/>
                 <ComboBox x:Name="CmbInterval" Width="64" Height="26"
@@ -146,12 +148,91 @@
             <TabItem x:Name="TabLiveCalls" Header="Live Calls">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*" MinHeight="140"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <Border Grid.Row="0" Style="{StaticResource KpiCard}" Margin="0,8,0,0">
+                    <!-- Filter bar — client-side, applies to captured history -->
+                    <Border Grid.Row="0" Background="{StaticResource BgCard}"
+                            BorderBrush="{StaticResource Border}" BorderThickness="1"
+                            CornerRadius="4" Padding="4,6" Margin="0,8,0,0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                <TextBlock x:Name="TxtFilterCount" Text=""
+                                           Style="{StaticResource TraceLabel}"/>
+                                <Button x:Name="BtnClearFilters" Content="Clear filters"
+                                        Style="{StaticResource TraceFlatBtn}" Click="BtnClearFilters_Click"/>
+                            </StackPanel>
+
+                            <WrapPanel Orientation="Horizontal">
+                                <TextBlock Text="Search:" Style="{StaticResource TraceLabel}"/>
+                                <TextBox x:Name="TxtSearch" Width="150"
+                                         Style="{StaticResource TraceInput}"
+                                         TextChanged="Filter_TextChanged"
+                                         ToolTip="Procedure name or statement text contains…"/>
+
+                                <TextBlock Text="Database:" Style="{StaticResource TraceLabel}"/>
+                                <ComboBox x:Name="CmbDatabase" Width="120"
+                                          Style="{StaticResource TraceFilterCombo}"
+                                          SelectionChanged="FilterCombo_SelectionChanged"/>
+
+                                <TextBlock Text="Login:" Style="{StaticResource TraceLabel}"/>
+                                <ComboBox x:Name="CmbLogin" Width="110"
+                                          Style="{StaticResource TraceFilterCombo}"
+                                          SelectionChanged="FilterCombo_SelectionChanged"/>
+
+                                <TextBlock Text="Application:" Style="{StaticResource TraceLabel}"/>
+                                <ComboBox x:Name="CmbApp" Width="150"
+                                          Style="{StaticResource TraceFilterCombo}"
+                                          SelectionChanged="FilterCombo_SelectionChanged"/>
+
+                                <TextBlock Text="Host:" Style="{StaticResource TraceLabel}"/>
+                                <ComboBox x:Name="CmbHost" Width="110"
+                                          Style="{StaticResource TraceFilterCombo}"
+                                          SelectionChanged="FilterCombo_SelectionChanged"/>
+
+                                <TextBlock Text="Event:" Style="{StaticResource TraceLabel}"/>
+                                <ComboBox x:Name="CmbEvent" Width="140"
+                                          Style="{StaticResource TraceFilterCombo}"
+                                          SelectionChanged="FilterCombo_SelectionChanged"/>
+
+                                <TextBlock Text="SPID:" Style="{StaticResource TraceLabel}"/>
+                                <TextBox x:Name="TxtSpidFilter" Width="50"
+                                         Style="{StaticResource TraceInput}"
+                                         TextChanged="Filter_TextChanged"
+                                         ToolTip="Exact session id"/>
+
+                                <TextBlock Text="Dur ≥" Style="{StaticResource TraceLabel}"/>
+                                <TextBox x:Name="TxtMinDurFilter" Width="56"
+                                         Style="{StaticResource TraceInput}"
+                                         TextChanged="Filter_TextChanged"
+                                         ToolTip="Show calls with duration of at least this many ms"/>
+
+                                <TextBlock Text="CPU ≥" Style="{StaticResource TraceLabel}"/>
+                                <TextBox x:Name="TxtMinCpuFilter" Width="56"
+                                         Style="{StaticResource TraceInput}"
+                                         TextChanged="Filter_TextChanged"
+                                         ToolTip="Show calls with CPU time of at least this many ms"/>
+
+                                <TextBlock Text="Reads ≥" Style="{StaticResource TraceLabel}"/>
+                                <TextBox x:Name="TxtMinReadsFilter" Width="66"
+                                         Style="{StaticResource TraceInput}"
+                                         TextChanged="Filter_TextChanged"
+                                         ToolTip="Show calls with at least this many logical reads"/>
+
+                                <CheckBox x:Name="ChkHideResets" Content="Hide sp_reset_connection"
+                                          IsChecked="True" Margin="10,0,0,0" VerticalAlignment="Center"
+                                          Foreground="{StaticResource TextMuted}"
+                                          FontFamily="Segoe UI" FontSize="11"
+                                          Checked="FilterCheck_Changed" Unchecked="FilterCheck_Changed"
+                                          ToolTip="Connection-pool resets are noise for most investigations"/>
+                            </WrapPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,8,0,0">
                         <Grid>
                             <DataGrid x:Name="CallsGrid" IsReadOnly="True"
                                       AutoGenerateColumns="False"
@@ -181,11 +262,11 @@
                         </Grid>
                     </Border>
 
-                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                    <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
                                   Background="{StaticResource Border}" Margin="0,4"/>
 
                     <!-- Detail pane -->
-                    <Border Grid.Row="2" Style="{StaticResource KpiCard}" Height="176">
+                    <Border Grid.Row="3" Style="{StaticResource KpiCard}" Height="176">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
