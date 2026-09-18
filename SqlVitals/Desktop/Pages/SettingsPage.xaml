@@ -105,7 +105,7 @@
                         Click="BtnSave_Click">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#x1F4BE;" FontFamily="Segoe UI Emoji" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBlock Text="Save Settings" VerticalAlignment="Center" />
+                        <TextBlock Text="Save &amp; Connect" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </StackPanel>

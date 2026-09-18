@@ -3,7 +3,7 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Repositories;
 
 
-public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepository
+public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepository, ISpTraceRepository
 {
     // ── Engine edition detection ──────────────────────────────────────
     Task<bool> IsAzureSqlDatabaseAsync();

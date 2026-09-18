@@ -52,6 +52,7 @@ public partial class ExportPage : Page, IRefreshable
         [ExportService.G_IMPLICIT_CONV]    = "Implicit type conversions causing scans",
         [ExportService.G_STALE_STATS]      = "Statistics with high modification counters",
         [ExportService.G_DB_STORAGE]       = "DB / log / tempdb sizes, server config, top tables",
+        [ExportService.G_SP_TRACE]         = "Stored procedure execution counts, duration & reads",
     };
 
     public ExportPage(IWaitStatsRepository repo)

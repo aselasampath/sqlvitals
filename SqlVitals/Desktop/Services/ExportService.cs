@@ -25,13 +25,14 @@ public class ExportService(IWaitStatsRepository repo)
     public const string G_IMPLICIT_CONV    = "Implicit Conversions";
     public const string G_STALE_STATS      = "Stale Statistics";
     public const string G_DB_STORAGE       = "Database Storage & Configuration";
+    public const string G_SP_TRACE         = "Stored Procedure Activity";
 
     public static readonly string[] AllGroups =
     [
         G_TOP_WAITS, G_ACTIVE_WAITS,
         G_SIGNAL_VS_RES, G_TEMPDB, G_MEMORY_GRANTS,
         G_QUERY_STORE, G_INDEX_HEALTH, G_RESOURCE_QUERIES, G_INDEX_USAGE,
-        G_INDEX_FRAG, G_IMPLICIT_CONV, G_STALE_STATS, G_DB_STORAGE,
+        G_INDEX_FRAG, G_IMPLICIT_CONV, G_STALE_STATS, G_DB_STORAGE, G_SP_TRACE,
     ];
 
     // ── Entry point ────────────────────────────────────────────────────
@@ -59,6 +60,7 @@ public class ExportService(IWaitStatsRepository repo)
         if (groups.Contains(G_IMPLICIT_CONV))    tasks.Add((G_IMPLICIT_CONV,    FetchImplicitConv()));
         if (groups.Contains(G_STALE_STATS))      tasks.Add((G_STALE_STATS,      FetchStaleStats()));
         if (groups.Contains(G_DB_STORAGE))       tasks.Add((G_DB_STORAGE,       FetchDatabaseStorage()));
+        if (groups.Contains(G_SP_TRACE))         tasks.Add((G_SP_TRACE,         FetchSpActivity()));
 
         await Task.WhenAll(tasks.Select(t => t.Work));
 
@@ -171,6 +173,32 @@ public class ExportService(IWaitStatsRepository repo)
                 ("DB",        r => r.DatabaseName),
                 ("Login",     r => r.LoginName),
                 ("Query",     r => r.QueryText?.Substring(0, Math.Min(80, r.QueryText?.Length ?? 0)))));
+        }
+        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        return sb.ToString();
+    }
+
+    // Cumulative totals rather than the SP Trace page's live window: an exported report is
+    // a one-shot snapshot with no baseline to difference against.
+    private async Task<string> FetchSpActivity()
+    {
+        var sb = new StringBuilder(Section(G_SP_TRACE));
+        try
+        {
+            var rows = (await repo.GetProcedureStatsTotalsAsync(25)).ToList();
+            if (rows.Count == 0) { sb.AppendLine("  (no cached procedure statistics)"); return sb.ToString(); }
+
+            sb.AppendLine("  Totals since each plan was cached — not since server start.");
+            sb.AppendLine();
+            sb.Append(Table(rows,
+                ("Procedure",  r => r.FullName),
+                ("Executions", r => r.ExecCount.ToString("N0")),
+                ("Avg ms",     r => r.AvgDurationMs.ToString("N1")),
+                ("Total ms",   r => r.TotalDurationMs.ToString("N0")),
+                ("Max ms",     r => r.MaxDurationMs.ToString("N0")),
+                ("Avg CPU ms", r => r.AvgCpuMs.ToString("N1")),
+                ("Avg Reads",  r => r.AvgLogicalReads.ToString("N0")),
+                ("Last Run",   r => r.LastExecutionTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "")));
         }
         catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
         return sb.ToString();

@@ -23,8 +23,9 @@ Current version: **2.0**
 12. [Query Wrapper (NOLOCK + Timeout)](#query-wrapper-nolock--timeout)
 13. [Azure SQL vs On-Premises Compatibility](#azure-sql-vs-on-premises-compatibility)
 14. [Export / AI Report Feature](#export--ai-report-feature)
-15. [Styling & Themes](#styling--themes)
-16. [Common Errors & Fixes](#common-errors--fixes)
+15. [Live SP Trace](#live-sp-trace)
+16. [Styling & Themes](#styling--themes)
+17. [Common Errors & Fixes](#common-errors--fixes)
 
 ---
 
@@ -210,13 +211,56 @@ to `%AppData%\SqlVitals\settings.dat` and override the connection string from `a
 - Windows 10/11 (WPF requires Windows)
 - SQL Server or Azure SQL with `VIEW SERVER STATE` permission granted
 
-### SQL permission required
+### SQL permissions required
+
+| Feature | On-premises / SQL MI | Azure SQL Database |
+|---|---|---|
+| Every page except SP Trace | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
+| SP Trace — DMV fallback mode | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
+| SP Trace — Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
+
+**Minimum — everything except per-call tracing:**
 
 ```sql
+-- On-premises / SQL Managed Instance (server-scoped)
 GRANT VIEW SERVER STATE TO [your_login];
--- Azure SQL (DB-scoped):
-GRANT VIEW DATABASE STATE TO [your_login];
+
+-- Azure SQL Database (database-scoped, run in the user database)
+GRANT VIEW DATABASE STATE TO [your_user];
 ```
+
+**To also get per-call SP tracing** (Extended Events). Without these the SP Trace page still
+works — it drops to DMV fallback mode and says so — so grant them only if you want
+individual call rows:
+
+```sql
+-- On-premises / SQL Managed Instance: server-level, granted in master
+GRANT ALTER ANY EVENT SESSION TO [your_login];
+
+-- Azure SQL Database: database-level, granted in the user database
+GRANT ALTER ANY DATABASE EVENT SESSION TO [your_user];
+```
+
+> **What `ALTER ANY EVENT SESSION` allows.** It lets the login create, start, stop and drop
+> *any* Extended Events session on that scope — not just this app's. On-premises that is a
+> server-wide permission. If that is too broad for your environment, withhold it: DMV
+> fallback mode needs nothing beyond `VIEW SERVER STATE` and still reports per-procedure
+> executions, duration, CPU and reads.
+
+**Verify what the current login has:**
+
+```sql
+-- On-premises
+SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE')       AS CanReadDmvs,
+       HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER ANY EVENT SESSION') AS CanTrace;
+
+-- Azure SQL Database
+SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')            AS CanReadDmvs,
+       HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'ALTER ANY DATABASE EVENT SESSION') AS CanTrace;
+```
+
+`SpTraceRepository.CanCreateEventSessionAsync` runs exactly this probe at trace start to
+choose the capture mode.
 
 ### From PowerShell
 
@@ -264,6 +308,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | DB Storage | `DbStorage` | `DatabaseStoragePage` | `GetDatabaseStorageAsync` |
 | App Connections | `AppConnections` | `ApplicationConnectionsPage` | Application connection methods |
 | Perfmon | `Perfmon` | `PerfmonPage` | Perfmon counter methods |
+| SP Trace | `SpTrace` | `SpTracePage` | `StartTraceAsync`, `PollTraceEventsAsync`, `PollProcedureStatsAsync` |
 | Export / AI | `Export` | `ExportPage` | *(all groups via ExportService)* |
 | Settings | `Settings` | `SettingsPage` | *(connection settings only — no repository)* |
 
@@ -649,7 +694,67 @@ public const string G_INDEX_FRAG       = "Index Fragmentation";
 public const string G_IMPLICIT_CONV    = "Implicit Conversions";
 public const string G_STALE_STATS      = "Stale Statistics";
 public const string G_DB_STORAGE       = "Database Storage & Configuration";
+public const string G_SP_TRACE         = "Stored Procedure Activity";
 ```
+
+---
+
+## Live SP Trace
+
+`SpTracePage` streams stored-procedure calls as they happen. It has two capture modes and
+picks between them automatically when you press **Start Trace**.
+
+| Mode | Source | Requires | Gives |
+|---|---|---|---|
+| **Extended Events** | app-managed XE session, `ring_buffer` target | `ALTER ANY EVENT SESSION` (on-prem) / `ALTER ANY DATABASE EVENT SESSION` (Azure SQL DB) | per-call rows: procedure, duration, CPU, reads/writes, rows, SPID, login, app, host, statement |
+| **DMV fallback** | `sys.dm_exec_procedure_stats` snapshot deltas | nothing beyond `VIEW SERVER STATE` | per-procedure aggregates for the poll window |
+
+The mode badge in the status strip shows which is active, and the DMV fallback always
+explains *why* it was chosen. A missing permission never breaks the page.
+
+See [SQL permissions required](#sql-permissions-required) for the exact `GRANT` statements.
+In short: `ALTER ANY EVENT SESSION` (on-prem) or `ALTER ANY DATABASE EVENT SESSION` (Azure
+SQL DB) buys you per-call rows; without it you still get per-procedure aggregates.
+
+### Event session lifecycle
+
+The session is named from `TraceSettings:SessionName` (default `SqlVitals_SpTrace`) and is
+**created on Start and dropped on Stop**. It is also dropped when you navigate away from
+the page and when the app closes (`MainWindow.OnClosing`), and any session left behind by a
+crash is dropped by name before the next one is created. Nothing is left running on the
+monitored server.
+
+> `MainWindow.OnClosing` blocks for up to 20 s on the drop and first calls
+> `SpTracePage.PrepareForShutdown()` to stop the poll timer. Without that the in-flight poll
+> holds the repository's gate and the drop misses its window — which leaves a live session
+> on the server.
+
+### Compatibility notes
+
+- **Both events are captured.** `CommandType.StoredProcedure` calls arrive as
+  `rpc_completed`; `EXEC dbo.usp_X` sent as a batch arrives as `module_end`. Capturing only
+  one silently misses half the traffic depending on how callers are written.
+- **`object_type = 8272`** narrows `module_end` to stored procedures, but **Azure SQL
+  Database rejects that predicate**. `CreateAndStartSessionAsync` retries without it and
+  filters functions/triggers client-side via `SpTraceEvent.IsStoredProcedure`.
+- Azure SQL Database uses a database-scoped session (`ON DATABASE`) and reads
+  `sys.dm_xe_database_sessions` / `sys.dm_xe_database_session_targets`; on-premises uses the
+  server-scoped equivalents. Branching follows the existing `IsAzureSqlDatabaseAsync()`
+  pattern.
+
+### Overhead
+
+Tracing a busy server is not free. The trace never auto-starts, filters to the connected
+database, caps the ring buffer (`max_memory` 4 MB, `max_events_limit` 1000) and exposes a
+**Min duration (ms)** filter — raise it on a hot server. Dropped-event and truncation
+warnings are surfaced in the status strip rather than silently making the server look quiet.
+
+### Pure, testable helpers
+
+`SpTraceXmlParser` (ring-buffer XML → events) and `ProcedureStatsDelta` (two DMV snapshots
+→ per-window activity) are static and database-free, and carry the bulk of the unit tests.
+XML shredding is done in C# rather than with T-SQL `.nodes()` so the monitored server does
+not spend CPU on it.
 
 ---
 
@@ -722,6 +827,35 @@ A `sql_variant` column contains string values. Use the `ISNUMERIC` CASE pattern.
 
 Column aliases are not always resolvable in `ORDER BY` after `GROUP BY` on Azure SQL.
 Use the full expression: `ORDER BY SUM(a.total_pages) DESC` instead of `ORDER BY TotalSizeMB DESC`.
+
+### SP Trace: "Login lacks ALTER ANY EVENT SESSION"
+
+Expected on a locked-down login. The page drops to DMV fallback mode and keeps working with
+per-procedure aggregates. Grant the permission (see
+[SQL permissions required](#sql-permissions-required)) if you want per-call rows.
+
+### SP Trace: 'The value specified for ... "object_type", event, "module_end", is invalid'
+
+Azure SQL Database rejects the `object_type = 8272` predicate that narrows `module_end` to
+stored procedures. `CreateAndStartSessionAsync` already handles this — it retries without
+the predicate and filters client-side. If you see this surface as a *fallback reason*, the
+retry itself failed, which points at something else in the DDL.
+
+### SP Trace: an event session is left behind on the server
+
+Should not happen — it is dropped on Stop, on navigating away, and on app close. If a crash
+or a killed process leaves one, the next **Start Trace** drops it by name first. To remove it
+by hand:
+
+```sql
+-- On-premises
+IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'SqlVitals_SpTrace')
+    DROP EVENT SESSION [SqlVitals_SpTrace] ON SERVER;
+
+-- Azure SQL Database
+IF EXISTS (SELECT 1 FROM sys.database_event_sessions WHERE name = 'SqlVitals_SpTrace')
+    DROP EVENT SESSION [SqlVitals_SpTrace] ON DATABASE;
+```
 
 ### IDE shows "type not found" errors for Models
 
