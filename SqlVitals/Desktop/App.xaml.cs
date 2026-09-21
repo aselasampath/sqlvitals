@@ -14,7 +14,7 @@ public partial class App : System.Windows.Application
         System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         System.Windows.MessageBox.Show(
-            $"An unexpected error occurred:\n\n{e.Exception.Message}",
+            $"An unexpected error occurred:\n\n{Services.ConnectionSettingsService.RedactSecrets(e.Exception.Message)}",
             "SqlVitals", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         e.Handled = true;
     }

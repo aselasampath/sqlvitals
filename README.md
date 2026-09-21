@@ -198,8 +198,40 @@ Edit **`src/SqlVitals/Engine/appsettings.json`** before running:
 The file is linked into `SqlVitals/Desktop/bin/Debug/net8.0-windows/appsettings.json`
 automatically by the `.csproj` `<None Update>` entry — you only need to edit it once.
 
-Connection settings entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
-to `%AppData%\SqlVitals\settings.dat` and override the connection string from `appsettings.json`.
+Connections entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
+to `%AppData%\SqlVitals\settings.dat`, and the active one overrides the connection string from `appsettings.json`.
+
+### Multiple connections
+
+You can save any number of connections (e.g. Production, UAT, Dev) and switch between them with the
+**Active connection** selector at the top of the sidebar. No restart is needed.
+
+- **Save** checks the connection against the server, then adds or updates it. A connection that fails the check is not saved.
+  **Save & Connect** also makes it the active connection.
+- Switching reopens the current page against the new database. Loads still running against the previous
+  database are discarded, so its data is never shown under the new connection.
+- Passwords reach disk only when **Remember password** is ticked. Otherwise they are kept in memory for the
+  current session, so you are asked once per app launch.
+- Credentials are never shown in the connection list, the selector or error messages. The *Additional parameters*
+  field rejects `Password`/`User ID`.
+- Settings files from earlier versions (one connection) are migrated automatically to a single active connection.
+
+### Background monitoring
+
+Live Metrics keeps collecting for every connection with **Monitor in background** ticked (on by default),
+not just the active one. When you switch back to a connection, its charts already show the history collected
+while you were away (the last 60 samples, about 10 minutes at the default 10 s interval).
+
+- **Health dot:** each connection in the sidebar selector has one. Hover it for the details.
+  - 🟢 healthy.
+  - 🟠 warning: CPU ≥ 75 %, memory grants pending, or page life expectancy < 300 s.
+  - 🔴 critical (CPU ≥ 90 %) or unreachable.
+  - ◯ not monitored or paused.
+- **Interval and Start/Stop** on the Live Metrics page apply to that connection's collector, including while it runs in the background.
+- **Unreachable servers** are retried with exponential backoff (up to every 5 minutes), so they aren't hammered.
+- **Only the lightweight live-metrics query runs in the background.** Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
+- **Entra MFA connections** start background collection only after you've switched to them once in the session. This avoids unexpected sign-in windows.
+  The same applies to SQL logins without a saved password.
 
 ---
 

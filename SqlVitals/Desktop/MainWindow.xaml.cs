@@ -10,11 +10,30 @@ namespace SqlVitals.Desktop;
 
 public partial class MainWindow : Window
 {
-    // Replaced when the user saves new connection settings, so pages created after that
-    // point pick up the new server without restarting the app.
+    // Replaced whenever the active connection changes, so pages created after that point
+    // query the new server without restarting the app.
     internal IWaitStatsRepository Repo { get; private set; }
     internal readonly ConnectionSettingsService SettingsService;
     private bool _isConnectionConfigured;
+
+    // Identifies the connection Repo was built from, so re-reading the store only swaps the
+    // repository when the active connection (or its details) actually changed.
+    private Guid? _activeConnectionId;
+    private string _activeFingerprint = string.Empty;
+
+    // Page the user is on, reopened against the new database after a switch.
+    private string _currentTag = "LiveMetrics";
+
+    // Bumped on every navigation and connection switch. A page load that finishes after
+    // either has happened belongs to a previous database, so its result is discarded.
+    private int _loadVersion;
+
+    // Set while the selector is repopulated in code, so it doesn't trigger a switch.
+    private bool _isUpdatingSelector;
+
+    // Background live-metrics collection for the active and every monitored connection.
+    internal readonly MonitoringManager Monitoring = new();
+    private List<ConnectionSelectorItem> _selectorItems = new();
 
     public MainWindow()
     {
@@ -24,26 +43,38 @@ public partial class MainWindow : Window
         Title = $"SqlVitals v{version?.Major}.{version?.Minor}.{version?.Build}";
         AppVersionText.Text = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
 
+        // Pages are recreated on each navigation, but the Frame journal would otherwise keep
+        // the old instances — and the mouse Back button could bring back a page still showing
+        // data from the previous database.
+        MainFrame.Navigated += (_, _) =>
+        {
+            while (MainFrame.CanGoBack)
+                MainFrame.RemoveBackEntry();
+        };
+
         SettingsService = new ConnectionSettingsService();
-        var savedSettings = SettingsService.Load();
-        Repo = BuildRepository(savedSettings);
+        var store  = SettingsService.Load();
+        var active = store.Active;
+        Repo = BuildRepository(active, store.CommandTimeoutSeconds);
+        Monitoring.SessionStateChanged += OnMonitoringStateChanged;
+        SyncConnections(store);
 
         Loaded += async (_, _) =>
         {
             if (!_isConnectionConfigured)
             {
-                // First run (or settings cleared): send the user straight to Settings
+                // First run, or the active connection was removed: send the user to Settings
                 // instead of letting every page fail against an empty connection string.
-                await NavigateTo("Settings",
-                    "Welcome to SqlVitals! Enter your SQL Server connection details below, then click Save & Connect.");
+                await NavigateTo("Settings", store.Connections.Count == 0
+                    ? "Welcome to SqlVitals! Enter your SQL Server connection details below, then click Save & Connect."
+                    : "No connection is active. Select a saved connection in the sidebar, or add a new one below.");
                 return;
             }
 
-            if (savedSettings.NeedsPassword)
+            if (active is { NeedsPassword: true })
             {
                 // "Remember password" was off last session, so every query would fail the login.
-                await NavigateTo("Settings",
-                    $"Enter the password for {savedSettings.UserName} on {savedSettings.Server}, then click Save & Connect.");
+                await NavigateTo("Settings", PasswordPrompt(active), active.Id);
                 return;
             }
 
@@ -52,42 +83,47 @@ public partial class MainWindow : Window
         };
     }
 
-    // Builds config from appsettings.json overlaid with the encrypted user settings, and
-    // refreshes the connection labels in the header.
-    private IWaitStatsRepository BuildRepository(ConnectionSettings userSettings)
+    private static string PasswordPrompt(ConnectionSettings conn) =>
+        $"Enter the password for {conn.UserName} on {conn.Server} (\"{conn.DisplayName}\"), then click Save & Connect.";
+
+    private static string Fingerprint(ConnectionSettings? conn, int commandTimeoutSeconds) =>
+        RepositoryFactory.Fingerprint(conn, commandTimeoutSeconds);
+
+    // Builds the repository the pages use, from appsettings.json overlaid with the active connection.
+    private IWaitStatsRepository BuildRepository(ConnectionSettings? active, int commandTimeoutSeconds)
     {
-        var configBuilder = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false);
+        _activeConnectionId = active?.Id;
+        _activeFingerprint  = Fingerprint(active, commandTimeoutSeconds);
 
-        var overrides = new Dictionary<string, string?>();
-
-        if (!string.IsNullOrWhiteSpace(userSettings.ConnectionString))
-            overrides["ConnectionStrings:SqlServer"] = userSettings.ConnectionString;
-
-        if (userSettings.CommandTimeoutSeconds > 0)
-            overrides["QuerySettings:CommandTimeoutSeconds"] = userSettings.CommandTimeoutSeconds.ToString();
-
-        if (overrides.Count > 0)
-            configBuilder.AddInMemoryCollection(overrides);
-
-        var config = configBuilder.Build();
-        var resolvedConnectionString = config.GetConnectionString("SqlServer") ?? string.Empty;
-
+        var repo = RepositoryFactory.Create(active, commandTimeoutSeconds, out var resolvedConnectionString);
         _isConnectionConfigured = !string.IsNullOrWhiteSpace(resolvedConnectionString);
-        ApplyConnectionLabel(resolvedConnectionString);
-
-        return new WaitStatsRepository(config);
+        return repo;
     }
 
     /// <summary>
-    /// Swaps in a repository for newly saved settings and, when the server is reachable,
-    /// opens the dashboard — so a new connection works without restarting the app.
+    /// Re-reads the saved connections after Settings changed them. Swaps in a new repository
+    /// when the active connection changed, refreshes the selector, and optionally opens the
+    /// dashboard — so connection changes apply without restarting the app.
     /// </summary>
-    internal async System.Threading.Tasks.Task ApplyConnectionSettingsAsync(ConnectionSettings settings, bool navigateToDashboard)
+    internal async System.Threading.Tasks.Task ApplySavedConnectionsAsync(bool navigateToDashboard)
     {
+        var store = SettingsService.Load();
+        SyncConnections(store);
+
+        if (Fingerprint(store.Active, store.CommandTimeoutSeconds) != _activeFingerprint)
+            await SwapRepositoryAsync(store);
+
+        if (navigateToDashboard)
+            await NavigateTo("LiveMetrics");
+    }
+
+    private async System.Threading.Tasks.Task SwapRepositoryAsync(ConnectionStore store)
+    {
+        // Anything still loading was queried against the previous database.
+        _loadVersion++;
+
         var previous = Repo;
-        Repo = BuildRepository(settings);
+        Repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
 
         // Best effort: a trace session started against the old connection shouldn't be
         // left running on that server.
@@ -99,10 +135,98 @@ public partial class MainWindow : Window
         BtnTempDb.IsEnabled = true;
         BtnTempDb.ToolTip = null;
         await DisableTempDbIfAzureSqlAsync();
-
-        if (navigateToDashboard)
-            await NavigateTo("LiveMetrics");
     }
+
+    // ── Connection selector ───────────────────────────────────────────────────
+
+    // Brings background monitoring and the selector in line with the saved connections.
+    private void SyncConnections(ConnectionStore store)
+    {
+        Monitoring.Sync(store);
+        RefreshConnectionSelector(store);
+    }
+
+    private void RefreshConnectionSelector(ConnectionStore store)
+    {
+        _isUpdatingSelector = true;
+        try
+        {
+            _selectorItems = store.Connections
+                .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(c => new ConnectionSelectorItem(c))
+                .ToList();
+            foreach (var item in _selectorItems)
+                item.UpdateHealth(Monitoring);
+
+            var activeItem = _selectorItems.FirstOrDefault(i => i.Settings.Id == store.ActiveConnectionId);
+            CmbConnection.ItemsSource  = _selectorItems;
+            CmbConnection.SelectedItem = activeItem;
+            CmbConnection.IsEnabled    = _selectorItems.Count > 0;
+            CmbConnection.ToolTip      = activeItem?.ToolTipText;
+
+            TxtNoActiveConnection.Text = _selectorItems.Count == 0
+                ? "No saved connections. Click Manage to add one."
+                : "No active connection. Choose one above.";
+            TxtNoActiveConnection.Visibility = store.Active is null ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally
+        {
+            _isUpdatingSelector = false;
+        }
+    }
+
+    private void OnMonitoringStateChanged(Guid connectionId)
+    {
+        var item = _selectorItems.FirstOrDefault(i => i.Settings.Id == connectionId);
+        if (item is null)
+            return;
+
+        item.UpdateHealth(Monitoring);
+        if (ReferenceEquals(CmbConnection.SelectedItem, item))
+            CmbConnection.ToolTip = item.ToolTipText;
+    }
+
+    private async void CmbConnection_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingSelector || CmbConnection.SelectedItem is not ConnectionSelectorItem { Settings: var target })
+            return;
+        if (target.Id == _activeConnectionId)
+            return;
+
+        var store = SettingsService.Load();
+
+        if (target.NeedsPassword)
+        {
+            // Switching would only fail the login — ask for the password first, and keep the
+            // selector on the connection that is still active.
+            RefreshConnectionSelector(store);
+            await NavigateTo("Settings", PasswordPrompt(target), target.Id);
+            return;
+        }
+
+        try
+        {
+            SettingsService.SetActive(target.Id);
+        }
+        catch (Exception ex)
+        {
+            RefreshConnectionSelector(store);
+            TxtStatus.Text = $"Could not switch: {ConnectionSettingsService.RedactSecrets(ex.Message)}";
+            return;
+        }
+
+        store = SettingsService.Load();
+        SyncConnections(store);
+        await SwapRepositoryAsync(store);
+
+        // Reopen the current page as a fresh instance so nothing from the previous database
+        // stays on screen. TempDB may have just been disabled for an Azure SQL database.
+        var tag = _currentTag == "TempDb" && !BtnTempDb.IsEnabled ? "LiveMetrics" : _currentTag;
+        await NavigateTo(tag, tag == "Settings" ? $"Switched to \"{target.DisplayName}\"." : null, target.Id);
+    }
+
+    private async void ManageConnections_Click(object sender, RoutedEventArgs e) =>
+        await NavigateTo("Settings");
 
     // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database
     // doesn't expose (see README → Azure SQL vs On-Premises Compatibility). Disable the
@@ -132,6 +256,9 @@ public partial class MainWindow : Window
     // server after the app is gone.
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // Background collectors hold no server-side state; just stop them polling.
+        Monitoring.Dispose();
+
         try
         {
             // Stop the page's poll timer first. Each poll holds the trace repository's gate
@@ -158,9 +285,9 @@ public partial class MainWindow : Window
 
     // Returns a compact one-line status bar string, e.g. "Error [WaitStatsRepository.GetCumulativeWaitsAsync]: Timeout"
     private static string FormatErrorStatus(Exception ex) =>
-        ex is WaitStatsException wse
+        ConnectionSettingsService.RedactSecrets(ex is WaitStatsException wse
             ? $"Error [{wse.ErrorTag}]: {ex.InnerException?.Message ?? ex.Message}"
-            : $"Error: {ex.Message}";
+            : $"Error: {ex.Message}");
 
     // Returns the full message for the MessageBox, with the searchable tag on its own line.
     private static string FormatErrorDetail(Exception ex)
@@ -168,29 +295,10 @@ public partial class MainWindow : Window
         if (ex is WaitStatsException wse)
         {
             var sqlNote = wse.SqlErrorNumber != 0 ? $"\nSQL error number: {wse.SqlErrorNumber}" : string.Empty;
-            return $"Error tag:  {wse.ErrorTag}{sqlNote}\n\n{ex.InnerException?.Message ?? ex.Message}\n\nSearch the codebase for \"{wse.ErrorTag}\" to locate the originating query.";
+            return ConnectionSettingsService.RedactSecrets(
+                $"Error tag:  {wse.ErrorTag}{sqlNote}\n\n{ex.InnerException?.Message ?? ex.Message}\n\nSearch the codebase for \"{wse.ErrorTag}\" to locate the originating query.");
         }
-        return ex.Message;
-    }
-
-    private void ApplyConnectionLabel(string connectionString)
-    {
-        TxtServerName.Text   = "—";
-        TxtDatabaseName.Text = "—";
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-            return;
-
-        try
-        {
-            var csb = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionString);
-            TxtServerName.Text   = string.IsNullOrWhiteSpace(csb.DataSource)         ? "—" : csb.DataSource;
-            TxtDatabaseName.Text = string.IsNullOrWhiteSpace(csb.InitialCatalog) ? "—" : csb.InitialCatalog;
-        }
-        catch
-        {
-            // Malformed connection string — leave defaults
-        }
+        return ConnectionSettingsService.RedactSecrets(ex.Message);
     }
 
     private async void Nav_Click(object sender, RoutedEventArgs e)
@@ -203,29 +311,42 @@ public partial class MainWindow : Window
     {
         if (MainFrame.Content is IRefreshable page)
         {
+            var version = _loadVersion;
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = "Refreshing…";
             try
             {
                 await page.RefreshAsync();
-                TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
+                if (version == _loadVersion)
+                    TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
             }
             catch (Exception ex)
             {
-                TxtStatus.Text = FormatErrorStatus(ex);
+                if (version == _loadVersion)
+                    TxtStatus.Text = FormatErrorStatus(ex);
             }
-            finally { BtnRefresh.IsEnabled = true; }
+            finally
+            {
+                if (version == _loadVersion)
+                    BtnRefresh.IsEnabled = true;
+            }
         }
     }
 
-    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null)
+    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, Guid? settingsConnectionId = null)
     {
+        var version = ++_loadVersion;
+
         // Without a connection every data page would just fail — point the user at Settings.
         if (!_isConnectionConfigured && tag != "Settings")
         {
             tag = "Settings";
-            settingsMessage ??= "No SQL Server connection is configured yet. Enter your connection details below, then click Save & Connect.";
+            settingsMessage ??= SettingsService.Load().Connections.Count == 0
+                ? "No SQL Server connection is configured yet. Enter your connection details below, then click Save & Connect."
+                : "No connection is active. Select a saved connection in the sidebar, or add a new one below.";
         }
+
+        _currentTag = tag;
 
         // Update nav button styles
         foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
@@ -257,7 +378,7 @@ public partial class MainWindow : Window
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(new SettingsPage(SettingsService, ApplyConnectionSettingsAsync, settingsMessage));
+            MainFrame.Navigate(new SettingsPage(SettingsService, ApplySavedConnectionsAsync, settingsMessage, settingsConnectionId));
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;
@@ -265,7 +386,7 @@ public partial class MainWindow : Window
 
         IRefreshable page = tag switch
         {
-            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo),
+            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "WaitTrend"       => new WaitStatsTrendPage(Repo),
@@ -282,7 +403,7 @@ public partial class MainWindow : Window
             "Perfmon"        => new PerfmonPage(Repo),
             "SpTrace"         => new SpTracePage(Repo),
             "Export"          => new ExportPage(Repo),
-            _                 => new LiveMetricsDashboardPage(Repo),
+            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
         };
 
         MainFrame.Navigate(page);
@@ -292,15 +413,25 @@ public partial class MainWindow : Window
         try
         {
             await page.RefreshAsync();
-            TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
+            if (version == _loadVersion)
+                TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
         }
         catch (Exception ex)
         {
+            // The user has already moved on (another page or another database) — an error
+            // from this load would describe data that is no longer on screen.
+            if (version != _loadVersion)
+                return;
+
             TxtStatus.Text = FormatErrorStatus(ex);
             MessageBox.Show(
                 FormatErrorDetail(ex) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
                 "Data Error", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        finally { BtnRefresh.IsEnabled = true; }
+        finally
+        {
+            if (version == _loadVersion)
+                BtnRefresh.IsEnabled = true;
+        }
     }
 }
