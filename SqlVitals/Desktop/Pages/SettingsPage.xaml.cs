@@ -14,6 +14,11 @@ public partial class SettingsPage : Page
     // Applies saved settings to the running app. The bool asks it to open the dashboard.
     private readonly Func<ConnectionSettings, bool, Task> _applySettings;
 
+    // Connection string the database list was last loaded with. Any change to the server or
+    // credentials clears it, so reopening the list queries the new server.
+    private string? _databaseListSource;
+    private bool _isLoadingDatabases;
+
     public SettingsPage(
         ConnectionSettingsService service,
         Func<ConnectionSettings, bool, Task> applySettings,
@@ -33,20 +38,26 @@ public partial class SettingsPage : Page
     private void LoadCurrentSettings()
     {
         var settings = _service.Load();
-        TxtConnectionString.Text = settings.ConnectionString;
-        TxtTimeout.Text          = settings.CommandTimeoutSeconds.ToString();
+
+        TxtServer.Text                      = settings.Server;
+        SelectByTag(CmbAuthentication, settings.Authentication.ToString());
+        TxtUserName.Text                    = settings.UserName;
+        TxtPassword.Password                = settings.Password;
+        ChkSavePassword.IsChecked           = settings.SavePassword;
+        CmbDatabase.Text                    = settings.Database;
+        SelectByTag(CmbEncrypt, settings.Encrypt.ToString());
+        ChkTrustServerCertificate.IsChecked = settings.TrustServerCertificate;
+        TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
+        TxtAdditionalParameters.Text        = settings.AdditionalParameters;
+        TxtTimeout.Text                     = settings.CommandTimeoutSeconds.ToString();
+
+        ApplyAuthenticationLayout();
     }
 
     private async void BtnSave_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryParseInputs(out var connStr, out var timeout))
+        if (!TryReadInputs(out var settings))
             return;
-
-        var settings = new ConnectionSettings
-        {
-            ConnectionString      = connStr,
-            CommandTimeoutSeconds = timeout
-        };
 
         try
         {
@@ -60,11 +71,11 @@ public partial class SettingsPage : Page
 
         BtnSave.IsEnabled = false;
         BtnTestConnection.IsEnabled = false;
-        SetStatus("Settings saved. Connecting…", success: null);
+        SetStatus(ConnectingMessage(settings, "Settings saved. Connecting…"), success: null);
 
         try
         {
-            var error = await TryOpenConnectionAsync(connStr);
+            var error = await TryOpenConnectionAsync(settings.ConnectionString);
 
             // Apply even when the server is unreachable, so the app never keeps using a
             // connection the user has replaced. Only open the dashboard when it works.
@@ -86,15 +97,15 @@ public partial class SettingsPage : Page
 
     private async void BtnTestConnection_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryParseInputs(out var connStr, out _))
+        if (!TryReadInputs(out var settings))
             return;
 
         BtnTestConnection.IsEnabled = false;
-        SetStatus("Testing connection�", success: null);
+        SetStatus(ConnectingMessage(settings, "Testing connection…"), success: null);
 
         try
         {
-            var error = await TryOpenConnectionAsync(connStr);
+            var error = await TryOpenConnectionAsync(settings.ConnectionString);
             if (error is null)
                 SetStatus("Connection successful!", success: true);
             else
@@ -128,25 +139,176 @@ public partial class SettingsPage : Page
         NavigationService?.Navigate(new SettingsPage(_service, _applySettings));
     }
 
-    // ?? Helpers ???????????????????????????????????????????????????????????????
+    // ── Connection form ───────────────────────────────────────────────────────
 
-    private bool TryParseInputs(out string connStr, out int timeout)
+    private void CmbAuthentication_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        connStr = TxtConnectionString.Text.Trim();
-        timeout = 30;
+        ApplyAuthenticationLayout();
+        ConnectionField_Changed(sender, e);
+    }
 
-        if (string.IsNullOrWhiteSpace(connStr))
+    // Mirrors SSMS: the credential fields shown depend on the authentication type.
+    private void ApplyAuthenticationLayout()
+    {
+        // Fires during InitializeComponent, before the named fields below exist.
+        if (TxtPassword is null)
+            return;
+
+        var auth = SelectedAuthentication();
+
+        var showUser     = auth != SqlAuthMode.Windows;
+        var showPassword = auth == SqlAuthMode.SqlServer;
+
+        LblUserName.Visibility     = showUser ? Visibility.Visible : Visibility.Collapsed;
+        PanelUserName.Visibility   = showUser ? Visibility.Visible : Visibility.Collapsed;
+        RunUserNameText.Text       = auth == SqlAuthMode.EntraMfa ? "User name" : "Login";
+        RunUserNameRequired.Text   = auth == SqlAuthMode.SqlServer ? " *" : string.Empty;
+        TxtUserNameHint.Visibility = auth == SqlAuthMode.EntraMfa ? Visibility.Visible : Visibility.Collapsed;
+
+        LblPassword.Visibility     = showPassword ? Visibility.Visible : Visibility.Collapsed;
+        TxtPassword.Visibility     = showPassword ? Visibility.Visible : Visibility.Collapsed;
+        ChkSavePassword.Visibility = showPassword ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ConnectionField_Changed(object sender, RoutedEventArgs e) => _databaseListSource = null;
+
+    private async void CmbDatabase_DropDownOpened(object sender, EventArgs e)
+    {
+        if (_isLoadingDatabases || !TryBuildSettings(out var settings, out _))
+            return;
+
+        // Browse from master: the typed database may not exist, or the login may lack access to it.
+        var connStr = settings.BuildConnectionString(databaseOverride: string.Empty);
+        if (connStr == _databaseListSource)
+            return;
+
+        _isLoadingDatabases = true;
+        var typed = CmbDatabase.Text;
+        TxtDatabaseHint.Text = settings.Authentication == SqlAuthMode.EntraMfa
+            ? "Loading databases… complete the Microsoft sign-in if prompted."
+            : "Loading databases…";
+
+        try
         {
-            SetStatus("Connection string cannot be empty.", success: false);
+            var names = await Task.Run(async () =>
+            {
+                await using var conn = new SqlConnection(connStr);
+                await conn.OpenAsync();
+                await using var cmd = new SqlCommand(
+                    "SELECT name FROM sys.databases WHERE HAS_DBACCESS(name) = 1 ORDER BY name;", conn);
+                await using var reader = await cmd.ExecuteReaderAsync();
+
+                var list = new List<string>();
+                while (await reader.ReadAsync())
+                    list.Add(reader.GetString(0));
+                return list;
+            });
+
+            CmbDatabase.ItemsSource = names;
+            CmbDatabase.Text        = typed;   // replacing ItemsSource clears the typed text
+            _databaseListSource     = connStr;
+            TxtDatabaseHint.Text    = $"{names.Count} database(s) on {settings.Server}.";
+        }
+        catch (Exception ex)
+        {
+            CmbDatabase.IsDropDownOpen = false;
+            TxtDatabaseHint.Text = $"Could not list databases: {ex.Message} You can still type a name.";
+        }
+        finally
+        {
+            _isLoadingDatabases = false;
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private SqlAuthMode SelectedAuthentication() =>
+        Enum.TryParse<SqlAuthMode>((CmbAuthentication.SelectedItem as ComboBoxItem)?.Tag as string, out var mode)
+            ? mode
+            : SqlAuthMode.SqlServer;
+
+    private static void SelectByTag(ComboBox combo, string tag)
+    {
+        combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == tag)
+                             ?? combo.Items[0];
+    }
+
+    private static string ConnectingMessage(ConnectionSettings settings, string message) =>
+        settings.Authentication == SqlAuthMode.EntraMfa
+            ? message + " Complete the Microsoft sign-in in the window that opens."
+            : message;
+
+    // Reads the form, reporting the first problem in the status line.
+    private bool TryReadInputs(out ConnectionSettings settings)
+    {
+        if (!TryBuildSettings(out settings, out var error))
+        {
+            SetStatus(error!, success: false);
+            return false;
+        }
+        return true;
+    }
+
+    private bool TryBuildSettings(out ConnectionSettings settings, out string? error)
+    {
+        var auth = SelectedAuthentication();
+        settings = new ConnectionSettings
+        {
+            Server                 = TxtServer.Text.Trim(),
+            Authentication         = auth,
+            UserName               = auth == SqlAuthMode.Windows ? string.Empty : TxtUserName.Text.Trim(),
+            Password               = auth == SqlAuthMode.SqlServer ? TxtPassword.Password : string.Empty,
+            SavePassword           = auth == SqlAuthMode.SqlServer && ChkSavePassword.IsChecked == true,
+            Database               = CmbDatabase.Text.Trim(),
+            Encrypt                = Enum.TryParse<EncryptMode>((CmbEncrypt.SelectedItem as ComboBoxItem)?.Tag as string, out var enc)
+                                         ? enc : EncryptMode.Mandatory,
+            TrustServerCertificate = ChkTrustServerCertificate.IsChecked == true,
+            AdditionalParameters   = TxtAdditionalParameters.Text.Trim(),
+        };
+
+        if (string.IsNullOrWhiteSpace(settings.Server))
+        {
+            error = "Server name is required.";
             return false;
         }
 
-        if (!int.TryParse(TxtTimeout.Text.Trim(), out timeout) || timeout <= 0)
+        if (auth == SqlAuthMode.SqlServer && string.IsNullOrWhiteSpace(settings.UserName))
         {
-            SetStatus("Timeout must be a positive integer.", success: false);
+            error = "Login is required for SQL Server Authentication.";
             return false;
         }
 
+        if (auth == SqlAuthMode.SqlServer && string.IsNullOrEmpty(settings.Password))
+        {
+            error = "Password is required for SQL Server Authentication.";
+            return false;
+        }
+
+        if (!int.TryParse(TxtConnectTimeout.Text.Trim(), out var connectTimeout) || connectTimeout <= 0)
+        {
+            error = "Connection timeout must be a positive integer.";
+            return false;
+        }
+        settings.ConnectTimeoutSeconds = connectTimeout;
+
+        if (!int.TryParse(TxtTimeout.Text.Trim(), out var timeout) || timeout <= 0)
+        {
+            error = "Command timeout must be a positive integer.";
+            return false;
+        }
+        settings.CommandTimeoutSeconds = timeout;
+
+        try
+        {
+            _ = settings.BuildConnectionString();
+        }
+        catch (Exception ex)
+        {
+            error = $"Additional parameters are not valid: {ex.Message}";
+            return false;
+        }
+
+        error = null;
         return true;
     }
 
@@ -154,8 +316,8 @@ public partial class SettingsPage : Page
     {
         TxtStatus.Text = success switch
         {
-            true  => "\u2713  " + message,   // ?
-            false => "\u2717  " + message,   // ?
+            true  => "✓  " + message,   // ✓
+            false => "✗  " + message,   // ✗
             null  => message,
         };
         TxtStatus.Foreground = success switch

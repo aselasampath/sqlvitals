@@ -25,7 +25,8 @@ public partial class MainWindow : Window
         AppVersionText.Text = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
 
         SettingsService = new ConnectionSettingsService();
-        Repo = BuildRepository(SettingsService.Load());
+        var savedSettings = SettingsService.Load();
+        Repo = BuildRepository(savedSettings);
 
         Loaded += async (_, _) =>
         {
@@ -34,7 +35,15 @@ public partial class MainWindow : Window
                 // First run (or settings cleared): send the user straight to Settings
                 // instead of letting every page fail against an empty connection string.
                 await NavigateTo("Settings",
-                    "Welcome to SqlVitals! Enter a SQL Server connection string below, then click Save & Connect.");
+                    "Welcome to SqlVitals! Enter your SQL Server connection details below, then click Save & Connect.");
+                return;
+            }
+
+            if (savedSettings.NeedsPassword)
+            {
+                // "Remember password" was off last session, so every query would fail the login.
+                await NavigateTo("Settings",
+                    $"Enter the password for {savedSettings.UserName} on {savedSettings.Server}, then click Save & Connect.");
                 return;
             }
 
@@ -215,7 +224,7 @@ public partial class MainWindow : Window
         if (!_isConnectionConfigured && tag != "Settings")
         {
             tag = "Settings";
-            settingsMessage ??= "No SQL Server connection is configured yet. Enter a connection string below, then click Save & Connect.";
+            settingsMessage ??= "No SQL Server connection is configured yet. Enter your connection details below, then click Save & Connect.";
         }
 
         // Update nav button styles

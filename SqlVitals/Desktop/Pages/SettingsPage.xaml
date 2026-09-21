@@ -11,34 +11,182 @@
             <TextBlock Text="Connection Settings"
                        Style="{StaticResource SectionHeader}"
                        FontSize="20" Margin="0,0,0,4" />
-            <TextBlock Text="Configure the SQL Server connection used by all dashboard pages. The connection string is stored encrypted on this machine."
+            <TextBlock Text="Configure the SQL Server connection used by all dashboard pages. Connection details are stored encrypted on this machine."
                        Foreground="{StaticResource TextMuted}" FontSize="12"
                        TextWrapping="Wrap" Margin="0,0,0,24" />
 
-            <!-- Connection String card -->
+            <!-- Connect to Server card -->
             <Border Style="{StaticResource KpiCard}" Margin="0,0,0,16">
+                <Border.Resources>
+                    <Style x:Key="FieldLabel" TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                        <Setter Property="FontSize" Value="12" />
+                        <Setter Property="VerticalAlignment" Value="Center" />
+                        <Setter Property="Margin" Value="0,0,12,0" />
+                    </Style>
+                    <Style x:Key="FieldHint" TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                        <Setter Property="FontSize" Value="10" />
+                        <Setter Property="TextWrapping" Value="Wrap" />
+                        <Setter Property="Margin" Value="0,3,0,0" />
+                    </Style>
+                    <Style x:Key="FieldTextBox" TargetType="TextBox">
+                        <Setter Property="Height" Value="30" />
+                        <Setter Property="FontSize" Value="12" />
+                        <Setter Property="Padding" Value="8,0" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                        <Setter Property="Background" Value="{StaticResource BgDeep}" />
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource Border}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}" />
+                    </Style>
+                    <Style TargetType="PasswordBox">
+                        <Setter Property="Height" Value="30" />
+                        <Setter Property="FontSize" Value="12" />
+                        <Setter Property="Padding" Value="8,0" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                        <Setter Property="Background" Value="{StaticResource BgDeep}" />
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource Border}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}" />
+                    </Style>
+                    <Style TargetType="ComboBox">
+                        <Setter Property="Height" Value="30" />
+                        <Setter Property="FontSize" Value="12" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                        <Setter Property="Background" Value="{StaticResource BgCard}" />
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource Border}" />
+                        <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboItem}" />
+                    </Style>
+                    <Style TargetType="CheckBox">
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                        <Setter Property="FontSize" Value="12" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                        <Setter Property="Cursor" Value="Hand" />
+                    </Style>
+                </Border.Resources>
+
                 <StackPanel>
-                    <TextBlock Text="SQL Server Connection String"
+                    <TextBlock Text="Connect to Server"
                                Foreground="{StaticResource TextMuted}"
                                FontSize="11" FontWeight="SemiBold"
-                               Margin="0,0,0,8" />
+                               Margin="0,0,0,14" />
 
-                    <TextBox x:Name="TxtConnectionString"
-                             Height="80"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto"
-                             FontFamily="Consolas" FontSize="12"
-                             Padding="10,8"
-                             Background="{StaticResource BgDeep}"
-                             Foreground="{StaticResource TextPrimary}"
-                             BorderBrush="{StaticResource Border}"
-                             BorderThickness="1"
-                             CaretBrush="{StaticResource TextPrimary}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />  <!-- 0 Server -->
+                            <RowDefinition Height="Auto" />  <!-- 1 Authentication -->
+                            <RowDefinition Height="Auto" />  <!-- 2 User name -->
+                            <RowDefinition Height="Auto" />  <!-- 3 Password -->
+                            <RowDefinition Height="Auto" />  <!-- 4 Remember password -->
+                            <RowDefinition Height="Auto" />  <!-- 5 Database -->
+                            <RowDefinition Height="Auto" />  <!-- 6 Encrypt -->
+                            <RowDefinition Height="Auto" />  <!-- 7 Trust server cert -->
+                        </Grid.RowDefinitions>
 
-                    <TextBlock Text="Example: Server=myserver.database.windows.net;Database=mydb;User Id=user;Password=pass;"
-                               Foreground="{StaticResource TextMuted}" FontSize="10"
-                               Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <!-- Server name -->
+                        <TextBlock Grid.Row="0" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0">
+                            <Run Text="Server name" /><Run Text=" *" Foreground="{StaticResource Danger}" />
+                        </TextBlock>
+                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
+                            <TextBox x:Name="TxtServer" Style="{StaticResource FieldTextBox}" TextChanged="ConnectionField_Changed" />
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="e.g. myserver.database.windows.net, localhost\SQLEXPRESS, or host,1433 for a custom port" />
+                        </StackPanel>
+
+                        <!-- Authentication -->
+                        <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}" Margin="0,0,12,10">
+                            <Run Text="Authentication" /><Run Text=" *" Foreground="{StaticResource Danger}" />
+                        </TextBlock>
+                        <ComboBox x:Name="CmbAuthentication" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10"
+                                  SelectionChanged="CmbAuthentication_SelectionChanged">
+                            <ComboBoxItem Content="SQL Server Authentication" Tag="SqlServer" />
+                            <ComboBoxItem Content="Microsoft Entra MFA" Tag="EntraMfa" />
+                            <ComboBoxItem Content="Windows Authentication" Tag="Windows" />
+                        </ComboBox>
+
+                        <!-- User name -->
+                        <TextBlock x:Name="LblUserName" Grid.Row="2" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0">
+                            <Run x:Name="RunUserNameText" Text="Login" /><Run x:Name="RunUserNameRequired" Text=" *" Foreground="{StaticResource Danger}" />
+                        </TextBlock>
+                        <StackPanel x:Name="PanelUserName" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10">
+                            <TextBox x:Name="TxtUserName" Style="{StaticResource FieldTextBox}" TextChanged="ConnectionField_Changed" />
+                            <TextBlock x:Name="TxtUserNameHint" Style="{StaticResource FieldHint}"
+                                       Text="Optional: your Entra account (user@domain.com) to pre-fill the sign-in prompt." />
+                        </StackPanel>
+
+                        <!-- Password -->
+                        <TextBlock x:Name="LblPassword" Grid.Row="3" Style="{StaticResource FieldLabel}" Margin="0,0,12,10">
+                            <Run Text="Password" /><Run Text=" *" Foreground="{StaticResource Danger}" />
+                        </TextBlock>
+                        <PasswordBox x:Name="TxtPassword" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10"
+                                     PasswordChanged="ConnectionField_Changed" />
+
+                        <!-- Remember password -->
+                        <CheckBox x:Name="ChkSavePassword" Grid.Row="4" Grid.Column="1" Margin="0,0,0,12"
+                                  Content="Remember password" />
+
+                        <!-- Database -->
+                        <TextBlock Grid.Row="5" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0"
+                                   Text="Database name" />
+                        <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,10">
+                            <ComboBox x:Name="CmbDatabase" IsEditable="True"
+                                      DropDownOpened="CmbDatabase_DropDownOpened" />
+                            <TextBlock x:Name="TxtDatabaseHint" Style="{StaticResource FieldHint}"
+                                       Text="Leave blank for the login's default database. Open the list to browse the server." />
+                        </StackPanel>
+
+                        <!-- Encrypt -->
+                        <TextBlock Grid.Row="6" Style="{StaticResource FieldLabel}" Margin="0,0,12,10" Text="Encrypt" />
+                        <ComboBox x:Name="CmbEncrypt" Grid.Row="6" Grid.Column="1" Margin="0,0,0,10"
+                                  SelectionChanged="ConnectionField_Changed">
+                            <ComboBoxItem Content="Mandatory" Tag="Mandatory" />
+                            <ComboBoxItem Content="Optional" Tag="Optional" />
+                            <ComboBoxItem Content="Strict (SQL Server 2022 and Azure SQL)" Tag="Strict" />
+                        </ComboBox>
+
+                        <!-- Trust server certificate -->
+                        <CheckBox x:Name="ChkTrustServerCertificate" Grid.Row="7" Grid.Column="1"
+                                  Content="Trust server certificate"
+                                  Checked="ConnectionField_Changed" Unchecked="ConnectionField_Changed" />
+                    </Grid>
+
+                    <!-- Advanced -->
+                    <Expander Header="Advanced" Foreground="{StaticResource TextMuted}"
+                              FontSize="12" Margin="0,16,0,0">
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Style="{StaticResource FieldLabel}" Margin="0,0,12,10"
+                                       Text="Connection timeout (s)" />
+                            <TextBox x:Name="TxtConnectTimeout" Style="{StaticResource FieldTextBox}" Grid.Row="0" Grid.Column="1" Width="120"
+                                     HorizontalAlignment="Left" Margin="0,0,0,10"
+                                     TextChanged="ConnectionField_Changed" />
+
+                            <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0"
+                                       Text="Additional parameters" />
+                            <StackPanel Grid.Row="1" Grid.Column="1">
+                                <TextBox x:Name="TxtAdditionalParameters" Style="{StaticResource FieldTextBox}" FontFamily="Consolas"
+                                         TextChanged="ConnectionField_Changed" />
+                                <TextBlock Style="{StaticResource FieldHint}"
+                                           Text="Extra connection string keywords, e.g. MultipleActiveResultSets=True;HostNameInCertificate=*.contoso.com" />
+                            </StackPanel>
+                        </Grid>
+                    </Expander>
                 </StackPanel>
             </Border>
 
@@ -87,9 +235,7 @@
             <!-- Action buttons -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                 <Button x:Name="BtnTestConnection"
-                        Style="{StaticResource RefreshButton}"
-                        Background="{StaticResource BgCard}"
-                        BorderBrush="{StaticResource Border}" BorderThickness="1"
+                        Style="{StaticResource SecondaryButton}"
                         Padding="18,9"
                         Margin="0,0,12,0"
                         Click="BtnTestConnection_Click">

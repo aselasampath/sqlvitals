@@ -125,6 +125,39 @@
         </Setter>
     </Style>
 
+    <!-- ── Secondary button ───────────────────────────────────────── -->
+    <Style x:Key="SecondaryButton" TargetType="Button">
+        <Setter Property="Background"       Value="{StaticResource BgCard}" />
+        <Setter Property="Foreground"       Value="{StaticResource TextPrimary}" />
+        <Setter Property="BorderBrush"      Value="{StaticResource Border}" />
+        <Setter Property="BorderThickness"  Value="1" />
+        <Setter Property="FontFamily"       Value="Segoe UI" />
+        <Setter Property="FontSize"         Value="12" />
+        <Setter Property="Padding"          Value="16,7" />
+        <Setter Property="Cursor"           Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#FF24243A" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentLight}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ── DataGrid ────────────────────────────────────────────────── -->
     <Style TargetType="DataGrid">
         <Setter Property="Background"               Value="{StaticResource BgCard}" />
