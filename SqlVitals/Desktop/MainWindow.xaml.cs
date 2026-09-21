@@ -284,7 +284,7 @@ public partial class MainWindow : Window
     }
 
     // Returns a compact one-line status bar string, e.g. "Error [WaitStatsRepository.GetCumulativeWaitsAsync]: Timeout"
-    private static string FormatErrorStatus(Exception ex) =>
+    internal static string FormatErrorStatus(Exception ex) =>
         ConnectionSettingsService.RedactSecrets(ex is WaitStatsException wse
             ? $"Error [{wse.ErrorTag}]: {ex.InnerException?.Message ?? ex.Message}"
             : $"Error: {ex.Message}");
