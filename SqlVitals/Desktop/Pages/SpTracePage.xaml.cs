@@ -256,7 +256,8 @@ public partial class SpTracePage : Page, IRefreshable
             TxtMinDurFilter.Text   = string.Empty;
             TxtMinCpuFilter.Text   = string.Empty;
             TxtMinReadsFilter.Text = string.Empty;
-            ChkHideResets.IsChecked = true;   // back to the default, not "show everything"
+            ChkHideResets.IsChecked     = true;    // back to the default, not "show everything"
+            ChkHideExecuteSql.IsChecked = false;
             foreach (var combo in FilterCombos) combo.SelectedIndex = 0;
         }
         finally
@@ -333,6 +334,7 @@ public partial class SpTracePage : Page, IRefreshable
         var minCpu   = ReadLong(TxtMinCpuFilter);
         var minReads = ReadLong(TxtMinReadsFilter);
         var hideResets = ChkHideResets.IsChecked == true;
+        var hideExecSql = ChkHideExecuteSql.IsChecked == true;
 
         IEnumerable<SpTraceEvent> query = _allCalls;
 
@@ -354,6 +356,9 @@ public partial class SpTracePage : Page, IRefreshable
 
         if (hideResets)
             query = query.Where(c => c.ObjectName?.EndsWith("sp_reset_connection", StringComparison.OrdinalIgnoreCase) != true);
+
+        if (hideExecSql)
+            query = query.Where(c => c.ObjectName?.EndsWith("sp_executesql", StringComparison.OrdinalIgnoreCase) != true);
 
         // Newest first — the interesting row on a live trace is the one that just arrived.
         var filtered = query.OrderByDescending(c => c.EventTime).ToList();
