@@ -257,6 +257,9 @@ public class ConnectionSettings
     public int         ConnectTimeoutSeconds  { get; set; } = 30;
     public string      AdditionalParameters   { get; set; } = string.Empty;
 
+    /// <summary>Keep collecting live metrics for this connection while another one is active.</summary>
+    public bool        MonitorInBackground    { get; set; } = true;
+
     [System.Text.Json.Serialization.JsonIgnore]
     public int CommandTimeoutSeconds { get; set; } = 30;
 

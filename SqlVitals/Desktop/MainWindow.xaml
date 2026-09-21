@@ -42,13 +42,19 @@
                               SelectionChanged="CmbConnection_SelectionChanged">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,1" ToolTip="{Binding Summary}">
-                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock FontSize="10" Opacity="0.75" TextTrimming="CharacterEllipsis">
-                                        <Run Text="{Binding Server, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding DatabaseLabel, Mode=OneWay}" />
-                                    </TextBlock>
-                                </StackPanel>
+                                <DockPanel Margin="0,1" ToolTip="{Binding ToolTipText}">
+                                    <!-- Background monitoring health: green / amber / red; outline = not monitored or paused -->
+                                    <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,4,6,0"
+                                             VerticalAlignment="Top" StrokeThickness="1.5"
+                                             Fill="{Binding HealthFill}" Stroke="{Binding HealthStroke}" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock FontSize="10" Opacity="0.75" TextTrimming="CharacterEllipsis">
+                                            <Run Text="{Binding Server, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding DatabaseLabel, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DockPanel>
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>

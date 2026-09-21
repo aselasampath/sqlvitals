@@ -31,6 +31,10 @@ public partial class MainWindow : Window
     // Set while the selector is repopulated in code, so it doesn't trigger a switch.
     private bool _isUpdatingSelector;
 
+    // Background live-metrics collection for the active and every monitored connection.
+    internal readonly MonitoringManager Monitoring = new();
+    private List<ConnectionSelectorItem> _selectorItems = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -52,7 +56,8 @@ public partial class MainWindow : Window
         var store  = SettingsService.Load();
         var active = store.Active;
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
-        RefreshConnectionSelector(store);
+        Monitoring.SessionStateChanged += OnMonitoringStateChanged;
+        SyncConnections(store);
 
         Loaded += async (_, _) =>
         {
@@ -82,38 +87,17 @@ public partial class MainWindow : Window
         $"Enter the password for {conn.UserName} on {conn.Server} (\"{conn.DisplayName}\"), then click Save & Connect.";
 
     private static string Fingerprint(ConnectionSettings? conn, int commandTimeoutSeconds) =>
-        conn is null ? string.Empty : $"{conn.Id}|{conn.ConnectionString}|{commandTimeoutSeconds}";
+        RepositoryFactory.Fingerprint(conn, commandTimeoutSeconds);
 
-    // Builds config from appsettings.json overlaid with the active saved connection.
+    // Builds the repository the pages use, from appsettings.json overlaid with the active connection.
     private IWaitStatsRepository BuildRepository(ConnectionSettings? active, int commandTimeoutSeconds)
     {
         _activeConnectionId = active?.Id;
         _activeFingerprint  = Fingerprint(active, commandTimeoutSeconds);
 
-        var userSettings = active?.Clone() ?? new ConnectionSettings();
-        userSettings.CommandTimeoutSeconds = commandTimeoutSeconds;
-
-        var configBuilder = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false);
-
-        var overrides = new Dictionary<string, string?>();
-
-        if (!string.IsNullOrWhiteSpace(userSettings.ConnectionString))
-            overrides["ConnectionStrings:SqlServer"] = userSettings.ConnectionString;
-
-        if (userSettings.CommandTimeoutSeconds > 0)
-            overrides["QuerySettings:CommandTimeoutSeconds"] = userSettings.CommandTimeoutSeconds.ToString();
-
-        if (overrides.Count > 0)
-            configBuilder.AddInMemoryCollection(overrides);
-
-        var config = configBuilder.Build();
-        var resolvedConnectionString = config.GetConnectionString("SqlServer") ?? string.Empty;
-
+        var repo = RepositoryFactory.Create(active, commandTimeoutSeconds, out var resolvedConnectionString);
         _isConnectionConfigured = !string.IsNullOrWhiteSpace(resolvedConnectionString);
-
-        return new WaitStatsRepository(config);
+        return repo;
     }
 
     /// <summary>
@@ -124,7 +108,7 @@ public partial class MainWindow : Window
     internal async System.Threading.Tasks.Task ApplySavedConnectionsAsync(bool navigateToDashboard)
     {
         var store = SettingsService.Load();
-        RefreshConnectionSelector(store);
+        SyncConnections(store);
 
         if (Fingerprint(store.Active, store.CommandTimeoutSeconds) != _activeFingerprint)
             await SwapRepositoryAsync(store);
@@ -155,21 +139,32 @@ public partial class MainWindow : Window
 
     // ── Connection selector ───────────────────────────────────────────────────
 
+    // Brings background monitoring and the selector in line with the saved connections.
+    private void SyncConnections(ConnectionStore store)
+    {
+        Monitoring.Sync(store);
+        RefreshConnectionSelector(store);
+    }
+
     private void RefreshConnectionSelector(ConnectionStore store)
     {
         _isUpdatingSelector = true;
         try
         {
-            var items = store.Connections
+            _selectorItems = store.Connections
                 .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(c => new ConnectionSelectorItem(c))
                 .ToList();
+            foreach (var item in _selectorItems)
+                item.UpdateHealth(Monitoring);
 
-            CmbConnection.ItemsSource  = items;
-            CmbConnection.SelectedItem = items.FirstOrDefault(c => c.Id == store.ActiveConnectionId);
-            CmbConnection.IsEnabled    = items.Count > 0;
-            CmbConnection.ToolTip      = store.Active?.Summary;
+            var activeItem = _selectorItems.FirstOrDefault(i => i.Settings.Id == store.ActiveConnectionId);
+            CmbConnection.ItemsSource  = _selectorItems;
+            CmbConnection.SelectedItem = activeItem;
+            CmbConnection.IsEnabled    = _selectorItems.Count > 0;
+            CmbConnection.ToolTip      = activeItem?.ToolTipText;
 
-            TxtNoActiveConnection.Text = items.Count == 0
+            TxtNoActiveConnection.Text = _selectorItems.Count == 0
                 ? "No saved connections. Click Manage to add one."
                 : "No active connection. Choose one above.";
             TxtNoActiveConnection.Visibility = store.Active is null ? Visibility.Visible : Visibility.Collapsed;
@@ -180,9 +175,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnMonitoringStateChanged(Guid connectionId)
+    {
+        var item = _selectorItems.FirstOrDefault(i => i.Settings.Id == connectionId);
+        if (item is null)
+            return;
+
+        item.UpdateHealth(Monitoring);
+        if (ReferenceEquals(CmbConnection.SelectedItem, item))
+            CmbConnection.ToolTip = item.ToolTipText;
+    }
+
     private async void CmbConnection_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isUpdatingSelector || CmbConnection.SelectedItem is not ConnectionSettings target)
+        if (_isUpdatingSelector || CmbConnection.SelectedItem is not ConnectionSelectorItem { Settings: var target })
             return;
         if (target.Id == _activeConnectionId)
             return;
@@ -210,7 +216,7 @@ public partial class MainWindow : Window
         }
 
         store = SettingsService.Load();
-        RefreshConnectionSelector(store);
+        SyncConnections(store);
         await SwapRepositoryAsync(store);
 
         // Reopen the current page as a fresh instance so nothing from the previous database
@@ -250,6 +256,9 @@ public partial class MainWindow : Window
     // server after the app is gone.
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // Background collectors hold no server-side state; just stop them polling.
+        Monitoring.Dispose();
+
         try
         {
             // Stop the page's poll timer first. Each poll holds the trace repository's gate
@@ -377,7 +386,7 @@ public partial class MainWindow : Window
 
         IRefreshable page = tag switch
         {
-            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo),
+            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "WaitTrend"       => new WaitStatsTrendPage(Repo),
@@ -394,7 +403,7 @@ public partial class MainWindow : Window
             "Perfmon"        => new PerfmonPage(Repo),
             "SpTrace"         => new SpTracePage(Repo),
             "Export"          => new ExportPage(Repo),
-            _                 => new LiveMetricsDashboardPage(Repo),
+            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
         };
 
         MainFrame.Navigate(page);

@@ -273,6 +273,7 @@ public partial class SettingsPage : Page
         ChkTrustServerCertificate.IsChecked = settings.TrustServerCertificate;
         TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
         TxtAdditionalParameters.Text        = settings.AdditionalParameters;
+        ChkMonitorInBackground.IsChecked    = settings.MonitorInBackground;
 
         _databaseListSource = null;
         ApplyAuthenticationLayout();
@@ -413,6 +414,7 @@ public partial class SettingsPage : Page
                                          ? enc : EncryptMode.Mandatory,
             TrustServerCertificate = ChkTrustServerCertificate.IsChecked == true,
             AdditionalParameters   = TxtAdditionalParameters.Text.Trim(),
+            MonitorInBackground    = ChkMonitorInBackground.IsChecked == true,
         };
 
         if (string.IsNullOrWhiteSpace(settings.Server))

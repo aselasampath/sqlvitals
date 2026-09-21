@@ -169,7 +169,15 @@
                             <RowDefinition Height="Auto" />  <!-- 6 Encrypt -->
                             <RowDefinition Height="Auto" />  <!-- 7 Trust server cert -->
                             <RowDefinition Height="Auto" />  <!-- 8 Connection name -->
+                            <RowDefinition Height="Auto" />  <!-- 9 Monitor in background -->
                         </Grid.RowDefinitions>
+
+                        <!-- Monitor in background -->
+                        <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,12,0,0">
+                            <CheckBox x:Name="ChkMonitorInBackground" Content="Monitor in background" IsChecked="True" />
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Keep collecting live metrics (every 10 s by default) while another connection is active, so switching back shows continuous history and the sidebar can flag problems." />
+                        </StackPanel>
 
                         <!-- Connection name -->
                         <TextBlock Grid.Row="8" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,19,12,0"

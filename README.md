@@ -216,6 +216,23 @@ You can save any number of connections (e.g. Production, UAT, Dev) and switch be
   field rejects `Password`/`User ID`.
 - Settings files from earlier versions (one connection) are migrated automatically to a single active connection.
 
+### Background monitoring
+
+Live Metrics keeps collecting for every connection with **Monitor in background** ticked (on by default),
+not just the active one. When you switch back to a connection, its charts already show the history collected
+while you were away (the last 60 samples, about 10 minutes at the default 10 s interval).
+
+- **Health dot:** each connection in the sidebar selector has one. Hover it for the details.
+  - 🟢 healthy.
+  - 🟠 warning: CPU ≥ 75 %, memory grants pending, or page life expectancy < 300 s.
+  - 🔴 critical (CPU ≥ 90 %) or unreachable.
+  - ◯ not monitored or paused.
+- **Interval and Start/Stop** on the Live Metrics page apply to that connection's collector, including while it runs in the background.
+- **Unreachable servers** are retried with exponential backoff (up to every 5 minutes), so they aren't hammered.
+- **Only the lightweight live-metrics query runs in the background.** Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
+- **Entra MFA connections** start background collection only after you've switched to them once in the session. This avoids unexpected sign-in windows.
+  The same applies to SQL logins without a saved password.
+
 ---
 
 ## How to Build & Run

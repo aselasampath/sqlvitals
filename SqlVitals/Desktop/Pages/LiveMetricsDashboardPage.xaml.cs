@@ -15,21 +15,27 @@ using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
 
 public partial class LiveMetricsDashboardPage : Page, IRefreshable
 {
     // ?? Constants ??????????????????????????????????????????????????????
-    private const int MaxPoints = 60;   // rolling window length
+    private const int MaxPoints = MonitoringSession.MaxPoints;   // rolling window length
 
     // ?? Repo & timer ??????????????????????????????????????????????????
+    // Collection lives in the connection's MonitoringSession, which keeps running (and keeps
+    // its history) while the user is on another page or another connection. The page only
+    // plots it; its own timer just drives the countdown.
     private readonly IWaitStatsRepository _repo;
+    private readonly MonitoringSession    _session;
+    private readonly bool                 _ownsSession;   // ad-hoc session when there is no saved connection
     private readonly DispatcherTimer      _timer    = new();
-    private bool                          _refreshing = false;
-    private int                           _intervalSec;
-    private int                           _remainingSec;
     private bool                          _itemsReady = false;
+    private DateTime?                     _lastPlotted;
+    private bool                          _refreshingMap;
 
     private static readonly int[] Intervals =
         Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
@@ -37,7 +43,6 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         s < 60 ? $"{s}s" : $"{s / 60}m {s % 60:00}s";
 
     // ?? Previous snapshot for delta-wait calculation ???????????????????
-    private LiveMetricSnapshot? _prev;
 
     // ?? Time-series ring buffers ??????????????????????????????????????
     // Waits
@@ -89,14 +94,17 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private static readonly SKColor ColMgP   = SKColor.Parse("#FF4444");
     private static readonly SKColor ColBuf   = SKColor.Parse("#22C55E");
 
-    public LiveMetricsDashboardPage(IWaitStatsRepository repo)
+    public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringSession? session = null)
     {
-        _repo = repo;
+        _repo        = repo;
+        _ownsSession = session is null;
+        _session     = session ?? new MonitoringSession(null, repo, string.Empty);
         InitializeComponent();
 
-        // Populate interval ComboBox
+        // Populate interval ComboBox with the session's current interval (default 10 s)
         CmbInterval.ItemsSource   = Intervals.Select(IntervalLabel).ToList();
-        CmbInterval.SelectedIndex = 1; // default 10 s
+        var index = Array.IndexOf(Intervals, _session.IntervalSeconds);
+        CmbInterval.SelectedIndex = index >= 0 ? index : 1;
         _itemsReady = true;
 
         // Build chip registry from XAML-named buttons
@@ -104,6 +112,11 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
 
         _timer.Interval = TimeSpan.FromSeconds(1);
         _timer.Tick    += Timer_Tick;
+
+        // Subscribed here rather than in Loaded: MainWindow calls RefreshAsync straight after
+        // navigating, and that sample can arrive before the page has loaded.
+        _session.SampleAdded  += Session_SampleAdded;
+        _session.StateChanged += Session_StateChanged;
     }
 
     // ?? Page lifetime ?????????????????????????????????????????????????
@@ -120,142 +133,147 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         // Build all panels (hidden panels are simply removed from the grid)
         BuildAllPanels();
 
-        if (NavigationService != null)
-            NavigationService.Navigating += OnFrameNavigating;
+        // Plot the history collected while this page wasn't open. The new charts draw it when
+        // they load, so no forced update here.
+        PlotNewSamples();
+
+        // Shared sessions are started by MonitoringManager (and may have been paused by the user).
+        if (_ownsSession)
+            _session.Start();
+
+        SyncRunButton();
+        _timer.Start();
+        UpdateCountdown();
     }
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
-        if (NavigationService != null)
-            NavigationService.Navigating -= OnFrameNavigating;
-        StopTimer();
-    }
+        _timer.Stop();
 
-    private void OnFrameNavigating(object sender,
-        System.Windows.Navigation.NavigatingCancelEventArgs e) => StopTimer();
+        // The session outlives the page; don't let it keep this page alive.
+        _session.SampleAdded  -= Session_SampleAdded;
+        _session.StateChanged -= Session_StateChanged;
+
+        if (_ownsSession)
+            _session.Dispose();
+    }
 
     // ?? IRefreshable ??????????????????????????????????????????????????
-    public async System.Threading.Tasks.Task RefreshAsync()
-    {
-        var snap = await _repo.GetLiveMetricsAsync();
-        ApplySnapshot(snap);
+    // Takes a sample now (joining one already in flight). Session_SampleAdded plots it; a
+    // failure propagates so MainWindow can report it.
+    public System.Threading.Tasks.Task RefreshAsync() => _session.CollectNowAsync();
 
+    private void Session_SampleAdded(MonitoringSession session, LiveMetricSample sample)
+    {
+        PlotNewSamples();
+        ForceChartUpdate();
+        _ = RefreshProcessMapAsync();
+    }
+
+    private void Session_StateChanged(MonitoringSession session)
+    {
+        SyncRunButton();
+        UpdateCountdown();
+    }
+
+    // Appends every session sample not plotted yet, so the page catches up whether the
+    // samples arrived while it was closed or one at a time while it is open.
+    private void PlotNewSamples()
+    {
+        foreach (var sample in _session.Samples)
+        {
+            if (_lastPlotted is { } last && sample.Time <= last)
+                continue;
+            AppendSample(sample);
+            _lastPlotted = sample.Time;
+        }
+    }
+
+    private void ForceChartUpdate()
+    {
+        // Force update charts to fix freeze issue
         foreach (var chart in _charts.Values)
         {
-            if (chart.CoreChart is not null)
-            {
-                chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
-            }
-        }
+            // CoreChart throws ("Core not set yet") rather than returning null until the chart
+            // has loaded — e.g. a panel just built, or a sample arriving before the page loads.
+            if (!chart.IsLoaded)
+                continue;
 
-        if (_activeProcessMap != null && ChipProcessMap.IsChecked == true)
-        {
-            var nodes = (await _repo.GetProcessesAsync()).ToList();
-            _activeProcessMap.UpdateNodes(nodes);
+            chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
         }
     }
 
-    // ?? Timer ?????????????????????????????????????????????????????????
-    private void StartTimer()
+    // The process map is only needed while it is on screen, so it is fetched by the page
+    // rather than collected in the background.
+    private async System.Threading.Tasks.Task RefreshProcessMapAsync()
     {
-        _remainingSec = _intervalSec;
-        UpdateCountdown();
-        _timer.Start();
-    }
+        if (!IsLoaded || _refreshingMap || _activeProcessMap == null || ChipProcessMap.IsChecked != true)
+            return;
 
-    private void StopTimer()
-    {
-        _timer.Stop();
-        TxtCountdown.Text = "--";
-        if (BtnAutoRefresh.IsChecked == true)
-            BtnAutoRefresh.IsChecked = false;
-    }
-
-    private async void Timer_Tick(object? sender, EventArgs e)
-    {
-        _remainingSec--;
-        UpdateCountdown();
-        if (_remainingSec > 0 || _refreshing) return;
-        _refreshing = true;
+        _refreshingMap = true;
         try
         {
-            var snap = await _repo.GetLiveMetricsAsync();
-            ApplySnapshot(snap);
-
-            // Force update charts to fix freeze issue
-            foreach (var chart in _charts.Values)
-            {
-                if (chart.CoreChart is not null)
-                {
-                    chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
-                }
-            }
-
-            if (_activeProcessMap != null && ChipProcessMap.IsChecked == true)
-            {
-                var nodes = (await _repo.GetProcessesAsync()).ToList();
-                _activeProcessMap.UpdateNodes(nodes);
-            }
+            var nodes = (await _repo.GetProcessesAsync()).ToList();
+            _activeProcessMap?.UpdateNodes(nodes);
         }
         catch { }
         finally
         {
-            _refreshing   = false;
-            _remainingSec = _intervalSec;
-            UpdateCountdown();
+            _refreshingMap = false;
         }
     }
 
-    private void UpdateCountdown() =>
-        TxtCountdown.Text = _remainingSec >= 60
-            ? $"{_remainingSec / 60}:{_remainingSec % 60:00}"
-            : $"{_remainingSec}s";
+    // ?? Timer ?????????????????????????????????????????????????????????
+    private void Timer_Tick(object? sender, EventArgs e) => UpdateCountdown();
+
+    private void UpdateCountdown()
+    {
+        if (!_session.IsRunning)
+        {
+            TxtCountdown.Text = "--";
+            return;
+        }
+
+        var remaining = (int)Math.Ceiling(_session.TimeUntilNextSample.TotalSeconds);
+        TxtCountdown.Text = remaining >= 60
+            ? $"{remaining / 60}:{remaining % 60:00}"
+            : $"{remaining}s";
+    }
+
+    // Reflects the session's running state on the Start/Stop button. Its handlers call
+    // Start/Pause, which do nothing when the session is already in that state.
+    private void SyncRunButton()
+    {
+        if (BtnAutoRefresh.IsChecked != _session.IsRunning)
+            BtnAutoRefresh.IsChecked = _session.IsRunning;
+    }
 
     // ?? Snapshot ? ring buffers ????????????????????????????????????????
-    private void ApplySnapshot(LiveMetricSnapshot snap)
+    // Rates are computed by LiveMetricSample.From in the session; the page only plots them.
+    private void AppendSample(LiveMetricSample s)
     {
-        var t = snap.CaptureTime;
-        double seconds = _prev is null ? 1.0 : (snap.CaptureTime - _prev.CaptureTime).TotalSeconds;
-        if (seconds < 0.1) seconds = 1.0; // avoid div/0 or huge spikes on rapid update
+        var t = s.Time;
 
-        // 1. Wait deltas (cumulative ms ? ms per second)
-        long dCpu   = (long)(_prev is null ? 0 : Math.Max(0, snap.CpuWaitMs    - _prev.CpuWaitMs)    / seconds);
-        long dIo    = (long)(_prev is null ? 0 : Math.Max(0, snap.IoWaitMs     - _prev.IoWaitMs)     / seconds);
-        long dLock  = (long)(_prev is null ? 0 : Math.Max(0, snap.LockWaitMs   - _prev.LockWaitMs)   / seconds);
-        long dMem   = (long)(_prev is null ? 0 : Math.Max(0, snap.MemoryWaitMs - _prev.MemoryWaitMs) / seconds);
-        long dNet   = (long)(_prev is null ? 0 : Math.Max(0, snap.NetworkWaitMs- _prev.NetworkWaitMs)/ seconds);
-        long dOther = (long)(_prev is null ? 0 : Math.Max(0, snap.OtherWaitMs  - _prev.OtherWaitMs)  / seconds);
+        Append(_waitCpu,    t, s.WaitCpuMsPerSec);
+        Append(_waitIo,     t, s.WaitIoMsPerSec);
+        Append(_waitLock,   t, s.WaitLockMsPerSec);
+        Append(_waitMem,    t, s.WaitMemoryMsPerSec);
+        Append(_waitNet,    t, s.WaitNetworkMsPerSec);
+        Append(_waitOther,  t, s.WaitOtherMsPerSec);
 
-        // 2. Throughput & I/O (cumulative count ? rate per second)
-        double rBatch   = _prev is null ? 0 : Math.Max(0, snap.BatchRequestsPerSec     - _prev.BatchRequestsPerSec)     / seconds;
-        double rComp    = _prev is null ? 0 : Math.Max(0, snap.SQLCompilationsPerSec   - _prev.SQLCompilationsPerSec)   / seconds;
-        double rRecomp  = _prev is null ? 0 : Math.Max(0, snap.SQLRecompilationsPerSec - _prev.SQLRecompilationsPerSec) / seconds;
-        double rTxn     = _prev is null ? 0 : Math.Max(0, snap.TransactionsPerSec      - _prev.TransactionsPerSec)      / seconds;
-        double rRead    = _prev is null ? 0 : Math.Max(0, snap.PhysicalReadsPerSec     - _prev.PhysicalReadsPerSec)     / seconds;
-        double rWrite   = _prev is null ? 0 : Math.Max(0, snap.PhysicalWritesPerSec    - _prev.PhysicalWritesPerSec)    / seconds;
+        Append(_cpuPct,     t, s.SqlCpuPct);
 
-        _prev = snap;
+        Append(_batches,    t, s.BatchRequestsPerSec);
+        Append(_compiles,   t, s.CompilationsPerSec);
+        Append(_recompiles, t, s.RecompilationsPerSec);
+        Append(_txns,       t, s.TransactionsPerSec);
 
-        Append(_waitCpu,    t, dCpu);
-        Append(_waitIo,     t, dIo);
-        Append(_waitLock,   t, dLock);
-        Append(_waitMem,    t, dMem);
-        Append(_waitNet,    t, dNet);
-        Append(_waitOther,  t, dOther);
+        Append(_physReads,  t, s.PhysicalReadsPerSec);
+        Append(_physWrites, t, s.PhysicalWritesPerSec);
 
-        Append(_cpuPct,     t, snap.SqlCpuUtilizationPct);
-
-        Append(_batches,    t, rBatch);
-        Append(_compiles,   t, rComp);
-        Append(_recompiles, t, rRecomp);
-        Append(_txns,       t, rTxn);
-
-        Append(_physReads,  t, rRead);
-        Append(_physWrites, t, rWrite);
-
-        Append(_ple,        t, snap.PageLifeExpectancy);
-        Append(_mgPending,  t, snap.MemoryGrantsPending);
-        Append(_bufCache,   t, snap.BufferCacheHitRatio);
+        Append(_ple,        t, s.PageLifeExpectancySec);
+        Append(_mgPending,  t, s.MemoryGrantsPending);
+        Append(_bufCache,   t, s.BufferCacheHitRatio);
     }
 
     private static void Append(ObservableCollection<DateTimePoint> series,
@@ -699,11 +717,11 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     }
 
     // ?? Toolbar handlers ??????????????????????????????????????????????
+    // Sets this connection's collection interval — it applies in the background too.
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_itemsReady || CmbInterval.SelectedIndex < 0) return;
-        _intervalSec  = Intervals[CmbInterval.SelectedIndex];
-        _remainingSec = _intervalSec;
+        _session.IntervalSeconds = Intervals[CmbInterval.SelectedIndex];
         UpdateCountdown();
     }
 
@@ -713,7 +731,8 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         BtnAutoRefresh.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40));
         BtnAutoRefresh.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40));
         BtnAutoRefresh.Background  = new SolidColorBrush(Color.FromArgb(0x22, 0xC0, 0x60, 0x00));
-        StartTimer();
+        _session.Start();
+        UpdateCountdown();
     }
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
@@ -722,8 +741,10 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         BtnAutoRefresh.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0xDD, 0x66));
         BtnAutoRefresh.BorderBrush = new SolidColorBrush(Color.FromRgb(0x44, 0xAA, 0x44));
         BtnAutoRefresh.Background  = new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x3A, 0x1E));
-        _timer.Stop();
-        TxtCountdown.Text = "--";
+
+        // Pausing stops collection for this connection entirely, including in the background.
+        _session.Pause();
+        UpdateCountdown();
     }
 
     private Border BuildWaitsPanelDirectWithFilters()
@@ -765,7 +786,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             }
             chart.Series = newSeries;
             // Force update
-            if (chart.CoreChart is not null)
+            if (chart.IsLoaded)
                 chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
         }
 
