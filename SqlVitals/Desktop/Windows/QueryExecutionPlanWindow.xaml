@@ -82,14 +82,10 @@
                     Style="{StaticResource RefreshButton}" Padding="14,7"
                     Margin="0,0,8,0" Click="BtnCopy_Click"/>
             <Button x:Name="BtnSave" Content="Save as .sqlplan"
-                    Style="{StaticResource RefreshButton}" Padding="14,7"
-                    Margin="0,0,8,0" Click="BtnSave_Click"
-                    Background="{StaticResource BgCard}"
-                    BorderBrush="{StaticResource Border}" BorderThickness="1"/>
+                    Style="{StaticResource SecondaryButton}" Padding="14,7"
+                    Margin="0,0,8,0" Click="BtnSave_Click"/>
             <Button Content="Close" Click="BtnClose_Click"
-                    Style="{StaticResource RefreshButton}" Padding="14,7"
-                    Background="{StaticResource BgCard}"
-                    BorderBrush="{StaticResource Border}" BorderThickness="1"/>
+                    Style="{StaticResource SecondaryButton}" Padding="14,7"/>
         </StackPanel>
     </Grid>
 </Window>
