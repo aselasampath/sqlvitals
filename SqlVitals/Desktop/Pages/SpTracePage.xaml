@@ -228,6 +228,13 @@
                                           FontFamily="Segoe UI" FontSize="11"
                                           Checked="FilterCheck_Changed" Unchecked="FilterCheck_Changed"
                                           ToolTip="Connection-pool resets are noise for most investigations"/>
+
+                                <CheckBox x:Name="ChkHideExecuteSql" Content="Hide sp_executesql"
+                                          IsChecked="False" Margin="10,0,0,0" VerticalAlignment="Center"
+                                          Foreground="{StaticResource TextMuted}"
+                                          FontFamily="Segoe UI" FontSize="11"
+                                          Checked="FilterCheck_Changed" Unchecked="FilterCheck_Changed"
+                                          ToolTip="Hide parameterised ad-hoc batches — note their statement text is often the real query"/>
                             </WrapPanel>
                         </DockPanel>
                     </Border>
