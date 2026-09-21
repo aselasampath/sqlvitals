@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **2.0**
+Current version: **0.10.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -15,6 +15,7 @@ Current version: **2.0**
 4. [Tech Stack & NuGet Packages](#tech-stack--nuget-packages)
 5. [Configuration](#configuration)
 6. [How to Build & Run](#how-to-build--run)
+   - [Installer (SqlVitals Setup)](#installer-sqlvitals-setup)
 7. [Navigation & Pages](#navigation--pages)
 8. [Adding a New Page — Step-by-Step](#adding-a-new-page--step-by-step)
 9. [Repository Pattern](#repository-pattern)
@@ -315,6 +316,37 @@ Start-Process "src\SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.
 ### Visual Studio
 
 Open `src/SqlVitalsDashboard.slnx`, set `SqlVitals.Desktop` as startup project, press **F5**.
+
+### Installer (SqlVitals Setup)
+
+End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`. They don't need .NET or admin rights:
+
+```powershell
+.\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
+.\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
+# → artifacts\SqlVitals-Setup-0.10.1.exe (+ .sha256)
+```
+
+**CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
+
+The script publishes `SqlVitals.Desktop` **self-contained** for win-x64, so the .NET 8 runtime is bundled. It then writes a manifest with the size and SHA-256 hash of every file, zips it, and embeds the zip in `SqlVitals.Setup.exe`. The version comes from `SqlVitals.Desktop.csproj`.
+
+**Setup wizard:** Welcome → System check → Options → Review → Install → Finish
+
+| Concern | How Setup handles it |
+|---|---|
+| Runs on a clean PC | Setup targets .NET Framework 4.7.2, which ships with Windows 10 1803+ and Windows 11. The app it installs is self-contained. |
+| System check | Windows 10 1607+ / 11, 64-bit, package intact, runtime bundled, disk space, write permission, SqlVitals not running. Each failure says how to fix it, with **Check again** and, where it helps, **Restart as administrator**. |
+| Defaults | Installs per-user to `%LocalAppData%\Programs\SqlVitals` with Start menu and desktop shortcuts, and needs no admin rights. Any other folder works too. Outside the user profile with admin rights, SqlVitals is installed for all users. |
+| Transactional install | Files are unpacked to `.setup-staging`, verified against the manifest hashes, then swapped in. Every replaced file is moved to `.setup-backup` first. A failed step offers **Retry** or **Cancel**, and Cancel rolls back every step, restoring the previous installation exactly. |
+| Upgrade / repair / reinstall | The existing install is detected from its Settings → Apps entry. Setup offers Upgrade, Repair or Replace (older package), or Uninstall. Only files listed in `install-manifest.txt` are replaced or removed. |
+| User data | `%AppData%\SqlVitals` (saved connections) is never read or changed. Uninstall deletes it only if the user ticks the box. If the user edited `appsettings.json`, their copy is kept and the new default is written as `appsettings.json.new`. |
+| Security | Nothing is downloaded, so Setup contains every file it installs. Manifest paths are validated so no file can land outside the install folder. The log (`%TEMP%\SqlVitals-Setup-*.log`) records steps and paths only. Sign release builds so users see a verified publisher. |
+| Finish | **Launch SqlVitals** (always starts non-elevated), plus next steps: add a connection in Settings and the required SQL permissions. |
+
+Settings → Apps → SqlVitals → **Modify** reopens Setup for repair or upgrade, and **Uninstall** runs `SqlVitals Setup.exe /uninstall`. Setup always hands over to a temporary copy of itself before changing the install folder.
+
+The core logic in `SqlVitals/Installer/Core/` has no WPF dependency and is covered by `SqlVitals.Installer.Tests` (`dotnet test SqlVitals/Installer.Tests`).
 
 ---
 
@@ -893,3 +925,7 @@ IF EXISTS (SELECT 1 FROM sys.database_event_sessions WHERE name = 'SqlVitals_SpT
 
 False-positive from stale Roslyn/IntelliSense cache. The `using SqlVitals.Engine.Models`
 is already present. Run an actual `dotnet build` to confirm — it will show `0 Error(s)`.
+
+## License
+
+SqlVitals is free, open-source software released under the [MIT License](LICENSE). You can use it at no cost, at home or at work, and copy, modify or redistribute it, as long as the copyright and license notice are kept.

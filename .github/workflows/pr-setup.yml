@@ -1,0 +1,88 @@
+# Builds SqlVitals Setup for every pull request so reviewers can download and try the installer.
+# The release number comes from <Version> in SqlVitals/Desktop/SqlVitals.Desktop.csproj.
+name: PR – Build SqlVitals Setup
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+# A new push to the PR supersedes the build still running for the previous one.
+concurrency:
+  group: pr-setup-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build-setup:
+    name: Build Setup
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Read release number
+        id: version
+        shell: pwsh
+        run: |
+          [xml] $proj = Get-Content SqlVitals/Desktop/SqlVitals.Desktop.csproj
+          $version = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if (-not $version) { throw 'No <Version> in SqlVitals.Desktop.csproj' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Release number: $version"
+
+      # Tests run before the payload exists, so they don't carry the ~80 MB package.
+      - name: Test installer logic
+        run: dotnet test SqlVitals/Installer.Tests/SqlVitals.Installer.Tests.csproj -c Release
+
+      - name: Test engine
+        run: dotnet test SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj -c Release
+
+      # Unsigned: signing secrets aren't available to pull requests (and never to forks).
+      - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}
+        shell: pwsh
+        run: ./SqlVitals/Installer/Build-Installer.ps1 -Configuration Release
+
+      - name: Check output
+        shell: pwsh
+        run: |
+          $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
+          if (-not (Test-Path $exe)) { throw "Expected $exe was not produced." }
+          $info = Get-Item $exe
+          $hash = (Get-Content "$exe.sha256").Split(' ')[0]
+          @(
+            "### SqlVitals Setup ${{ steps.version.outputs.version }}"
+            ""
+            "| | |"
+            "|---|---|"
+            "| File | ``$($info.Name)`` |"
+            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB |"
+            "| SHA-256 | ``$hash`` |"
+            "| Commit | ``${{ github.event.pull_request.head.sha }}`` |"
+            ""
+            "Download it from **Artifacts** below. It is unsigned, so Windows SmartScreen may ask you to confirm (More info → Run anyway)."
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload Setup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SqlVitals-Setup-${{ steps.version.outputs.version }}-pr${{ github.event.pull_request.number }}
+          path: |
+            artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe
+            artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0   # the exe is already compressed

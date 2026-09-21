@@ -1,0 +1,39 @@
+<UserControl x:Class="SqlVitals.Installer.Views.UninstallView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Style="{StaticResource PageTitle}" Text="Uninstall SqlVitals" />
+        <TextBlock x:Name="Intro" Style="{StaticResource Muted}" Margin="0,8,0,22" />
+
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Style="{StaticResource SectionTitle}" Text="What will be removed" />
+                <TextBlock Text="•  The SqlVitals program files" />
+                <TextBlock Text="•  The Start menu and desktop shortcuts" Margin="0,4,0,0" />
+                <TextBlock Text="•  SqlVitals' entry in Settings → Apps" Margin="0,4,0,0" />
+                <TextBlock Style="{StaticResource Muted}" FontSize="12" Margin="0,10,0,0"
+                           Text="Files you added to the install folder yourself are left where they are." />
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+            <StackPanel>
+                <TextBlock Style="{StaticResource SectionTitle}" Text="Your saved connections" />
+                <TextBlock Style="{StaticResource Muted}"
+                           Text="Kept by default, so if you install SqlVitals again your connections are still there." />
+                <CheckBox x:Name="RemoveData" Margin="0,12,0,0"
+                          Content="Also delete my saved connections and settings" />
+                <TextBlock x:Name="DataPath" Style="{StaticResource Muted}" FontSize="12" Margin="22,4,0,0" />
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="ElevatePanel" Background="{StaticResource WarningSoft}" CornerRadius="8" Padding="14,12"
+                Margin="0,12,0,0" Visibility="Collapsed">
+            <StackPanel>
+                <TextBlock Text="SqlVitals was installed for all users of this PC, so removing it needs administrator rights." />
+                <Button Content="Restart as administrator" Style="{StaticResource SecondaryButton}"
+                        HorizontalAlignment="Left" Margin="0,10,0,0" Click="Elevate_Click" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

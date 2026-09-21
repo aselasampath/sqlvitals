@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    SqlVitals Setup — guided installer.
+
+    Targets .NET Framework 4.7.2 on purpose: it ships with Windows 10 1803+ and Windows 11,
+    so Setup runs on a clean machine without the user installing anything first. The app it
+    installs is published self-contained, so no .NET 8 runtime is needed either.
+
+    The application files are embedded as a single resource (SqlVitals.payload.zip). Build the
+    real installer with build/Build-Installer.ps1; a plain `dotnet build` produces a Setup with
+    no payload, which says so on start-up.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>SqlVitals.Setup</AssemblyName>
+    <RootNamespace>SqlVitals.Installer</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\Branding\SqlVitals.ico</ApplicationIcon>
+    <!-- Build-Installer.ps1 overrides this with the version from SqlVitals.Desktop.csproj. -->
+    <Version>0.10.1</Version>
+    <Product>SqlVitals</Product>
+    <Company>SqlVitals</Company>
+    <AssemblyTitle>SqlVitals Setup</AssemblyTitle>
+    <!-- Everything Setup needs is in the Framework, so the output is one self-contained exe. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SqlVitals.Installer.Tests" />
+  </ItemGroup>
+
+  <!-- Shown on the License page; the repository's LICENSE is the single source of truth. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\LICENSE" LogicalName="SqlVitals.LICENSE.txt" Link="LICENSE" />
+  </ItemGroup>
+
+  <!-- Payload produced by build/Build-Installer.ps1 (pass -p:PayloadPath=... to embed another one). -->
+  <PropertyGroup>
+    <PayloadPath Condition="'$(PayloadPath)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\payload\SqlVitals.payload.zip</PayloadPath>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(PayloadPath)')">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="SqlVitals.payload.zip" Link="SqlVitals.payload.zip" />
+  </ItemGroup>
+
+</Project>

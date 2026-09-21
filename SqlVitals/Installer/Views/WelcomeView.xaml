@@ -1,0 +1,46 @@
+<UserControl x:Class="SqlVitals.Installer.Views.WelcomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Style="{StaticResource PageTitle}" Text="Welcome to SqlVitals Setup" />
+        <TextBlock x:Name="Intro" Style="{StaticResource Muted}" Margin="0,8,0,22" />
+
+        <!-- Fresh install -->
+        <Border x:Name="FreshPanel" Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Style="{StaticResource SectionTitle}" Text="What happens next" />
+                <TextBlock Margin="0,4,0,0"><Run FontWeight="SemiBold" Text="1.  Check your PC" /> — Setup makes sure Windows, disk space and permissions are ready.</TextBlock>
+                <TextBlock Margin="0,8,0,0"><Run FontWeight="SemiBold" Text="2.  Choose options" /> — where to install and whether you want a desktop shortcut. The defaults suit most people.</TextBlock>
+                <TextBlock Margin="0,8,0,0"><Run FontWeight="SemiBold" Text="3.  Install" /> — Setup copies and verifies the files, then you can open SqlVitals straight away.</TextBlock>
+                <Border Background="{StaticResource AccentSoft}" CornerRadius="6" Padding="12,10" Margin="0,16,0,0">
+                    <TextBlock Text="It usually takes under a minute. Everything SqlVitals needs is included (there's nothing else to install, and nothing is downloaded), and the default location doesn't need administrator rights." />
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Already installed: repair / upgrade / uninstall -->
+        <Border x:Name="ExistingPanel" Style="{StaticResource Card}" Visibility="Collapsed">
+            <StackPanel>
+                <TextBlock x:Name="ExistingTitle" Style="{StaticResource SectionTitle}" />
+                <TextBlock x:Name="ExistingLocation" Style="{StaticResource Muted}" Margin="0,0,0,16" />
+
+                <RadioButton x:Name="OptPrimary" GroupName="Mode" IsChecked="True">
+                    <StackPanel Margin="4,0,0,0">
+                        <TextBlock x:Name="OptPrimaryTitle" FontWeight="SemiBold" />
+                        <TextBlock x:Name="OptPrimaryDetail" Style="{StaticResource Muted}" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="OptUninstall" GroupName="Mode">
+                    <StackPanel Margin="4,0,0,0">
+                        <TextBlock Text="Uninstall SqlVitals" FontWeight="SemiBold" />
+                        <TextBlock Style="{StaticResource Muted}" Text="Removes the program, its shortcuts and its entry in Settings → Apps." />
+                    </StackPanel>
+                </RadioButton>
+
+                <Border Background="{StaticResource SuccessSoft}" CornerRadius="6" Padding="12,10" Margin="0,6,0,0">
+                    <TextBlock Text="Your saved connections and settings are kept whichever option you choose. Uninstall deletes them only if you tick the box that asks it to." />
+                </Border>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>
