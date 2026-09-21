@@ -8,8 +8,11 @@
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>2.0.0</Version>
-    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
+    <Version>0.10.1</Version>
+    <AssemblyVersion>0.10.1.0</AssemblyVersion>
+    <!-- Exe, taskbar and window icon. Regenerate with Branding/Build-Icon.ps1. -->
+    <ApplicationIcon>..\Branding\SqlVitals.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Reuse models + repository directly — no HTTP, no Kestrel -->

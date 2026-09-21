@@ -6,6 +6,7 @@ obj/
 .vs/
 *.dll
 *.pdb
+artifacts/
 
 ## Node
 node_modules/
