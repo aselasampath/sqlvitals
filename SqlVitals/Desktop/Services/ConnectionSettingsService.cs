@@ -7,7 +7,7 @@ using Microsoft.Data.SqlClient;
 namespace SqlVitals.Desktop.Services;
 
 /// <summary>
-/// Persists SQL Server connection settings to a per-user encrypted file.
+/// Persists the user's saved SQL Server connections to a per-user encrypted file.
 /// The connection details are protected with Windows DPAPI (current-user scope)
 /// so they are unreadable by other OS accounts.
 /// </summary>
@@ -18,67 +18,170 @@ public class ConnectionSettingsService
 
     private static readonly string SettingsFile = Path.Combine(SettingsDir, "settings.dat");
 
+    private static readonly JsonSerializerOptions FileJsonOptions = new()
+    {
+        WriteIndented          = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    // Passwords for connections without "Remember password", held for this process only so
+    // switching back to such a connection doesn't ask for the password again.
+    private readonly Dictionary<Guid, string> _sessionPasswords = new();
+
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /// <summary>Loads settings from disk. Returns defaults when no file exists.</summary>
-    public ConnectionSettings Load()
+    /// <summary>Loads the saved connections from disk. Returns an empty store when no file exists.</summary>
+    public ConnectionStore Load()
+    {
+        var store = ReadFile();
+
+        foreach (var conn in store.Connections)
+        {
+            conn.CommandTimeoutSeconds = store.CommandTimeoutSeconds;
+            if (string.IsNullOrEmpty(conn.Password) && _sessionPasswords.TryGetValue(conn.Id, out var pwd))
+                conn.Password = pwd;
+        }
+
+        // Never point at a connection that no longer exists.
+        if (store.ActiveConnectionId is { } id && store.Connections.All(c => c.Id != id))
+            store.ActiveConnectionId = null;
+
+        return store;
+    }
+
+    /// <summary>Adds the connection, or replaces the saved one with the same <see cref="ConnectionSettings.Id"/>.</summary>
+    public void Upsert(ConnectionSettings settings)
+    {
+        var store = Load();
+        var index = store.Connections.FindIndex(c => c.Id == settings.Id);
+        if (index >= 0)
+            store.Connections[index] = settings.Clone();
+        else
+            store.Connections.Add(settings.Clone());
+
+        store.CommandTimeoutSeconds = settings.CommandTimeoutSeconds;
+
+        if (settings.SavePassword || string.IsNullOrEmpty(settings.Password))
+            _sessionPasswords.Remove(settings.Id);
+        else
+            _sessionPasswords[settings.Id] = settings.Password;
+
+        Save(store);
+    }
+
+    /// <summary>Removes a saved connection. Clears the active connection when it was the one removed.</summary>
+    public void Remove(Guid id)
+    {
+        var store = Load();
+        store.Connections.RemoveAll(c => c.Id == id);
+        if (store.ActiveConnectionId == id)
+            store.ActiveConnectionId = null;
+
+        _sessionPasswords.Remove(id);
+        Save(store);
+    }
+
+    /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
+    public void SetActive(Guid? id)
+    {
+        var store = Load();
+        store.ActiveConnectionId = id is { } value && store.Connections.Any(c => c.Id == value) ? value : null;
+        Save(store);
+    }
+
+    /// <summary>
+    /// Masks password values in a message before it is shown, in case a driver or parser
+    /// error echoes part of a connection string back.
+    /// </summary>
+    public static string RedactSecrets(string message) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            message ?? string.Empty,
+            @"(?i)\b(password|pwd)(\s*=\s*)(""[^""]*""|'[^']*'|[^;""']*)",
+            "$1$2*****");
+
+    // ── File I/O ──────────────────────────────────────────────────────────────
+
+    private static ConnectionStore ReadFile()
     {
         if (!File.Exists(SettingsFile))
-            return new ConnectionSettings();
+            return new ConnectionStore();
 
         try
         {
-            var json = File.ReadAllText(SettingsFile);
-            var raw  = JsonSerializer.Deserialize<RawSettings>(json);
-            if (raw is null) return new ConnectionSettings();
+            var raw = JsonSerializer.Deserialize<RawSettings>(File.ReadAllText(SettingsFile));
+            if (raw is null) return new ConnectionStore();
 
-            ConnectionSettings settings;
-            if (!string.IsNullOrWhiteSpace(raw.EncryptedConnection))
+            var store = new ConnectionStore
             {
-                settings = JsonSerializer.Deserialize<ConnectionSettings>(Decrypt(raw.EncryptedConnection))
-                           ?? new ConnectionSettings();
-            }
-            else if (!string.IsNullOrWhiteSpace(raw.EncryptedConnectionString))
+                CommandTimeoutSeconds = raw.CommandTimeoutSeconds > 0 ? raw.CommandTimeoutSeconds : 30,
+                ActiveConnectionId    = raw.ActiveConnectionId,
+            };
+
+            if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
             {
-                // Settings saved before the connection form existed held a raw connection string.
-                settings = ConnectionSettings.FromConnectionString(Decrypt(raw.EncryptedConnectionString));
+                store.Connections = JsonSerializer.Deserialize<List<ConnectionSettings>>(Decrypt(raw.EncryptedConnections))
+                                    ?? new List<ConnectionSettings>();
             }
             else
             {
-                settings = new ConnectionSettings();
+                // Files written before multiple connections held a single one; carry it over as
+                // the active connection so upgrading doesn't lose it.
+                ConnectionSettings? legacy = null;
+                if (!string.IsNullOrWhiteSpace(raw.EncryptedConnection))
+                    legacy = JsonSerializer.Deserialize<ConnectionSettings>(Decrypt(raw.EncryptedConnection));
+                else if (!string.IsNullOrWhiteSpace(raw.EncryptedConnectionString))
+                    // Older still: a raw connection string from before the connection form existed.
+                    legacy = ConnectionSettings.FromConnectionString(Decrypt(raw.EncryptedConnectionString));
+
+                if (legacy is { IsConfigured: true })
+                {
+                    legacy.Id = Guid.NewGuid();
+                    store.Connections.Add(legacy);
+                    store.ActiveConnectionId = legacy.Id;
+                }
+
+                // Write the new format straight away: the Id is generated here, so leaving the
+                // old file in place would hand out a different Id on every load.
+                try { Save(store); } catch { /* retried on the next load */ }
             }
 
-            settings.CommandTimeoutSeconds = raw.CommandTimeoutSeconds;
-            return settings;
+            // Guard against hand-edited files; persist so the Ids stay stable.
+            var missingIds = store.Connections.Where(c => c.Id == Guid.Empty).ToList();
+            foreach (var conn in missingIds)
+                conn.Id = Guid.NewGuid();
+            if (missingIds.Count > 0)
+                try { Save(store); } catch { /* retried on the next load */ }
+
+            return store;
         }
         catch
         {
-            return new ConnectionSettings();
+            return new ConnectionStore();
         }
     }
 
-    /// <summary>Saves settings to disk. Connection details are encrypted before writing.</summary>
-    public void Save(ConnectionSettings settings)
+    private static void Save(ConnectionStore store)
     {
         Directory.CreateDirectory(SettingsDir);
 
-        // The password only reaches disk when the user asked for it to be remembered.
-        var toStore = settings.Clone();
-        if (!toStore.SavePassword)
-            toStore.Password = string.Empty;
+        // A password only reaches disk when the user asked for it to be remembered.
+        var toStore = store.Connections.Select(c =>
+        {
+            var copy = c.Clone();
+            if (!copy.SavePassword)
+                copy.Password = string.Empty;
+            return copy;
+        }).ToList();
 
         var raw = new RawSettings
         {
-            EncryptedConnection   = Encrypt(JsonSerializer.Serialize(toStore)),
-            CommandTimeoutSeconds = settings.CommandTimeoutSeconds
+            EncryptedConnections  = Encrypt(JsonSerializer.Serialize(toStore)),
+            ActiveConnectionId    = store.ActiveConnectionId,
+            CommandTimeoutSeconds = store.CommandTimeoutSeconds,
         };
 
-        var json = JsonSerializer.Serialize(raw, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(SettingsFile, json);
+        File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
     }
-
-    /// <summary>Returns true when a settings file with a server already exists.</summary>
-    public bool HasSavedSettings() => Load().IsConfigured;
 
     // ── DPAPI helpers ─────────────────────────────────────────────────────────
 
@@ -100,13 +203,25 @@ public class ConnectionSettingsService
 
     private sealed class RawSettings
     {
-        public string EncryptedConnection       { get; set; } = string.Empty;
+        public string? EncryptedConnections      { get; set; }
+        public Guid?   ActiveConnectionId        { get; set; }
+        public int     CommandTimeoutSeconds     { get; set; } = 30;
 
-        // Legacy: read on load, never written.
-        public string EncryptedConnectionString { get; set; } = string.Empty;
-
-        public int    CommandTimeoutSeconds     { get; set; } = 30;
+        // Legacy single-connection formats: read on load, never written.
+        public string? EncryptedConnection       { get; set; }
+        public string? EncryptedConnectionString { get; set; }
     }
+}
+
+/// <summary>Decrypted, in-memory view of everything in the settings file.</summary>
+public class ConnectionStore
+{
+    public List<ConnectionSettings> Connections           { get; set; } = new();
+    public Guid?                    ActiveConnectionId    { get; set; }
+    public int                      CommandTimeoutSeconds { get; set; } = 30;
+
+    public ConnectionSettings? Active =>
+        ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;
 }
 
 public enum SqlAuthMode
@@ -123,9 +238,14 @@ public enum EncryptMode
     Strict,
 }
 
-/// <summary>Decrypted, in-memory view of the user's connection settings.</summary>
+/// <summary>Decrypted, in-memory view of one saved connection.</summary>
 public class ConnectionSettings
 {
+    public Guid        Id                     { get; set; } = Guid.NewGuid();
+
+    /// <summary>User-chosen label for the connection selector. Blank means use <see cref="DefaultName"/>.</summary>
+    public string      Name                   { get; set; } = string.Empty;
+
     public string      Server                 { get; set; } = string.Empty;
     public SqlAuthMode Authentication         { get; set; } = SqlAuthMode.SqlServer;
     public string      UserName               { get; set; } = string.Empty;
@@ -152,6 +272,29 @@ public class ConnectionSettings
 
     [System.Text.Json.Serialization.JsonIgnore]
     public string ConnectionString => IsConfigured ? BuildConnectionString() : string.Empty;
+
+    // ── Display (never includes credentials) ──────────────────────────────────
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DefaultName => string.IsNullOrWhiteSpace(Database) ? Server.Trim() : $"{Server.Trim()} / {Database.Trim()}";
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? DefaultName : Name.Trim();
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DatabaseLabel => string.IsNullOrWhiteSpace(Database) ? "(default database)" : Database.Trim();
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string AuthenticationLabel => Authentication switch
+    {
+        SqlAuthMode.EntraMfa => "Entra MFA",
+        SqlAuthMode.Windows  => "Windows",
+        _                    => "SQL login",
+    };
+
+    /// <summary>One-line summary for lists and tooltips, e.g. "myserver · Sales · SQL login".</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Summary => $"{Server.Trim()} · {DatabaseLabel} · {AuthenticationLabel}";
 
     /// <summary>Builds the ADO.NET connection string, optionally targeting a different database.</summary>
     public string BuildConnectionString(string? databaseOverride = null)

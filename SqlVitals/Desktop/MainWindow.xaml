@@ -22,20 +22,40 @@
                     <TextBlock x:Name="AppVersionText" Text="" Foreground="{DynamicResource TextMuted}"
                                FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
                     <Separator Background="{DynamicResource Border}" Margin="0,10,0,8" />
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
-                        <TextBlock Text="🖥  " Foreground="{DynamicResource TextMuted}" FontSize="10" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="TxtServerName" Text="—"
-                                   Foreground="{DynamicResource TextPrimary}"
-                                   FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="🗄  " Foreground="{DynamicResource TextMuted}" FontSize="10" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="TxtDatabaseName" Text="—"
-                                   Foreground="{DynamicResource TextPrimary}"
-                                   FontFamily="Segoe UI" FontSize="10"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                    </StackPanel>
+
+                    <!-- Active connection selector -->
+                    <DockPanel Margin="0,0,0,4">
+                        <TextBlock DockPanel.Dock="Right" FontFamily="Segoe UI" FontSize="10">
+                            <Hyperlink Click="ManageConnections_Click" Foreground="{DynamicResource AccentLight}"
+                                       ToolTip="Add, edit or remove saved connections">Manage</Hyperlink>
+                        </TextBlock>
+                        <TextBlock Text="ACTIVE CONNECTION" Foreground="{DynamicResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ComboBox x:Name="CmbConnection"
+                              FontFamily="Segoe UI" FontSize="11"
+                              Background="{DynamicResource BgCard}"
+                              Foreground="{DynamicResource TextPrimary}"
+                              BorderBrush="{DynamicResource Accent}"
+                              ItemContainerStyle="{DynamicResource DarkComboItem}"
+                              AutomationProperties.Name="Active connection"
+                              SelectionChanged="CmbConnection_SelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,1" ToolTip="{Binding Summary}">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock FontSize="10" Opacity="0.75" TextTrimming="CharacterEllipsis">
+                                        <Run Text="{Binding Server, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding DatabaseLabel, Mode=OneWay}" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock x:Name="TxtNoActiveConnection"
+                               Foreground="{DynamicResource Warning}"
+                               FontFamily="Segoe UI" FontSize="10" TextWrapping="Wrap"
+                               Margin="0,4,0,0" Visibility="Collapsed" />
                 </StackPanel>
 
                 <!-- Nav -->

@@ -11,9 +11,88 @@
             <TextBlock Text="Connection Settings"
                        Style="{StaticResource SectionHeader}"
                        FontSize="20" Margin="0,0,0,4" />
-            <TextBlock Text="Configure the SQL Server connection used by all dashboard pages. Connection details are stored encrypted on this machine."
+            <TextBlock Text="Save connections to each SQL Server environment you monitor, then switch between them from the selector in the sidebar. Connection details are stored encrypted on this machine."
                        Foreground="{StaticResource TextMuted}" FontSize="12"
                        TextWrapping="Wrap" Margin="0,0,0,24" />
+
+            <!-- Saved connections card -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,16">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button x:Name="BtnNewConnection" Style="{StaticResource SecondaryButton}"
+                                    Padding="12,5" Margin="0,0,8,0" Click="BtnNewConnection_Click"
+                                    Content="+  New connection" />
+                            <Button x:Name="BtnRemoveConnection" Style="{StaticResource SecondaryButton}"
+                                    Padding="12,5" Click="BtnRemoveConnection_Click"
+                                    Content="🗑  Remove" IsEnabled="False" />
+                        </StackPanel>
+                        <TextBlock Text="Saved Connections"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <TextBlock x:Name="TxtNoConnections"
+                               Text="No saved connections yet. Fill in the form below and click Save &amp; Connect to add your first one."
+                               Foreground="{StaticResource TextMuted}" FontSize="12"
+                               TextWrapping="Wrap" Visibility="Collapsed" />
+
+                    <ListBox x:Name="LstConnections"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             SelectionChanged="LstConnections_SelectionChanged">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Cursor" Value="Hand" />
+                                <Setter Property="Margin" Value="0,0,0,4" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                                    BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                                    Padding="12,8">
+                                                <ContentPresenter />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentLight}" />
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#337C3AED" />
+                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Right" VerticalAlignment="Center"
+                                            Background="{StaticResource Success}" CornerRadius="4" Padding="7,2"
+                                            Visibility="{Binding ActiveVisibility}">
+                                        <TextBlock Text="● ACTIVE" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                    </Border>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Settings.DisplayName}"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   FontSize="13" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Settings.Summary}"
+                                                   Foreground="{StaticResource TextMuted}"
+                                                   FontSize="11" Margin="0,2,0,0"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
 
             <!-- Connect to Server card -->
             <Border Style="{StaticResource KpiCard}" Margin="0,0,0,16">
@@ -70,7 +149,7 @@
                 </Border.Resources>
 
                 <StackPanel>
-                    <TextBlock Text="Connect to Server"
+                    <TextBlock x:Name="TxtFormTitle" Text="New Connection"
                                Foreground="{StaticResource TextMuted}"
                                FontSize="11" FontWeight="SemiBold"
                                Margin="0,0,0,14" />
@@ -89,7 +168,17 @@
                             <RowDefinition Height="Auto" />  <!-- 5 Database -->
                             <RowDefinition Height="Auto" />  <!-- 6 Encrypt -->
                             <RowDefinition Height="Auto" />  <!-- 7 Trust server cert -->
+                            <RowDefinition Height="Auto" />  <!-- 8 Connection name -->
                         </Grid.RowDefinitions>
+
+                        <!-- Connection name -->
+                        <TextBlock Grid.Row="8" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,19,12,0"
+                                   Text="Connection name" />
+                        <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,12,0,0">
+                            <TextBox x:Name="TxtConnectionName" Style="{StaticResource FieldTextBox}" />
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Shown in the sidebar connection selector, e.g. Production or UAT. Leave blank to use server / database." />
+                        </StackPanel>
 
                         <!-- Server name -->
                         <TextBlock Grid.Row="0" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0">
@@ -246,11 +335,24 @@
                 </Button>
 
                 <Button x:Name="BtnSave"
-                        Style="{StaticResource RefreshButton}"
+                        Style="{StaticResource SecondaryButton}"
                         Padding="18,9"
+                        Margin="0,0,12,0"
+                        ToolTip="Validate and save this connection without switching to it"
                         Click="BtnSave_Click">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#x1F4BE;" FontFamily="Segoe UI Emoji" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Save" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="BtnSaveAndConnect"
+                        Style="{StaticResource RefreshButton}"
+                        Padding="18,9"
+                        ToolTip="Validate and save this connection, then make it the active connection"
+                        Click="BtnSaveAndConnect_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x26A1;" FontFamily="Segoe UI Emoji" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0" />
                         <TextBlock Text="Save &amp; Connect" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>

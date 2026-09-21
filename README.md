@@ -198,8 +198,23 @@ Edit **`src/SqlVitals/Engine/appsettings.json`** before running:
 The file is linked into `SqlVitals/Desktop/bin/Debug/net8.0-windows/appsettings.json`
 automatically by the `.csproj` `<None Update>` entry — you only need to edit it once.
 
-Connection settings entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
-to `%AppData%\SqlVitals\settings.dat` and override the connection string from `appsettings.json`.
+Connections entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
+to `%AppData%\SqlVitals\settings.dat`, and the active one overrides the connection string from `appsettings.json`.
+
+### Multiple connections
+
+You can save any number of connections (e.g. Production, UAT, Dev) and switch between them with the
+**Active connection** selector at the top of the sidebar. No restart is needed.
+
+- **Save** checks the connection against the server, then adds or updates it. A connection that fails the check is not saved.
+  **Save & Connect** also makes it the active connection.
+- Switching reopens the current page against the new database. Loads still running against the previous
+  database are discarded, so its data is never shown under the new connection.
+- Passwords reach disk only when **Remember password** is ticked. Otherwise they are kept in memory for the
+  current session, so you are asked once per app launch.
+- Credentials are never shown in the connection list, the selector or error messages. The *Additional parameters*
+  field rejects `Password`/`User ID`.
+- Settings files from earlier versions (one connection) are migrated automatically to a single active connection.
 
 ---
 

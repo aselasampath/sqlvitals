@@ -11,8 +11,15 @@ public partial class SettingsPage : Page
 {
     private readonly ConnectionSettingsService _service;
 
-    // Applies saved settings to the running app. The bool asks it to open the dashboard.
-    private readonly Func<ConnectionSettings, bool, Task> _applySettings;
+    // Tells the running app the saved connections changed so it can pick up a new or edited
+    // active connection. The bool asks it to open the dashboard afterwards.
+    private readonly Func<bool, Task> _applyConnections;
+
+    // The saved connection the form is editing; null while adding a new one.
+    private Guid? _editingId;
+
+    // Set while the list is repopulated in code, so the selection handler doesn't reload the form.
+    private bool _isPopulatingList;
 
     // Connection string the database list was last loaded with. Any change to the server or
     // credentials clears it, so reopening the list queries the new server.
@@ -21,13 +28,25 @@ public partial class SettingsPage : Page
 
     public SettingsPage(
         ConnectionSettingsService service,
-        Func<ConnectionSettings, bool, Task> applySettings,
-        string? initialMessage = null)
+        Func<bool, Task> applyConnections,
+        string? initialMessage = null,
+        Guid? selectConnectionId = null)
     {
         InitializeComponent();
-        _service       = service;
-        _applySettings = applySettings;
-        LoadCurrentSettings();
+        _service          = service;
+        _applyConnections = applyConnections;
+
+        var store = _service.Load();
+        TxtTimeout.Text = store.CommandTimeoutSeconds.ToString();
+        var initial = (selectConnectionId is { } id ? store.Connections.FirstOrDefault(c => c.Id == id) : null)
+                      ?? store.Active
+                      ?? store.Connections.FirstOrDefault();
+        PopulateConnectionList(store, initial?.Id);
+        if (initial is not null)
+            LoadIntoForm(initial);
+        else
+            ClearForm();
+
         var app = (App)Application.Current;
         BtnThemeToggle.Content = app.IsDarkTheme ? "☀  Light" : "🌙  Dark";
 
@@ -35,63 +54,149 @@ public partial class SettingsPage : Page
             SetStatus(initialMessage, success: null);
     }
 
-    private void LoadCurrentSettings()
+    // ── Saved connections list ────────────────────────────────────────────────
+
+    private void PopulateConnectionList(ConnectionStore store, Guid? selectId)
     {
-        var settings = _service.Load();
+        _isPopulatingList = true;
+        try
+        {
+            var items = store.Connections
+                .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(c => new ConnectionListItem(c, c.Id == store.ActiveConnectionId))
+                .ToList();
 
-        TxtServer.Text                      = settings.Server;
-        SelectByTag(CmbAuthentication, settings.Authentication.ToString());
-        TxtUserName.Text                    = settings.UserName;
-        TxtPassword.Password                = settings.Password;
-        ChkSavePassword.IsChecked           = settings.SavePassword;
-        CmbDatabase.Text                    = settings.Database;
-        SelectByTag(CmbEncrypt, settings.Encrypt.ToString());
-        ChkTrustServerCertificate.IsChecked = settings.TrustServerCertificate;
-        TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
-        TxtAdditionalParameters.Text        = settings.AdditionalParameters;
-        TxtTimeout.Text                     = settings.CommandTimeoutSeconds.ToString();
-
-        ApplyAuthenticationLayout();
+            LstConnections.ItemsSource  = items;
+            LstConnections.SelectedItem = items.FirstOrDefault(i => i.Settings.Id == selectId);
+            LstConnections.Visibility   = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            TxtNoConnections.Visibility = items.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            BtnRemoveConnection.IsEnabled = LstConnections.SelectedItem is not null;
+        }
+        finally
+        {
+            _isPopulatingList = false;
+        }
     }
 
-    private async void BtnSave_Click(object sender, RoutedEventArgs e)
+    private void LstConnections_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        BtnRemoveConnection.IsEnabled = LstConnections.SelectedItem is not null;
+        if (_isPopulatingList || LstConnections.SelectedItem is not ConnectionListItem item)
+            return;
+
+        LoadIntoForm(item.Settings);
+        SetStatus(string.Empty, success: null);
+    }
+
+    private void BtnNewConnection_Click(object sender, RoutedEventArgs e)
+    {
+        _isPopulatingList = true;
+        LstConnections.SelectedItem = null;
+        _isPopulatingList = false;
+        BtnRemoveConnection.IsEnabled = false;
+
+        ClearForm();
+        TxtServer.Focus();
+        SetStatus("Enter the details for the new connection, then click Save or Save & Connect.", success: null);
+    }
+
+    private async void BtnRemoveConnection_Click(object sender, RoutedEventArgs e)
+    {
+        if (LstConnections.SelectedItem is not ConnectionListItem item)
+            return;
+
+        var confirm = MessageBox.Show(
+            $"Remove the connection \"{item.Settings.DisplayName}\" ({item.Settings.Server})?\n\nThis cannot be undone.",
+            "Remove Connection", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            _service.Remove(item.Settings.Id);
+            await _applyConnections(false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to remove the connection: {Redact(ex.Message)}", success: false);
+            return;
+        }
+
+        var store = _service.Load();
+        PopulateConnectionList(store, selectId: null);
+        ClearForm();
+
+        if (!item.IsActive)
+            SetStatus($"Removed \"{item.Settings.DisplayName}\".", success: true);
+        else if (store.Connections.Count > 0)
+            SetStatus($"Removed \"{item.Settings.DisplayName}\", which was the active connection. " +
+                      "Select another connection in the sidebar (or above, then Save & Connect), or add a new one.",
+                      success: null);
+        else
+            SetStatus($"Removed \"{item.Settings.DisplayName}\". No connections are left — add a new one below to continue.",
+                      success: null);
+    }
+
+    // ── Save / test ───────────────────────────────────────────────────────────
+
+    private async void BtnSave_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: false);
+
+    private async void BtnSaveAndConnect_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: true);
+
+    // Validates the connection against the server, then adds or updates it. Nothing is saved
+    // when the server can't be reached, so the list only ever holds working connections.
+    private async Task SaveAsync(bool connect)
     {
         if (!TryReadInputs(out var settings))
             return;
 
-        try
+        var store = _service.Load();
+        var duplicate = store.Connections.FirstOrDefault(c =>
+            c.Id != settings.Id && string.Equals(c.DisplayName, settings.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+        if (duplicate is not null)
         {
-            _service.Save(settings);
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Failed to save: {ex.Message}", success: false);
+            SetStatus($"A connection named \"{settings.DisplayName}\" already exists. Enter a different connection name.", success: false);
+            TxtConnectionName.Focus();
             return;
         }
 
-        BtnSave.IsEnabled = false;
-        BtnTestConnection.IsEnabled = false;
-        SetStatus(ConnectingMessage(settings, "Settings saved. Connecting…"), success: null);
+        SetBusy(true);
+        SetStatus(ConnectingMessage(settings, "Validating connection…"), success: null);
 
         try
         {
             var error = await TryOpenConnectionAsync(settings.ConnectionString);
-
-            // Apply even when the server is unreachable, so the app never keeps using a
-            // connection the user has replaced. Only open the dashboard when it works.
-            await _applySettings(settings, error is null);
-
             if (error is not null)
-                SetStatus($"Settings saved, but the connection failed: {error}", success: false);
+            {
+                SetStatus($"Connection failed — not saved: {error}", success: false);
+                return;
+            }
+
+            _service.Upsert(settings);
+
+            // The first connection saved becomes active, so the dashboard has something to show.
+            var makeActive = connect || store.ActiveConnectionId is null;
+            if (makeActive)
+                _service.SetActive(settings.Id);
+
+            _editingId = settings.Id;
+            PopulateConnectionList(_service.Load(), settings.Id);
+            TxtFormTitle.Text = $"Edit Connection — {settings.DisplayName}";
+
+            await _applyConnections(connect);
+
+            SetStatus(makeActive
+                ? $"Connection \"{settings.DisplayName}\" saved and is now active."
+                : $"Connection \"{settings.DisplayName}\" saved. Switch to it from the sidebar selector.",
+                success: true);
         }
         catch (Exception ex)
         {
-            SetStatus($"Settings saved, but could not be applied: {ex.Message}", success: false);
+            SetStatus($"Failed to save: {Redact(ex.Message)}", success: false);
         }
         finally
         {
-            BtnSave.IsEnabled = true;
-            BtnTestConnection.IsEnabled = true;
+            SetBusy(false);
         }
     }
 
@@ -117,7 +222,7 @@ public partial class SettingsPage : Page
         }
     }
 
-    // Returns null on success, otherwise the failure message.
+    // Returns null on success, otherwise the failure message with any credentials masked.
     private static async Task<string?> TryOpenConnectionAsync(string connStr)
     {
         try
@@ -128,15 +233,57 @@ public partial class SettingsPage : Page
         }
         catch (Exception ex)
         {
-            return ex.Message;
+            return Redact(ex.Message);
         }
+    }
+
+    private void SetBusy(bool busy)
+    {
+        BtnSave.IsEnabled             = !busy;
+        BtnSaveAndConnect.IsEnabled   = !busy;
+        BtnTestConnection.IsEnabled   = !busy;
+        BtnNewConnection.IsEnabled    = !busy;
+        BtnRemoveConnection.IsEnabled = !busy && LstConnections.SelectedItem is not null;
+        LstConnections.IsEnabled      = !busy;
     }
 
     private void BtnThemeToggle_Click(object sender, RoutedEventArgs e)
     {
         var app = (App)Application.Current;
         app.ToggleTheme();
-        NavigationService?.Navigate(new SettingsPage(_service, _applySettings));
+        NavigationService?.Navigate(new SettingsPage(_service, _applyConnections, selectConnectionId: _editingId));
+    }
+
+    // ── Form ──────────────────────────────────────────────────────────────────
+
+    private void LoadIntoForm(ConnectionSettings settings)
+    {
+        _editingId = settings.Id;
+        TxtFormTitle.Text = $"Edit Connection — {settings.DisplayName}";
+
+        TxtConnectionName.Text              = settings.Name;
+        TxtServer.Text                      = settings.Server;
+        SelectByTag(CmbAuthentication, settings.Authentication.ToString());
+        TxtUserName.Text                    = settings.UserName;
+        TxtPassword.Password                = settings.Password;
+        ChkSavePassword.IsChecked           = settings.SavePassword;
+        CmbDatabase.ItemsSource             = null;
+        CmbDatabase.Text                    = settings.Database;
+        SelectByTag(CmbEncrypt, settings.Encrypt.ToString());
+        ChkTrustServerCertificate.IsChecked = settings.TrustServerCertificate;
+        TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
+        TxtAdditionalParameters.Text        = settings.AdditionalParameters;
+
+        _databaseListSource = null;
+        ApplyAuthenticationLayout();
+    }
+
+    private void ClearForm()
+    {
+        var blank = new ConnectionSettings();
+        LoadIntoForm(blank);
+        _editingId        = null;
+        TxtFormTitle.Text = "New Connection";
     }
 
     // ── Connection form ───────────────────────────────────────────────────────
@@ -254,6 +401,8 @@ public partial class SettingsPage : Page
         var auth = SelectedAuthentication();
         settings = new ConnectionSettings
         {
+            Id                     = _editingId ?? Guid.NewGuid(),
+            Name                   = TxtConnectionName.Text.Trim(),
             Server                 = TxtServer.Text.Trim(),
             Authentication         = auth,
             UserName               = auth == SqlAuthMode.Windows ? string.Empty : TxtUserName.Text.Trim(),
@@ -300,16 +449,33 @@ public partial class SettingsPage : Page
 
         try
         {
+            // Credentials typed here would sit in plain text in a visible field, and the
+            // form's own fields would silently override them anyway.
+            var extra = new SqlConnectionStringBuilder(settings.AdditionalParameters);
+            if (!string.IsNullOrEmpty(extra.Password) || !string.IsNullOrEmpty(extra.UserID))
+            {
+                error = "Additional parameters must not contain a user name or password. Use the Login and Password fields instead.";
+                return false;
+            }
+
             _ = settings.BuildConnectionString();
         }
         catch (Exception ex)
         {
-            error = $"Additional parameters are not valid: {ex.Message}";
+            error = $"Additional parameters are not valid: {Redact(ex.Message)}";
             return false;
         }
 
         error = null;
         return true;
+    }
+
+    private static string Redact(string message) => ConnectionSettingsService.RedactSecrets(message);
+
+    /// <summary>Row in the saved connections list.</summary>
+    public sealed record ConnectionListItem(ConnectionSettings Settings, bool IsActive)
+    {
+        public Visibility ActiveVisibility => IsActive ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void SetStatus(string message, bool? success)
