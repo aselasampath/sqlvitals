@@ -19,7 +19,7 @@ Current version: **0.10.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj`
 7. [Navigation & Pages](#navigation--pages)
 8. [Adding a New Page — Step-by-Step](#adding-a-new-page--step-by-step)
 9. [Repository Pattern](#repository-pattern)
-10. [SQL Files](#sql-files)
+10. [Where the SQL Lives](#where-the-sql-lives)
 11. [Data Models](#data-models)
 12. [Query Wrapper (NOLOCK + Timeout)](#query-wrapper-nolock--timeout)
 13. [Azure SQL vs On-Premises Compatibility](#azure-sql-vs-on-premises-compatibility)
@@ -39,13 +39,15 @@ live diagnostic data across the app's monitoring screens:
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
-- Index health (missing + unused indexes)
+- Index health (missing, unused, usage, fragmentation) with a DROP script generator for unused indexes
 - Resource-intensive queries (reads + CPU)
 - Index usage patterns and fragmentation
 - Implicit type conversions
 - Stale statistics
 - Database storage, file sizes, and server configuration
+- Live stored-procedure tracing (SP Trace)
 - Export / AI report generator
+- Light theme (default) and dark theme, switchable in Settings
 
 ---
 
@@ -59,6 +61,9 @@ live diagnostic data across the app's monitoring screens:
 │   ├── Sidebar navigation                                 │
 │   ├── Frame → navigates to Page objects                  │
 │   └── Refresh button → calls IRefreshable.RefreshAsync() │
+│                                                           │
+│   Services/RepositoryFactory                             │
+│   └── Builds the repository for the active connection    │
 │                                                           │
 │   Pages                                                  │
 │   └── Each page holds IWaitStatsRepository reference     │
@@ -75,9 +80,11 @@ live diagnostic data across the app's monitoring screens:
 │                                                           │
 │   Repositories/                                          │
 │   ├── IWaitStatsRepository  (interface)                  │
-│   └── WaitStatsRepository   (Dapper implementation)      │
+│   ├── WaitStatsRepository   (Dapper implementation)      │
+│   └── SpTrace / TempDb / PlanCacheHealth repositories    │
 │                                                           │
 │   Models/    (C# record types, one file per feature area)│
+│   Scripting/ (T-SQL script generators, e.g. DROP INDEX)  │
 │   Controllers/ + ApiHost.cs / Program.cs                 │
 │   └── Optional standalone REST host — not used by Desktop│
 └───────────────────────┬──────────────────────────────────┘
@@ -87,8 +94,8 @@ live diagnostic data across the app's monitoring screens:
 ```
 
 > **Key design decision:** `SqlVitals.Desktop` references `SqlVitals.Engine` as a
-> **project reference**, not via HTTP. The repository is instantiated directly in
-> `MainWindow`. This means zero network latency and no background web server needed.
+> **project reference**, not via HTTP. `MainWindow` gets the repository for the active
+> connection from `RepositoryFactory` (in `SqlVitals/Desktop/Services/`). This means zero network latency and no background web server needed.
 > `SqlVitals.Engine` also contains a `Program.cs` / `ApiHost.cs` (and `Controllers/`) for
 > running as a standalone REST API if needed in future, but the desktop app doesn't use it.
 > Everything the app needs — models, repositories, and the optional REST surface — lives
@@ -98,62 +105,73 @@ live diagnostic data across the app's monitoring screens:
 
 ## Solution Structure
 
+All paths are relative to the repository root.
+
 ```
-src/
-├── SqlVitalsDashboard.slnx                 ← Solution file (open this in Visual Studio)
+(repo root)
+├── SqlVitalsDashboard.slnx                ← Solution file (open this in Visual Studio)
+├── README.md
+├── LICENSE
+├── .github/workflows/pr-setup.yml         ← CI: tests + Setup build on every PR to main
+├── TODO/wait-stats-ui/                    ← Parked React web UI (not part of the solution)
 │
-├── SqlVitals/
-│   ├── Engine/                            ← Class library + optional web API
-│   │   ├── SqlVitals.Engine.csproj
-│   │   ├── appsettings.json               ← Connection string + query settings ← EDIT THIS
-│   │   ├── Models/                        ← C# record types for every query result
-│   │   │   ├── ActiveWait.cs
-│   │   │   ├── DatabaseStorage.cs
-│   │   │   ├── ImplicitConversion.cs
-│   │   │   ├── IndexFragmentation.cs
-│   │   │   ├── IndexHealth.cs
-│   │   │   ├── IndexUsagePattern.cs
-│   │   │   ├── MemoryGrant.cs
-│   │   │   ├── PlanCacheData.cs
-│   │   │   ├── QueryStoreData.cs
-│   │   │   ├── ResourceIntensiveQuery.cs
-│   │   │   ├── ServerHealthKpi.cs
-│   │   │   ├── SignalVsResourceWait.cs
-│   │   │   ├── StaleStatistic.cs
-│   │   │   ├── TempDbPressure.cs
-│   │   │   ├── TopWaitType.cs
-│   │   │   └── WaitStatCumulative.cs
-│   │   │       (+ more — see Models/ for the full current list)
-│   │   ├── Repositories/
-│   │   │   ├── IWaitStatsRepository.cs    ← Interface — defines the query methods
-│   │   │   └── WaitStatsRepository.cs     ← Dapper implementation
-│   │   ├── Controllers/
-│   │   │   └── WaitStatsController.cs     ← REST endpoints (only used if running as API)
-│   │   ├── Errors/
-│   │   │   └── WaitStatsException.cs
-│   │   ├── Services/                      ← (reserved for future engine-level business logic)
-│   │   ├── Utilities/                     ← (reserved for future helpers)
-│   │   ├── AnalysisEngine.cs              ← placeholder entry point for future analysis logic
-│   │   ├── ApiHost.cs / Program.cs        ← Web API host (not used by desktop app)
-│   │   └── wwwroot/                       ← Static assets for standalone API mode
-│   │
-│   └── Desktop/                           ← WPF application
-│       ├── SqlVitals.Desktop.csproj
-│       ├── App.xaml / App.xaml.cs
-│       ├── MainWindow.xaml                ← Shell: sidebar + frame + status bar
-│       ├── MainWindow.xaml.cs             ← Navigation logic + Repo instantiation
-│       ├── Pages/
-│       │   ├── IRefreshable.cs            ← Interface every page must implement
-│       │   └── ...Page.xaml/.cs           ← One file pair per monitoring screen
-│       ├── Controls/
-│       ├── Windows/
-│       ├── Helpers/
-│       ├── Services/
-│       │   ├── ConnectionSettingsService.cs
-│       │   └── ExportService.cs           ← Concurrent multi-group AI export
-│       └── Styles/
-│           └── (XAML resource dictionaries for dark theme)
+└── SqlVitals/
+    ├── Desktop/                           ← WPF application (net8.0-windows) — the app users run
+    │   ├── SqlVitals.Desktop.csproj       ← <Version> here is the release number
+    │   ├── App.xaml / App.xaml.cs         ← Theme loading + ToggleTheme()
+    │   ├── MainWindow.xaml                ← Shell: connection selector + sidebar + frame + status bar
+    │   ├── MainWindow.xaml.cs             ← Navigation (NavigateTo) + connection switching
+    │   ├── Pages/
+    │   │   ├── IRefreshable.cs            ← Interface every page must implement
+    │   │   └── ...Page.xaml/.cs           ← One file pair per screen
+    │   ├── Controls/                      ← ProcessMapControl
+    │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
+    │   ├── Helpers/                       ← ChartTheme, ClipboardHelper
+    │   ├── Services/
+    │   │   ├── ConnectionSettingsService.cs ← Saved connections (DPAPI-encrypted)
+    │   │   ├── RepositoryFactory.cs       ← Builds the repository for the active connection
+    │   │   ├── MonitoringManager.cs       ← Background live-metrics collectors, one per connection
+    │   │   ├── MonitoringSession.cs
+    │   │   └── ExportService.cs           ← Concurrent multi-group AI export
+    │   └── Styles/
+    │       ├── Theme.xaml
+    │       ├── LightTheme.xaml            ← Default theme
+    │       └── DarkTheme.xaml
+    │
+    ├── Engine/                            ← Class library + optional web API (net8.0, Microsoft.NET.Sdk.Web)
+    │   ├── SqlVitals.Engine.csproj
+    │   ├── appsettings.json               ← Default connection string + query settings
+    │   ├── Models/                        ← C# record types for every query result
+    │   ├── Repositories/
+    │   │   ├── IWaitStatsRepository.cs    ← Main interface — the query methods pages call
+    │   │   ├── WaitStatsRepository.cs     ← Dapper implementation (SQL embedded as raw strings)
+    │   │   ├── BaseRepository.cs          ← Q() / QFirst() query wrappers
+    │   │   ├── SpTraceRepository.cs, TempDbRepository.cs, PlanCacheHealthRepository.cs
+    │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
+    │   ├── Scripting/
+    │   │   └── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
+    │   ├── Monitoring/                    ← LiveMetricSample
+    │   ├── Controllers/                   ← REST endpoints (only used if running as API)
+    │   ├── Errors/                        ← WaitStatsException
+    │   ├── AnalysisEngine.cs              ← Placeholder for future analysis logic
+    │   ├── ApiHost.cs / Program.cs        ← Web API host (not used by the desktop app)
+    │   └── wwwroot/                       ← Static assets for standalone API mode
+    │
+    ├── Engine.Tests/                      ← xUnit tests for Engine (net8.0)
+    │
+    ├── Installer/                         ← SqlVitals Setup wizard (WPF, net472)
+    │   ├── SqlVitals.Installer.csproj     ← Produces SqlVitals.Setup.exe
+    │   ├── Build-Installer.ps1            ← Builds artifacts\SqlVitals-Setup-<version>.exe
+    │   ├── Core/                          ← Install logic, no WPF dependency
+    │   └── Views/                         ← Wizard pages
+    │
+    ├── Installer.Tests/                   ← xUnit tests for Installer/Core (net472)
+    │
+    └── Branding/                          ← App icon sources + Build-Icon.ps1
 ```
+
+The solution contains five projects: `SqlVitals.Desktop`, `SqlVitals.Engine`,
+`SqlVitals.Engine.Tests`, `SqlVitals.Installer` and `SqlVitals.Installer.Tests`.
 
 ---
 
@@ -166,19 +184,31 @@ src/
 | `Microsoft.AspNetCore.OpenApi` | 8.0.23 | `SqlVitals.Engine` | Swagger (API mode only) |
 | `Swashbuckle.AspNetCore` | 6.6.2 | `SqlVitals.Engine` | Swagger UI (API mode only) |
 | `LiveChartsCore.SkiaSharpView.WPF` | 2.0.0-rc4.5 | `SqlVitals.Desktop` | Charts (bar, pie, line) |
+| `System.Security.Cryptography.ProtectedData` | 8.0.0 | `SqlVitals.Desktop` | DPAPI encryption of saved connections |
+| `xunit` | 2.9.3 | `*.Tests` | Unit tests |
 
-**Target framework:** `net8.0-windows` (WPF) / `net8.0` (Engine, `Microsoft.NET.Sdk.Web`)
+**Target frameworks:**
+
+| Project | Framework |
+|---|---|
+| `SqlVitals.Desktop` | `net8.0-windows` (WPF) |
+| `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) |
+| `SqlVitals.Engine.Tests` | `net8.0` |
+| `SqlVitals.Installer` | `net472` (WPF), so Setup runs on a clean Windows install |
+| `SqlVitals.Installer.Tests` | `net472` |
 
 ---
 
 ## Configuration
 
-Edit **`src/SqlVitals/Engine/appsettings.json`** before running:
+You don't have to edit any file to get started: add a connection on the app's **Settings**
+page (it opens automatically on first launch). `SqlVitals/Engine/appsettings.json` holds the
+defaults that saved connections are layered on top of:
 
 ```json
 {
   "ConnectionStrings": {
-    "SqlServer": "Server=YOUR_SERVER;Database=YOUR_DB;User Id=USER;Password=PASS;TrustServerCertificate=false;"
+    "SqlServer": ""
   },
   "QuerySettings": {
     "CommandTimeoutSeconds": 30,
@@ -189,15 +219,15 @@ Edit **`src/SqlVitals/Engine/appsettings.json`** before running:
 
 | Setting | Default | Description |
 |---|---|---|
-| `ConnectionStrings:SqlServer` | *(must set)* | ADO.NET connection string for SQL Server or Azure SQL |
+| `ConnectionStrings:SqlServer` | *(empty)* | Fallback ADO.NET connection string, used only when no connection is saved in Settings |
 | `QuerySettings:CommandTimeoutSeconds` | `30` | Max seconds any query may run before being cancelled |
 | `QuerySettings:UseNoLock` | `true` | Prepends `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` to all queries (avoids blocking on monitored server) |
 
 > **Azure SQL:** Use `TrustServerCertificate=false` and `Encrypt=true` (default).
 > **On-premises:** Set `TrustServerCertificate=true` for self-signed certs.
 
-The file is linked into `SqlVitals/Desktop/bin/Debug/net8.0-windows/appsettings.json`
-automatically by the `.csproj` `<None Update>` entry — you only need to edit it once.
+The build copies the file to `SqlVitals/Desktop/bin/Debug/net8.0-windows/appsettings.json`
+through the `<None Update>` entry in `SqlVitals.Desktop.csproj`, so edit the one in `Engine/`.
 
 Connections entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
 to `%AppData%\SqlVitals\settings.dat`, and the active one overrides the connection string from `appsettings.json`.
@@ -240,8 +270,11 @@ while you were away (the last 60 samples, about 10 minutes at the default 10 s i
 
 ### Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Windows 10/11 (WPF requires Windows)
+- [.NET SDK](https://dotnet.microsoft.com/download) **9.0.200 or later** (the .NET 10 SDK works too).
+  The projects target .NET 8, but the `.slnx` solution format needs a 9.0.200+ SDK.
+  With only the .NET 8 SDK, build the projects one by one instead (as CI does), e.g.
+  `dotnet build SqlVitals\Desktop`.
+- Windows 10/11 (WPF requires Windows; the Installer tests run on .NET Framework 4.7.2)
 - SQL Server or Azure SQL with `VIEW SERVER STATE` permission granted
 
 ### SQL permissions required
@@ -295,27 +328,42 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')          
 `SpTraceRepository.CanCreateEventSessionAsync` runs exactly this probe at trace start to
 choose the capture mode.
 
-### From PowerShell
+### Build, test and run (from the repo root)
 
 ```powershell
-# From repo root — build and run
-cd src
-dotnet build SqlVitalsDashboard.slnx --nologo
-Start-Process "SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.exe"
+git clone https://github.com/aselasampath/sqlvitals.git
+cd sqlvitals
+
+dotnet build SqlVitalsDashboard.slnx     # builds all five projects
+dotnet test                              # runs Engine.Tests and Installer.Tests
+dotnet run --project SqlVitals\Desktop   # starts the app
+```
+
+`dotnet test` finds `SqlVitalsDashboard.slnx` on its own because it is the only solution in the
+root. The build prints a few `NU1701` warnings from LiveCharts' SkiaSharp/OpenTK dependencies.
+They are expected and harmless.
+
+On first launch the app opens **Settings**. Add a connection there and click **Save & Connect**.
+
+To run one test project on its own:
+
+```powershell
+dotnet test SqlVitals\Engine.Tests
+dotnet test SqlVitals\Installer.Tests
 ```
 
 ### Kill old instance + rebuild + relaunch (use this when already running)
 
 ```powershell
 Get-Process -Name "SqlVitals.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep 1
-dotnet build "src\SqlVitals\Desktop\SqlVitals.Desktop.csproj" --nologo
-Start-Process "src\SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.exe"
+dotnet build SqlVitals\Desktop --nologo
+Start-Process "SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.exe"
 ```
 
 ### Visual Studio
 
-Open `src/SqlVitalsDashboard.slnx`, set `SqlVitals.Desktop` as startup project, press **F5**.
+Open `SqlVitalsDashboard.slnx` (needs Visual Studio 2022 17.14 or later), set
+`SqlVitals.Desktop` as startup project, press **F5**.
 
 ### Installer (SqlVitals Setup)
 
@@ -346,7 +394,10 @@ The script publishes `SqlVitals.Desktop` **self-contained** for win-x64, so the 
 
 Settings → Apps → SqlVitals → **Modify** reopens Setup for repair or upgrade, and **Uninstall** runs `SqlVitals Setup.exe /uninstall`. Setup always hands over to a temporary copy of itself before changing the install folder.
 
-The core logic in `SqlVitals/Installer/Core/` has no WPF dependency and is covered by `SqlVitals.Installer.Tests` (`dotnet test SqlVitals/Installer.Tests`).
+The core logic in `SqlVitals/Installer/Core/` has no WPF dependency and is covered by `SqlVitals.Installer.Tests` (`dotnet test SqlVitals\Installer.Tests`).
+
+A plain `dotnet build` also builds `SqlVitals.Setup.exe`, but without the app payload. That
+Setup says so when it starts. Use `Build-Installer.ps1` for a working installer.
 
 ---
 
@@ -355,30 +406,48 @@ The core logic in `SqlVitals/Installer/Core/` has no WPF dependency and is cover
 `MainWindow` hosts a left-side navigation sidebar. Each button has a `Tag` string that maps
 to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string tag)`.
 
-| Nav Button | Tag string | Page class | Repository method(s) |
-|---|---|---|---|
-| Live Metrics | `LiveMetrics` | `LiveMetricsDashboardPage` | Live snapshot methods |
-| Top Waits | `TopWaits` | `TopWaitsPage` | `GetTopWaitTypesAsync`, `GetCumulativeWaitsAsync` |
-| Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` |
-| Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods |
-| TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` |
-| Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` |
-| Query Store | `QueryStore` | `QueryStorePage` | `GetQueryStoreAsync` |
-| Index Health | `IndexHealth` | `IndexHealthPage` | `GetIndexHealthAsync` |
-| Resource Queries | `ResourceQueries` | `ResourceQueriesPage` | `GetResourceIntensiveQueriesAsync` |
-| Implicit Conv. | `ImplicitConv` | `ImplicitConversionsPage` | `GetImplicitConversionsAsync` |
-| Plan Cache Health | `PlanCacheHealth` | `PlanCacheHealthPage` | Plan cache health methods |
-| Stale Stats | `StaleStats` | `StaleStatisticsPage` | `GetStaleStatisticsAsync` |
-| DB Storage | `DbStorage` | `DatabaseStoragePage` | `GetDatabaseStorageAsync` |
-| App Connections | `AppConnections` | `ApplicationConnectionsPage` | Application connection methods |
-| Perfmon | `Perfmon` | `PerfmonPage` | Perfmon counter methods |
-| SP Trace | `SpTrace` | `SpTracePage` | `StartTraceAsync`, `PollTraceEventsAsync`, `PollProcedureStatsAsync` |
-| Export / AI | `Export` | `ExportPage` | *(all groups via ExportService)* |
-| Settings | `Settings` | `SettingsPage` | *(connection settings only — no repository)* |
+| Nav Button | Tag string | Page class | Repository method(s) | Notes |
+|---|---|---|---|---|
+| Live Metrics | `LiveMetrics` | `LiveMetricsDashboardPage` | Live snapshot methods | Start page; keeps collecting in the background |
+| Top Waits | `TopWaits` | `TopWaitsPage` | `GetTopWaitTypesAsync`, `GetCumulativeWaitsAsync` | |
+| Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` | |
+| Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
+| TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
+| Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
+| Query Store | `QueryStore` | `QueryStorePage` | `GetQueryStoreAsync` | |
+| Index Health | `IndexHealth` | `IndexHealthPage` | `GetIndexHealthAsync`, `GetIndexUsagePatternsAsync`, `GetIndexFragmentationAsync` | Tabs: Missing, Unused, Usage, Fragmentation. See [Index Health](#index-health) |
+| Resource Queries | `ResourceQueries` | `ResourceQueriesPage` | `GetResourceIntensiveQueriesAsync` | |
+| Implicit Conv. | `ImplicitConv` | `ImplicitConversionsPage` | `GetImplicitConversionsAsync` | |
+| Plan Cache Health | `PlanCacheHealth` | `PlanCacheHealthPage` | Plan cache health methods | |
+| Stale Stats | `StaleStats` | `StaleStatisticsPage` | `GetStaleStatisticsAsync` | |
+| DB Storage | `DbStorage` | `DatabaseStoragePage` | `GetDatabaseStorageAsync` | |
+| App Connections | `AppConnections` | `ApplicationConnectionsPage` | Application connection methods | |
+| Perfmon | `Perfmon` | `PerfmonPage` | Perfmon counter methods | |
+| SP Trace | `SpTrace` | `SpTracePage` | `StartTraceAsync`, `PollTraceEventsAsync`, `PollProcedureStatsAsync` | See [Live SP Trace](#live-sp-trace) |
+| Export / AI | `Export` | `ExportPage` | *(all groups via ExportService)* | |
+| Settings | `Settings` | `SettingsPage` | *(no repository)* | Connections, and the light/dark theme toggle |
 
 > The table above reflects the nav tags wired up in `MainWindow.xaml.cs`. See
 > `SqlVitals/Engine/Repositories/IWaitStatsRepository.cs` for the full, current method list —
 > it has grown well past the methods shown here as pages were added.
+>
+> `ProcessesPage` exists in `Pages/` but has no sidebar button yet, so it can't be reached in
+> the app (tracked in issue #19).
+
+### Index Health
+
+- **Missing Indexes:** suggestions sorted by severity, then impact, with a ready-made `CREATE INDEX` statement per row.
+- **Unused Indexes:** indexes with zero reads since the last restart. **Generate DROP Script** builds a
+  `DROP INDEX` script for the selected rows, or for every row if nothing is selected, in the grid's
+  current sort order. Unique indexes are commented out in the script. The script opens in a
+  preview window (`SqlScriptWindow`) where you can copy or save it. SqlVitals never runs it. The script
+  itself comes from `SqlVitals/Engine/Scripting/UnusedIndexDropScript.cs`.
+- **Index Usage:** seeks, scans, lookups and updates per index, with a health assessment.
+- **Fragmentation:** filtered by **Min Page Count** (default 1000) and **Min Frag %** (default 10).
+  The tab's own **↻ Refresh** button (or **Enter** in either box) reloads only this grid with
+  the new criteria. The other tabs keep their rows, and the grid keeps its sort. Invalid input is
+  reported next to the boxes. The sidebar **Refresh** reloads all four tabs and falls back to the
+  defaults if the boxes hold invalid values.
 
 Every page implements `IRefreshable`:
 
@@ -398,14 +467,15 @@ is clicked. Data errors are caught in `MainWindow.NavigateTo` and shown in a `Me
 
 Follow this exact pattern every time you add a new monitoring screen.
 
-### 1. Write the SQL file
+### 1. Write and test the query
 
-Add `SQL/20_YourFeature.sql` in the `SQL/` folder at the repo root.
+Draft the query in SSMS or Azure Data Studio first. It goes into the repository as a C# raw
+string in step 4. There is no separate `.sql` file (see [Where the SQL lives](#where-the-sql-lives)).
 Keep it compatible with both Azure SQL and on-premises (see [compatibility notes](#azure-sql-vs-on-premises-compatibility)).
 
 ### 2. Create the C# model
 
-Add `src/SqlVitals/Engine/Models/YourFeature.cs`:
+Add `SqlVitals/Engine/Models/YourFeature.cs`:
 
 ```csharp
 namespace SqlVitals.Engine.Models;
@@ -421,7 +491,7 @@ Use `record` types — Dapper maps columns by name automatically (case-insensiti
 
 ### 3. Add the interface method
 
-In `src/SqlVitals/Engine/Repositories/IWaitStatsRepository.cs`:
+In `SqlVitals/Engine/Repositories/IWaitStatsRepository.cs`:
 
 ```csharp
 Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync();
@@ -458,7 +528,7 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 
 ### 5. Create the WPF page
 
-`src/SqlVitals/Desktop/Pages/YourFeaturePage.xaml`:
+`SqlVitals/Desktop/Pages/YourFeaturePage.xaml`:
 
 ```xml
 <Page x:Class="SqlVitals.Desktop.Pages.YourFeaturePage"
@@ -470,11 +540,11 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Your Feature" Style="{StaticResource PageTitle}" />
+        <TextBlock Grid.Row="0" Text="Your Feature" Style="{StaticResource SectionHeader}" />
 
         <DataGrid x:Name="MainGrid" Grid.Row="1"
                   AutoGenerateColumns="False"
-                  Style="{StaticResource DataGridStyle}">
+                  CanUserAddRows="False">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Name"    Binding="{Binding SomeColumn}" Width="200"/>
                 <DataGridTextColumn Header="Value MB" Binding="{Binding ValueMB, StringFormat=N2}" Width="100"/>
@@ -563,13 +633,15 @@ Add a description entry in `ExportPage.xaml.cs` in the `_descriptions` dictionar
 
 ## Repository Pattern
 
-`WaitStatsRepository` (in `SqlVitals.Engine.Repositories`) is the single class that executes
-all SQL against the database.
+`WaitStatsRepository` (in `SqlVitals.Engine.Repositories`) runs most of the SQL against the
+database. SP Trace, TempDB and Plan Cache Health have their own repositories
+(`SpTraceRepository`, `TempDbRepository`, `PlanCacheHealthRepository`). All of them derive from
+`BaseRepository`, which owns the connection and the query wrappers below.
 
 ### Connection
 
 ```csharp
-private IDbConnection CreateConnection() =>
+protected IDbConnection CreateConnection() =>
     new SqlConnection(configuration.GetConnectionString("SqlServer"));
 ```
 
@@ -580,14 +652,18 @@ Dapper opens it lazily on the first query.
 
 ```csharp
 // Multiple rows — returns IEnumerable<dynamic>
-private async Task<IEnumerable<dynamic>> Q(IDbConnection conn, string sql, object? param = null)
+protected async Task<IEnumerable<dynamic>> Q(IDbConnection conn, string sql, object? param = null, ...)
 
 // Zero or one row — returns dynamic? (null if no rows)
-private async Task<dynamic?> QFirst(IDbConnection conn, string sql, object? param = null)
+protected async Task<dynamic?> QFirst(IDbConnection conn, string sql, object? param = null, ...)
+
+// Non-query (DDL such as CREATE EVENT SESSION) — no isolation-level prefix
+protected async Task<int> Exec(IDbConnection conn, string sql, object? param = null, ...)
 ```
 
-Both prepend `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;` when `UseNoLock: true`
-and pass `commandTimeout: _timeoutSec` to every query.
+`Q` and `QFirst` prepend `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;` when
+`UseNoLock: true`. All three pass the configured command timeout and wrap failures in a
+`WaitStatsException` that names the repository and method.
 
 ### Null-safe casting rule
 
@@ -612,37 +688,28 @@ r.FileSizeMB ?? 0m
 
 ---
 
-## SQL Files
+## Where the SQL Lives
 
-Reference SQL files live in `SQL/` at the repo root. The actual queries are embedded
-as C# raw string literals inside `WaitStatsRepository.cs` (not loaded from files at
-runtime). The `.sql` files serve as human-readable documentation and can be run
-directly in SSMS or Azure Data Studio for testing.
+There are no `.sql` files in the repository. Every query is a C# raw string literal
+(`"""..."""`) inside the repository class that runs it, mostly in
+`SqlVitals/Engine/Repositories/WaitStatsRepository.cs`. To try a query by hand, copy it from
+there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tracked in issue #47.
 
-| File | Feature | Key DMVs |
-|---|---|---|
-| `01_WaitStats_Cumulative.sql` | All cumulative waits | `sys.dm_os_wait_stats` |
-| `02_ActiveWaits.sql` | Live waiting sessions | `sys.dm_exec_requests`, `sys.dm_exec_sessions` |
-| `03_WaitCategorySummary.sql` | Category aggregation | `sys.dm_os_wait_stats` |
-| `04_SignalVsResourceWaits.sql` | CPU pressure signal | `sys.dm_os_wait_stats` |
-| `05_TopWaitTypes.sql` | Top 25 waits | `sys.dm_os_wait_stats` |
-| `07_ServerHealthKPIs.sql` | Header KPIs | `sys.dm_os_sys_info`, `sys.dm_os_performance_counters` |
-| `08_TempDB_Pressure.sql` | TempDB file + session usage | `sys.dm_db_task_space_usage` |
-| `09_MemoryGrants.sql` | Memory grant waits | `sys.dm_exec_query_memory_grants` |
-| `10_QueryStore_TopQueries.sql` | Query Store analysis | `sys.query_store_*` |
-| `11_IndexHealth.sql` | Missing + unused indexes | `sys.dm_db_missing_index_*`, `sys.dm_db_index_usage_stats` |
-| `12_PlanCache_Pressure.sql` | Plan cache analysis | `sys.dm_exec_cached_plans` |
-| `13_TopQueries_LogicalReads.sql` | Top reads queries | `sys.dm_exec_query_stats` |
-| `14_TopQueries_CPU.sql` | Top CPU queries | `sys.dm_exec_query_stats` |
-| `15_IndexUsagePatterns.sql` | Index seek/scan/lookup ratios | `sys.dm_db_index_usage_stats` |
-| `16_IndexFragmentation.sql` | Fragmentation % | `sys.dm_db_index_physical_stats` |
-| `17_ImplicitConversions.sql` | Type conversion warnings | `sys.dm_exec_query_stats` + plan XML |
-| `18_StaleStatistics.sql` | Out-of-date statistics | `sys.stats`, `sys.dm_db_stats_properties` |
-| `19_DatabaseStorage.sql` | DB files, TempDB files, config | `sys.database_files`, `sys.configurations` |
-
-> This list reflects the original feature set. Several pages (Live Metrics, Perfmon,
-> Application Connections, Plan Cache Health, Wait Trend) were added afterward — see
-> `SqlVitals/Engine/Repositories/WaitStatsRepository.cs` for their queries.
+| Feature | Key DMVs |
+|---|---|
+| Cumulative waits, categories, top waits, signal vs resource | `sys.dm_os_wait_stats` |
+| Live waiting sessions | `sys.dm_exec_requests`, `sys.dm_exec_sessions` |
+| TempDB file + session usage | `sys.dm_db_session_space_usage` |
+| Memory grants | `sys.dm_exec_query_memory_grants` |
+| Query Store analysis | `sys.query_store_*` |
+| Missing + unused indexes, usage patterns | `sys.dm_db_missing_index_*`, `sys.dm_db_index_usage_stats` |
+| Index fragmentation | `sys.dm_db_index_physical_stats` |
+| Plan cache | `sys.dm_exec_cached_plans` |
+| Top queries by reads / CPU, implicit conversions | `sys.dm_exec_query_stats` + plan XML |
+| Stale statistics | `sys.stats`, `sys.dm_db_stats_properties` |
+| DB files, TempDB files, config | `sys.database_files`, `sys.master_files`, `sys.configurations` |
+| Live metrics, Perfmon | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` |
+| SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 
 ---
 
@@ -656,15 +723,16 @@ aliases to record constructor parameters by name (case-insensitive). See the
 
 ## Query Wrapper (NOLOCK + Timeout)
 
-All queries go through `Q()` or `QFirst()` at the top of `WaitStatsRepository.cs`:
+All queries go through `Q()` or `QFirst()` in `SqlVitals/Engine/Repositories/BaseRepository.cs`
+(simplified here):
 
 ```csharp
-private async Task<IEnumerable<dynamic>> Q(IDbConnection conn, string sql, object? param = null)
+protected async Task<IEnumerable<dynamic>> Q(IDbConnection conn, string sql, object? param = null, ...)
 {
     var effectiveSql = _useNoLock
         ? "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n" + sql
         : sql;
-    return await conn.QueryAsync(effectiveSql, param, commandTimeout: _timeoutSec);
+    return await conn.QueryAsync(effectiveSql, param, commandTimeout: commandTimeout ?? _timeoutSec);
 }
 ```
 
@@ -824,36 +892,47 @@ not spend CPU on it.
 
 ## Styling & Themes
 
-The app uses a **dark theme** defined in XAML resource dictionaries under `SqlVitals/Desktop/Styles/`.
+The app ships with two themes, defined as XAML resource dictionaries under
+`SqlVitals/Desktop/Styles/`:
+
+| File | Theme |
+|---|---|
+| `LightTheme.xaml` | **Light — the default.** Loaded by `App.xaml` at startup. |
+| `DarkTheme.xaml` | Dark |
+
+Each file defines the complete set of colours, brushes and styles. (`Theme.xaml` is an older
+copy of the dark theme that nothing loads.)
+
+Switch between them with the **🌙 Dark / ☀ Light** button on the **Settings** page. It calls
+`App.ToggleTheme()`, which swaps the merged dictionary at runtime. The choice isn't saved yet,
+so the app starts in the light theme every time. Pages are created fresh on every navigation,
+so they pick up the current theme. Use `Helpers/ChartTheme.cs` for LiveCharts colours instead of
+hard-coding them, so charts follow the theme too.
 
 Key style resource keys used across pages:
 
 | Style key | Element | Description |
 |---|---|---|
-| `NavButton` | Sidebar `Button` | Default grey nav button |
+| `NavButton` | Sidebar `Button` | Default nav button |
 | `NavButtonActive` | Sidebar `Button` | Active page — purple highlight |
-| `PageTitle` | `TextBlock` | Large white page heading |
-| `KpiCard` | `Border` | Dark rounded card for metric tiles |
+| `SectionHeader` | `TextBlock` | Page and section headings |
+| `KpiCard` | `Border` | Rounded card for metric tiles |
 | `KpiValue` | `TextBlock` | Large metric number |
-| `KpiLabel` | `TextBlock` | Small grey subtitle |
-| `DataGridStyle` | `DataGrid` | Dark grid with alternating rows |
-| `SubTabButton` | `Button` | Sub-tab toggle (used in DB Storage) |
-| `SubTabButtonActive` | `Button` | Active sub-tab |
+| `KpiLabel` | `TextBlock` | Small muted subtitle |
+| `RefreshButton` | `Button` | Refresh buttons (sidebar, Index Health Fragmentation tab) |
+| `SecondaryButton` | `Button` | Less prominent actions |
 
-Colour palette reference (use in new pages):
+`DataGrid` has an implicit style in each theme, so grids need no `Style` attribute.
 
-```
-Background:   #12121E    Surface:    #1E1E2E    Border:    #2D2D44
-Text:         #E2E8F0    Muted text: #94A3B8
-Accent blue:  #38BDF8    Accent purple: #A855F7
-Success:      #10B981    Warning:    #F59E0B    Error:     #EF4444
-```
+Use the brush keys, not hex values, in new pages, so both themes work: `BgDeep`, `BgCard`,
+`BgSidebar`, `Accent`, `AccentLight`, `TextPrimary`, `TextMuted`, `Border`, `Success`,
+`Warning`, `Danger`. Each theme file defines its own colours for them.
 
-For LiveCharts (SkiaSharp colours):
+For LiveCharts, read the colours from `ChartTheme`, which follows the current theme:
+
 ```csharp
-var textColor = SKColor.Parse("#94A3B8");
-var gridColor = SKColor.Parse("#2D2D44");
-var accent    = SKColor.Parse("#A855F7");
+var axisColor = ChartTheme.MutedAxisColor;
+var gridColor = ChartTheme.GridColor;
 ```
 
 ---
