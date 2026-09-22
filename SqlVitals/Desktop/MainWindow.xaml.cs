@@ -289,6 +289,24 @@ public partial class MainWindow : Window
             ? $"Error [{wse.ErrorTag}]: {ex.InnerException?.Message ?? ex.Message}"
             : $"Error: {ex.Message}");
 
+    // Timer-driven page refreshes report here rather than through a MessageBox, which would
+    // pop up again on every tick while the server stays unreachable. The details go to the
+    // log; the status bar shows the one-line error. A page the user has navigated away from
+    // no longer owns the status bar, so only its log entry is kept.
+    internal static void ReportBackgroundError(Page page, string source, Exception ex)
+    {
+        AppLog.Error($"{source}: collection failed", ex);
+        if (Window.GetWindow(page) is MainWindow main && ReferenceEquals(main.MainFrame.Content, page))
+            main.TxtStatus.Text = FormatErrorStatus(ex);
+    }
+
+    // Replaces an earlier background error once the page collects successfully again.
+    internal static void ReportBackgroundSuccess(Page page)
+    {
+        if (Window.GetWindow(page) is MainWindow main && ReferenceEquals(main.MainFrame.Content, page))
+            main.TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
+    }
+
     // Returns the full message for the MessageBox, with the searchable tag on its own line.
     private static string FormatErrorDetail(Exception ex)
     {
@@ -322,6 +340,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
+                AppLog.Error($"{_currentTag}: refresh failed", ex);
                 if (version == _loadVersion)
                     TxtStatus.Text = FormatErrorStatus(ex);
             }
@@ -420,6 +439,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AppLog.Error($"{tag}: load failed", ex);
+
             // The user has already moved on (another page or another database) — an error
             // from this load would describe data that is no longer on screen.
             if (version != _loadVersion)

@@ -13,6 +13,7 @@ public partial class App : System.Windows.Application
     private void OnDispatcherUnhandledException(object sender,
         System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
+        Services.AppLog.Error("Unhandled exception", e.Exception);
         System.Windows.MessageBox.Show(
             $"An unexpected error occurred:\n\n{Services.ConnectionSettingsService.RedactSecrets(e.Exception.Message)}",
             "SqlVitals", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);

@@ -72,8 +72,12 @@ public partial class ProcessesPage : Page, IRefreshable
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
-        catch { /* silently skip failed ticks */ }
+        catch (Exception ex)
+        {
+            MainWindow.ReportBackgroundError(this, "Processes", ex);
+        }
         finally
         {
             _refreshing   = false;
