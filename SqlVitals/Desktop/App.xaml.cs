@@ -7,7 +7,17 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
         base.OnStartup(e);
+        Services.AppLog.DeleteExpiredFiles();
         DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+        // Failures off the UI thread never reach DispatcherUnhandledException.
+        System.AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is System.Exception ex)
+                Services.AppLog.Error("Unhandled exception on a background thread", ex);
+        };
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
+            Services.AppLog.Error("Unobserved task exception", args.Exception);
     }
 
     private void OnDispatcherUnhandledException(object sender,

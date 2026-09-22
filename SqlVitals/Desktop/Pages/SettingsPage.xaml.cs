@@ -49,6 +49,8 @@ public partial class SettingsPage : Page
 
         var app = (App)Application.Current;
         BtnThemeToggle.Content = app.IsDarkTheme ? "☀  Light" : "🌙  Dark";
+        TxtLogInfo.Text = $"{AppLog.Directory} — one file per day, kept for {AppLog.RetentionDays} days. " +
+                          "Passwords and connection strings are never written. Attach the latest file to a bug report.";
 
         if (!string.IsNullOrWhiteSpace(initialMessage))
             SetStatus(initialMessage, success: null);
@@ -252,6 +254,24 @@ public partial class SettingsPage : Page
         var app = (App)Application.Current;
         app.ToggleTheme();
         NavigationService?.Navigate(new SettingsPage(_service, _applyConnections, selectConnectionId: _editingId));
+    }
+
+    private void LnkOpenLogFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // Created up front so the link works before anything has been logged.
+            System.IO.Directory.CreateDirectory(AppLog.Directory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName        = AppLog.Directory,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not open the log folder: {ex.Message}", success: false);
+        }
     }
 
     // ── Form ──────────────────────────────────────────────────────────────────
