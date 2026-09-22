@@ -48,9 +48,47 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             .ToList();
         UnusedGrid.ItemsSource  = unused.OrderByDescending(u => u.UserUpdates).ToList();
         UsageGrid.ItemsSource   = usage.ToList();
+        UpdateCreateScriptButton();
         UpdateDropScriptButton();
 
         await LoadFragmentationAsync(minFrag, minPages);
+    }
+
+    private void MissingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateCreateScriptButton();
+
+    private void UpdateCreateScriptButton()
+    {
+        int selected = MissingGrid.SelectedItems.Count;
+        int total    = MissingGrid.Items.Count;
+
+        BtnCreateScript.IsEnabled = total > 0;
+        BtnCreateScript.Content = selected > 0
+            ? $"Generate CREATE Script ({selected} selected)"
+            : "Generate CREATE Script (all)";
+    }
+
+    private void BtnCreateScript_Click(object sender, RoutedEventArgs e)
+    {
+        // Selected rows if the user picked some, otherwise everything in the grid —
+        // in the grid's current sort order so the script reads like what's on screen.
+        var selected = MissingGrid.SelectedItems.OfType<MissingIndex>().ToHashSet();
+        var suggestions = MissingGrid.Items.OfType<MissingIndex>()
+            .Where(i => selected.Count == 0 || selected.Contains(i))
+            .ToList();
+        if (suggestions.Count == 0) return;
+
+        var notice =
+            $"Review before running. {suggestions.Count:N0} index(es) will be created. " +
+            "SQL Server does not check these suggestions against your existing indexes, and every new index slows writes. SqlVitals does not run this script.";
+
+        new SqlScriptWindow(
+            "Create Missing Indexes",
+            notice,
+            MissingIndexCreateScript.Build(suggestions, DateTime.Now),
+            $"CreateMissingIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql")
+        {
+            Owner = Window.GetWindow(this)
+        }.ShowDialog();
     }
 
     private void UnusedGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateDropScriptButton();
