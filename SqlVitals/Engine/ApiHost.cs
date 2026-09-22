@@ -3,8 +3,8 @@ using SqlVitals.Engine.Repositories;
 namespace SqlVitals.Engine;
 
 /// <summary>
-/// Exposes the ASP.NET Core host as a reusable factory so the WPF desktop
-/// shell can start it in-process on a dynamic port.
+/// Exposes the ASP.NET Core host as a reusable factory so it can be started
+/// from Program.cs or in-process (e.g. by tests) on a dynamic port.
 /// </summary>
 public static class ApiHost
 {
@@ -38,7 +38,7 @@ public static class ApiHost
         // ── Services ───────────────────────────────────────────────────────────
         // Explicitly register this assembly as an application part: controller
         // discovery otherwise defaults to the entry assembly, which is wrong when
-        // this host is started in-process by a different app (e.g. the WPF shell).
+        // this host is started in-process by a different app (e.g. the test host).
         builder.Services.AddControllers()
             .AddApplicationPart(typeof(ApiHost).Assembly)
             .AddJsonOptions(opt =>
