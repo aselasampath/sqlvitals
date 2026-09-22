@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.22.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.23.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -47,6 +47,7 @@ live diagnostic data across the app's monitoring screens:
 - Database storage, file sizes, and server configuration
 - Live stored-procedure tracing (SP Trace)
 - Export / AI report generator
+- Right-click any grid to Copy, Copy with headers, or Export to CSV (UTF-8)
 - Light theme (default) and dark theme, switchable in Settings
 
 ---
@@ -85,6 +86,7 @@ live diagnostic data across the app's monitoring screens:
 │                                                           │
 │   Models/    (C# record types, one file per feature area)│
 │   Scripting/ (T-SQL script generators, e.g. DROP INDEX)  │
+│   Export/    (CSV / TSV text for grid copy and export)   │
 │   Controllers/ + ApiHost.cs / Program.cs                 │
 │   └── Optional standalone REST host — not used by Desktop│
 └───────────────────────┬──────────────────────────────────┘
@@ -126,7 +128,7 @@ All paths are relative to the repository root.
     │   │   └── ...Page.xaml/.cs           ← One file pair per screen
     │   ├── Controls/                      ← ProcessMapControl
     │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
-    │   ├── Helpers/                       ← ChartTheme, ClipboardHelper
+    │   ├── Helpers/                       ← ChartTheme, ClipboardHelper, DataGridExport (grid right-click menu)
     │   ├── Services/
     │   │   ├── AppLog.cs                  ← Daily diagnostic log in %AppData%\SqlVitals\logs (14-day retention)
     │   │   ├── ConnectionSettingsService.cs ← Saved connections (DPAPI-encrypted)
@@ -151,6 +153,8 @@ All paths are relative to the repository root.
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── Scripting/
     │   │   └── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
+    │   ├── Export/
+    │   │   └── DelimitedText.cs           ← CSV / tab-separated text for grid copy and export
     │   ├── Monitoring/                    ← LiveMetricSample
     │   ├── Controllers/                   ← REST endpoints (only used if running as API)
     │   ├── Errors/                        ← WaitStatsException
@@ -378,7 +382,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.22.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.23.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.

@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers">
 
     <!-- ── Colours ─────────────────────────────────────────────────── -->
     <Color x:Key="BgDeepColor">#FFF0F2F5</Color>
@@ -179,6 +180,8 @@
         <Setter Property="SelectionMode"            Value="Single" />
         <Setter Property="CanUserResizeRows"        Value="False" />
         <Setter Property="HeadersVisibility"        Value="Column" />
+        <!-- Right-click Copy / Copy with headers / Export to CSV on every grid -->
+        <Setter Property="helpers:DataGridExport.IsEnabled" Value="True" />
     </Style>
 
     <Style TargetType="DataGridColumnHeader">
