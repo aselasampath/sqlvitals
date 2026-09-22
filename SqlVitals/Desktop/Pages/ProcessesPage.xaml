@@ -24,7 +24,7 @@
                           SelectionChanged="CmbInterval_SelectionChanged" />
 
                 <!-- Toggle button -->
-                <ToggleButton x:Name="BtnAutoRefresh" Content="? Start" Width="72" Height="26"
+                <ToggleButton x:Name="BtnAutoRefresh" Content="▶ Start" Width="72" Height="26"
                               Margin="6,0,0,0" Padding="6,0"
                               Background="#1E3A1E" BorderBrush="#44AA44" BorderThickness="1"
                               Foreground="#66DD66" FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
@@ -139,7 +139,7 @@
                         <!-- Header -->
                         <Border Background="#E0E0E0" Padding="12,8" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
                             <DockPanel>
-                                <Button DockPanel.Dock="Right" Content="?" Foreground="#FF4444"
+                                <Button DockPanel.Dock="Right" Content="✕" Foreground="#FF4444"
                                         Background="Transparent" BorderThickness="0"
                                         FontWeight="Bold" FontSize="16" Cursor="Hand"
                                         Padding="4,0" Click="BtnCloseDetails_Click"/>

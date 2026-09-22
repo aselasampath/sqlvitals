@@ -117,7 +117,7 @@ public partial class ProcessesPage : Page, IRefreshable
 
     private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
     {
-        BtnAutoRefresh.Content = "? Stop";
+        BtnAutoRefresh.Content = "■ Stop";
         BtnAutoRefresh.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40));
         BtnAutoRefresh.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40));
         BtnAutoRefresh.Background  = new SolidColorBrush(Color.FromArgb(0x22, 0xC0, 0x60, 0x00));
@@ -126,7 +126,7 @@ public partial class ProcessesPage : Page, IRefreshable
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
     {
-        BtnAutoRefresh.Content = "? Start";
+        BtnAutoRefresh.Content = "▶ Start";
         BtnAutoRefresh.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0xDD, 0x66));
         BtnAutoRefresh.BorderBrush = new SolidColorBrush(Color.FromRgb(0x44, 0xAA, 0x44));
         BtnAutoRefresh.Background  = new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x3A, 0x1E));
