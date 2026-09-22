@@ -329,6 +329,24 @@
                 </StackPanel>
             </Border>
 
+            <!-- Diagnostics card -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="Diagnostics"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Margin="0,0,0,12" />
+                    <TextBlock FontSize="13">
+                        <Hyperlink x:Name="LnkOpenLogFolder"
+                                   Foreground="{StaticResource Accent}"
+                                   Click="LnkOpenLogFolder_Click">Open log folder</Hyperlink>
+                    </TextBlock>
+                    <TextBlock x:Name="TxtLogInfo"
+                               Foreground="{StaticResource TextMuted}" FontSize="10"
+                               TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+
             <!-- Action buttons -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                 <Button x:Name="BtnTestConnection"

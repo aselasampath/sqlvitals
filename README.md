@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.21.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.22.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -128,7 +128,7 @@ All paths are relative to the repository root.
     │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
     │   ├── Helpers/                       ← ChartTheme, ClipboardHelper
     │   ├── Services/
-    │   │   ├── AppLog.cs                  ← Daily error log in %AppData%\SqlVitals\Logs
+    │   │   ├── AppLog.cs                  ← Daily diagnostic log in %AppData%\SqlVitals\logs (14-day retention)
     │   │   ├── ConnectionSettingsService.cs ← Saved connections (DPAPI-encrypted)
     │   │   ├── RepositoryFactory.cs       ← Builds the repository for the active connection
     │   │   ├── MonitoringManager.cs       ← Background live-metrics collectors, one per connection
@@ -232,7 +232,9 @@ through the `<None Update>` entry in `SqlVitals.Desktop.csproj`, so edit the one
 Connections entered in the app's **Settings** page are saved per-user (DPAPI-encrypted)
 to `%AppData%\SqlVitals\settings.dat`, and the active one overrides the connection string from `appsettings.json`.
 
-Data-collection errors are written to `%AppData%\SqlVitals\Logs\SqlVitals-yyyyMMdd.log` (connection secrets redacted).
+Collection errors and unhandled exceptions are written to `%AppData%\SqlVitals\logs\SqlVitals-yyyyMMdd.log`:
+one file per day, deleted after 14 days. Passwords and connection strings are removed before writing.
+**Settings → Diagnostics → Open log folder** opens it, so you can attach the latest file to a bug report.
 When a page's auto-refresh fails, the status bar shows the error instead of the page going quiet;
 it does not pop up a dialog on every tick.
 
@@ -376,7 +378,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.21.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.22.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
