@@ -153,7 +153,6 @@ All paths are relative to the repository root.
     │   ├── Monitoring/                    ← LiveMetricSample
     │   ├── Controllers/                   ← REST endpoints (only used if running as API)
     │   ├── Errors/                        ← WaitStatsException
-    │   ├── AnalysisEngine.cs              ← Placeholder for future analysis logic
     │   ├── ApiHost.cs / Program.cs        ← Web API host (not used by the desktop app)
     │   └── wwwroot/                       ← Static assets for standalone API mode
     │
