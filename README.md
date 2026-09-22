@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.23.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.24.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -39,7 +39,7 @@ live diagnostic data across the app's monitoring screens:
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
-- Index health (missing, unused, usage, fragmentation) with a DROP script generator for unused indexes
+- Index health (missing, unused, usage, fragmentation) with script generators to create missing indexes and drop unused ones
 - Resource-intensive queries (reads + CPU)
 - Index usage patterns and fragmentation
 - Implicit type conversions
@@ -152,7 +152,8 @@ All paths are relative to the repository root.
     │   │   ├── SpTraceRepository.cs, TempDbRepository.cs, PlanCacheHealthRepository.cs
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── Scripting/
-    │   │   └── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
+    │   │   ├── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
+    │   │   └── MissingIndexCreateScript.cs ← Builds the Index Health CREATE script
     │   ├── Export/
     │   │   └── DelimitedText.cs           ← CSV / tab-separated text for grid copy and export
     │   ├── Monitoring/                    ← LiveMetricSample
@@ -382,7 +383,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.23.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.24.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -445,6 +446,11 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 ### Index Health
 
 - **Missing Indexes:** suggestions sorted by severity, then impact, with a ready-made `CREATE INDEX` statement per row.
+  **Generate CREATE Script** builds one script for the selected rows, or for every row if nothing is
+  selected, in the grid's current sort order. Each index gets its key and `INCLUDE` columns, a
+  generated name (`IX_<Table>_<key columns>`) and an `IF NOT EXISTS` guard. A header lists what to
+  check before running it. It opens in `SqlScriptWindow`. SqlVitals never runs it. The script comes
+  from `SqlVitals/Engine/Scripting/MissingIndexCreateScript.cs`.
 - **Unused Indexes:** indexes with zero reads since the last restart. **Generate DROP Script** builds a
   `DROP INDEX` script for the selected rows, or for every row if nothing is selected, in the grid's
   current sort order. Unique indexes are commented out in the script. The script opens in a

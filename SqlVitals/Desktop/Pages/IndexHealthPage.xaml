@@ -15,10 +15,18 @@
                 <TabItem Header="Missing Indexes">
                     <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
                         <StackPanel>
-                            <TextBlock Text="Recommended Missing Indexes" Style="{StaticResource SectionHeader}" />
+                            <DockPanel Margin="0,0,0,8" LastChildFill="True">
+                                <Button x:Name="BtnCreateScript" DockPanel.Dock="Right" Content="Generate CREATE Script"
+                                        Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
+                                        IsEnabled="False" Click="BtnCreateScript_Click"
+                                        ToolTip="Generate a T-SQL script that creates the selected missing indexes (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                                <TextBlock Text="Recommended Missing Indexes" Style="{StaticResource SectionHeader}"
+                                           VerticalAlignment="Center" />
+                            </DockPanel>
                             <DataGrid x:Name="MissingGrid" MaxHeight="480"
                                       IsReadOnly="True" CanUserAddRows="False"
-                                      ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow">
+                                      ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow"
+                                      SelectionChanged="MissingGrid_SelectionChanged">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Database"       Binding="{Binding DatabaseName}"                  Width="100" />
                                     <DataGridTextColumn Header="Schema"         Binding="{Binding SchemaName}"                    Width="80" />
@@ -35,7 +43,7 @@
                                     <DataGridTextColumn Header="Equality Cols"  Binding="{Binding EqualityColumns}"               Width="150">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Columns that appear in equality predicates (WHERE col = value). These become the leading key columns in the suggested index."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Include Cols"   Binding="{Binding IncludeColumns}"                Width="150">
+                                    <DataGridTextColumn Header="Include Cols"   Binding="{Binding IncludedColumns}"               Width="150">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Columns suggested as INCLUDE columns to make the index covering — i.e., all columns needed by the SELECT are in the index, eliminating key lookups."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                     <DataGridTextColumn Header="Severity"       Binding="{Binding Severity}"                      Width="80">
