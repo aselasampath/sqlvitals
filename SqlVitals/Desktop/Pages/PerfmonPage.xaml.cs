@@ -441,8 +441,12 @@ public partial class PerfmonPage : Page, IRefreshable
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            MainWindow.ReportBackgroundError(this, "Perfmon", ex);
+        }
         finally
         {
             _refreshing   = false;

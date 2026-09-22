@@ -243,8 +243,12 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
             var snap = await _repo.GetMemorySnapshotAsync();
             ApplyKpi(snap);
             AppendSnapshot(snap);
+            MainWindow.ReportBackgroundSuccess(this);
         }
-        catch { /* swallow — status will not update but app stays alive */ }
+        catch (Exception ex)
+        {
+            MainWindow.ReportBackgroundError(this, "Memory Grants", ex);
+        }
     }
 
     private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)

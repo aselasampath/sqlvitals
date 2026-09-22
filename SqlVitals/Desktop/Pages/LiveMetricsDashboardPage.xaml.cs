@@ -215,8 +215,12 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         {
             var nodes = (await _repo.GetProcessesAsync()).ToList();
             _activeProcessMap?.UpdateNodes(nodes);
+            MainWindow.ReportBackgroundSuccess(this);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            MainWindow.ReportBackgroundError(this, "Live Metrics process map", ex);
+        }
         finally
         {
             _refreshingMap = false;
