@@ -411,6 +411,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Live Metrics | `LiveMetrics` | `LiveMetricsDashboardPage` | Live snapshot methods | Start page; keeps collecting in the background |
 | Top Waits | `TopWaits` | `TopWaitsPage` | `GetTopWaitTypesAsync`, `GetCumulativeWaitsAsync` | |
 | Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` | |
+| Processes | `Processes` | `ProcessesPage` | `GetProcessesAsync` | Full-page blocking map with SPID search, session details and its own auto-refresh |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
@@ -430,9 +431,6 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 > The table above reflects the nav tags wired up in `MainWindow.xaml.cs`. See
 > `SqlVitals/Engine/Repositories/IWaitStatsRepository.cs` for the full, current method list —
 > it has grown well past the methods shown here as pages were added.
->
-> `ProcessesPage` exists in `Pages/` but has no sidebar button yet, so it can't be reached in
-> the app (tracked in issue #19).
 
 ### Index Health
 

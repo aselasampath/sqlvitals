@@ -349,13 +349,14 @@ public partial class MainWindow : Window
         _currentTag = tag;
 
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
         {
             "TopWaits"        => BtnTopWaits,
             "ActiveWaits"     => BtnActiveWaits,
+            "Processes"       => BtnProcesses,
             "WaitTrend"       => BtnWaitTrend,
             "TempDb"          => BtnTempDb,
             "Memory"          => BtnMemory,
@@ -389,6 +390,7 @@ public partial class MainWindow : Window
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
+            "Processes"       => new ProcessesPage(Repo),
             "WaitTrend"       => new WaitStatsTrendPage(Repo),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
