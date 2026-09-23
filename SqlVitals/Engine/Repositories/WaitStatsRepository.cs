@@ -1063,7 +1063,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     public async Task<IEnumerable<StaleStatistic>> GetStaleStatisticsAsync()
     {
         const string sql = """
-            SELECT OBJECT_NAME(s.object_id) AS TableName, s.name AS StatisticsName,
+            SELECT OBJECT_SCHEMA_NAME(s.object_id) AS SchemaName,
+                OBJECT_NAME(s.object_id) AS TableName, s.name AS StatisticsName,
                 STATS_DATE(s.object_id,s.stats_id) AS LastUpdated,
                 DATEDIFF(DAY,STATS_DATE(s.object_id,s.stats_id),GETDATE()) AS DaysOld,
                 sp.rows AS RowsInTable, sp.rows_sampled AS RowsSampled,
@@ -1080,7 +1081,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
         using var conn = CreateConnection();
         return (await Q(conn, sql)).Select(r => new StaleStatistic(
-            (string)r.TableName, (string)r.StatisticsName,
+            (string)r.SchemaName, (string)r.TableName, (string)r.StatisticsName,
             (DateTime?)r.LastUpdated, (int)r.DaysOld,
             (long)r.RowsInTable, (long)r.RowsSampled, (double?)r.SamplePct ?? 0,
             (long)r.ModificationsSinceLastUpdate,

@@ -2,6 +2,7 @@ namespace SqlVitals.Engine.Models;
 
 /// <summary>Statistics that have not been updated in a while.</summary>
 public record StaleStatistic(
+    string    SchemaName,
     string    TableName,
     string    StatisticsName,
     DateTime? LastUpdated,

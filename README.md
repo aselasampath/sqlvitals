@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.25.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.26.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -43,7 +43,7 @@ live diagnostic data across the app's monitoring screens:
 - Resource-intensive queries (reads + CPU)
 - Index usage patterns and fragmentation
 - Implicit type conversions
-- Stale statistics
+- Stale statistics, with a script generator to update them (default sampling or FULLSCAN)
 - Database storage, file sizes, and server configuration
 - Live stored-procedure tracing (SP Trace)
 - Export / AI report generator
@@ -154,7 +154,8 @@ All paths are relative to the repository root.
     │   ├── Scripting/
     │   │   ├── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
     │   │   ├── MissingIndexCreateScript.cs ← Builds the Index Health CREATE script
-    │   │   └── IndexMaintenanceScript.cs  ← Builds the Index Health REORGANIZE / REBUILD script
+    │   │   ├── IndexMaintenanceScript.cs  ← Builds the Index Health REORGANIZE / REBUILD script
+    │   │   └── UpdateStatisticsScript.cs  ← Builds the Stale Statistics UPDATE STATISTICS script
     │   ├── Export/
     │   │   └── DelimitedText.cs           ← CSV / tab-separated text for grid copy and export
     │   ├── Monitoring/                    ← LiveMetricSample
@@ -384,7 +385,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.25.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.26.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -432,7 +433,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Resource Queries | `ResourceQueries` | `ResourceQueriesPage` | `GetResourceIntensiveQueriesAsync` | |
 | Implicit Conv. | `ImplicitConv` | `ImplicitConversionsPage` | `GetImplicitConversionsAsync` | |
 | Plan Cache Health | `PlanCacheHealth` | `PlanCacheHealthPage` | Plan cache health methods | |
-| Stale Stats | `StaleStats` | `StaleStatisticsPage` | `GetStaleStatisticsAsync` | |
+| Stale Stats | `StaleStats` | `StaleStatisticsPage` | `GetStaleStatisticsAsync` | See [Stale Statistics](#stale-statistics) |
 | DB Storage | `DbStorage` | `DatabaseStoragePage` | `GetDatabaseStorageAsync` | |
 | App Connections | `AppConnections` | `ApplicationConnectionsPage` | Application connection methods | |
 | Perfmon | `Perfmon` | `PerfmonPage` | Perfmon counter methods | |
@@ -479,6 +480,19 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
   that reject it (columnstore, XML, spatial), each with a note in the script. The script opens in
   `SqlScriptWindow`. SqlVitals never runs it. It comes from
   `SqlVitals/Engine/Scripting/IndexMaintenanceScript.cs`.
+
+### Stale Statistics
+
+Statistics with pending modifications, sorted by modification count. **Generate UPDATE STATISTICS
+Script** builds one `UPDATE STATISTICS <table> (<statistic>)` per selected row, or per row if nothing
+is selected, in the grid's current sort order. **Sampling** picks between **Default** (no `WITH`
+clause — SQL Server chooses the sample size, or reuses a persisted sample percent) and **FULLSCAN**
+(every row is read). With default sampling, statistics last built with a full scan are flagged in the
+script, since a sampled update makes them less accurate; with FULLSCAN, the header and the preview
+notice give the approximate number of rows that will be read. Incremental statistics get a note about
+`WITH RESAMPLE ON PARTITIONS`. Each statement is guarded by an `IF EXISTS` against `sys.stats`, and
+the table is schema-qualified. The script opens in `SqlScriptWindow`. SqlVitals never runs it. It
+comes from `SqlVitals/Engine/Scripting/UpdateStatisticsScript.cs`.
 
 Every page implements `IRefreshable`:
 

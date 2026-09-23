@@ -25,8 +25,25 @@
             <StackPanel>
                 <TextBlock Text="Statistics with pending modifications — sorted by modification count"
                            Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+
+                <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="Sampling:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,8,0"/>
+                    <RadioButton x:Name="RbDefaultSampling" GroupName="Sampling" Content="Default" IsChecked="True"
+                                 VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource TextPrimary}"
+                                 ToolTip="No WITH clause: SQL Server chooses the sample size (or uses a persisted sample percent). Fast, but skewed data can still get a poor histogram." />
+                    <RadioButton x:Name="RbFullScan" GroupName="Sampling" Content="FULLSCAN"
+                                 VerticalAlignment="Center" Margin="0,0,15,0" Foreground="{StaticResource TextPrimary}"
+                                 ToolTip="WITH FULLSCAN: reads every row for the most accurate histogram. Heavy I/O on large tables — run it off-peak." />
+                    <Button x:Name="BtnUpdateStatsScript" Content="Generate UPDATE STATISTICS Script"
+                            Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
+                            IsEnabled="False" Click="BtnUpdateStatsScript_Click"
+                            ToolTip="Generate a T-SQL UPDATE STATISTICS script for the selected rows (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                </WrapPanel>
+
                 <DataGrid x:Name="StatsGrid" MaxHeight="620" CanUserAddRows="False"
                           IsReadOnly="True" AutoGenerateColumns="False"
+                          SelectionMode="Extended" SelectionUnit="FullRow"
+                          SelectionChanged="StatsGrid_SelectionChanged"
                           RowBackground="{StaticResource BgDeep}"
                           AlternatingRowBackground="{StaticResource BgSidebar}"
                           Foreground="{StaticResource TextPrimary}"
@@ -35,6 +52,9 @@
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Database"      Binding="{Binding DatabaseName}"                                       Width="110">
                             <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database containing the statistics object."/></Style></DataGridTextColumn.HeaderStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Schema"        Binding="{Binding SchemaName}"                                         Width="80">
+                            <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Schema the table belongs to. The UPDATE STATISTICS script qualifies every table with it."/></Style></DataGridTextColumn.HeaderStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="Table"         Binding="{Binding TableName}"                                          Width="160">
                             <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Table the statistics are defined on."/></Style></DataGridTextColumn.HeaderStyle>
