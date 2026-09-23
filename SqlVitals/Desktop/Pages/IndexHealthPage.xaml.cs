@@ -20,6 +20,10 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     // overlapping the in-page one) cannot overwrite the grid with results for stale criteria.
     private int _fragLoadVersion;
 
+    // One edition probe per page instance: MainWindow builds a fresh page after a connection
+    // switch, so the answer cannot go stale underneath us.
+    private bool _onlineSupportChecked;
+
     public IndexHealthPage(IWaitStatsRepository repo)
     {
         _repo = repo;
@@ -51,7 +55,44 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
         UpdateCreateScriptButton();
         UpdateDropScriptButton();
 
+        await UpdateOnlineRebuildSupportAsync();
         await LoadFragmentationAsync(minFrag, minPages);
+    }
+
+    /// <summary>
+    /// ONLINE = ON is an edition feature — offering it where the server rejects it would only
+    /// produce a script that fails. Ask once, then enable the box (and default it on, since an
+    /// online rebuild is the one that doesn't take the table away from the application).
+    /// </summary>
+    private async System.Threading.Tasks.Task UpdateOnlineRebuildSupportAsync()
+    {
+        if (_onlineSupportChecked) return;
+        _onlineSupportChecked = true;
+
+        try
+        {
+            if (await _repo.SupportsOnlineIndexRebuildAsync())
+            {
+                ChkOnlineRebuild.IsEnabled = true;
+                ChkOnlineRebuild.IsChecked = true;
+                ChkOnlineRebuild.Foreground = (System.Windows.Media.Brush)FindResource("TextPrimary");
+                ChkOnlineRebuild.ToolTip = "Rebuild rowstore indexes with WITH (ONLINE = ON) so the table stays available. "
+                    + "Slower, and it needs more log and tempdb space.";
+            }
+            else
+            {
+                ChkOnlineRebuild.ToolTip = "This server's edition does not support online index rebuilds — "
+                    + "the script would fail. Enterprise, Developer, Azure SQL Database and Managed Instance do.";
+            }
+        }
+        catch
+        {
+            // The edition check failed (server unreachable, permissions). Leave the box off:
+            // a rebuild without ONLINE runs everywhere, one with it does not.
+            _onlineSupportChecked = false;
+            ChkOnlineRebuild.ToolTip = "Could not read the server edition, so online rebuilds are not offered. "
+                + "Refresh to try again.";
+        }
     }
 
     private void MissingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateCreateScriptButton();
@@ -130,6 +171,105 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
         }.ShowDialog();
     }
 
+    private void FragGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateMaintenanceScriptButton();
+
+    private void UpdateMaintenanceScriptButton()
+    {
+        int selected = FragGrid.SelectedItems.Count;
+        int total    = FragGrid.Items.Count;
+
+        BtnMaintenanceScript.IsEnabled = total > 0;
+        BtnMaintenanceScript.Content = selected > 0
+            ? $"Generate Maintenance Script ({selected} selected)"
+            : "Generate Maintenance Script (all)";
+    }
+
+    private void BtnMaintenanceScript_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadScriptThresholds(out var options, out string error, out var invalidBox))
+        {
+            SetFragStatus(error, isError: true);
+            invalidBox?.Focus();
+            invalidBox?.SelectAll();
+            return;
+        }
+
+        // Selected rows if the user picked some, otherwise everything in the grid —
+        // in the grid's current sort order so the script reads like what's on screen.
+        var selected = FragGrid.SelectedItems.OfType<IndexFragmentation>().ToHashSet();
+        var indexes = FragGrid.Items.OfType<IndexFragmentation>()
+            .Where(i => selected.Count == 0 || selected.Contains(i))
+            .ToList();
+        if (indexes.Count == 0) return;
+
+        var summary = IndexMaintenanceScript.Summarize(indexes, options);
+        var notice =
+            $"Review before running. {summary.Rebuild:N0} index(es) will be rebuilt and {summary.Reorganize:N0} reorganized" +
+            (summary.Skipped > 0 ? $"; {summary.Skipped:N0} skipped" : "") +
+            (options.OnlineRebuild ? ", rebuilds using ONLINE = ON" : "") +
+            ". A rebuild without ONLINE = ON locks the table for the whole operation — run this in a maintenance window. SqlVitals does not run this script.";
+
+        new SqlScriptWindow(
+            "Index Maintenance",
+            notice,
+            IndexMaintenanceScript.Build(indexes, options, DateTime.Now),
+            $"IndexMaintenance_{DateTime.Now:yyyyMMdd_HHmm}.sql")
+        {
+            Owner = Window.GetWindow(this)
+        }.ShowDialog();
+    }
+
+    /// <summary>
+    /// Reads the script thresholds. Min page count is shared with the grid criteria above —
+    /// an index too small to be worth defragmenting is the same index in both places.
+    /// </summary>
+    private bool TryReadScriptThresholds(out IndexMaintenanceOptions options, out string error, out TextBox? invalidBox)
+    {
+        options = new IndexMaintenanceOptions();
+        error = string.Empty;
+        invalidBox = null;
+
+        if (!double.TryParse(TxtReorganizePct.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double reorg)
+            || reorg <= 0 || reorg > 100)
+        {
+            error = "Reorganize from % must be a number greater than 0 and at most 100.";
+            invalidBox = TxtReorganizePct;
+            return false;
+        }
+
+        if (!double.TryParse(TxtRebuildPct.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double rebuild)
+            || rebuild <= 0 || rebuild > 100)
+        {
+            error = "Rebuild from % must be a number greater than 0 and at most 100.";
+            invalidBox = TxtRebuildPct;
+            return false;
+        }
+
+        if (rebuild < reorg)
+        {
+            error = "Rebuild from % must be at least the reorganize threshold — a rebuild is the heavier fix.";
+            invalidBox = TxtRebuildPct;
+            return false;
+        }
+
+        if (!long.TryParse(TxtMinPageCount.Text, NumberStyles.Integer | NumberStyles.AllowThousands,
+                CultureInfo.CurrentCulture, out long minPages) || minPages <= 0)
+        {
+            error = "Min Page Count must be a whole number greater than 0.";
+            invalidBox = TxtMinPageCount;
+            return false;
+        }
+
+        options = new IndexMaintenanceOptions
+        {
+            ReorganizeThresholdPercent = reorg,
+            RebuildThresholdPercent    = rebuild,
+            MinPageCount               = minPages,
+            OnlineRebuild              = ChkOnlineRebuild.IsEnabled && ChkOnlineRebuild.IsChecked == true,
+        };
+        return true;
+    }
+
     private async void BtnRefreshFrag_Click(object sender, RoutedEventArgs e) => await RefreshFragmentationAsync();
 
     private async void FragParam_KeyDown(object sender, KeyEventArgs e)
@@ -178,6 +318,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             if (version != _fragLoadVersion) return;
 
             SetItemsSourcePreservingSort(FragGrid, rows);
+            UpdateMaintenanceScriptButton();
             SetFragStatus(
                 $"{rows.Count:N0} index{(rows.Count == 1 ? "" : "es")} with ≥ {minFrag:0.##}% fragmentation " +
                 $"and ≥ {minPages:N0} pages · updated {DateTime.Now:HH:mm:ss}",

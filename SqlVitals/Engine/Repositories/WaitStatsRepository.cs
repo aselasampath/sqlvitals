@@ -2,6 +2,7 @@ using System.Data;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Scripting;
 
 namespace SqlVitals.Engine.Repositories;
 
@@ -41,6 +42,15 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
         using var conn = CreateConnection();
         var row = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
         return row?.Edition == 5;
+    }
+
+    // Online index rebuilds are an edition feature, so the maintenance script only offers
+    // WITH (ONLINE = ON) where the server accepts it (see IndexMaintenanceScript).
+    public async Task<bool> SupportsOnlineIndexRebuildAsync()
+    {
+        using var conn = CreateConnection();
+        var row = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
+        return row is not null && IndexMaintenanceScript.EditionSupportsOnlineRebuild(Convert.ToInt32(row.Edition));
     }
 
     // ── 1. Cumulative wait stats ──────────────────────────────────────
@@ -986,7 +996,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     public async Task<IEnumerable<IndexFragmentation>> GetIndexFragmentationAsync(double minFragmentationPercent = 10, long minPageCount = 1000)
     {
         const string sql = """
-            SELECT OBJECT_NAME(ips.object_id) AS TableName, i.name AS IndexName,
+            SELECT SCHEMA_NAME(o.schema_id) AS SchemaName,
+                OBJECT_NAME(ips.object_id) AS TableName, i.name AS IndexName,
                 ips.index_type_desc AS IndexType,
                 ips.avg_fragmentation_in_percent AS FragmentationPercent,
                 ips.page_count AS PageCount,
@@ -1014,7 +1025,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             var row = (IDictionary<string, object>)r;
             object? Get(string k) => row.TryGetValue(k, out var v) && v is not DBNull ? v : null;
             return new IndexFragmentation(
-                (string)r.TableName, (string?)r.IndexName, (string)r.IndexType,
+                (string)r.SchemaName, (string)r.TableName, (string?)r.IndexName, (string)r.IndexType,
                 Convert.ToDouble(Get("FragmentationPercent") ?? 0.0),
                 Convert.ToInt64(Get("PageCount") ?? 0L),
                 Convert.ToDouble(Get("AvgPageSpaceUsed") ?? 0.0),

@@ -7,6 +7,7 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
 {
     // ── Engine edition detection ──────────────────────────────────────
     Task<bool> IsAzureSqlDatabaseAsync();
+    Task<bool> SupportsOnlineIndexRebuildAsync();
 
     Task<IEnumerable<WaitStatCumulative>>  GetCumulativeWaitsAsync();
 

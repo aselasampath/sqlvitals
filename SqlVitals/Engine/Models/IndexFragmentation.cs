@@ -2,6 +2,7 @@ namespace SqlVitals.Engine.Models;
 
 /// <summary>Index fragmentation data from dm_db_index_physical_stats.</summary>
 public record IndexFragmentation(
+    string   SchemaName,
     string   TableName,
     string?  IndexName,
     string   IndexType,
