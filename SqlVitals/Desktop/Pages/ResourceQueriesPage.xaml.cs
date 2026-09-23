@@ -23,9 +23,9 @@ public partial class ResourceQueriesPage : Page, IRefreshable
     {
         var (byReads, byCpu, byHighestReads) = await _repo.GetResourceIntensiveQueriesAsync(_topN);
 
-        if (ReadsGrid != null)       ReadsGrid.ItemsSource       = byReads.ToList();
-        if (CpuGrid != null)         CpuGrid.ItemsSource         = byCpu.ToList();
-        if (HighestReadsGrid != null) HighestReadsGrid.ItemsSource = byHighestReads.ToList();
+        DataGridRefresh.SetItemsSource(ReadsGrid,        byReads.ToList());
+        DataGridRefresh.SetItemsSource(CpuGrid,          byCpu.ToList());
+        DataGridRefresh.SetItemsSource(HighestReadsGrid, byHighestReads.ToList());
     }
 
     private async void CmbTopN_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -84,6 +84,7 @@ public partial class ResourceQueriesPage : Page, IRefreshable
     private void CopyCpu_Click(object sender, RoutedEventArgs e)          => CopyGrid(CpuGrid);
     private void CopyHighestReads_Click(object sender, RoutedEventArgs e) => CopyGrid(HighestReadsGrid);
 
+    // Copies what the grid shows: the filtered rows, in the current sort order.
     private static void CopyGrid(DataGrid grid)
     {
         if (grid.ItemsSource == null) return;
@@ -96,7 +97,7 @@ public partial class ResourceQueriesPage : Page, IRefreshable
                 sb.Append(col.Header + "\t");
             sb.AppendLine();
 
-            foreach (var item in grid.ItemsSource)
+            foreach (var item in grid.Items)
             {
                 var props = item.GetType().GetProperties();
                 foreach (var col in grid.Columns)

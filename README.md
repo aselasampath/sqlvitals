@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.26.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.27.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -48,6 +48,7 @@ live diagnostic data across the app's monitoring screens:
 - Live stored-procedure tracing (SP Trace)
 - Export / AI report generator
 - Right-click any grid to Copy, Copy with headers, or Export to CSV (UTF-8)
+- Filter box on the Resource Queries, Index Health and Query Store grids, and a column sort that survives Refresh
 - Light theme (default) and dark theme, switchable in Settings
 
 ---
@@ -87,6 +88,7 @@ live diagnostic data across the app's monitoring screens:
 │   Models/    (C# record types, one file per feature area)│
 │   Scripting/ (T-SQL script generators, e.g. DROP INDEX)  │
 │   Export/    (CSV / TSV text for grid copy and export)   │
+│   Filtering/ (text matching for the grid filter boxes)   │
 │   Controllers/ + ApiHost.cs / Program.cs                 │
 │   └── Optional standalone REST host — not used by Desktop│
 └───────────────────────┬──────────────────────────────────┘
@@ -126,9 +128,10 @@ All paths are relative to the repository root.
     │   ├── Pages/
     │   │   ├── IRefreshable.cs            ← Interface every page must implement
     │   │   └── ...Page.xaml/.cs           ← One file pair per screen
-    │   ├── Controls/                      ← ProcessMapControl
+    │   ├── Controls/                      ← ProcessMapControl, GridFilterBox (grid filter box)
     │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
-    │   ├── Helpers/                       ← ChartTheme, ClipboardHelper, DataGridExport (grid right-click menu)
+    │   ├── Helpers/                       ← ChartTheme, ClipboardHelper, DataGridExport (grid right-click menu),
+    │   │                                     DataGridRefresh (reload a grid keeping its sort and filter)
     │   ├── Services/
     │   │   ├── AppLog.cs                  ← Daily diagnostic log in %AppData%\SqlVitals\logs (14-day retention)
     │   │   ├── ConnectionSettingsService.cs ← Saved connections (DPAPI-encrypted)
@@ -158,6 +161,8 @@ All paths are relative to the repository root.
     │   │   └── UpdateStatisticsScript.cs  ← Builds the Stale Statistics UPDATE STATISTICS script
     │   ├── Export/
     │   │   └── DelimitedText.cs           ← CSV / tab-separated text for grid copy and export
+    │   ├── Filtering/
+    │   │   └── RowFilter.cs               ← Term parsing and row matching for the grid filter boxes
     │   ├── Monitoring/                    ← LiveMetricSample
     │   ├── Controllers/                   ← REST endpoints (only used if running as API)
     │   ├── Errors/                        ← WaitStatsException
@@ -385,7 +390,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.26.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.27.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -428,9 +433,9 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
-| Query Store | `QueryStore` | `QueryStorePage` | `GetQueryStoreAsync` | |
+| Query Store | `QueryStore` | `QueryStorePage` | `GetQueryStoreAsync` | Filter box. See [Filtering and sorting grids](#filtering-and-sorting-grids) |
 | Index Health | `IndexHealth` | `IndexHealthPage` | `GetIndexHealthAsync`, `GetIndexUsagePatternsAsync`, `GetIndexFragmentationAsync` | Tabs: Missing, Unused, Usage, Fragmentation. See [Index Health](#index-health) |
-| Resource Queries | `ResourceQueries` | `ResourceQueriesPage` | `GetResourceIntensiveQueriesAsync` | |
+| Resource Queries | `ResourceQueries` | `ResourceQueriesPage` | `GetResourceIntensiveQueriesAsync` | Filter box on each tab. See [Filtering and sorting grids](#filtering-and-sorting-grids) |
 | Implicit Conv. | `ImplicitConv` | `ImplicitConversionsPage` | `GetImplicitConversionsAsync` | |
 | Plan Cache Health | `PlanCacheHealth` | `PlanCacheHealthPage` | Plan cache health methods | |
 | Stale Stats | `StaleStats` | `StaleStatisticsPage` | `GetStaleStatisticsAsync` | See [Stale Statistics](#stale-statistics) |
@@ -493,6 +498,30 @@ notice give the approximate number of rows that will be read. Incremental statis
 `WITH RESAMPLE ON PARTITIONS`. Each statement is guarded by an `IF EXISTS` against `sys.stats`, and
 the table is schema-qualified. The script opens in `SqlScriptWindow`. SqlVitals never runs it. It
 comes from `SqlVitals/Engine/Scripting/UpdateStatisticsScript.cs`.
+
+### Filtering and sorting grids
+
+Every grid on **Resource Queries** (all three tabs), **Index Health** (all four tabs) and **Query
+Store** has a **Filter rows…** box above it. It shows only the rows that contain every word typed,
+in any visible column, ignoring case. Put a phrase in `"double quotes"` to match it as written.
+Cells match as they are displayed and as raw values, so `40,000` and `40000` both find a row that
+shows 40,000, and dates match in the grid's own format (`2026-09-23 14:05`). While a filter is on,
+the box shows **N of M rows**. **Esc** or **✕** clears it.
+
+Click a column header to sort as usual. **Refresh** (the sidebar button, the Row Limit on Resource
+Queries, or the Fragmentation tab's own **↻ Refresh**) reloads the rows but keeps the column sort
+and the filter. The sort is kept for the page you are on; opening a page again starts from its
+default order.
+
+What you see is what you get. The context menu's Copy and Export to CSV, the **Copy All** buttons
+on Resource Queries, and the Index Health script buttons all work on the rows the filter shows, in
+the current sort order. With nothing selected, the script buttons read **(N shown)** instead of
+**(all)** while a filter is on. Query Store now has a **Query Text** column (first line of the
+statement), so a query can be found by its text.
+
+The matching lives in `SqlVitals/Engine/Filtering/RowFilter.cs`. The box is
+`SqlVitals/Desktop/Controls/GridFilterBox`, and pages reload grids through
+`SqlVitals/Desktop/Helpers/DataGridRefresh.SetItemsSource`.
 
 Every page implements `IRefreshable`:
 

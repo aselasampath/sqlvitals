@@ -1,6 +1,7 @@
 <Page x:Class="SqlVitals.Desktop.Pages.ResourceQueriesPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Resource-Intensive Queries">
     <Page.Resources>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
@@ -46,7 +47,10 @@
                             <DockPanel Margin="0,0,0,8">
                                 <Button Content="&#x2398; Copy All" DockPanel.Dock="Right"
                                         Style="{StaticResource RefreshButton}" Padding="10,5"
+                                        ToolTip="Copy every row shown, in the grid's current order, with headers."
                                         Click="CopyReads_Click"/>
+                                <controls:GridFilterBox DockPanel.Dock="Right" Margin="0,0,10,0"
+                                                        Target="{Binding ElementName=ReadsGrid}"/>
                                 <TextBlock Text="Queries sorted by total logical reads (most I/O-intensive)"
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
@@ -116,7 +120,10 @@
                             <DockPanel Margin="0,0,0,8">
                                 <Button Content="&#x2398; Copy All" DockPanel.Dock="Right"
                                         Style="{StaticResource RefreshButton}" Padding="10,5"
+                                        ToolTip="Copy every row shown, in the grid's current order, with headers."
                                         Click="CopyCpu_Click"/>
+                                <controls:GridFilterBox DockPanel.Dock="Right" Margin="0,0,10,0"
+                                                        Target="{Binding ElementName=CpuGrid}"/>
                                 <TextBlock Text="Queries sorted by total CPU time (most processor-intensive)"
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
@@ -170,7 +177,10 @@
                             <DockPanel Margin="0,0,0,8">
                                 <Button Content="&#x2398; Copy All" DockPanel.Dock="Right"
                                         Style="{StaticResource RefreshButton}" Padding="10,5"
+                                        ToolTip="Copy every row shown, in the grid's current order, with headers."
                                         Click="CopyHighestReads_Click"/>
+                                <controls:GridFilterBox DockPanel.Dock="Right" Margin="0,0,10,0"
+                                                        Target="{Binding ElementName=HighestReadsGrid}"/>
                                 <TextBlock Text="Queries sorted by total logical reads"
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
