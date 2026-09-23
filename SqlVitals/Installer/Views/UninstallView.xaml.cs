@@ -29,7 +29,7 @@ public partial class UninstallView : UserControl
             ? "SqlVitals doesn't appear to be installed."
             : $"This removes SqlVitals {existing.Version.ToString(3)} from {existing.InstallDir}.";
 
-        DataPath.Text = $"Stored for your Windows account in {ProductInfo.UserDataDir}";
+        DataPath.Text = $"Stored for your Windows account in {ProductInfo.UserDataDir} and {ProductInfo.HistoryDataDir}";
         ElevatePanel.Visibility = existing is not null && !CanUninstall ? Visibility.Visible : Visibility.Collapsed;
     }
 

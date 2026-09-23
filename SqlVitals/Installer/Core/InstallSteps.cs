@@ -438,16 +438,19 @@ internal sealed class UnregisterStep : IInstallStep
     public void Rollback(InstallContext context) { }
 }
 
-/// <summary>Only when the user ticked "Also delete my saved connections".</summary>
+/// <summary>Only when the user ticked "Also delete my saved connections, settings and history".</summary>
 internal sealed class RemoveUserDataStep : IInstallStep
 {
-    public string Title  => "Removing saved connections";
+    public string Title  => "Removing saved connections and history";
     public double Weight => 1;
 
     public void Execute(InstallContext context, IProgress<double> progress, CancellationToken ct)
     {
-        if (context.RemoveUserData)
-            FileSystemHelpers.DeleteDirectoryIfExists(ProductInfo.UserDataDir);
+        if (!context.RemoveUserData)
+            return;
+
+        FileSystemHelpers.DeleteDirectoryIfExists(ProductInfo.UserDataDir);
+        FileSystemHelpers.DeleteDirectoryIfExists(ProductInfo.HistoryDataDir);
     }
 
     public void Rollback(InstallContext context) { }

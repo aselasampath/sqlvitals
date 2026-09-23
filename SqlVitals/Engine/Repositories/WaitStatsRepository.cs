@@ -34,6 +34,9 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     // long-lived instance rather than created per call.
     private readonly SpTraceRepository _spTrace = new(configuration);
 
+    // Caches the engine edition, so one instance per connection.
+    private readonly HistoryRepository _history = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1765,4 +1768,11 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     public Task<IReadOnlyList<SqlVitals.Engine.Models.SpAggregateRow>> GetProcedureStatsTotalsAsync(int topN = 25)
         => _spTrace.GetProcedureStatsTotalsAsync(topN);
+
+    // ── Monitoring history (delegated to HistoryRepository) ───────────
+    public Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries)
+        => _history.GetHistoryDetailAsync(queriesExecutedSince, maxQueries);
+
+    public Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength)
+        => _history.GetQueryTextsAsync(queryHashes, maxLength);
 }
