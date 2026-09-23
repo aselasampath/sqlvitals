@@ -32,4 +32,11 @@ public static class ProductInfo
     /// </summary>
     public static string UserDataDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Name);
+
+    /// <summary>
+    /// Where the app keeps its monitoring history (history.db, see HistoryWriter). Local rather
+    /// than roaming because it grows. Same rules as <see cref="UserDataDir"/>.
+    /// </summary>
+    public static string HistoryDataDir =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Name);
 }

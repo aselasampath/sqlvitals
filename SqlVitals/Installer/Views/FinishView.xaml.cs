@@ -99,8 +99,9 @@ public partial class FinishView : UserControl
         NextStepsTitle.Text      = "Good to know";
 
         AddStep(new Run(context.RemoveUserData
-            ? "Your saved connections and settings were deleted."
-            : $"Your saved connections were kept in {ProductInfo.UserDataDir}. If you install SqlVitals again, they'll be there."));
+            ? "Your saved connections, settings and monitoring history were deleted."
+            : $"Your saved connections were kept in {ProductInfo.UserDataDir} and your monitoring history in " +
+              $"{ProductInfo.HistoryDataDir}. If you install SqlVitals again, they'll be there."));
 
         foreach (var dir in context.LeftBehind)
             AddStep(new Run($"Some files that Setup didn't install were left in {dir}. Delete them yourself if you no longer need them."));

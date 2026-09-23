@@ -1,5 +1,6 @@
 using System.Windows.Threading;
 using SqlVitals.Engine.Errors;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -23,6 +24,7 @@ public sealed class MonitoringSession : IDisposable
 
     private readonly DispatcherTimer        _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<LiveMetricSample> _samples = new();
+    private readonly HistoryRecorder?       _history;
     private LiveMetricSnapshot?             _previous;
     private Task?                           _inFlight;
     private int                             _consecutiveFailures;
@@ -30,12 +32,17 @@ public sealed class MonitoringSession : IDisposable
     private int                             _intervalSeconds;
     private bool                            _disposed;
 
+    /// <param name="history">
+    /// Saves this session's samples to the local history; null (the ad-hoc Live Metrics session)
+    /// keeps nothing beyond the in-memory window.
+    /// </param>
     public MonitoringSession(Guid? connectionId, IWaitStatsRepository repository, string fingerprint,
-                             int intervalSeconds = DefaultIntervalSeconds)
+                             int intervalSeconds = DefaultIntervalSeconds, HistoryRecorder? history = null)
     {
         ConnectionId     = connectionId;
         Repository       = repository;
         Fingerprint      = fingerprint;
+        _history         = history;
         _intervalSeconds = Math.Max(1, intervalSeconds);
         _timer.Tick     += Timer_Tick;
     }
@@ -147,7 +154,8 @@ public sealed class MonitoringSession : IDisposable
             var snapshot = await Repository.GetLiveMetricsAsync();
             if (_disposed) return;
 
-            var sample = LiveMetricSample.From(_previous, snapshot);
+            var isFirst = _previous is null;
+            var sample  = LiveMetricSample.From(_previous, snapshot);
             _previous = snapshot;
 
             _samples.Add(sample);
@@ -161,6 +169,16 @@ public sealed class MonitoringSession : IDisposable
                              ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
                              : string.Join(" · ", reasons))
                          + $" · updated {DateTime.Now:HH:mm:ss}";
+
+            // Neither call throws or waits on the disk. The first sample's rates are all zero
+            // (nothing to diff against), so it isn't history. Details are only read from a
+            // server that just answered, never from one that is failing.
+            if (_history is not null)
+            {
+                if (!isFirst)
+                    _history.RecordSample(sample);
+                _ = _history.CollectDetailIfDueAsync();
+            }
 
             SampleAdded?.Invoke(this, sample);
         }

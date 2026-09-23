@@ -67,7 +67,10 @@ public sealed class InstallContext
     public string           SetupExePath     { get; set; } = string.Empty;
     public bool             CreateDesktopShortcut { get; set; }
 
-    /// <summary>Uninstall only: also delete %AppData%\SqlVitals (saved connections).</summary>
+    /// <summary>
+    /// Uninstall only: also delete %AppData%\SqlVitals (saved connections, logs) and
+    /// %LocalAppData%\SqlVitals (monitoring history).
+    /// </summary>
     public bool RemoveUserData { get; set; }
 
     /// <summary>Set when this run created the install folder, so a rollback can remove it again.</summary>

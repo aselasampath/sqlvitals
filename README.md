@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.27.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.28.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -49,6 +49,7 @@ live diagnostic data across the app's monitoring screens:
 - Export / AI report generator
 - Right-click any grid to Copy, Copy with headers, or Export to CSV (UTF-8)
 - Filter box on the Resource Queries, Index Health and Query Store grids, and a column sort that survives Refresh
+- Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite, 14 days)
 - Light theme (default) and dark theme, switchable in Settings
 
 ---
@@ -153,7 +154,13 @@ All paths are relative to the repository root.
     │   │   ├── WaitStatsRepository.cs     ← Dapper implementation (SQL embedded as raw strings)
     │   │   ├── BaseRepository.cs          ← Q() / QFirst() query wrappers
     │   │   ├── SpTraceRepository.cs, TempDbRepository.cs, PlanCacheHealthRepository.cs
+    │   │   ├── HistoryRepository.cs       ← Server reads for the 5-minute history snapshot
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
+    │   ├── History/
+    │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
+    │   │   ├── HistoryWriter.cs           ← Background queue + writer thread shared by all connections
+    │   │   ├── HistoryRecorder.cs         ← Per connection: queues samples, takes detail snapshots
+    │   │   └── HistoryDetailTracker.cs    ← Turns cumulative DMV totals into per-interval changes
     │   ├── Scripting/
     │   │   ├── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
     │   │   ├── MissingIndexCreateScript.cs ← Builds the Index Health CREATE script
@@ -193,6 +200,7 @@ The solution contains five projects: `SqlVitals.Desktop`, `SqlVitals.Engine`,
 |---|---|---|---|
 | `Dapper` | 2.1.72 | `SqlVitals.Engine` | Micro-ORM — maps SQL results to C# records |
 | `Microsoft.Data.SqlClient` | 5.2.2 | `SqlVitals.Engine` | SQL Server / Azure SQL driver |
+| `Microsoft.Data.Sqlite` | 8.0.31 | `SqlVitals.Engine` | Local monitoring history file (see [Monitoring history](#monitoring-history)) |
 | `Microsoft.AspNetCore.OpenApi` | 8.0.23 | `SqlVitals.Engine` | Swagger (API mode only) |
 | `Swashbuckle.AspNetCore` | 6.6.2 | `SqlVitals.Engine` | Swagger UI (API mode only) |
 | `LiveChartsCore.SkiaSharpView.WPF` | 2.0.0-rc4.5 | `SqlVitals.Desktop` | Charts (bar, pie, line) |
@@ -278,9 +286,32 @@ while you were away (the last 60 samples, about 10 minutes at the default 10 s i
   - ◯ not monitored or paused.
 - **Interval and Start/Stop** on the Live Metrics page apply to that connection's collector, including while it runs in the background.
 - **Unreachable servers** are retried with exponential backoff (up to every 5 minutes), so they aren't hammered.
-- **Only the lightweight live-metrics query runs in the background.** Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
+- **Only lightweight queries run in the background:** the live-metrics query every interval, and the [history](#monitoring-history) detail snapshot every 5 minutes. Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
 - **Entra MFA connections** start background collection only after you've switched to them once in the session. This avoids unexpected sign-in windows.
   The same applies to SQL logins without a saved password.
+
+### Monitoring history
+
+Every connection monitored in the background is also saved to a local SQLite file, so you can look into a
+problem that happened while you weren't watching. It lives at `%LocalAppData%\SqlVitals\history.db`. That's
+local rather than roaming because the file grows, and SQLite's WAL mode doesn't work on the network shares
+roaming profiles are often redirected to. Open it with any SQLite tool (DB Browser for SQLite, the `sqlite3`
+CLI, DuckDB). Why SQLite over DuckDB, LiteDB or flat files is recorded on
+[issue #28](https://github.com/aselasampath/sqlvitals/issues/28).
+
+| Tier | How often | What | Tables |
+|---|---|---|---|
+| Samples | Every Live Metrics interval (10 s by default) | The Live Metrics sample: CPU %, wait rate per category, batch requests, compilations, transactions, physical I/O, page life expectancy, memory grants pending, buffer cache hit ratio. No extra server query. | `metric_samples` |
+| Details | Every 5 minutes | Change over the interval in waits per type (`sys.dm_os_wait_stats`, idle waits excluded), file I/O per file (`sys.dm_io_virtual_file_stats`), and the top 20 queries by CPU (`sys.dm_exec_query_stats`, grouped by `query_hash`). Also memory: total/target server memory, cache sizes. | `detail_snapshots`, `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts` |
+
+- **Times** are UTC epoch milliseconds from this PC (`captured_utc`). The server's own clock is kept beside it as text (`server_time`).
+- **Retention:** 14 days, purged hourly; the file shrinks as it goes (incremental auto-vacuum).
+- **Query text** is stored once per `query_hash` per connection, cut to 4,000 characters. It can contain literal values from your queries and isn't encrypted, so treat the file like the app log.
+- **`connections`** keeps each connection's name, server and database, never credentials, so history stays readable after the connection is deleted.
+- **Details skip an interval** when the server restarted (counters start again from zero), and a query is left out when its earlier totals are unknown. The first detail read after a session starts is only the baseline.
+- **The first sample** of each session is not stored: its rates are all zero, with nothing to diff against.
+- **Never breaks live monitoring.** Records go into a bounded in-memory queue; one background thread writes them in batches. If the disk is slow the oldest queued records are dropped. Failures are written to the app log (at most one line a minute) and never change a connection's health dot. A damaged file is renamed to `history.corrupt-<timestamp>.db` and a new one started. A file from a newer SqlVitals turns history off rather than being changed.
+- The ad-hoc Live Metrics session (no saved connection) is not recorded.
 
 ---
 
@@ -390,7 +421,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.27.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.28.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -406,7 +437,7 @@ The script publishes `SqlVitals.Desktop` **self-contained** for win-x64, so the 
 | Defaults | Installs per-user to `%LocalAppData%\Programs\SqlVitals` with Start menu and desktop shortcuts, and needs no admin rights. Any other folder works too. Outside the user profile with admin rights, SqlVitals is installed for all users. |
 | Transactional install | Files are unpacked to `.setup-staging`, verified against the manifest hashes, then swapped in. Every replaced file is moved to `.setup-backup` first. A failed step offers **Retry** or **Cancel**, and Cancel rolls back every step, restoring the previous installation exactly. |
 | Upgrade / repair / reinstall | The existing install is detected from its Settings → Apps entry. Setup offers Upgrade, Repair or Replace (older package), or Uninstall. Only files listed in `install-manifest.txt` are replaced or removed. |
-| User data | `%AppData%\SqlVitals` (saved connections) is never read or changed. Uninstall deletes it only if the user ticks the box. If the user edited `appsettings.json`, their copy is kept and the new default is written as `appsettings.json.new`. |
+| User data | `%AppData%\SqlVitals` (saved connections) and `%LocalAppData%\SqlVitals` (monitoring history) are never read or changed. Uninstall deletes them only if the user ticks the box. If the user edited `appsettings.json`, their copy is kept and the new default is written as `appsettings.json.new`. |
 | Security | Nothing is downloaded, so Setup contains every file it installs. Manifest paths are validated so no file can land outside the install folder. The log (`%TEMP%\SqlVitals-Setup-*.log`) records steps and paths only. Sign release builds so users see a verified publisher. |
 | Finish | **Launch SqlVitals** (always starts non-elevated), plus next steps: add a connection in Settings and the required SQL permissions. |
 

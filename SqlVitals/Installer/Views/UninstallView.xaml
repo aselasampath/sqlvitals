@@ -18,11 +18,11 @@
 
         <Border Style="{StaticResource Card}" Margin="0,12,0,0">
             <StackPanel>
-                <TextBlock Style="{StaticResource SectionTitle}" Text="Your saved connections" />
+                <TextBlock Style="{StaticResource SectionTitle}" Text="Your saved connections and history" />
                 <TextBlock Style="{StaticResource Muted}"
-                           Text="Kept by default, so if you install SqlVitals again your connections are still there." />
+                           Text="Kept by default, so if you install SqlVitals again your connections and monitoring history are still there." />
                 <CheckBox x:Name="RemoveData" Margin="0,12,0,0"
-                          Content="Also delete my saved connections and settings" />
+                          Content="Also delete my saved connections, settings and monitoring history" />
                 <TextBlock x:Name="DataPath" Style="{StaticResource Muted}" FontSize="12" Margin="22,4,0,0" />
             </StackPanel>
         </Border>

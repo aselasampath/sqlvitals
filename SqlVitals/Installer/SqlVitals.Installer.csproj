@@ -26,7 +26,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\Branding\SqlVitals.ico</ApplicationIcon>
     <!-- Build-Installer.ps1 overrides this with the version from SqlVitals.Desktop.csproj. -->
-    <Version>0.27.1</Version>
+    <Version>0.28.1</Version>
     <Product>SqlVitals</Product>
     <Company>SqlVitals</Company>
     <AssemblyTitle>SqlVitals Setup</AssemblyTitle>

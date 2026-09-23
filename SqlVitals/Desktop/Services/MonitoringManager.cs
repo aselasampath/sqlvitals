@@ -1,12 +1,18 @@
+using SqlVitals.Engine.History;
+
 namespace SqlVitals.Desktop.Services;
 
 /// <summary>
 /// Keeps one <see cref="MonitoringSession"/> running per monitored connection: the active one,
 /// plus every saved connection with <see cref="ConnectionSettings.MonitorInBackground"/> set.
+/// Every session's samples are also saved to the local history (see <see cref="HistoryWriter"/>).
 /// </summary>
 public sealed class MonitoringManager : IDisposable
 {
     private readonly Dictionary<Guid, MonitoringSession> _sessions = new();
+
+    // Shared by every session: one background writer, one SQLite file.
+    private readonly HistoryWriter _history = new(HistoryWriter.DefaultPath, AppLog.Error);
 
     // Interval and paused state chosen on the Live Metrics page, kept when a session is
     // recreated because its connection was edited.
@@ -71,10 +77,14 @@ public sealed class MonitoringManager : IDisposable
             if (_sessions.ContainsKey(id))
                 continue;
 
-            var repo    = RepositoryFactory.Create(conn, store.CommandTimeoutSeconds, out _);
+            var repo     = RepositoryFactory.Create(conn, store.CommandTimeoutSeconds, out _);
+            var recorder = new HistoryRecorder(
+                new HistoryConnection(id, conn.DisplayName, conn.Server.Trim(), conn.DatabaseLabel),
+                repo, _history, AppLog.Error);
             var session = new MonitoringSession(
                 id, repo, RepositoryFactory.Fingerprint(conn, store.CommandTimeoutSeconds),
-                _intervals.TryGetValue(id, out var seconds) ? seconds : MonitoringSession.DefaultIntervalSeconds);
+                _intervals.TryGetValue(id, out var seconds) ? seconds : MonitoringSession.DefaultIntervalSeconds,
+                recorder);
 
             session.StateChanged += OnSessionStateChanged;
             _sessions[id] = session;
@@ -119,5 +129,8 @@ public sealed class MonitoringManager : IDisposable
         SessionStateChanged = null;   // the window is closing; nothing left to update
         foreach (var id in _sessions.Keys.ToList())
             Remove(id);
+
+        // After the sessions, so their last samples are queued; waits a few seconds at most.
+        _history.Dispose();
     }
 }
