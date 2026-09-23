@@ -1,6 +1,7 @@
 <Page x:Class="SqlVitals.Desktop.Pages.IndexHealthPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Index Health">
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
         <StackPanel>
@@ -19,7 +20,10 @@
                                 <Button x:Name="BtnCreateScript" DockPanel.Dock="Right" Content="Generate CREATE Script"
                                         Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
                                         IsEnabled="False" Click="BtnCreateScript_Click"
-                                        ToolTip="Generate a T-SQL script that creates the selected missing indexes (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                                        ToolTip="Generate a T-SQL script that creates the selected missing indexes (or every row shown if none are selected). The script is shown for review — nothing is executed." />
+                                <controls:GridFilterBox x:Name="MissingFilter" DockPanel.Dock="Right" Margin="0,0,10,0"
+                                                        Target="{Binding ElementName=MissingGrid}"
+                                                        FilterChanged="MissingFilter_FilterChanged" />
                                 <TextBlock Text="Recommended Missing Indexes" Style="{StaticResource SectionHeader}"
                                            VerticalAlignment="Center" />
                             </DockPanel>
@@ -66,7 +70,10 @@
                                 <Button x:Name="BtnDropScript" DockPanel.Dock="Right" Content="Generate DROP Script"
                                         Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
                                         IsEnabled="False" Click="BtnDropScript_Click"
-                                        ToolTip="Generate a T-SQL script that drops the selected unused indexes (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                                        ToolTip="Generate a T-SQL script that drops the selected unused indexes (or every row shown if none are selected). The script is shown for review — nothing is executed." />
+                                <controls:GridFilterBox x:Name="UnusedFilter" DockPanel.Dock="Right" Margin="0,0,10,0"
+                                                        Target="{Binding ElementName=UnusedGrid}"
+                                                        FilterChanged="UnusedFilter_FilterChanged" />
                                 <TextBlock Text="Unused Indexes (zero reads since last restart)" Style="{StaticResource SectionHeader}"
                                            VerticalAlignment="Center" />
                             </DockPanel>
@@ -102,8 +109,12 @@
                 <TabItem Header="Index Usage">
                     <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
                         <StackPanel>
-                            <TextBlock Text="Index reads, writes and health assessment since last SQL Server restart"
-                                       Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+                            <DockPanel Margin="0,0,0,8" LastChildFill="True">
+                                <controls:GridFilterBox DockPanel.Dock="Right"
+                                                        Target="{Binding ElementName=UsageGrid}" />
+                                <TextBlock Text="Index reads, writes and health assessment since last SQL Server restart"
+                                           Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center" />
+                            </DockPanel>
                             <DataGrid x:Name="UsageGrid" MaxHeight="660" CanUserAddRows="False"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       RowBackground="{StaticResource BgDeep}"
@@ -178,11 +189,16 @@
                                 <Button x:Name="BtnMaintenanceScript" Content="Generate Maintenance Script"
                                         Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
                                         IsEnabled="False" Click="BtnMaintenanceScript_Click"
-                                        ToolTip="Generate a T-SQL ALTER INDEX script for the selected rows (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                                        ToolTip="Generate a T-SQL ALTER INDEX script for the selected rows (or every row shown if none are selected). The script is shown for review — nothing is executed." />
                             </WrapPanel>
 
-                            <TextBlock x:Name="TxtFragStatus" Foreground="{StaticResource TextMuted}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <DockPanel Margin="0,0,0,8" LastChildFill="True">
+                                <controls:GridFilterBox x:Name="FragFilter" DockPanel.Dock="Right" Margin="10,0,0,0"
+                                                        Target="{Binding ElementName=FragGrid}"
+                                                        FilterChanged="FragFilter_FilterChanged" />
+                                <TextBlock x:Name="TxtFragStatus" Foreground="{StaticResource TextMuted}" FontSize="11"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </DockPanel>
 
                             <DataGrid x:Name="FragGrid" MaxHeight="660" CanUserAddRows="False"
                                       IsReadOnly="True" AutoGenerateColumns="False"

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
@@ -35,7 +36,7 @@ public partial class QueryStorePage : System.Windows.Controls.Page, IRefreshable
         }
 
         // ── Top queries DataGrid ───────────────────────────────────────
-        QueriesGrid.ItemsSource = topQueries.ToList();
+        DataGridRefresh.SetItemsSource(QueriesGrid, topQueries.ToList());
     }
 
     private void AddHealthCard(string label, string value, string hexColor, string? tooltip = null)

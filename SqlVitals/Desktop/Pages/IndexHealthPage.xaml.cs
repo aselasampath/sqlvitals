@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using SqlVitals.Desktop.Controls;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
@@ -46,12 +48,13 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
         var (missing, unused) = await _repo.GetIndexHealthAsync();
         var usage = await _repo.GetIndexUsagePatternsAsync();
 
-        MissingGrid.ItemsSource = missing
+        // A refresh keeps each grid's column sort and filter; the order below is only the default.
+        DataGridRefresh.SetItemsSource(MissingGrid, missing
             .OrderBy(m => m.Severity == "CRITICAL" ? 1 : m.Severity == "WARNING" ? 2 : 3)
             .ThenByDescending(m => m.ImpactScore)
-            .ToList();
-        UnusedGrid.ItemsSource  = unused.OrderByDescending(u => u.UserUpdates).ToList();
-        UsageGrid.ItemsSource   = usage.ToList();
+            .ToList());
+        DataGridRefresh.SetItemsSource(UnusedGrid, unused.OrderByDescending(u => u.UserUpdates).ToList());
+        DataGridRefresh.SetItemsSource(UsageGrid,  usage.ToList());
         UpdateCreateScriptButton();
         UpdateDropScriptButton();
 
@@ -96,6 +99,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     }
 
     private void MissingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateCreateScriptButton();
+    private void MissingFilter_FilterChanged(object? sender, EventArgs e) => UpdateCreateScriptButton();
 
     private void UpdateCreateScriptButton()
     {
@@ -103,14 +107,12 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
         int total    = MissingGrid.Items.Count;
 
         BtnCreateScript.IsEnabled = total > 0;
-        BtnCreateScript.Content = selected > 0
-            ? $"Generate CREATE Script ({selected} selected)"
-            : "Generate CREATE Script (all)";
+        BtnCreateScript.Content = $"Generate CREATE Script ({ScopeLabel(selected, total, MissingFilter)})";
     }
 
     private void BtnCreateScript_Click(object sender, RoutedEventArgs e)
     {
-        // Selected rows if the user picked some, otherwise everything in the grid —
+        // Selected rows if the user picked some, otherwise every row the filter shows —
         // in the grid's current sort order so the script reads like what's on screen.
         var selected = MissingGrid.SelectedItems.OfType<MissingIndex>().ToHashSet();
         var suggestions = MissingGrid.Items.OfType<MissingIndex>()
@@ -133,6 +135,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     }
 
     private void UnusedGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateDropScriptButton();
+    private void UnusedFilter_FilterChanged(object? sender, EventArgs e) => UpdateDropScriptButton();
 
     private void UpdateDropScriptButton()
     {
@@ -140,14 +143,12 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
         int total    = UnusedGrid.Items.Count;
 
         BtnDropScript.IsEnabled = total > 0;
-        BtnDropScript.Content = selected > 0
-            ? $"Generate DROP Script ({selected} selected)"
-            : "Generate DROP Script (all)";
+        BtnDropScript.Content = $"Generate DROP Script ({ScopeLabel(selected, total, UnusedFilter)})";
     }
 
     private void BtnDropScript_Click(object sender, RoutedEventArgs e)
     {
-        // Selected rows if the user picked some, otherwise everything in the grid —
+        // Selected rows if the user picked some, otherwise every row the filter shows —
         // in the grid's current sort order so the script reads like what's on screen.
         var selected = UnusedGrid.SelectedItems.OfType<UnusedIndex>().ToHashSet();
         var indexes = UnusedGrid.Items.OfType<UnusedIndex>()
@@ -172,6 +173,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     }
 
     private void FragGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateMaintenanceScriptButton();
+    private void FragFilter_FilterChanged(object? sender, EventArgs e) => UpdateMaintenanceScriptButton();
 
     private void UpdateMaintenanceScriptButton()
     {
@@ -179,10 +181,15 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
         int total    = FragGrid.Items.Count;
 
         BtnMaintenanceScript.IsEnabled = total > 0;
-        BtnMaintenanceScript.Content = selected > 0
-            ? $"Generate Maintenance Script ({selected} selected)"
-            : "Generate Maintenance Script (all)";
+        BtnMaintenanceScript.Content = $"Generate Maintenance Script ({ScopeLabel(selected, total, FragFilter)})";
     }
+
+    // What a script button will cover: the selection, else every row — or, while a filter is
+    // on, only the rows it shows, so the button never claims "all" for a filtered grid.
+    private static string ScopeLabel(int selected, int shown, GridFilterBox filter) =>
+        selected > 0      ? $"{selected} selected" :
+        filter.IsActive   ? $"{shown} shown" :
+                            "all";
 
     private void BtnMaintenanceScript_Click(object sender, RoutedEventArgs e)
     {
@@ -194,7 +201,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             return;
         }
 
-        // Selected rows if the user picked some, otherwise everything in the grid —
+        // Selected rows if the user picked some, otherwise every row the filter shows —
         // in the grid's current sort order so the script reads like what's on screen.
         var selected = FragGrid.SelectedItems.OfType<IndexFragmentation>().ToHashSet();
         var indexes = FragGrid.Items.OfType<IndexFragmentation>()
@@ -317,7 +324,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             var rows = (await _repo.GetIndexFragmentationAsync(minFrag, minPages)).ToList();
             if (version != _fragLoadVersion) return;
 
-            SetItemsSourcePreservingSort(FragGrid, rows);
+            DataGridRefresh.SetItemsSource(FragGrid, rows);
             UpdateMaintenanceScriptButton();
             SetFragStatus(
                 $"{rows.Count:N0} index{(rows.Count == 1 ? "" : "es")} with ≥ {minFrag:0.##}% fragmentation " +
@@ -366,22 +373,5 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     {
         TxtFragStatus.Text = text;
         TxtFragStatus.Foreground = (System.Windows.Media.Brush)FindResource(isError ? "Danger" : "TextMuted");
-    }
-
-    // Assigning a new ItemsSource creates a new collection view, which drops the user's
-    // column sort. Carry it across so a refresh doesn't reshuffle what they were looking at.
-    private static void SetItemsSourcePreservingSort(DataGrid grid, System.Collections.IEnumerable items)
-    {
-        var sorts = grid.Items.SortDescriptions.ToList();
-
-        grid.ItemsSource = items;
-
-        foreach (var sort in sorts)
-            grid.Items.SortDescriptions.Add(sort);
-        foreach (var column in grid.Columns)
-        {
-            var match = sorts.FirstOrDefault(s => s.PropertyName == column.SortMemberPath);
-            column.SortDirection = match.PropertyName is null ? null : match.Direction;
-        }
     }
 }

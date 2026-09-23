@@ -1,7 +1,17 @@
 <Page x:Class="SqlVitals.Desktop.Pages.QueryStorePage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Query Store">
+    <Page.Resources>
+        <Style x:Key="SingleLineText" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <!-- Query Store keeps the statement's line breaks; show only the first line. -->
+            <Setter Property="MaxHeight" Value="18"/>
+        </Style>
+    </Page.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
         <StackPanel>
             <TextBlock Text="Query Store — Top CPU Queries" Style="{StaticResource SectionHeader}"
@@ -15,7 +25,12 @@
             <!-- Top queries DataGrid -->
             <Border Style="{StaticResource KpiCard}">
                 <StackPanel>
-                    <TextBlock Text="Top 20 Queries by CPU (last 24 h)" Style="{StaticResource SectionHeader}" />
+                    <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                        <controls:GridFilterBox DockPanel.Dock="Right"
+                                                Target="{Binding ElementName=QueriesGrid}" />
+                        <TextBlock Text="Top 20 Queries by CPU (last 24 h)" Style="{StaticResource SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center" />
+                    </DockPanel>
                     <DataGrid x:Name="QueriesGrid" MaxHeight="540">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Query ID"       Binding="{Binding QueryId}"                         Width="80">
@@ -44,6 +59,9 @@
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Status"         Binding="{Binding Severity}"                        Width="80">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Derived health classification: Critical = very high CPU or reads; Warning = elevated; Info = normal range."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Query Text"     Binding="{Binding QueryText}"                       Width="*" MinWidth="200" ElementStyle="{StaticResource SingleLineText}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Statement text from sys.query_store_query_text. Type part of it in the filter box to find a query."/></Style></DataGridTextColumn.HeaderStyle>
                             </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
