@@ -161,11 +161,33 @@
                                         Padding="12,4" VerticalAlignment="Center" Click="BtnRefreshFrag_Click"
                                         ToolTip="Apply the criteria above and reload the fragmentation grid (Enter in either box does the same)." />
                             </WrapPanel>
+
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="Maintenance Script" Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0,0,20,0" />
+                                <TextBlock Text="Reorganize from:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+                                <TextBox x:Name="TxtReorganizePct" Text="5" Width="40" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}"
+                                         ToolTip="Indexes at or above this fragmentation are REORGANIZE'd. Anything below it is skipped." />
+                                <TextBlock Text="%" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="3,0,15,0"/>
+                                <TextBlock Text="Rebuild from:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+                                <TextBox x:Name="TxtRebuildPct" Text="30" Width="40" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}"
+                                         ToolTip="Indexes at or above this fragmentation are REBUILD'd instead of REORGANIZE'd." />
+                                <TextBlock Text="%" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="3,0,15,0"/>
+                                <CheckBox x:Name="ChkOnlineRebuild" Content="ONLINE = ON" VerticalAlignment="Center" Margin="0,0,15,0"
+                                          IsEnabled="False" Foreground="{StaticResource TextMuted}"
+                                          ToolTip="Checking whether this server's edition supports online index rebuilds…" />
+                                <Button x:Name="BtnMaintenanceScript" Content="Generate Maintenance Script"
+                                        Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
+                                        IsEnabled="False" Click="BtnMaintenanceScript_Click"
+                                        ToolTip="Generate a T-SQL ALTER INDEX script for the selected rows (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                            </WrapPanel>
+
                             <TextBlock x:Name="TxtFragStatus" Foreground="{StaticResource TextMuted}" FontSize="11"
                                        TextWrapping="Wrap" Margin="0,0,0,8" />
 
                             <DataGrid x:Name="FragGrid" MaxHeight="660" CanUserAddRows="False"
                                       IsReadOnly="True" AutoGenerateColumns="False"
+                                      SelectionMode="Extended" SelectionUnit="FullRow"
+                                      SelectionChanged="FragGrid_SelectionChanged"
                                       RowBackground="{StaticResource BgDeep}"
                                       AlternatingRowBackground="{StaticResource BgSidebar}"
                                       Foreground="{StaticResource TextPrimary}"
@@ -174,6 +196,9 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Database"      Binding="{Binding DatabaseName}"                                      Width="110">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database containing the fragmented index."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Schema"        Binding="{Binding SchemaName}"                                        Width="80">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Schema the table belongs to. The maintenance script qualifies every ALTER INDEX with it."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                     <DataGridTextColumn Header="Table"         Binding="{Binding TableName}"                                         Width="160">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Table the fragmented index belongs to."/></Style></DataGridTextColumn.HeaderStyle>
