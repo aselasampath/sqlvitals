@@ -1,13 +1,15 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using SqlVitals.Engine.History;
 
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
-/// Live / 1h / 24h / 7d / Custom switch shared by the trend pages. Anything but Live is read
-/// from the monitoring history, so those choices are disabled when there is none to read.
+/// Live / 1h / 24h / 7d / Custom switch shared by the trend pages, and the "Compare to baseline"
+/// toggle. Anything but Live, and the baseline, is read from the monitoring history, so those
+/// are disabled when there is none to read.
 /// </summary>
 public partial class TimeRangePicker : UserControl
 {
@@ -24,9 +26,14 @@ public partial class TimeRangePicker : UserControl
 
     public HistoryRange Range => _range;
 
+    /// <summary>Raised when "Compare to baseline" is turned on or off.</summary>
+    public event EventHandler<bool>? BaselineChanged;
+
+    public bool CompareToBaseline => BtnBaseline.IsChecked == true;
+
     /// <summary>
-    /// Turns the history choices off, with the reason as their tooltip, or back on. Going
-    /// unavailable while showing history switches back to Live.
+    /// Turns the history choices and the baseline off, with the reason as their tooltip, or back
+    /// on. Going unavailable while showing history switches back to Live, without a baseline.
     /// </summary>
     public void SetHistoryAvailable(bool available, string? reason = null)
     {
@@ -39,18 +46,24 @@ public partial class TimeRangePicker : UserControl
         }
         if (available)
         {
-            BtnHour.ToolTip   = "The last hour, from the monitoring history";
-            BtnDay.ToolTip    = "The last 24 hours, from the monitoring history";
-            BtnWeek.ToolTip   = "The last 7 days, from the monitoring history";
-            BtnCustom.ToolTip = "Pick a start and end from the monitoring history";
+            BtnHour.ToolTip     = "The last hour, from the monitoring history";
+            BtnDay.ToolTip      = "The last 24 hours, from the monitoring history";
+            BtnWeek.ToolTip     = "The last 7 days, from the monitoring history";
+            BtnCustom.ToolTip   = "Pick a start and end from the monitoring history";
+            BtnBaseline.ToolTip = "Overlay the same time last week as dashed lines, to see whether now is unusual";
         }
-        else if (!_range.IsLive)
+        else
         {
-            Select(HistoryRange.Live);
+            BtnBaseline.IsChecked = false;
+            if (!_range.IsLive)
+                Select(HistoryRange.Live);
         }
     }
 
-    private RadioButton[] HistoryButtons => [BtnHour, BtnDay, BtnWeek, BtnCustom];
+    private ButtonBase[] HistoryButtons => [BtnHour, BtnDay, BtnWeek, BtnCustom, BtnBaseline];
+
+    private void Baseline_Changed(object sender, RoutedEventArgs e) =>
+        BaselineChanged?.Invoke(this, CompareToBaseline);
 
     private void Preset_Click(object sender, RoutedEventArgs e)
     {

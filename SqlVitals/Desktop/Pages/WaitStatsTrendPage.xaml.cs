@@ -89,13 +89,22 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
     private HistoryLoad<WaitHistoryBucket>? _historyLoad;
     private readonly Dictionary<string, ObservableCollection<DateTimePoint>> _historyWindows = new();   // built on demand
 
+    // "Compare to baseline" draws the same time last week under each wait type, dashed. It is
+    // re-clipped to the chart on every rebuild, so it follows the live window as it moves.
+    private readonly BaselineTracker<WaitHistoryBucket>? _baseline;
+    private string _baselineNote = "";
+    private string _statusMain   = "";
+
     // ── constructor ───────────────────────────────────────────────────────────
     public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null)
     {
         _repo    = repo;
         _history = history;
+        if (history is not null)
+            _baseline = new BaselineTracker<WaitHistoryBucket>(history, (reader, id, from, to, bucket) => reader.ReadWaits(id, from, to, bucket));
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
+        _statusMain  = TxtStatus.Text;
         _timer.Tick += Timer_Tick;
     }
 
@@ -123,7 +132,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
                 PopulateWaitTypeList(data);
                 StoreValues(data, now);
                 _initialized = true;
-                TxtStatus.Text = $"Loaded {_allItems.Count} wait types. Select types, then press ▶ Start.";
+                ShowStatus($"Loaded {_allItems.Count} wait types. Select types, then press ▶ Start.");
                 return; // first tick — no delta yet
             }
 
@@ -166,12 +175,13 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             RebuildSeries();
 
             int checkedCount = _allItems.Count(i => i.IsChecked);
-            TxtStatus.Text = $"Updated {now:HH:mm:ss}  |  {checkedCount} series shown";
+            ShowStatus($"Updated {now:HH:mm:ss}  |  {checkedCount} series shown");
+            await LoadBaselineAsync();
         }
         catch (Exception ex)
         {
             if (_range.IsLive)
-                TxtStatus.Text = $"Error: {ex.Message}";
+                ShowStatus($"Error: {ex.Message}");
         }
     }
 
@@ -187,13 +197,18 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         BtnAutoRefresh.IsEnabled = live;
         CmbInterval.IsEnabled    = live;
 
+        // A baseline belongs to the range it was read for.
+        _baseline?.Clear();
+        _baselineNote = "";
+
         if (live)
         {
             _historyVersion++;
             _historyLoad = null;
             _historyWindows.Clear();
-            TxtStatus.Text = "Live — press ▶ Start to trend";
+            ShowStatus("Live — press ▶ Start to trend");
             RebuildSeries();
+            await LoadBaselineAsync();
             return;
         }
 
@@ -232,43 +247,111 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             UpdateSelCount();
 
             RebuildSeries();
-            TxtStatus.Text = load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList());
+            ShowStatus(load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList()));
         }
         catch (Exception ex)
         {
             if (version != _historyVersion)
                 return;
-            TxtStatus.Text = $"Could not read the history: {ex.Message}";
+            ShowStatus($"Could not read the history: {ex.Message}");
             MainWindow.ReportBackgroundError(this, "Wait Stats Trend history", ex);
+            return;
         }
+
+        await LoadBaselineAsync();
     }
 
     // The chosen metric per second over each bucket, with breaks where nothing was recorded.
-    // A bucket without this wait type had none of it: zero, not a break.
     private ObservableCollection<DateTimePoint> BuildHistoryWindow(string waitType)
     {
         var window = new ObservableCollection<DateTimePoint>();
         if (_historyLoad is not { } load)
             return window;
 
-        foreach (var (time, bucket) in HistoryGaps.WithGaps(load.Items, b => b.TimeUtc, load.Bucket))
-        {
-            double? value = null;
-            if (bucket is not null)
-            {
-                bucket.Waits.TryGetValue(waitType, out var w);
-                long total = w is null ? 0 : _metric switch
-                {
-                    MetricType.SignalWaitMs   => w.SignalWaitTimeMs,
-                    MetricType.ResourceWaitMs => w.WaitTimeMs - w.SignalWaitTimeMs,
-                    MetricType.WaitingTasks   => w.WaitingTasks,
-                    _                         => w.WaitTimeMs,
-                };
-                value = bucket.Seconds > 0 ? Math.Max(0, total) / bucket.Seconds : 0;
-            }
-            window.Add(new DateTimePoint(time.ToLocalTime(), value));
-        }
+        foreach (var (time, bucket) in OnLocalClock(load.Items, load.Bucket))
+            window.Add(new DateTimePoint(time, bucket is null ? null : ValueOf(bucket, waitType)));
         return window;
+    }
+
+    // History buckets on this PC's clock, as the chart plots them, with a null where the line breaks.
+    private static IEnumerable<(DateTime Time, WaitHistoryBucket? Bucket)> OnLocalClock(
+        IReadOnlyList<WaitHistoryBucket> items, TimeSpan bucket) =>
+        HistoryGaps.WithGaps(items, b => b.TimeUtc, bucket).Select(p => (p.Time.ToLocalTime(), p.Item));
+
+    // The chosen metric per second over one bucket. A bucket without this wait type had none of
+    // it: zero, not a break.
+    private double ValueOf(WaitHistoryBucket bucket, string waitType)
+    {
+        bucket.Waits.TryGetValue(waitType, out var w);
+        long total = w is null ? 0 : _metric switch
+        {
+            MetricType.SignalWaitMs   => w.SignalWaitTimeMs,
+            MetricType.ResourceWaitMs => w.WaitTimeMs - w.SignalWaitTimeMs,
+            MetricType.WaitingTasks   => w.WaitingTasks,
+            _                         => w.WaitTimeMs,
+        };
+        return bucket.Seconds > 0 ? Math.Max(0, total) / bucket.Seconds : 0;
+    }
+
+    // ── baseline ─────────────────────────────────────────────────────────────
+    private async void RangePicker_BaselineChanged(object? sender, bool on)
+    {
+        _baseline?.Clear();
+        _baselineNote = "";
+        RebuildSeries();
+        ShowStatus(_statusMain);
+        await LoadBaselineAsync();
+    }
+
+    // Reads the baseline for what the chart shows, when it doesn't have one yet: the past range
+    // on screen, or the live window. Live, that is a new read only every half hour or so.
+    private async Task LoadBaselineAsync()
+    {
+        if (_baseline is null || !RangePicker.CompareToBaseline)
+            return;
+
+        try
+        {
+            var read = _range.IsLive
+                ? await _baseline.EnsureLiveAsync(LiveSpan())
+                : _historyLoad is { } load && await _baseline.LoadAsync(load.FromUtc, load.ToUtc, load.Bucket);
+            if (!read || _baseline.Current is not { } baseline)
+                return;
+
+            _baselineNote = baseline.Describe();
+            RebuildSeries();
+            ShowStatus(_statusMain);
+        }
+        catch (Exception ex)
+        {
+            _baselineNote = $"Could not read the baseline: {ex.Message}";
+            ShowStatus(_statusMain);
+            MainWindow.ReportBackgroundError(this, "Wait Stats Trend baseline", ex);
+        }
+    }
+
+    // How long the live lines on the chart span.
+    private TimeSpan LiveSpan()
+    {
+        var shown = _windows.Values.Where(w => w.Count > 0).ToList();
+        return shown.Count == 0 ? TimeSpan.Zero : shown.Max(w => w[^1].DateTime) - shown.Min(w => w[0].DateTime);
+    }
+
+    // Last week's line for one wait type, moved onto this week's axis between from and to.
+    private ObservableCollection<DateTimePoint> BuildBaselineWindow(BaselineLoad<WaitHistoryBucket> baseline,
+                                                                    string waitType, DateTime from, DateTime to)
+    {
+        var window = new ObservableCollection<DateTimePoint>();
+        foreach (var (time, bucket) in HistoryBaseline.Shift(OnLocalClock(baseline.Items, baseline.Bucket), from, to))
+            window.Add(new DateTimePoint(time, bucket is null ? null : ValueOf(bucket, waitType)));
+        return window;
+    }
+
+    // Sets the status line, adding what the baseline shows while it is on.
+    private void ShowStatus(string text)
+    {
+        _statusMain    = text;
+        TxtStatus.Text = RangePicker.CompareToBaseline && _baselineNote.Length > 0 ? $"{text}  |  {_baselineNote}" : text;
     }
 
     // Top 20 by total wait time: over the range on screen, or since the server started when live.
@@ -365,18 +448,22 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         };
 
         var windows = _range.IsLive ? _windows : _historyWindows;
-        var series = toShow.Select((item, idx) =>
+        var buffers = toShow.Select(item =>
         {
             if (!windows.TryGetValue(item.WaitType, out var buf))
             {
                 buf = _range.IsLive ? new ObservableCollection<DateTimePoint>() : BuildHistoryWindow(item.WaitType);
                 windows[item.WaitType] = buf;
             }
+            return buf;
+        }).ToList();
 
+        var series = toShow.Select((item, idx) =>
+        {
             var colour = Palette[idx % Palette.Length];
             return (ISeries)new LineSeries<DateTimePoint>
             {
-                Values         = buf,
+                Values         = buffers[idx],
                 Name           = item.WaitType,
                 Stroke         = new SolidColorPaint(colour) { StrokeThickness = 2 },
                 Fill           = null,
@@ -385,7 +472,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
                 GeometryFill   = null,
                 LineSmoothness = 0,
             };
-        }).ToArray();
+        }).ToList();
 
         var axisColor = ChartTheme.MutedAxisColor;
         var gridColor = ChartTheme.GridColor;
@@ -393,6 +480,20 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         // A past range is shown whole, so missing history reads as missing rather than cropped.
         var history    = _range.IsLive ? null : _historyLoad;
         var axisFormat = history is null ? "HH:mm:ss" : ConnectionHistory.AxisFormat(history.Span);
+
+        // The baseline under each line, over the times the chart shows: the range picked, or the
+        // live window so far (so the baseline never stretches the live axis).
+        if (RangePicker.CompareToBaseline && _baseline?.Current is { } baseline)
+        {
+            var live = buffers.Where(b => b.Count > 0).ToList();
+            (DateTime From, DateTime To)? shown = history is not null
+                ? (history.FromUtc.ToLocalTime(), history.ToUtc.ToLocalTime())
+                : live.Count > 0 ? (live.Min(b => b[0].DateTime), live.Max(b => b[^1].DateTime)) : null;
+
+            if (shown is { } s)
+                series.AddRange(toShow.Select((item, idx) => (ISeries)BaselineSeries.Line(
+                    BuildBaselineWindow(baseline, item.WaitType, s.From, s.To), item.WaitType, Palette[idx % Palette.Length])));
+        }
 
         TrendChart.Series = series;
         TrendChart.XAxes  = new[]

@@ -45,7 +45,22 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private int                           _historyVersion;   // bumped per load; a stale load is dropped
     private string                        _axisFormat = "HH:mm:ss";
     private double?                       _xMin, _xMax;      // the picked range; null while live
+    private HistoryLoad<MetricHistoryPoint>? _historyLoad;   // the picked range's read; null while live
+    private string                        _historyNote = "";
     private readonly (ObservableCollection<DateTimePoint> Series, Func<LiveMetricSample, double> Value)[] _plotted;
+
+    // "Compare to baseline" draws the same time last week on every chart, dashed: a line per
+    // metric, and on the stacked waits chart one line for the total of the categories shown.
+    // It is re-clipped to the charts as the live window moves.
+    private const int WaitCategories = 6;   // the first entries of _plotted, stacked on the waits chart
+    private readonly BaselineTracker<MetricHistoryPoint>? _baseline;
+    private readonly ObservableCollection<DateTimePoint>[] _baselineValues;   // parallel to _plotted
+    private readonly ObservableCollection<DateTimePoint>   _baselineWaits = [];
+    private readonly bool[]               _waitsShown = [true, true, true, true, true, true];
+    private string                        _baselineNote = "";
+
+    // Each chart's own series, and its baseline series shown beside them while the baseline is on.
+    private readonly Dictionary<string, (Func<ISeries[]> Current, ISeries[] Baseline)> _chartSeries = [];
 
     private static readonly int[] Intervals =
         Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
@@ -130,6 +145,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             (_mgPending,  s => s.MemoryGrantsPending),
             (_bufCache,   s => s.BufferCacheHitRatio),
         ];
+        _baselineValues = _plotted.Select(_ => new ObservableCollection<DateTimePoint>()).ToArray();
+        if (history is not null)
+            _baseline = new BaselineTracker<MetricHistoryPoint>(history, (reader, id, from, to, bucket) => reader.ReadMetrics(id, from, to, bucket));
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
 
@@ -202,7 +220,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         if (_range.IsLive)
         {
             PlotNewSamples();
+            PlotBaseline();
             ForceChartUpdate();
+            _ = LoadBaselineAsync();
         }
         _ = RefreshProcessMapAsync();
     }
@@ -211,9 +231,16 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range = range;
+
+        // A baseline belongs to the range it was read for.
+        _baseline?.Clear();
+        _baselineNote = "";
+        PlotBaseline();
+
         if (range.IsLive)
         {
             ShowLive();
+            await LoadBaselineAsync();
             return;
         }
 
@@ -226,7 +253,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             // Only the latest pick owns the status line.
             if (_range == range)
             {
-                TxtHistoryStatus.Text = $"Could not read the history: {ex.Message}";
+                ShowStatus($"Could not read the history: {ex.Message}");
                 MainWindow.ReportBackgroundError(this, "Live Metrics history", ex);
             }
         }
@@ -235,14 +262,16 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private void ShowLive()
     {
         _historyVersion++;
-        _axisFormat = "HH:mm:ss";
+        _axisFormat  = "HH:mm:ss";
         _xMin = _xMax = null;
-        TxtHistoryStatus.Text = "";
+        _historyLoad = null;
+        ShowStatus("");
 
         foreach (var (series, _) in _plotted)
             series.Clear();
         _lastPlotted = null;
         PlotNewSamples();
+        PlotBaseline();
         ApplyXAxisLimits();
         ForceChartUpdate();
     }
@@ -253,7 +282,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             return;
 
         var version = ++_historyVersion;
-        TxtHistoryStatus.Text = $"Reading {_range.Label.ToLowerInvariant()} from history…";
+        ShowStatus($"Reading {_range.Label.ToLowerInvariant()} from history…");
 
         var load = await _history.LoadAsync(_range, (reader, id, from, to, bucket) => reader.ReadMetrics(id, from, to, bucket));
         if (version != _historyVersion)
@@ -262,27 +291,144 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         // On the server's clock, like the live samples, so switching to a past range doesn't
         // shift the axis by the server's time zone. The range's ends use the latest offset.
         var offset = load.Items.Count > 0 ? load.Items[^1].ServerClockOffset : TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
-        _axisFormat = ConnectionHistory.AxisFormat(load.Span);
+        _historyLoad = load;
+        _axisFormat  = ConnectionHistory.AxisFormat(load.Span);
         _xMin = (load.FromUtc + offset).Ticks;
         _xMax = (load.ToUtc + offset).Ticks;
 
         foreach (var (series, _) in _plotted)
             series.Clear();
-        var pointOffset = offset;
-        foreach (var (time, point) in HistoryGaps.WithGaps(load.Items, p => p.TimeUtc, load.Bucket))
-        {
-            if (point is not null)
-                pointOffset = point.ServerClockOffset;
+        foreach (var (time, point) in OnServerClock(load.Items, load.Bucket, offset))
             foreach (var (series, value) in _plotted)
-                series.Add(new DateTimePoint(time + pointOffset, point is null ? null : value(point.Averages)));
-        }
+                series.Add(new DateTimePoint(time, point is null ? null : value(point.Averages)));
 
-        TxtHistoryStatus.Text = load.Items.Count == 0
+        ShowStatus(load.Items.Count == 0
             ? load.NoData("Live Metrics samples are recorded while SqlVitals monitors this connection.")
-            : load.Describe(load.Items.Select(p => p.TimeUtc).ToList(), "the server's clock");
+            : load.Describe(load.Items.Select(p => p.TimeUtc).ToList(), "the server's clock"));
 
+        PlotBaseline();
         ApplyXAxisLimits();
         ForceChartUpdate();
+
+        await LoadBaselineAsync();
+    }
+
+    // History points on the server's clock, as the live samples are plotted, with a null where
+    // the line breaks. Each point uses the server's offset recorded with it, so a daylight-saving
+    // change on the server lands where the server saw it.
+    private static IEnumerable<(DateTime Time, MetricHistoryPoint? Point)> OnServerClock(
+        IReadOnlyList<MetricHistoryPoint> items, TimeSpan bucket, TimeSpan offset)
+    {
+        foreach (var (time, point) in HistoryGaps.WithGaps(items, p => p.TimeUtc, bucket))
+        {
+            if (point is not null)
+                offset = point.ServerClockOffset;
+            yield return (time + offset, point);
+        }
+    }
+
+    // ── Baseline ────────────────────────────────────────────────────────────
+    private async void RangePicker_BaselineChanged(object? sender, bool on)
+    {
+        _baseline?.Clear();
+        _baselineNote = "";
+        PlotBaseline();
+        foreach (var tag in _chartSeries.Keys)
+            ApplySeries(tag);
+        ShowStatus(_historyNote);
+        ForceChartUpdate();
+        await LoadBaselineAsync();
+    }
+
+    // Reads the baseline for what the charts show, when they don't have one yet: the past range
+    // on screen, or the live window. Live, that is a new read only every half hour or so.
+    private async System.Threading.Tasks.Task LoadBaselineAsync()
+    {
+        if (_baseline is null || !RangePicker.CompareToBaseline)
+            return;
+
+        try
+        {
+            var read = _range.IsLive
+                ? await _baseline.EnsureLiveAsync(_cpuPct.Count > 1 ? _cpuPct[^1].DateTime - _cpuPct[0].DateTime : TimeSpan.Zero)
+                : _historyLoad is { } load && await _baseline.LoadAsync(load.FromUtc, load.ToUtc, load.Bucket);
+            if (!read || _baseline.Current is not { } baseline)
+                return;
+
+            _baselineNote = baseline.Describe();
+            ShowStatus(_historyNote);
+            PlotBaseline();
+            ForceChartUpdate();
+        }
+        catch (Exception ex)
+        {
+            _baselineNote = $"Could not read the baseline: {ex.Message}";
+            ShowStatus(_historyNote);
+            MainWindow.ReportBackgroundError(this, "Live Metrics baseline", ex);
+        }
+    }
+
+    // Fills the baseline series from the baseline read last, over the times the charts show: the
+    // range picked, or the live samples so far (so the baseline never stretches the live axis).
+    // Empty while the baseline is off.
+    private void PlotBaseline()
+    {
+        foreach (var series in _baselineValues)
+            series.Clear();
+        _baselineWaits.Clear();
+
+        if (!RangePicker.CompareToBaseline || _baseline?.Current is not { } baseline)
+            return;
+
+        DateTime from, to;
+        if (_xMin is { } min && _xMax is { } max)
+            (from, to) = (new DateTime((long)min), new DateTime((long)max));
+        else if (_cpuPct.Count > 0)
+            (from, to) = (_cpuPct[0].DateTime, _cpuPct[^1].DateTime);
+        else
+            return;
+
+        var offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
+        foreach (var (time, point) in HistoryBaseline.Shift(OnServerClock(baseline.Items, baseline.Bucket, offset), from, to))
+        {
+            for (var i = 0; i < _plotted.Length; i++)
+                _baselineValues[i].Add(new DateTimePoint(time, point is null ? null : _plotted[i].Value(point.Averages)));
+
+            double? waits = null;
+            if (point is not null)
+            {
+                waits = 0;
+                for (var i = 0; i < WaitCategories; i++)
+                    if (_waitsShown[i])
+                        waits += _plotted[i].Value(point.Averages);
+            }
+            _baselineWaits.Add(new DateTimePoint(time, waits));
+        }
+    }
+
+    private ObservableCollection<DateTimePoint> BaselineOf(ObservableCollection<DateTimePoint> series) =>
+        _baselineValues[Array.FindIndex(_plotted, p => p.Series == series)];
+
+    // Registers a chart's series and shows them, with its baseline while that is on.
+    private void SetSeries(string tag, Func<ISeries[]> current, params ISeries[] baseline)
+    {
+        _chartSeries[tag] = (current, baseline);
+        ApplySeries(tag);
+    }
+
+    private void ApplySeries(string tag)
+    {
+        if (!_charts.TryGetValue(tag, out var chart) || !_chartSeries.TryGetValue(tag, out var series))
+            return;
+        chart.Series = RangePicker.CompareToBaseline ? [.. series.Current(), .. series.Baseline] : series.Current();
+    }
+
+    // The history status line, with what the baseline shows while it is on.
+    private void ShowStatus(string historyNote)
+    {
+        _historyNote = historyNote;
+        var baselineNote = RangePicker.CompareToBaseline ? _baselineNote : "";
+        TxtHistoryStatus.Text = string.Join(" · ", new[] { historyNote, baselineNote }.Where(s => s.Length > 0));
     }
 
     // Shows the whole picked range, so missing history reads as missing rather than being cropped.
@@ -580,7 +726,8 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     {
         var chart = MakeCartesian();
         _charts["Cpu"] = chart;
-        chart.Series = new ISeries[] { Line(_cpuPct, "SQL Server CPU", ColCpu) };
+        var series = new ISeries[] { Line(_cpuPct, "SQL Server CPU", ColCpu) };
+        SetSeries("Cpu", () => series, BaselineLine(_cpuPct, "SQL Server CPU", ColCpu));
         SetDateTimeAxes(chart, "% CPU", 0, 100);
         return WrapPanel("CPU Usage", chart, "Cpu");
     }
@@ -589,13 +736,18 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     {
         var chart = MakeCartesian();
         _charts["Throughput"] = chart;
-        chart.Series = new ISeries[]
+        var series = new ISeries[]
         {
             Line(_batches,    "Batch Requests",  ColBatch),
             Line(_compiles,   "Compilations",    ColComp),
             Line(_recompiles, "Recompilations",  ColRec),
             Line(_txns,       "Transactions",    ColTxn),
         };
+        SetSeries("Throughput", () => series,
+            BaselineLine(_batches,    "Batch Requests",  ColBatch),
+            BaselineLine(_compiles,   "Compilations",    ColComp),
+            BaselineLine(_recompiles, "Recompilations",  ColRec),
+            BaselineLine(_txns,       "Transactions",    ColTxn));
         SetDateTimeAxes(chart, "# per sec.");
         return WrapPanel("SQL Throughput", chart, "Throughput");
     }
@@ -604,11 +756,14 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     {
         var chart = MakeCartesian();
         _charts["PhysicalIO"] = chart;
-        chart.Series = new ISeries[]
+        var series = new ISeries[]
         {
             Line(_physReads,  "Physical Reads",  ColPhysR),
             Line(_physWrites, "Physical Writes", ColPhysW),
         };
+        SetSeries("PhysicalIO", () => series,
+            BaselineLine(_physReads,  "Physical Reads",  ColPhysR),
+            BaselineLine(_physWrites, "Physical Writes", ColPhysW));
         SetDateTimeAxes(chart, "R/W per sec.");
         return WrapPanel("Physical R/W", chart, "PhysicalIO");
     }
@@ -619,7 +774,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         _charts["Memory"] = chart;
         
         // 1. Configure Series with Axis assignments
-        chart.Series = new ISeries[]
+        var series = new ISeries[]
         {
             // Primary Axis (Index 0)
             Line(_mgPending, "Mem Grants Pending",     ColMgP, 0),
@@ -628,6 +783,10 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             // Secondary Axis (Index 1) for PLE
             Line(_ple, "Page Life Expectancy", ColPle, 1),
         };
+        SetSeries("Memory", () => series,
+            BaselineLine(_mgPending, "Mem Grants Pending",     ColMgP, 0),
+            BaselineLine(_bufCache,  "Buffer Cache Hit Ratio", ColBuf, 0),
+            BaselineLine(_ple,       "Page Life Expectancy",   ColPle, 1));
 
         // 2. Configure X-Axis (Time)
         chart.XAxes = new[] { TimeAxis() };
@@ -719,6 +878,10 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             GeometrySize    = 0,
             LineSmoothness  = 0.4,
         };
+
+    // The baseline under one of the plotted series.
+    private ISeries BaselineLine(ObservableCollection<DateTimePoint> series, string name, SKColor color, int scalesAt = 0) =>
+        BaselineSeries.Line(BaselineOf(series), name, color, scalesAt);
 
     private static LineSeries<DateTimePoint> Line(
         ObservableCollection<DateTimePoint> values, string name, SKColor color, int scalesAt = 0) =>
@@ -870,22 +1033,24 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             (Series: (ISeries)sOther, Label: "Other")
         };
 
-        // Initial set
-        chart.Series = definitions.Select(x => x.Series).ToArray();
-        SetDateTimeAxes(chart, "Wait (ms/s)");
-
         var filters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,10,0) };
         var checkBoxes = new List<CheckBox>();
 
+        // Initial set: every category. The baseline is one line against the top of the stack:
+        // last week's total of the categories shown.
+        Array.Fill(_waitsShown, true);
+        PlotBaseline();
+        SetSeries("Waits",
+            () => definitions.Where((_, i) => _waitsShown[i]).Select(x => x.Series).ToArray(),
+            BaselineSeries.Line(_baselineWaits, "Total waits", ChartTheme.AxisColor));
+        SetDateTimeAxes(chart, "Wait (ms/s)");
+
         void RebuildSeries(object? sender, RoutedEventArgs e)
         {
-            var newSeries = new List<ISeries>();
             for (int i = 0; i < checkBoxes.Count; i++)
-            {
-                if (checkBoxes[i].IsChecked == true)
-                    newSeries.Add(definitions[i].Series);
-            }
-            chart.Series = newSeries;
+                _waitsShown[i] = checkBoxes[i].IsChecked == true;
+            PlotBaseline();
+            ApplySeries("Waits");
             // Force update
             if (chart.IsLoaded)
                 chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });

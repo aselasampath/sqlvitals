@@ -192,12 +192,21 @@ public partial class PerfmonPage : Page, IRefreshable
     private HistoryLoad<CounterHistoryBucket>? _historyLoad;
     private readonly Dictionary<string, ObservableCollection<DateTimePoint>> _historyWindows = [];   // built on demand
 
+    // "Compare to baseline" draws the same time last week under each counter, dashed. It is
+    // re-clipped to the chart on every rebuild, so it follows the live window as it moves.
+    private readonly BaselineTracker<CounterHistoryBucket>? _baseline;
+    private string _baselineNote = "";
+    private string _statusMain;
+
     public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null)
     {
         _repo    = repo;
         _history = history;
+        if (history is not null)
+            _baseline = new BaselineTracker<CounterHistoryBucket>(history, (reader, id, from, to, bucket) => reader.ReadCounters(id, from, to, bucket));
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
+        _statusMain = TxtStatus.Text;
 
         CmbInterval.ItemsSource   = Intervals.Select(IntervalLabel).ToList();
         CmbInterval.SelectedIndex = 1;   // default 10 s
@@ -278,9 +287,13 @@ public partial class PerfmonPage : Page, IRefreshable
         if (!_range.IsLive)
             return;
 
+        // The baseline is clipped to the live window, which has just moved.
+        if (RangePicker.CompareToBaseline)
+            RebuildSeries();
         UpdateChart();
 
-        TxtStatus.Text = $"Last refresh: {now:HH:mm:ss}  •  {data.Count} counters retrieved";
+        ShowStatus($"Last refresh: {now:HH:mm:ss}  •  {data.Count} counters retrieved");
+        await LoadBaselineAsync();
     }
 
     // ── History ──────────────────────────────────────────────────────────────
@@ -295,14 +308,19 @@ public partial class PerfmonPage : Page, IRefreshable
         BtnAutoRefresh.IsEnabled = live;
         CmbInterval.IsEnabled    = live;
 
+        // A baseline belongs to the range it was read for.
+        _baseline?.Clear();
+        _baselineNote = "";
+
         if (live)
         {
             _historyVersion++;
             _historyLoad = null;
             _historyWindows.Clear();
-            TxtStatus.Text = "Live — press Start or use manual Refresh.";
+            ShowStatus("Live — press Start or use manual Refresh.");
             RebuildSeries();
             UpdateChart();
+            await LoadBaselineAsync();
             return;
         }
 
@@ -315,7 +333,7 @@ public partial class PerfmonPage : Page, IRefreshable
             // Only the latest pick owns the status line.
             if (_range != range)
                 return;
-            TxtStatus.Text = $"Could not read the history: {ex.Message}";
+            ShowStatus($"Could not read the history: {ex.Message}");
             MainWindow.ReportBackgroundError(this, "Perfmon history", ex);
         }
     }
@@ -341,7 +359,9 @@ public partial class PerfmonPage : Page, IRefreshable
 
         RebuildSeries();
         UpdateChart();
-        TxtStatus.Text = load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList());
+        ShowStatus(load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList()));
+
+        await LoadBaselineAsync();
     }
 
     // The counter averaged over each bucket, with breaks where nothing was recorded. A bucket
@@ -352,10 +372,77 @@ public partial class PerfmonPage : Page, IRefreshable
         if (_historyLoad is not { } load)
             return window;
 
-        foreach (var (time, bucket) in HistoryGaps.WithGaps(load.Items, b => b.TimeUtc, load.Bucket))
-            window.Add(new DateTimePoint(time.ToLocalTime(),
-                bucket is null ? null : bucket.Values.GetValueOrDefault(counterName)));
+        foreach (var (time, bucket) in OnLocalClock(load.Items, load.Bucket))
+            window.Add(new DateTimePoint(time, bucket?.Values.GetValueOrDefault(counterName)));
         return window;
+    }
+
+    // History buckets on this PC's clock, as the chart plots them, with a null where the line breaks.
+    private static IEnumerable<(DateTime Time, CounterHistoryBucket? Bucket)> OnLocalClock(
+        IReadOnlyList<CounterHistoryBucket> items, TimeSpan bucket) =>
+        HistoryGaps.WithGaps(items, b => b.TimeUtc, bucket).Select(p => (p.Time.ToLocalTime(), p.Item));
+
+    // ── Baseline ─────────────────────────────────────────────────────────────
+    private async void RangePicker_BaselineChanged(object? sender, bool on)
+    {
+        _baseline?.Clear();
+        _baselineNote = "";
+        RebuildSeries();
+        UpdateChart();
+        ShowStatus(_statusMain);
+        await LoadBaselineAsync();
+    }
+
+    // Reads the baseline for what the chart shows, when it doesn't have one yet: the past range
+    // on screen, or the live window. Live, that is a new read only every half hour or so.
+    private async System.Threading.Tasks.Task LoadBaselineAsync()
+    {
+        if (_baseline is null || !RangePicker.CompareToBaseline)
+            return;
+
+        try
+        {
+            var read = _range.IsLive
+                ? await _baseline.EnsureLiveAsync(LiveSpan())
+                : _historyLoad is { } load && await _baseline.LoadAsync(load.FromUtc, load.ToUtc, load.Bucket);
+            if (!read || _baseline.Current is not { } baseline)
+                return;
+
+            _baselineNote = baseline.Describe();
+            RebuildSeries();
+            UpdateChart();
+            ShowStatus(_statusMain);
+        }
+        catch (Exception ex)
+        {
+            _baselineNote = $"Could not read the baseline: {ex.Message}";
+            ShowStatus(_statusMain);
+            MainWindow.ReportBackgroundError(this, "Perfmon baseline", ex);
+        }
+    }
+
+    // How long the live lines on the chart span.
+    private TimeSpan LiveSpan()
+    {
+        var shown = _windows.Values.Where(w => w.Count > 0).ToList();
+        return shown.Count == 0 ? TimeSpan.Zero : shown.Max(w => w[^1].DateTime) - shown.Min(w => w[0].DateTime);
+    }
+
+    // Last week's line for one counter, moved onto this week's axis between from and to.
+    private static ObservableCollection<DateTimePoint> BuildBaselineWindow(BaselineLoad<CounterHistoryBucket> baseline,
+                                                                           string counterName, DateTime from, DateTime to)
+    {
+        var window = new ObservableCollection<DateTimePoint>();
+        foreach (var (time, bucket) in HistoryBaseline.Shift(OnLocalClock(baseline.Items, baseline.Bucket), from, to))
+            window.Add(new DateTimePoint(time, bucket?.Values.GetValueOrDefault(counterName)));
+        return window;
+    }
+
+    // Sets the status line, adding what the baseline shows while it is on.
+    private void ShowStatus(string text)
+    {
+        _statusMain    = text;
+        TxtStatus.Text = RangePicker.CompareToBaseline && _baselineNote.Length > 0 ? $"{text}  •  {_baselineNote}" : text;
     }
 
     // ── Master list builder ──────────────────────────────────────────────────
@@ -464,7 +551,21 @@ public partial class PerfmonPage : Page, IRefreshable
                 GeometryStroke = null,
                 LineSmoothness = 0.3,
             };
-        }).ToArray();
+        }).ToList();
+
+        // The baseline under each line, over the times the chart shows: the range picked, or the
+        // live window so far (so the baseline never stretches the live axis).
+        if (RangePicker.CompareToBaseline && _baseline?.Current is { } baseline)
+        {
+            var live = selected.Select(i => windows[i.CounterName]).Where(w => w.Count > 0).ToList();
+            (DateTime From, DateTime To)? shown = history is not null
+                ? (history.FromUtc.ToLocalTime(), history.ToUtc.ToLocalTime())
+                : live.Count > 0 ? (live.Min(w => w[0].DateTime), live.Max(w => w[^1].DateTime)) : null;
+
+            if (shown is { } s)
+                series.AddRange(selected.Select((item, idx) => (ISeries)BaselineSeries.Line(
+                    BuildBaselineWindow(baseline, item.CounterName, s.From, s.To), item.CounterName, Palette[idx % Palette.Length])));
+        }
 
         PerfmonChart.Series = series;
 

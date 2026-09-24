@@ -107,9 +107,10 @@
                     BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
                 <DockPanel LastChildFill="False">
 
-                    <!-- Live, or a past range from the monitoring history -->
+                    <!-- Live, or a past range from the monitoring history; and the baseline -->
                     <controls:TimeRangePicker x:Name="RangePicker" DockPanel.Dock="Right"
-                                              RangeChanged="RangePicker_RangeChanged" />
+                                              RangeChanged="RangePicker_RangeChanged"
+                                              BaselineChanged="RangePicker_BaselineChanged" />
 
                     <TextBlock DockPanel.Dock="Left"
                                Text="Wait Stats — Trend"
