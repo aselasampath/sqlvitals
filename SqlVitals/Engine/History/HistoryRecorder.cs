@@ -1,3 +1,4 @@
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -74,6 +75,21 @@ public sealed class HistoryRecorder
         catch (Exception ex)
         {
             _reporter.Report($"Could not queue monitoring history for {Connection.Name}.", ex);
+        }
+    }
+
+    /// <summary>Queues alerts that started, changed or ended. Never throws.</summary>
+    public void RecordAlerts(IReadOnlyList<AlertChange> changes)
+    {
+        try
+        {
+            var now = _time.GetUtcNow().UtcDateTime;
+            foreach (var change in changes)
+                _sink.Enqueue(new AlertRecord(Connection, now, change.Alert));
+        }
+        catch (Exception ex)
+        {
+            _reporter.Report($"Could not queue alerts for {Connection.Name}.", ex);
         }
     }
 

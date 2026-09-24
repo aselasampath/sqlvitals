@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.33.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.34.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -52,6 +52,7 @@ live diagnostic data across the app's monitoring screens:
 - Filter box on the Resource Queries, Index Health, Query Store and Query Regressions grids, and a column sort that survives Refresh
 - Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite; snapshot interval and retention set in Settings)
 - A health dot per connection in the sidebar, graded on thresholds you set in Settings (CPU, blocking, page life expectancy, memory grants pending, log and TempDB space), for every connection or just one
+- Alerts: a threshold breached for a few samples in a row is recorded with its start, end and worst value, and listed on the Alerts page (active and past, filtered by connection)
 - Light theme (default) and dark theme, switchable in Settings
 
 ---
@@ -170,6 +171,10 @@ All paths are relative to the repository root.
     │   │   ├── HistoryReader.cs           ← Read-only: past ranges for the trend pages, averaged into buckets
     │   │   ├── HistoryRange.cs, HistoryGaps.cs ← Range picker choices, bucket sizes; where a chart breaks its line
     │   │   └── HistoryBaseline.cs         ← The same time last week, lined up under the current data
+    │   ├── Alerts/
+    │   │   ├── AlertTracker.cs            ← Per connection: turns graded samples into alerts (start / escalate / end)
+    │   │   ├── Alert.cs                   ← Alert, AlertChange, AlertText (how the Alerts page words figures)
+    │   │   └── AlertSettings.cs           ← Samples in a row before an alert starts (Settings choices)
     │   ├── Regressions/
     │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
     │   │   └── QueryRegressionDetector.cs ← Which queries got slower, and by how much (RegressionCriteria)
@@ -311,12 +316,41 @@ while you were away (the last 60 samples, about 10 minutes at the default 10 s i
   - Changes apply to the dots straight away, without waiting for the next sample.
   - The critical value must be past the warning one (higher, or lower for page life expectancy). Values out of range in a hand-edited `settings.dat` fall back to the defaults.
   - An indicator the server doesn't report (a counter missing on some Azure SQL tiers) is left out rather than flagged.
-  - Blocking, log and TempDB are read by the same live-metrics query (performance counters and `sys.dm_exec_requests`), so there's no extra query. They grade the dot only; they aren't saved to the history.
+  - Blocking, log and TempDB are read by the same live-metrics query (performance counters and `sys.dm_exec_requests`), so there's no extra query. Their figures aren't saved to the history, but an [alert](#alerts) on any of them is.
 - **Interval and Start/Stop** on the Live Metrics page apply to that connection's collector, including while it runs in the background.
 - **Unreachable servers** are retried with exponential backoff (up to every 5 minutes), so they aren't hammered.
 - **Only lightweight queries run in the background:** the live-metrics query every interval, and the [history](#monitoring-history) detail snapshot every 5 minutes (configurable). Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
 - **Entra MFA connections** start background collection only after you've switched to them once in the session. This avoids unexpected sign-in windows.
   The same applies to SQL logins without a saved password.
+
+### Alerts
+
+Every sample a monitored connection collects is checked against its [health thresholds](#background-monitoring). An
+indicator that stays past one raises an **alert**, saved to the [monitoring history](#monitoring-history), so you have a timeline
+of what went wrong and when. The **Alerts** page (sidebar, under Live Metrics) lists them.
+
+- **Starts after a run, ends after a run.** An alert starts once an indicator has been past its warning (or critical)
+  threshold for **3 samples in a row**, and ends once it has been back to normal for 3 samples in a row. Needing a run to end
+  as well as to start means a value hovering around a threshold raises one alert, not a new one every few samples. Set the
+  count in **Settings → Alerts** (1, 2, 3, 5 or 10). It's counted in samples, so the time depends on each connection's Live
+  Metrics interval: at the default 10 s, 3 samples is 30 s.
+- **What's stored:** the connection, the indicator, the severity, when it started (the first sample past the threshold) and
+  ended (the first sample back to normal), the worst value, the threshold crossed, and what the health dot said at the worst
+  value (e.g. *Log 93% full (Sales)*). A warning alert becomes **critical** once the indicator has been critical for as many
+  samples in a row. It stays critical after that.
+- **The Alerts page** lists active alerts first, then past ones, newest first. Filter by **connection**, by **active / past**
+  and by **period** (last 24 hours, 7 days, 30 days, or all the history kept). The filter box and column sorting work as on the
+  other grids. It updates by itself when an alert starts, changes or ends. The sidebar button shows the number of active
+  alerts, e.g. **🔔 Alerts (2)**.
+- **When monitoring stops**, active alerts end with *Monitoring stopped* at the last sample taken: pausing collection on
+  Live Metrics, editing or removing the connection, or closing SqlVitals. An alert left active by a run that was killed, or a
+  PC that turned off, is ended the same way the next time SqlVitals starts. A failed collection (server unreachable) counts
+  neither way, so an active alert stays active while the server can't be reached.
+- **Only monitored, saved connections** raise alerts: the active one, and those with **Monitor in background**. The ad-hoc
+  Live Metrics session doesn't. Changing a threshold or the sample count applies from the next sample.
+- Alerts are kept for the history's retention (counted from when they ended), and removed by *Clear history*. An active
+  alert is never purged.
+- The logic is pure and unit tested: `SqlVitals/Engine/Alerts/AlertTracker.cs`, fed by `HealthRules.Grade`.
 
 ### Monitoring history
 
@@ -331,6 +365,7 @@ CLI, DuckDB). Why SQLite over DuckDB, LiteDB or flat files is recorded on
 |---|---|---|---|
 | Samples | Every Live Metrics interval (10 s by default) | The Live Metrics sample: CPU %, wait rate per category, batch requests, compilations, transactions, physical I/O, page life expectancy, memory grants pending, buffer cache hit ratio. No extra server query. | `metric_samples` |
 | Details | Every 5 minutes by default (1, 5, 15 or 30 in Settings) | Change over the interval in waits per type (`sys.dm_os_wait_stats`, idle waits excluded), file I/O per file (`sys.dm_io_virtual_file_stats`), and the top 20 queries by CPU (`sys.dm_exec_query_stats`, grouped by `query_hash`). Also memory: total/target server memory, cache sizes. Also the Perfmon page's counters (`sys.dm_os_performance_counters`): rates per second over the interval, other counters as they stood; zeros aren't stored. | `detail_snapshots`, `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts`, `counter_values` |
+| Alerts | When an alert starts, escalates, gets worse or ends | One row per [alert](#alerts), updated in place: indicator, severity, start, end (empty while active), worst value, threshold, details, why it ended | `alerts` |
 
 - **Times** are UTC epoch milliseconds from this PC (`captured_utc`). The server's own clock is kept beside it as text (`server_time`).
 - **Settings → Monitoring History** sets the detail snapshot interval (1, 5, 15 or 30 minutes; default 5) and how long history is kept (7, 14, 30 or 90 days; default 14). Changes apply straight away to every monitored connection. A shorter interval shows more detail but adds load on the server and uses more disk; Live Metrics samples are saved at their own interval whatever is chosen here.
@@ -342,7 +377,7 @@ CLI, DuckDB). Why SQLite over DuckDB, LiteDB or flat files is recorded on
 - **The first sample** of each session is not stored: its rates are all zero, with nothing to diff against.
 - **Never breaks live monitoring.** Records go into a bounded in-memory queue; one background thread writes them in batches. If the disk is slow the oldest queued records are dropped. Failures are written to the app log (at most one line a minute) and never change a connection's health dot. A damaged file is renamed to `history.corrupt-<timestamp>.db` and a new one started. A file from a newer SqlVitals turns history off rather than being changed.
 - The ad-hoc Live Metrics session (no saved connection) is not recorded.
-- **Schema version** is kept in `PRAGMA user_version`: 1 from 0.28, 2 from 0.30 (adds `counter_values`). A newer SqlVitals upgrades an older file in place and keeps its data. An older SqlVitals leaves a newer file alone and turns history off.
+- **Schema version** is kept in `PRAGMA user_version`: 1 from 0.28, 2 from 0.30 (adds `counter_values`), 3 from 0.34 (adds `alerts`). A newer SqlVitals upgrades an older file in place and keeps its data. An older SqlVitals leaves a newer file alone and turns history off.
 
 ### Time ranges on trend pages
 
@@ -521,7 +556,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.33.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.34.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -558,6 +593,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Nav Button | Tag string | Page class | Repository method(s) | Notes |
 |---|---|---|---|---|
 | Live Metrics | `LiveMetrics` | `LiveMetricsDashboardPage` | Live snapshot methods | Start page; keeps collecting in the background |
+| Alerts | `Alerts` | `AlertsPage` | *(history reads, no server query)* | Every connection's alerts; filter box. See [Alerts](#alerts) |
 | Top Waits | `TopWaits` | `TopWaitsPage` | `GetTopWaitTypesAsync`, `GetCumulativeWaitsAsync` | |
 | Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` | |
 | Processes | `Processes` | `ProcessesPage` | `GetProcessesAsync` | Full-page blocking map with SPID search, session details and its own auto-refresh |
@@ -576,7 +612,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Perfmon | `Perfmon` | `PerfmonPage` | Perfmon counter methods | |
 | SP Trace | `SpTrace` | `SpTracePage` | `StartTraceAsync`, `PollTraceEventsAsync`, `PollProcedureStatsAsync` | See [Live SP Trace](#live-sp-trace) |
 | Export / AI | `Export` | `ExportPage` | *(all groups via ExportService)* | |
-| Settings | `Settings` | `SettingsPage` | *(no repository)* | Connections, and the light/dark theme toggle |
+| Settings | `Settings` | `SettingsPage` | *(no repository)* | Connections, history, health thresholds, alerts, and the light/dark theme toggle |
 
 > The table above reflects the nav tags wired up in `MainWindow.xaml.cs`. See
 > `SqlVitals/Engine/Repositories/IWaitStatsRepository.cs` for the full, current method list —

@@ -1,3 +1,4 @@
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 
 namespace SqlVitals.Desktop.Services;
@@ -29,8 +30,36 @@ public sealed class MonitoringManager : IDisposable
 
     private readonly Dictionary<Guid, string> _notMonitoredReasons = new();
 
+    public MonitoringManager()
+    {
+        // Queued before any session exists, so it can only end what a previous run left active.
+        _history.EndAlertsLeftOpen();
+    }
+
+    // From Settings; applied to every session, including ones created later.
+    private int _alertSamples = AlertSettings.DefaultSamples;
+
     /// <summary>Raised on the UI thread when a connection's session changes health or state.</summary>
     public event Action<Guid>? SessionStateChanged;
+
+    /// <summary>
+    /// Raised on the UI thread when a connection's alerts start, escalate, worsen or end,
+    /// including when they end because its monitoring stopped.
+    /// </summary>
+    public event Action<Guid, IReadOnlyList<AlertChange>>? AlertsChanged;
+
+    /// <summary>Every monitored connection's alerts that have started and not ended.</summary>
+    public IReadOnlyList<Alert> ActiveAlerts =>
+        _sessions.Values.SelectMany(s => s.ActiveAlerts).ToList();
+
+    /// <summary>
+    /// Reads the local history file: past ranges, alerts. Any thread may use it; each read opens
+    /// its own short-lived connection.
+    /// </summary>
+    public HistoryReader HistoryReader => _reader ??= new HistoryReader(_history.Path);
+
+    /// <summary>True when the history file is from a newer SqlVitals, so nothing is being saved.</summary>
+    public bool IsHistoryDisabled => _history.IsDisabled;
 
     public MonitoringSession? Get(Guid? connectionId) =>
         connectionId is { } id && _sessions.TryGetValue(id, out var session) ? session : null;
@@ -47,7 +76,7 @@ public sealed class MonitoringManager : IDisposable
     /// the file, so it includes what was recorded before the app was last restarted.
     /// </summary>
     public ConnectionHistory? HistoryFor(Guid? connectionId) =>
-        connectionId is { } id ? new ConnectionHistory(_reader ??= new HistoryReader(_history.Path), id) : null;
+        connectionId is { } id ? new ConnectionHistory(HistoryReader, id) : null;
 
     private HistoryReader? _reader;
 
@@ -78,10 +107,22 @@ public sealed class MonitoringManager : IDisposable
                 session.Thresholds = store.ThresholdsFor(conn);
     }
 
+    /// <summary>
+    /// Applies how many samples in a row start and end an alert to every running session, from
+    /// its next sample.
+    /// </summary>
+    public void ApplyAlertSettings(ConnectionStore store)
+    {
+        _alertSamples = store.AlertSamples;
+        foreach (var session in _sessions.Values)
+            session.AlertSamples = _alertSamples;
+    }
+
     /// <summary>Starts, stops or recreates sessions to match the saved connections.</summary>
     public void Sync(ConnectionStore store)
     {
         ApplyHistorySettings(store);
+        ApplyAlertSettings(store);
 
         if (store.Active is { } active)
             _signedIn.Add(active.Id);
@@ -133,10 +174,12 @@ public sealed class MonitoringManager : IDisposable
                 _intervals.TryGetValue(id, out var seconds) ? seconds : MonitoringSession.DefaultIntervalSeconds,
                 recorder)
             {
-                Thresholds = store.ThresholdsFor(conn),
+                Thresholds   = store.ThresholdsFor(conn),
+                AlertSamples = _alertSamples,
             };
 
-            session.StateChanged += OnSessionStateChanged;
+            session.StateChanged  += OnSessionStateChanged;
+            session.AlertsChanged += OnSessionAlertsChanged;
             _sessions[id] = session;
 
             if (!_paused.Contains(id))
@@ -167,19 +210,28 @@ public sealed class MonitoringManager : IDisposable
         SessionStateChanged?.Invoke(id);
     }
 
+    private void OnSessionAlertsChanged(MonitoringSession session, IReadOnlyList<AlertChange> changes)
+    {
+        if (session.ConnectionId is { } id)
+            AlertsChanged?.Invoke(id, changes);
+    }
+
     private void Remove(Guid id)
     {
         if (!_sessions.Remove(id, out var session))
             return;
 
+        // Still subscribed to its alerts while it's disposed: the ones it ends are reported.
         session.StateChanged -= OnSessionStateChanged;
         session.Dispose();
+        session.AlertsChanged -= OnSessionAlertsChanged;
         SessionStateChanged?.Invoke(id);
     }
 
     public void Dispose()
     {
         SessionStateChanged = null;   // the window is closing; nothing left to update
+        AlertsChanged       = null;
         foreach (var id in _sessions.Keys.ToList())
             Remove(id);
 

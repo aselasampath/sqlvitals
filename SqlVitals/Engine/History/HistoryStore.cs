@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.History;
@@ -15,8 +16,8 @@ namespace SqlVitals.Engine.History;
 /// </summary>
 public sealed class HistoryStore(string path) : IDisposable
 {
-    /// <summary>1: the tables from #28. 2: adds counter_values (#30).</summary>
-    public const int SchemaVersion = 2;
+    /// <summary>1: the tables from #28. 2: adds counter_values (#30). 3: adds alerts (#34).</summary>
+    public const int SchemaVersion = 3;
 
     private const long DayMs          = 24L * 60 * 60 * 1000;
     private const int  PurgeBatchSize = 500;
@@ -122,6 +123,21 @@ public sealed class HistoryStore(string path) : IDisposable
             value           REAL    NOT NULL,
             PRIMARY KEY (snapshot_id, counter_name)
         ) WITHOUT ROWID;
+
+        CREATE TABLE IF NOT EXISTS alerts (
+            alert_id        TEXT    NOT NULL PRIMARY KEY,
+            connection_id   TEXT    NOT NULL,
+            indicator       TEXT    NOT NULL,
+            severity        TEXT    NOT NULL,
+            started_utc     INTEGER NOT NULL,
+            ended_utc       INTEGER,
+            value           REAL    NOT NULL,
+            threshold       REAL,
+            detail          TEXT    NOT NULL,
+            end_reason      TEXT
+        );
+        CREATE INDEX IF NOT EXISTS ix_alerts_connection_start
+            ON alerts (connection_id, started_utc);
         """;
 
     private SqliteConnection? _conn;
@@ -225,6 +241,9 @@ public sealed class HistoryStore(string path) : IDisposable
                     break;
                 case DetailRecord d:
                     WriteDetail(conn, tx, connectionId, capturedMs, d);
+                    break;
+                case AlertRecord a:
+                    WriteAlert(conn, tx, connectionId, a.Alert);
                     break;
             }
         }
@@ -347,6 +366,49 @@ public sealed class HistoryStore(string path) : IDisposable
             tx);
     }
 
+    // The whole alert as it stands: a later record of the same alert replaces the row.
+    private static void WriteAlert(SqliteConnection conn, SqliteTransaction tx, string connectionId, Alert a) =>
+        conn.Execute("""
+            INSERT INTO alerts (alert_id, connection_id, indicator, severity, started_utc, ended_utc,
+                                value, threshold, detail, end_reason)
+            VALUES (@alertId, @connectionId, @indicator, @severity, @startedMs, @endedMs,
+                    @Value, @Threshold, @Detail, @endReason)
+            ON CONFLICT (alert_id) DO UPDATE SET
+                severity = excluded.severity, started_utc = excluded.started_utc, ended_utc = excluded.ended_utc,
+                value = excluded.value, threshold = excluded.threshold, detail = excluded.detail,
+                end_reason = excluded.end_reason
+            """,
+            new
+            {
+                alertId   = a.Id.ToString("D"),
+                connectionId,
+                indicator = a.Indicator.ToString(),
+                severity  = a.Severity.ToString(),
+                startedMs = ToEpochMs(a.StartedUtc),
+                endedMs   = a.EndedUtc is { } ended ? ToEpochMs(ended) : (long?)null,
+                a.Value, a.Threshold, a.Detail,
+                endReason = a.EndReason?.ToString(),
+            },
+            tx);
+
+    /// <summary>
+    /// Ends every alert still active in the file: ones a previous run never ended because it was
+    /// killed or the PC turned off. Each ends at the last sample stored for its connection since
+    /// it started, the last time anyone looked, as <see cref="AlertEndReason.MonitoringStopped"/>.
+    /// Returns how many were ended.
+    /// </summary>
+    public int EndAlertsLeftOpen() =>
+        Connection.Execute("""
+            UPDATE alerts SET
+                ended_utc = COALESCE(
+                    (SELECT MAX(s.captured_utc) FROM metric_samples s
+                     WHERE s.connection_id = alerts.connection_id AND s.captured_utc >= alerts.started_utc),
+                    alerts.started_utc),
+                end_reason = @endReason
+            WHERE ended_utc IS NULL
+            """,
+            new { endReason = AlertEndReason.MonitoringStopped.ToString() });
+
     /// <summary>
     /// Deletes everything captured before <paramref name="cutoffUtc"/>, a day or a few hundred
     /// snapshots per transaction so other writers are never held up for long, then gives the
@@ -392,6 +454,9 @@ public sealed class HistoryStore(string path) : IDisposable
 
         conn.Execute("DELETE FROM query_texts WHERE last_seen_utc < @cutoff;", new { cutoff });
 
+        // An active alert is kept however long ago it started.
+        conn.Execute("DELETE FROM alerts WHERE ended_utc < @cutoff;", new { cutoff });
+
         Compact(conn);
     }
 
@@ -411,6 +476,7 @@ public sealed class HistoryStore(string path) : IDisposable
                 DELETE FROM detail_snapshots;
                 DELETE FROM query_texts;
                 DELETE FROM metric_samples;
+                DELETE FROM alerts;
                 DELETE FROM connections;
                 """, transaction: tx);
             tx.Commit();

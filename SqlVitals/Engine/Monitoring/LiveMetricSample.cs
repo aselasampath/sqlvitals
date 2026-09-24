@@ -94,6 +94,12 @@ public enum HealthLevel
     Unavailable,
 }
 
+/// <summary>
+/// One indicator of one sample, graded: its level, its figure, the thresholds it was graded on
+/// and, when past one, the reason shown in the health dot's tooltip.
+/// </summary>
+public sealed record HealthReading(HealthIndicator Indicator, HealthLevel Level, double Value, HealthThreshold Limits, string? Reason);
+
 /// <summary>Traffic-light rules applied to each background sample.</summary>
 public static class HealthRules
 {
@@ -105,53 +111,64 @@ public static class HealthRules
     /// Grades a sample: the worst level any indicator reached, and one reason per indicator
     /// past its warning or critical threshold.
     /// </summary>
-    public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample, HealthThresholds thresholds)
-    {
-        var reasons = new List<string>();
-        var level   = HealthLevel.Healthy;
+    public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample, HealthThresholds thresholds) =>
+        Summarize(Grade(sample, thresholds));
 
-        void Check(HealthIndicator indicator, double value, Func<string> reason)
+    /// <summary>The worst level among the readings, and the reason of each one past a threshold.</summary>
+    public static (HealthLevel Level, IReadOnlyList<string> Reasons) Summarize(IReadOnlyList<HealthReading> readings)
+    {
+        var past  = readings.Where(r => r.Level > HealthLevel.Healthy).ToList();
+        var level = past.Count == 0 ? HealthLevel.Healthy : past.Max(r => r.Level);
+        return (level, past.Select(r => r.Reason!).ToList());
+    }
+
+    /// <summary>
+    /// Grades each indicator of a sample on its thresholds, in <see cref="HealthIndicator"/> order.
+    /// An indicator the sample has no figure for (nothing blocked, a counter the server didn't
+    /// report) reads as healthy.
+    /// </summary>
+    public static IReadOnlyList<HealthReading> Grade(LiveMetricSample sample, HealthThresholds thresholds)
+    {
+        var readings = new List<HealthReading>(6);
+
+        void Check(HealthIndicator indicator, double value, bool measured, Func<string> reason)
         {
             var info      = HealthThresholds.Info(indicator);
             var threshold = thresholds.Get(indicator);
 
             bool Past(double? limit) =>
-                limit is { } l && (info.LowerIsWorse ? value < l : value >= l);
+                measured && limit is { } l && (info.LowerIsWorse ? value < l : value >= l);
 
-            var to = Past(threshold.Critical) ? HealthLevel.Critical
-                   : Past(threshold.Warning)  ? HealthLevel.Warning
-                   : HealthLevel.Healthy;
-            if (to == HealthLevel.Healthy)
-                return;
+            var level = Past(threshold.Critical) ? HealthLevel.Critical
+                      : Past(threshold.Warning)  ? HealthLevel.Warning
+                      : HealthLevel.Healthy;
 
-            reasons.Add(reason());
-            if (to > level) level = to;
+            readings.Add(new HealthReading(indicator, level, value, threshold,
+                                           level == HealthLevel.Healthy ? null : reason()));
         }
 
-        Check(HealthIndicator.Cpu, sample.SqlCpuPct, () => $"CPU {sample.SqlCpuPct:0}%");
+        Check(HealthIndicator.Cpu, sample.SqlCpuPct, measured: true, () => $"CPU {sample.SqlCpuPct:0}%");
 
-        if (sample.BlockedSessions > 0)
-            Check(HealthIndicator.Blocking, sample.LongestBlockSec,
-                  () => $"Blocking {FormatSeconds(sample.LongestBlockSec)} ({sample.BlockedSessions:0} blocked)");
+        Check(HealthIndicator.Blocking, sample.LongestBlockSec, measured: sample.BlockedSessions > 0,
+              () => $"Blocking {FormatSeconds(sample.LongestBlockSec)} ({sample.BlockedSessions:0} blocked)");
 
         // Zero means the counter wasn't reported (some Azure SQL tiers), not an empty buffer pool.
-        if (sample.PageLifeExpectancySec > 0)
-            Check(HealthIndicator.PageLifeExpectancy, sample.PageLifeExpectancySec,
-                  () => $"PLE {sample.PageLifeExpectancySec:0}s");
+        Check(HealthIndicator.PageLifeExpectancy, sample.PageLifeExpectancySec, measured: sample.PageLifeExpectancySec > 0,
+              () => $"PLE {sample.PageLifeExpectancySec:0}s");
 
-        Check(HealthIndicator.MemoryGrantsPending, sample.MemoryGrantsPending,
+        Check(HealthIndicator.MemoryGrantsPending, sample.MemoryGrantsPending, measured: true,
               () => $"{sample.MemoryGrantsPending:0} memory grant(s) pending");
 
-        Check(HealthIndicator.LogSpace, sample.LogUsedPct,
+        Check(HealthIndicator.LogSpace, sample.LogUsedPct, measured: true,
               () => string.IsNullOrWhiteSpace(sample.LogUsedDatabase)
                   ? $"Log {sample.LogUsedPct:0}% full"
                   : $"Log {sample.LogUsedPct:0}% full ({sample.LogUsedDatabase})");
 
         // Zero means TempDB's counters weren't reported (Azure SQL Database).
-        if (sample.TempDbUsedPct > 0)
-            Check(HealthIndicator.TempDbSpace, sample.TempDbUsedPct, () => $"TempDB {sample.TempDbUsedPct:0}% full");
+        Check(HealthIndicator.TempDbSpace, sample.TempDbUsedPct, measured: sample.TempDbUsedPct > 0,
+              () => $"TempDB {sample.TempDbUsedPct:0}% full");
 
-        return (level, reasons);
+        return readings;
     }
 
     private static string FormatSeconds(double seconds) =>

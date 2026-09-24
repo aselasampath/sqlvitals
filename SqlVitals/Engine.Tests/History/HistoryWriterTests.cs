@@ -207,6 +207,37 @@ public sealed class HistoryWriterTests : IDisposable
         Assert.Equal(TimeSpan.FromDays(14), writer.Retention);
     }
 
+    [Fact]
+    public void EndAlertsLeftOpen_RunsBeforeRecordsQueuedAfterIt()
+    {
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([AlertAt(T0.AddMinutes(-10))]);   // left active by the "previous run"
+        }
+
+        var time = new ManualTime(new DateTimeOffset(T0));
+        using (var writer = Create(time: time))
+        {
+            writer.EndAlertsLeftOpen();
+            writer.Enqueue(AlertAt(T0));                  // this run's alert, queued straight after
+        }
+
+        Assert.Equal(1, Count("alerts WHERE ended_utc IS NULL"));
+        Assert.Equal(1, Count("alerts WHERE end_reason = 'MonitoringStopped'"));
+        Assert.Empty(_errors);
+    }
+
+    [Fact]
+    public void EndAlertsLeftOpen_WithNoHistoryCreatesNoFile()
+    {
+        using (var writer = Create())
+            writer.EndAlertsLeftOpen();
+
+        Assert.False(File.Exists(DbPath));
+        Assert.Empty(_errors);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }

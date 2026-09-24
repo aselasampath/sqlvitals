@@ -1,4 +1,5 @@
 using System.Windows.Threading;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
@@ -25,6 +26,7 @@ public sealed class MonitoringSession : IDisposable
     private readonly DispatcherTimer        _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<LiveMetricSample> _samples = new();
     private readonly HistoryRecorder?       _history;
+    private readonly AlertTracker?          _alerts;
     private LiveMetricSnapshot?             _previous;
     private Task?                           _inFlight;
     private int                             _consecutiveFailures;
@@ -35,8 +37,8 @@ public sealed class MonitoringSession : IDisposable
     private bool                            _disposed;
 
     /// <param name="history">
-    /// Saves this session's samples to the local history; null (the ad-hoc Live Metrics session)
-    /// keeps nothing beyond the in-memory window.
+    /// Saves this session's samples and alerts to the local history; null (the ad-hoc Live
+    /// Metrics session) keeps nothing beyond the in-memory window and raises no alerts.
     /// </param>
     public MonitoringSession(Guid? connectionId, IWaitStatsRepository repository, string fingerprint,
                              int intervalSeconds = DefaultIntervalSeconds, HistoryRecorder? history = null)
@@ -47,6 +49,9 @@ public sealed class MonitoringSession : IDisposable
         _history         = history;
         _intervalSeconds = Math.Max(1, intervalSeconds);
         _timer.Tick     += Timer_Tick;
+
+        if (connectionId is { } id && history is not null)
+            _alerts = new AlertTracker(id);
     }
 
     /// <summary>The saved connection this session monitors; null for an ad-hoc session.</summary>
@@ -103,6 +108,23 @@ public sealed class MonitoringSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Samples in a row an indicator must stay past a threshold for an alert to start, and back
+    /// to normal for it to end. Applies from the next sample.
+    /// </summary>
+    public int AlertSamples
+    {
+        get => _alerts?.Samples ?? AlertSettings.DefaultSamples;
+        set
+        {
+            if (_alerts is not null)
+                _alerts.Samples = Math.Max(1, value);
+        }
+    }
+
+    /// <summary>This connection's alerts that have started and not ended; none for an ad-hoc session.</summary>
+    public IReadOnlyList<Alert> ActiveAlerts => _alerts?.Active ?? [];
+
     /// <summary>Time left before the next scheduled collection; zero when paused.</summary>
     public TimeSpan TimeUntilNextSample
     {
@@ -120,6 +142,9 @@ public sealed class MonitoringSession : IDisposable
     /// <summary>Raised on the UI thread when health, running state or interval changes.</summary>
     public event Action<MonitoringSession>? StateChanged;
 
+    /// <summary>Raised on the UI thread when alerts start, escalate, worsen or end.</summary>
+    public event Action<MonitoringSession, IReadOnlyList<AlertChange>>? AlertsChanged;
+
     /// <summary>Starts (or resumes) scheduled collection. The first sample is taken right away.</summary>
     public void Start()
     {
@@ -130,12 +155,16 @@ public sealed class MonitoringSession : IDisposable
         StateChanged?.Invoke(this);
     }
 
-    /// <summary>Stops scheduled collection. The history is kept.</summary>
+    /// <summary>
+    /// Stops scheduled collection. The history is kept; active alerts end, since nothing is
+    /// watching any more.
+    /// </summary>
     public void Pause()
     {
         if (!IsRunning) return;
         IsRunning = false;
         _timer.Stop();
+        StopAlerts();
         StateChanged?.Invoke(this);
     }
 
@@ -188,7 +217,13 @@ public sealed class MonitoringSession : IDisposable
 
             _consecutiveFailures = 0;
             _lastSuccess         = DateTime.Now;
-            GradeHealth(sample);
+            var readings = HealthRules.Grade(sample, _thresholds);
+            GradeHealth(readings, sample);
+            // Every collected sample counts towards an alert, the first one too: the health
+            // gauges don't need a previous sample. A failed collection counts neither way, and
+            // neither does one finishing after Pause, which has already ended the alerts.
+            if (IsRunning)
+                RecordAlerts(_alerts?.Evaluate(readings, DateTime.UtcNow));
 
             // Neither call throws or waits on the disk. The first sample's rates are all zero
             // (nothing to diff against), so it isn't history. Details are only read from a
@@ -223,9 +258,11 @@ public sealed class MonitoringSession : IDisposable
         }
     }
 
-    private void GradeHealth(LiveMetricSample sample)
+    private void GradeHealth(LiveMetricSample sample) => GradeHealth(HealthRules.Grade(sample, _thresholds), sample);
+
+    private void GradeHealth(IReadOnlyList<HealthReading> readings, LiveMetricSample sample)
     {
-        var (level, reasons) = HealthRules.Evaluate(sample, _thresholds);
+        var (level, reasons) = HealthRules.Summarize(readings);
         Health     = level;
         HealthText = (reasons.Count == 0
                          ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
@@ -233,12 +270,24 @@ public sealed class MonitoringSession : IDisposable
                      + $" · updated {_lastSuccess:HH:mm:ss}";
     }
 
+    // Saves the changes and tells the app. Neither waits on the disk.
+    private void RecordAlerts(IReadOnlyList<AlertChange>? changes)
+    {
+        if (changes is not { Count: > 0 })
+            return;
+        _history?.RecordAlerts(changes);
+        AlertsChanged?.Invoke(this, changes);
+    }
+
+    private void StopAlerts() => RecordAlerts(_alerts?.Stop());
+
     private TimeSpan CurrentDelay() =>
         HealthRules.NextDelay(TimeSpan.FromSeconds(_intervalSeconds), _consecutiveFailures);
 
     private static string FormatDelay(TimeSpan delay) =>
         delay.TotalSeconds < 60 ? $"{delay.TotalSeconds:0}s" : $"{delay.TotalMinutes:0.#} min";
 
+    /// <summary>Stops collecting for good. Active alerts end, and are queued to the history first.</summary>
     public void Dispose()
     {
         if (_disposed) return;
@@ -246,7 +295,9 @@ public sealed class MonitoringSession : IDisposable
         IsRunning = false;
         _timer.Stop();
         _timer.Tick -= Timer_Tick;
-        SampleAdded  = null;
-        StateChanged = null;
+        StopAlerts();
+        SampleAdded   = null;
+        StateChanged  = null;
+        AlertsChanged = null;
     }
 }

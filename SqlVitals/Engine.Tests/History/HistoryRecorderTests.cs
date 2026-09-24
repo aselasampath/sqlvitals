@@ -1,3 +1,4 @@
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
@@ -34,6 +35,29 @@ public class HistoryRecorderTests
 
         var record = Assert.IsType<MetricSampleRecord>(Assert.Single(_sink.Records));
         Assert.Equal((Conn, T0, sample), (record.Connection, record.CapturedUtc, record.Sample));
+    }
+
+    [Fact]
+    public void RecordAlerts_QueuesEachAlertAsItNowStands()
+    {
+        var started = AlertAt(T0).Alert;
+        var ended   = AlertAt(T0.AddMinutes(-5), T0).Alert;
+
+        Create().RecordAlerts([new AlertChange(started, AlertChangeKind.Started), new AlertChange(ended, AlertChangeKind.Ended)]);
+
+        var records = _sink.Records.Cast<AlertRecord>().ToList();
+        Assert.Equal(new[] { started, ended }, records.Select(r => r.Alert));
+        Assert.All(records, r => Assert.Equal((Conn, T0), (r.Connection, r.CapturedUtc)));
+    }
+
+    [Fact]
+    public void RecordAlerts_SwallowsAFailingSink()
+    {
+        var recorder = new HistoryRecorder(Conn, _repo, new ThrowingSink(), (m, _) => _errors.Add(m), _time);
+
+        recorder.RecordAlerts([new AlertChange(AlertAt(T0).Alert, AlertChangeKind.Started)]);
+
+        Assert.Single(_errors);
     }
 
     [Fact]
