@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using SqlVitals.Engine.History;
 
 namespace SqlVitals.Desktop.Services;
 
@@ -81,6 +82,15 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves how often history detail snapshots are taken and how long history is kept.</summary>
+    public void SetHistorySettings(int intervalMinutes, int retentionDays)
+    {
+        var store = Load();
+        store.HistoryIntervalMinutes = HistorySettings.NormalizeInterval(intervalMinutes);
+        store.HistoryRetentionDays   = HistorySettings.NormalizeRetention(retentionDays);
+        Save(store);
+    }
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id)
     {
@@ -113,8 +123,10 @@ public class ConnectionSettingsService
 
             var store = new ConnectionStore
             {
-                CommandTimeoutSeconds = raw.CommandTimeoutSeconds > 0 ? raw.CommandTimeoutSeconds : 30,
-                ActiveConnectionId    = raw.ActiveConnectionId,
+                CommandTimeoutSeconds  = raw.CommandTimeoutSeconds > 0 ? raw.CommandTimeoutSeconds : 30,
+                ActiveConnectionId     = raw.ActiveConnectionId,
+                HistoryIntervalMinutes = HistorySettings.NormalizeInterval(raw.HistoryIntervalMinutes),
+                HistoryRetentionDays   = HistorySettings.NormalizeRetention(raw.HistoryRetentionDays),
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -175,9 +187,11 @@ public class ConnectionSettingsService
 
         var raw = new RawSettings
         {
-            EncryptedConnections  = Encrypt(JsonSerializer.Serialize(toStore)),
-            ActiveConnectionId    = store.ActiveConnectionId,
-            CommandTimeoutSeconds = store.CommandTimeoutSeconds,
+            EncryptedConnections   = Encrypt(JsonSerializer.Serialize(toStore)),
+            ActiveConnectionId     = store.ActiveConnectionId,
+            CommandTimeoutSeconds  = store.CommandTimeoutSeconds,
+            HistoryIntervalMinutes = store.HistoryIntervalMinutes,
+            HistoryRetentionDays   = store.HistoryRetentionDays,
         };
 
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
@@ -207,6 +221,10 @@ public class ConnectionSettingsService
         public Guid?   ActiveConnectionId        { get; set; }
         public int     CommandTimeoutSeconds     { get; set; } = 30;
 
+        // Missing from files written before these settings existed: the defaults apply.
+        public int     HistoryIntervalMinutes    { get; set; } = HistorySettings.DefaultIntervalMinutes;
+        public int     HistoryRetentionDays      { get; set; } = HistorySettings.DefaultRetentionDays;
+
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
         public string? EncryptedConnectionString { get; set; }
@@ -219,6 +237,12 @@ public class ConnectionStore
     public List<ConnectionSettings> Connections           { get; set; } = new();
     public Guid?                    ActiveConnectionId    { get; set; }
     public int                      CommandTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Minutes between monitoring-history detail snapshots; one of <see cref="HistorySettings.IntervalChoicesMinutes"/>.</summary>
+    public int HistoryIntervalMinutes { get; set; } = HistorySettings.DefaultIntervalMinutes;
+
+    /// <summary>Days of monitoring history kept; one of <see cref="HistorySettings.RetentionChoicesDays"/>.</summary>
+    public int HistoryRetentionDays   { get; set; } = HistorySettings.DefaultRetentionDays;
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;

@@ -1,15 +1,27 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Desktop;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.History;
 
 namespace SqlVitals.Desktop.Pages;
 
 public partial class SettingsPage : Page
 {
     private readonly ConnectionSettingsService _service;
+    private readonly MonitoringManager         _monitoring;
+
+    // The history file grows with every sample and shrinks after a purge, which the writer
+    // runs on its own schedule, so the size shown is re-read while the page is open.
+    private readonly DispatcherTimer _historySizeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+
+    // Set while the history choices are filled in or put back in code, so they aren't saved.
+    private bool _isLoadingHistorySettings;
+    private int  _savedIntervalMinutes;
+    private int  _savedRetentionDays;
 
     // Tells the running app the saved connections changed so it can pick up a new or edited
     // active connection. The bool asks it to open the dashboard afterwards.
@@ -28,16 +40,22 @@ public partial class SettingsPage : Page
 
     public SettingsPage(
         ConnectionSettingsService service,
+        MonitoringManager monitoring,
         Func<bool, Task> applyConnections,
         string? initialMessage = null,
         Guid? selectConnectionId = null)
     {
         InitializeComponent();
         _service          = service;
+        _monitoring       = monitoring;
         _applyConnections = applyConnections;
 
         var store = _service.Load();
         TxtTimeout.Text = store.CommandTimeoutSeconds.ToString();
+        LoadHistorySettings(store);
+        _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
+        Loaded   += (_, _) => { UpdateHistorySize(); _historySizeTimer.Start(); };
+        Unloaded += (_, _) => _historySizeTimer.Stop();
         var initial = (selectConnectionId is { } id ? store.Connections.FirstOrDefault(c => c.Id == id) : null)
                       ?? store.Active
                       ?? store.Connections.FirstOrDefault();
@@ -253,7 +271,7 @@ public partial class SettingsPage : Page
     {
         var app = (App)Application.Current;
         app.ToggleTheme();
-        NavigationService?.Navigate(new SettingsPage(_service, _applyConnections, selectConnectionId: _editingId));
+        NavigationService?.Navigate(new SettingsPage(_service, _monitoring, _applyConnections, selectConnectionId: _editingId));
     }
 
     private void LnkOpenLogFolder_Click(object sender, RoutedEventArgs e)
@@ -273,6 +291,136 @@ public partial class SettingsPage : Page
             SetStatus($"Could not open the log folder: {ex.Message}", success: false);
         }
     }
+
+    // ── Monitoring history ────────────────────────────────────────────────────
+
+    private void LoadHistorySettings(ConnectionStore store)
+    {
+        _isLoadingHistorySettings = true;
+        try
+        {
+            foreach (var minutes in HistorySettings.IntervalChoicesMinutes)
+                CmbHistoryInterval.Items.Add(new ComboBoxItem { Content = MinutesText(minutes), Tag = minutes });
+            foreach (var days in HistorySettings.RetentionChoicesDays)
+                CmbHistoryRetention.Items.Add(new ComboBoxItem { Content = $"{days} days", Tag = days });
+
+            ShowHistorySettings(store.HistoryIntervalMinutes, store.HistoryRetentionDays);
+        }
+        finally
+        {
+            _isLoadingHistorySettings = false;
+        }
+    }
+
+    // Selects the saved choices; the values are always ones offered (see HistorySettings.Normalize*).
+    private void ShowHistorySettings(int intervalMinutes, int retentionDays)
+    {
+        _savedIntervalMinutes = intervalMinutes;
+        _savedRetentionDays   = retentionDays;
+        CmbHistoryInterval.SelectedItem  = FindChoice(CmbHistoryInterval, intervalMinutes);
+        CmbHistoryRetention.SelectedItem = FindChoice(CmbHistoryRetention, retentionDays);
+    }
+
+    private static ComboBoxItem FindChoice(ComboBox combo, int value) =>
+        combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == value)
+        ?? (ComboBoxItem)combo.Items[0];
+
+    private void HistorySetting_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingHistorySettings ||
+            CmbHistoryInterval.SelectedItem is not ComboBoxItem { Tag: int minutes } ||
+            CmbHistoryRetention.SelectedItem is not ComboBoxItem { Tag: int days })
+            return;
+        if (minutes == _savedIntervalMinutes && days == _savedRetentionDays)
+            return;
+
+        if (days < _savedRetentionDays)
+        {
+            var confirm = MessageBox.Show(
+                $"Keep monitoring history for {days} days instead of {_savedRetentionDays}?\n\n" +
+                $"History older than {days} days is deleted straight away, for every connection. This cannot be undone.",
+                "Monitoring History", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                RevertHistorySettings();
+                return;
+            }
+        }
+
+        try
+        {
+            _service.SetHistorySettings(minutes, days);
+            var store = _service.Load();
+            _monitoring.ApplyHistorySettings(store);
+            _savedIntervalMinutes = store.HistoryIntervalMinutes;
+            _savedRetentionDays   = store.HistoryRetentionDays;
+
+            ShowStatus(TxtHistoryStatus,
+                $"Saved: a snapshot every {MinutesText(store.HistoryIntervalMinutes)}, " +
+                $"history older than {store.HistoryRetentionDays} days deleted automatically.",
+                success: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtHistoryStatus, $"Could not save the history settings: {ex.Message}", success: false);
+            RevertHistorySettings();
+        }
+    }
+
+    // Puts back the saved choices. Deferred: changing the selection inside its own
+    // SelectionChanged handler can leave the ComboBox showing the rejected choice.
+    private void RevertHistorySettings() =>
+        Dispatcher.BeginInvoke(() =>
+        {
+            _isLoadingHistorySettings = true;
+            try
+            {
+                ShowHistorySettings(_savedIntervalMinutes, _savedRetentionDays);
+            }
+            finally
+            {
+                _isLoadingHistorySettings = false;
+            }
+        });
+
+    private async void BtnClearHistory_Click(object sender, RoutedEventArgs e)
+    {
+        var confirm = MessageBox.Show(
+            "Delete all monitoring history, for every connection?\n\n" +
+            "Monitoring carries on, and new history is saved from the next sample. This cannot be undone.",
+            "Clear History", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        BtnClearHistory.IsEnabled = false;
+        ShowStatus(TxtHistoryStatus, "Clearing history…", success: null);
+        try
+        {
+            await _monitoring.ClearHistoryAsync();
+            ShowStatus(TxtHistoryStatus, "History cleared.", success: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtHistoryStatus, $"Could not clear the history: {ex.Message}", success: false);
+        }
+        finally
+        {
+            BtnClearHistory.IsEnabled = true;
+            UpdateHistorySize();
+        }
+    }
+
+    private void UpdateHistorySize()
+    {
+        var path  = _monitoring.HistoryPath;
+        var bytes = HistoryStore.SizeOnDisk(path);
+        TxtHistorySize.Text = bytes == 0
+            ? "No history saved yet."
+            : $"Size on disk: {HistorySettings.FormatSize(bytes)}";
+        TxtHistoryPath.Text = path;
+    }
+
+    private static string MinutesText(int minutes) => minutes == 1 ? "1 minute" : $"{minutes} minutes";
 
     // ── Form ──────────────────────────────────────────────────────────────────
 
@@ -500,15 +648,18 @@ public partial class SettingsPage : Page
         public Visibility ActiveVisibility => IsActive ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void SetStatus(string message, bool? success)
+    private void SetStatus(string message, bool? success) => ShowStatus(TxtStatus, message, success);
+
+    private static void ShowStatus(TextBlock target, string message, bool? success)
     {
-        TxtStatus.Text = success switch
+        target.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
+        target.Text = success switch
         {
             true  => "✓  " + message,   // ✓
             false => "✗  " + message,   // ✗
             null  => message,
         };
-        TxtStatus.Foreground = success switch
+        target.Foreground = success switch
         {
             true  => new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)),   // green
             false => new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),   // red

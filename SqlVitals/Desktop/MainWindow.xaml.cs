@@ -398,7 +398,7 @@ public partial class MainWindow : Window
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(new SettingsPage(SettingsService, ApplySavedConnectionsAsync, settingsMessage, settingsConnectionId));
+            MainFrame.Navigate(new SettingsPage(SettingsService, Monitoring, ApplySavedConnectionsAsync, settingsMessage, settingsConnectionId));
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;

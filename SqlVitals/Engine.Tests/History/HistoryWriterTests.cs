@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Models;
 using static SqlVitals.Engine.Tests.History.HistoryStoreTests;
 
 namespace SqlVitals.Engine.Tests.History;
@@ -93,6 +94,117 @@ public sealed class HistoryWriterTests : IDisposable
             writer.Enqueue(new MetricSampleRecord(Conn, T0, Sample(2)));
 
         Assert.Equal(1, Count("metric_samples"));
+    }
+
+    [Fact]
+    public async Task ClearAsync_DeletesEverythingIncludingRecordsStillQueued()
+    {
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([new MetricSampleRecord(Conn, T0.AddHours(-1), Sample(1)),
+                         Detail(T0.AddHours(-1), new QueryTextInfo("0xAB", "Sales", "SELECT 1"))]);
+        }
+
+        using var writer = Create();
+        writer.Enqueue(new MetricSampleRecord(Conn, T0, Sample(2)));
+        await writer.ClearAsync();
+
+        foreach (var table in new[] { "metric_samples", "detail_snapshots", "wait_deltas", "file_io_deltas",
+                                      "query_deltas", "query_texts", "connections" })
+            Assert.Equal(0, Count(table));
+        Assert.Equal(1, writer.ClearCount);
+        Assert.Empty(_errors);
+    }
+
+    [Fact]
+    public async Task ClearAsync_RecordsQueuedAfterwardsAreKept()
+    {
+        using (var writer = Create())
+        {
+            writer.Enqueue(new MetricSampleRecord(Conn, T0, Sample(1)));
+            var clear = writer.ClearAsync();
+            writer.Enqueue(new MetricSampleRecord(Conn, T0.AddSeconds(10), Sample(2)));
+            await clear;
+        }
+
+        Assert.Equal(1, Count("metric_samples"));
+    }
+
+    [Fact]
+    public async Task ClearAsync_WithNothingSavedYetCreatesNoFile()
+    {
+        using var writer = Create();
+
+        await writer.ClearAsync();
+
+        Assert.False(File.Exists(DbPath));
+        Assert.Equal(0, writer.ClearCount);
+    }
+
+    [Fact]
+    public async Task ClearAsync_AfterDisposeFails()
+    {
+        var writer = Create();
+        writer.Dispose();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(writer.ClearAsync);
+    }
+
+    [Fact]
+    public async Task ClearAsync_FileFromANewerVersionFailsAndIsLeftAlone()
+    {
+        Directory.CreateDirectory(_dir);
+        using (var conn = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = DbPath, Pooling = false }.ToString()))
+        {
+            conn.Open();
+            conn.Execute("PRAGMA user_version = 99; CREATE TABLE future (x); INSERT INTO future VALUES (1);");
+        }
+
+        using var writer = Create();
+        await Assert.ThrowsAsync<HistorySchemaTooNewException>(writer.ClearAsync);
+
+        Assert.True(writer.IsDisabled);
+        Assert.Equal(1, Count("future"));
+    }
+
+    [Fact]
+    public void Retention_ShortenedPurgesStraightAwayWithoutWaitingForARecord()
+    {
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([new MetricSampleRecord(Conn, T0.AddDays(-10), Sample(1)),
+                         new MetricSampleRecord(Conn, T0.AddDays(-1), Sample(2))]);
+        }
+
+        using (var writer = new HistoryWriter(DbPath, (m, _) => _errors.Enqueue(m), TimeSpan.FromDays(30),
+                                              new ManualTime(new DateTimeOffset(T0))))
+        {
+            writer.Retention = TimeSpan.FromDays(90);      // longer: nothing to delete
+            writer.Retention = TimeSpan.FromDays(7);
+        }
+
+        Assert.Equal(1, Count("metric_samples"));
+        Assert.Empty(_errors);
+    }
+
+    [Fact]
+    public void Retention_ShortenedWithNoHistoryCreatesNoFile()
+    {
+        using (var writer = Create())
+            writer.Retention = TimeSpan.FromDays(7);
+
+        Assert.False(File.Exists(DbPath));
+    }
+
+    [Fact]
+    public void Retention_MustBePositive()
+    {
+        using var writer = Create();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => writer.Retention = TimeSpan.Zero);
+        Assert.Equal(TimeSpan.FromDays(14), writer.Retention);
     }
 
     public void Dispose()

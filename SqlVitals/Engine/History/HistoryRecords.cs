@@ -42,4 +42,7 @@ public interface IHistorySink
 {
     /// <summary>Queues a record. Never blocks and never throws.</summary>
     void Enqueue(HistoryRecord record);
+
+    /// <summary>Goes up each time the history is cleared, so anything already saved is gone.</summary>
+    int ClearCount => 0;
 }

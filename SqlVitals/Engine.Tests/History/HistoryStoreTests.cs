@@ -171,6 +171,53 @@ public sealed class HistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Clear_DeletesEverythingAndShrinksTheFile()
+    {
+        using var store = new HistoryStore(DbPath);
+        store.Open();
+        store.Write(Enumerable.Range(0, 20_000)
+                              .Select(i => (HistoryRecord)new MetricSampleRecord(Conn, T0.AddSeconds(10 * i), Sample(i)))
+                              .Append(Detail(T0, new QueryTextInfo("0xAB", "Sales", "SELECT 1")))
+                              .ToList());
+        store.Purge(T0.AddYears(-1));   // checkpoints the WAL into the file, so the size below is the data
+        var before = HistoryStore.SizeOnDisk(DbPath);
+
+        store.Clear();
+
+        var after = HistoryStore.SizeOnDisk(DbPath);
+        Assert.True(after < before / 10, $"{before:N0} bytes before, {after:N0} after");
+        using var raw = Raw();
+        foreach (var table in new[] { "connections", "metric_samples", "detail_snapshots", "wait_deltas",
+                                      "file_io_deltas", "query_deltas", "query_texts" })
+            Assert.Equal(0L, raw.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table};"));
+    }
+
+    [Fact]
+    public void Clear_LeavesTheStoreReadyForNewRecords()
+    {
+        using var store = new HistoryStore(DbPath);
+        store.Open();
+        store.Write([new MetricSampleRecord(Conn, T0, Sample(1))]);
+
+        store.Clear();
+        store.Write([new MetricSampleRecord(Conn, T0.AddSeconds(10), Sample(2))]);
+
+        Assert.Equal(2.0, Assert.Single(store.ReadSamples(Conn.Id, T0, T0.AddMinutes(1))).Sample.SqlCpuPct);
+    }
+
+    [Fact]
+    public void SizeOnDisk_CountsTheWalFilesAndIsZeroWithoutAFile()
+    {
+        Assert.Equal(0, HistoryStore.SizeOnDisk(DbPath));
+
+        Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
+        File.WriteAllBytes(DbPath, new byte[4096]);
+        File.WriteAllBytes(DbPath + "-wal", new byte[1000]);
+
+        Assert.Equal(5096, HistoryStore.SizeOnDisk(DbPath));
+    }
+
+    [Fact]
     public void Open_FileFromANewerVersionIsLeftAlone()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);

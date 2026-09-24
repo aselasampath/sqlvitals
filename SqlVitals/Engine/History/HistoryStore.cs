@@ -375,8 +375,60 @@ public sealed class HistoryStore(string path) : IDisposable
 
         conn.Execute("DELETE FROM query_texts WHERE last_seen_utc < @cutoff;", new { cutoff });
 
+        Compact(conn);
+    }
+
+    /// <summary>Deletes all history, for every connection, and shrinks the file.</summary>
+    public void Clear()
+    {
+        var conn = Connection;
+
+        // A DELETE without WHERE empties a table in one step, however big it has grown.
+        using (var tx = conn.BeginTransaction())
+        {
+            conn.Execute("""
+                DELETE FROM wait_deltas;
+                DELETE FROM file_io_deltas;
+                DELETE FROM query_deltas;
+                DELETE FROM detail_snapshots;
+                DELETE FROM query_texts;
+                DELETE FROM metric_samples;
+                DELETE FROM connections;
+                """, transaction: tx);
+            tx.Commit();
+        }
+
+        Compact(conn);
+    }
+
+    // Gives freed pages back to the file system and empties the WAL file.
+    private static void Compact(SqliteConnection conn)
+    {
         conn.Execute("PRAGMA incremental_vacuum;");
         conn.Execute("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+
+    /// <summary>
+    /// Bytes the history takes on disk: the file plus its WAL files. Zero when there is none yet.
+    /// Reads file sizes only, so it is safe to call while the writer is busy.
+    /// </summary>
+    public static long SizeOnDisk(string path)
+    {
+        long total = 0;
+        foreach (var file in new[] { path, path + "-wal", path + "-shm" })
+        {
+            try
+            {
+                var info = new FileInfo(file);
+                if (info.Exists)
+                    total += info.Length;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Deleted or replaced between the check and the read; it no longer counts.
+            }
+        }
+        return total;
     }
 
     /// <summary>Samples for one connection, oldest first; for tests and a future History page.</summary>
