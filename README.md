@@ -49,7 +49,7 @@ live diagnostic data across the app's monitoring screens:
 - Export / AI report generator
 - Right-click any grid to Copy, Copy with headers, or Export to CSV (UTF-8)
 - Filter box on the Resource Queries, Index Health and Query Store grids, and a column sort that survives Refresh
-- Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite, 14 days)
+- Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite; snapshot interval and retention set in Settings)
 - Light theme (default) and dark theme, switchable in Settings
 
 ---
@@ -286,7 +286,7 @@ while you were away (the last 60 samples, about 10 minutes at the default 10 s i
   - ◯ not monitored or paused.
 - **Interval and Start/Stop** on the Live Metrics page apply to that connection's collector, including while it runs in the background.
 - **Unreachable servers** are retried with exponential backoff (up to every 5 minutes), so they aren't hammered.
-- **Only lightweight queries run in the background:** the live-metrics query every interval, and the [history](#monitoring-history) detail snapshot every 5 minutes. Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
+- **Only lightweight queries run in the background:** the live-metrics query every interval, and the [history](#monitoring-history) detail snapshot every 5 minutes (configurable). Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
 - **Entra MFA connections** start background collection only after you've switched to them once in the session. This avoids unexpected sign-in windows.
   The same applies to SQL logins without a saved password.
 
@@ -302,10 +302,12 @@ CLI, DuckDB). Why SQLite over DuckDB, LiteDB or flat files is recorded on
 | Tier | How often | What | Tables |
 |---|---|---|---|
 | Samples | Every Live Metrics interval (10 s by default) | The Live Metrics sample: CPU %, wait rate per category, batch requests, compilations, transactions, physical I/O, page life expectancy, memory grants pending, buffer cache hit ratio. No extra server query. | `metric_samples` |
-| Details | Every 5 minutes | Change over the interval in waits per type (`sys.dm_os_wait_stats`, idle waits excluded), file I/O per file (`sys.dm_io_virtual_file_stats`), and the top 20 queries by CPU (`sys.dm_exec_query_stats`, grouped by `query_hash`). Also memory: total/target server memory, cache sizes. | `detail_snapshots`, `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts` |
+| Details | Every 5 minutes by default (1, 5, 15 or 30 in Settings) | Change over the interval in waits per type (`sys.dm_os_wait_stats`, idle waits excluded), file I/O per file (`sys.dm_io_virtual_file_stats`), and the top 20 queries by CPU (`sys.dm_exec_query_stats`, grouped by `query_hash`). Also memory: total/target server memory, cache sizes. | `detail_snapshots`, `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts` |
 
 - **Times** are UTC epoch milliseconds from this PC (`captured_utc`). The server's own clock is kept beside it as text (`server_time`).
-- **Retention:** 14 days, purged hourly; the file shrinks as it goes (incremental auto-vacuum).
+- **Settings → Monitoring History** sets the detail snapshot interval (1, 5, 15 or 30 minutes; default 5) and how long history is kept (7, 14, 30 or 90 days; default 14). Changes apply straight away to every monitored connection. A shorter interval shows more detail but adds load on the server and uses more disk; Live Metrics samples are saved at their own interval whatever is chosen here.
+- **Retention:** older history is purged hourly, and straight away when the retention is shortened (after a confirmation). The file shrinks as it goes (incremental auto-vacuum).
+- **Size and Clear history:** Settings shows the file's size on disk (including its WAL file), refreshed while the page is open. *Clear history* deletes all history for every connection, including records still queued, and shrinks the file. It runs on the history writer's own thread, so it's safe while monitoring carries on and while another SqlVitals window uses the same file.
 - **Query text** is stored once per `query_hash` per connection, cut to 4,000 characters. It can contain literal values from your queries and isn't encrypted, so treat the file like the app log.
 - **`connections`** keeps each connection's name, server and database, never credentials, so history stays readable after the connection is deleted.
 - **Details skip an interval** when the server restarted (counters start again from zero), and a query is left out when its earlier totals are unknown. The first detail read after a session starts is only the baseline.

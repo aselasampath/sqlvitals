@@ -52,6 +52,9 @@ public sealed class MonitoringSession : IDisposable
 
     public IWaitStatsRepository Repository { get; }
 
+    /// <summary>Saves this session's samples to the local history; null for an ad-hoc session.</summary>
+    public HistoryRecorder? History => _history;
+
     /// <summary>What the repository was built from; a change means the session must be recreated.</summary>
     public string Fingerprint { get; }
 

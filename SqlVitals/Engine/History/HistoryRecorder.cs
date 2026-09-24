@@ -12,8 +12,6 @@ namespace SqlVitals.Engine.History;
 /// </summary>
 public sealed class HistoryRecorder
 {
-    public static readonly TimeSpan DetailInterval = TimeSpan.FromMinutes(5);
-
     /// <summary>Queries stored per detail snapshot, highest CPU in the interval first.</summary>
     public const int TopQueries = 20;
 
@@ -24,7 +22,7 @@ public sealed class HistoryRecorder
     internal const int BaselineQueryLimit = 20_000;
     internal const int IntervalQueryLimit = 500;
 
-    // Query texts already queued this session, so each is fetched once rather than every 5 minutes.
+    // Query texts already queued this session, so each is fetched once rather than every snapshot.
     private const int MaxRememberedTexts = 10_000;
 
     private readonly IHistoryRepository   _repository;
@@ -34,8 +32,10 @@ public sealed class HistoryRecorder
     private readonly HistoryDetailTracker _tracker = new();
     private readonly HashSet<string>      _textsSaved = new();
 
-    private DateTimeOffset _nextDetail = DateTimeOffset.MinValue;
-    private int            _detailInFlight;
+    private long            _detailIntervalTicks = TimeSpan.FromMinutes(HistorySettings.DefaultIntervalMinutes).Ticks;
+    private DateTimeOffset? _lastDetail;
+    private int             _detailInFlight;
+    private int             _clearCountSeen;
 
     public HistoryRecorder(HistoryConnection connection, IHistoryRepository repository, IHistorySink sink,
                            Action<string, Exception> onError, TimeProvider? time = null)
@@ -48,6 +48,21 @@ public sealed class HistoryRecorder
     }
 
     public HistoryConnection Connection { get; }
+
+    /// <summary>
+    /// Time between detail snapshots, counted from the end of the previous one. A change applies
+    /// to the next check, so a shorter interval can make a snapshot due straight away.
+    /// </summary>
+    public TimeSpan DetailInterval
+    {
+        get => TimeSpan.FromTicks(Interlocked.Read(ref _detailIntervalTicks));
+        set
+        {
+            if (value <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "The detail interval must be positive.");
+            Interlocked.Exchange(ref _detailIntervalTicks, value.Ticks);
+        }
+    }
 
     /// <summary>Queues a live sample, stamped with this PC's UTC clock.</summary>
     public void RecordSample(LiveMetricSample sample)
@@ -68,10 +83,10 @@ public sealed class HistoryRecorder
     /// </summary>
     public async Task CollectDetailIfDueAsync()
     {
-        // _nextDetail is only read or written while holding the in-flight flag.
+        // _lastDetail is only read or written while holding the in-flight flag.
         if (Interlocked.Exchange(ref _detailInFlight, 1) == 1)
             return;
-        if (_time.GetUtcNow() < _nextDetail)
+        if (_lastDetail is { } last && _time.GetUtcNow() < last + DetailInterval)
         {
             Volatile.Write(ref _detailInFlight, 0);
             return;
@@ -87,7 +102,7 @@ public sealed class HistoryRecorder
         }
         finally
         {
-            _nextDetail = _time.GetUtcNow() + DetailInterval;
+            _lastDetail = _time.GetUtcNow();
             Volatile.Write(ref _detailInFlight, 0);
         }
     }
@@ -103,6 +118,14 @@ public sealed class HistoryRecorder
         var detail = _tracker.Add(snapshot, TopQueries);
         if (detail is null)
             return;   // baseline: nothing to compare with yet
+
+        // After a clear the saved texts are gone too; fetch them again as the queries show up.
+        var clearCount = _sink.ClearCount;
+        if (clearCount != _clearCountSeen)
+        {
+            _textsSaved.Clear();
+            _clearCountSeen = clearCount;
+        }
 
         IReadOnlyList<QueryTextInfo> texts = Array.Empty<QueryTextInfo>();
         var missing = detail.TopQueries.Select(q => q.QueryHash).Where(h => !_textsSaved.Contains(h)).ToList();

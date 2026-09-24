@@ -14,6 +14,9 @@ public sealed class MonitoringManager : IDisposable
     // Shared by every session: one background writer, one SQLite file.
     private readonly HistoryWriter _history = new(HistoryWriter.DefaultPath, AppLog.Error);
 
+    // From Settings; applied to every recorder, including ones created later.
+    private TimeSpan _detailInterval = TimeSpan.FromMinutes(HistorySettings.DefaultIntervalMinutes);
+
     // Interval and paused state chosen on the Live Metrics page, kept when a session is
     // recreated because its connection was edited.
     private readonly Dictionary<Guid, int>  _intervals = new();
@@ -36,9 +39,30 @@ public sealed class MonitoringManager : IDisposable
     public string NotMonitoredReason(Guid connectionId) =>
         _notMonitoredReasons.TryGetValue(connectionId, out var reason) ? reason : "Not monitored in the background.";
 
+    /// <summary>The local history file every session writes to.</summary>
+    public string HistoryPath => _history.Path;
+
+    /// <summary>Deletes all monitoring history; fails with the reason when it couldn't.</summary>
+    public Task ClearHistoryAsync() => _history.ClearAsync();
+
+    /// <summary>
+    /// Applies the history snapshot interval and retention to the writer and every running
+    /// session. A shorter retention deletes the older history straight away.
+    /// </summary>
+    public void ApplyHistorySettings(ConnectionStore store)
+    {
+        _detailInterval    = TimeSpan.FromMinutes(store.HistoryIntervalMinutes);
+        _history.Retention = TimeSpan.FromDays(store.HistoryRetentionDays);
+        foreach (var session in _sessions.Values)
+            if (session.History is { } recorder)
+                recorder.DetailInterval = _detailInterval;
+    }
+
     /// <summary>Starts, stops or recreates sessions to match the saved connections.</summary>
     public void Sync(ConnectionStore store)
     {
+        ApplyHistorySettings(store);
+
         if (store.Active is { } active)
             _signedIn.Add(active.Id);
 
@@ -80,7 +104,10 @@ public sealed class MonitoringManager : IDisposable
             var repo     = RepositoryFactory.Create(conn, store.CommandTimeoutSeconds, out _);
             var recorder = new HistoryRecorder(
                 new HistoryConnection(id, conn.DisplayName, conn.Server.Trim(), conn.DatabaseLabel),
-                repo, _history, AppLog.Error);
+                repo, _history, AppLog.Error)
+            {
+                DetailInterval = _detailInterval,
+            };
             var session = new MonitoringSession(
                 id, repo, RepositoryFactory.Fingerprint(conn, store.CommandTimeoutSeconds),
                 _intervals.TryGetValue(id, out var seconds) ? seconds : MonitoringSession.DefaultIntervalSeconds,
