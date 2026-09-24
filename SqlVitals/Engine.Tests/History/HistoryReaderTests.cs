@@ -159,6 +159,61 @@ public sealed class HistoryReaderTests : IDisposable
     }
 
     [Fact]
+    public void ReadQueryTotals_SumsEachHashOverOneConnectionsSnapshotsInTheRange()
+    {
+        static DetailRecord Queries(HistoryConnection conn, DateTime at, params QueryDelta[] queries) =>
+            new(conn, at, new HistoryDetail(at, 300, [], [], queries, null), []);
+
+        using (var store = OpenStore())
+            store.Write(
+            [
+                Queries(Conn,  T0,                new QueryDelta("0xA", 10, 1_000, 5_000, 0, 0), new QueryDelta("0xB", 1, 7, 9, 0, 0)),
+                Queries(Conn,  T0.AddMinutes(5),  new QueryDelta("0xA", 20, 3_000, 9_000, 0, 0)),
+                Queries(Conn,  T0.AddHours(1),    new QueryDelta("0xA", 99, 9_999, 9_999, 0, 0)),   // end is excluded
+                Queries(Other, T0,                new QueryDelta("0xA", 50, 5_000, 5_000, 0, 0)),
+            ]);
+
+        var totals = new HistoryReader(DbPath).ReadQueryTotals(Conn.Id, T0, T0.AddHours(1))
+                                              .OrderBy(t => t.QueryHash).ToList();
+
+        Assert.Equal(
+            new[] { new HistoryQueryTotals("0xA", 30, 4_000, 14_000), new HistoryQueryTotals("0xB", 1, 7, 9) },
+            totals);
+    }
+
+    [Fact]
+    public void ReadQueryTexts_ReturnsTheTextAndDatabaseOfTheHashesAsked()
+    {
+        using (var store = OpenStore())
+            store.Write(
+            [
+                new DetailRecord(Conn, T0, new HistoryDetail(T0, 300, [], [], [], null),
+                [
+                    new QueryTextInfo("0xA", "Sales", "SELECT a"),
+                    new QueryTextInfo("0xB", null,    "SELECT b"),
+                ]),
+                new DetailRecord(Other, T0, new HistoryDetail(T0, 300, [], [], [], null),
+                    [new QueryTextInfo("0xC", "Other", "SELECT c")]),
+            ]);
+
+        var texts = new HistoryReader(DbPath).ReadQueryTexts(Conn.Id, ["0xA", "0xB", "0xC", "0xMISSING"]);
+
+        Assert.Equal(new[] { "0xA", "0xB" }, texts.Keys.Order());
+        Assert.Equal(new QueryTextInfo("0xA", "Sales", "SELECT a"), texts["0xA"]);
+        Assert.Null(texts["0xB"].DatabaseName);
+    }
+
+    [Fact]
+    public void ReadQueryTotals_WithoutAFileReturnsNothing()
+    {
+        var reader = new HistoryReader(DbPath);
+
+        Assert.Empty(reader.ReadQueryTotals(Conn.Id, T0, T0.AddHours(1)));
+        Assert.Empty(reader.ReadQueryTexts(Conn.Id, ["0xA"]));
+        Assert.False(File.Exists(DbPath));
+    }
+
+    [Fact]
     public void Read_FileFromANewerVersionThrowsAndIsLeftAlone()
     {
         Directory.CreateDirectory(_dir);

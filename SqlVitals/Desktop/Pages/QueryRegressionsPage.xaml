@@ -1,0 +1,217 @@
+<Page x:Class="SqlVitals.Desktop.Pages.QueryRegressionsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      Background="{StaticResource BgDeep}" Title="Query Regressions">
+    <Page.Resources>
+        <Style x:Key="SingleLineText" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <!-- Statements keep their line breaks; show only the first line. -->
+            <Setter Property="MaxHeight" Value="18"/>
+        </Style>
+        <Style x:Key="Number" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <!-- The figures that crossed the threshold are shown in red. -->
+        <Style x:Key="DurationAfter" TargetType="TextBlock" BasedOn="{StaticResource Number}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DurationRegressed}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CpuAfter" TargetType="TextBlock" BasedOn="{StaticResource Number}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding CpuRegressed}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PlanChangeText" TargetType="TextBlock" BasedOn="{StaticResource SingleLineText}">
+            <Setter Property="Foreground" Value="{StaticResource Warning}"/>
+        </Style>
+        <Style x:Key="ToolbarLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <Style x:Key="ToolbarCombo" TargetType="ComboBox">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Background" Value="{StaticResource BgCard}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,16,0"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolbarBox" TargetType="TextBox">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="Background" Value="{StaticResource BgCard}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+        </Style>
+    </Page.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Query Regressions — queries that got slower" Style="{StaticResource SectionHeader}"
+                   FontSize="20" Margin="0,0,0,14" />
+
+        <!-- What to compare, and when a query counts as regressed -->
+        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,16">
+            <StackPanel>
+                <WrapPanel>
+                    <TextBlock Text="Recent:" Style="{StaticResource ToolbarLabel}"/>
+                    <ComboBox x:Name="CmbRecent" Width="120" Style="{StaticResource ToolbarCombo}"
+                              SelectionChanged="Choice_SelectionChanged"
+                              ToolTip="The period checked for slower queries, ending now."/>
+
+                    <TextBlock Text="Compared with:" Style="{StaticResource ToolbarLabel}"/>
+                    <ComboBox x:Name="CmbBaseline" Width="170" Style="{StaticResource ToolbarCombo}"
+                              SelectionChanged="Choice_SelectionChanged">
+                        <ComboBoxItem Content="The 7 days before" IsSelected="True"
+                                      ToolTip="The week just before the recent period: many executions, so a steady average."/>
+                        <ComboBoxItem Content="The same time last week"
+                                      ToolTip="The recent period a week earlier, like the trend pages' Compare to baseline. Fairer for load that follows the day of the week."/>
+                    </ComboBox>
+
+                    <TextBlock Text="Source:" Style="{StaticResource ToolbarLabel}"/>
+                    <ComboBox x:Name="CmbSource" Width="150" Style="{StaticResource ToolbarCombo}"
+                              SelectionChanged="Choice_SelectionChanged">
+                        <ComboBoxItem Content="Auto" IsSelected="True"
+                                      ToolTip="Query Store when it is on for this database, the monitoring history otherwise."/>
+                        <ComboBoxItem Content="Query Store"
+                                      ToolTip="This database's Query Store: every query, with its plans."/>
+                        <ComboBoxItem Content="Monitoring history"
+                                      ToolTip="SqlVitals' own history: the whole server's top queries by CPU at each snapshot. Needs a saved connection."/>
+                    </ComboBox>
+                </WrapPanel>
+
+                <WrapPanel Margin="0,10,0,0">
+                    <TextBlock Text="Flag a rise in average duration or CPU of more than" Style="{StaticResource ToolbarLabel}"/>
+                    <TextBox x:Name="TxtThreshold" Width="60" Style="{StaticResource ToolbarBox}" KeyDown="Criteria_KeyDown"
+                             ToolTip="Percent. 50 flags a query whose average went up by more than half; 100, one that more than doubled."/>
+                    <TextBlock Text="%" Style="{StaticResource ToolbarLabel}" Margin="4,0,16,0"/>
+
+                    <TextBlock Text="with at least" Style="{StaticResource ToolbarLabel}"/>
+                    <TextBox x:Name="TxtMinExecutions" Width="60" Style="{StaticResource ToolbarBox}" KeyDown="Criteria_KeyDown"
+                             ToolTip="Executions a query needs in each period to be compared, so one odd run can't flag it. Lower it to 1 for jobs that run once a day."/>
+                    <TextBlock Text="executions in each period" Style="{StaticResource ToolbarLabel}" Margin="6,0,16,0"/>
+
+                    <Button x:Name="BtnCheck" Content="↻ Check" Style="{StaticResource RefreshButton}" Padding="12,4"
+                            ToolTip="Check again with these settings (or press Enter in either box). The settings are saved."
+                            Click="BtnCheck_Click"/>
+                </WrapPanel>
+
+                <TextBlock x:Name="TxtError" Foreground="{StaticResource Danger}" FontSize="12" Margin="0,8,0,0"
+                           TextWrapping="Wrap" Visibility="Collapsed"/>
+                <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,8,0,0"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Regressed queries -->
+        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="True">
+                    <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=RegressionsGrid}" />
+                    <TextBlock x:Name="TxtCount" Text="Regressed queries" Style="{StaticResource SectionHeader}"
+                               Margin="0" VerticalAlignment="Center" />
+                </DockPanel>
+                <Grid>
+                    <DataGrid x:Name="RegressionsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Query" Binding="{Binding QueryKey}" Width="75" ElementStyle="{StaticResource SingleLineText}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query Store query_id, or the query_hash (0x…) when the monitoring history is the source."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="90" ElementStyle="{StaticResource SingleLineText}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query Store covers the connection's database; the monitoring history covers the whole server."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Slower in" Binding="{Binding RegressedOn}" Width="112" ElementStyle="{StaticResource SingleLineText}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Which average rose by more than the threshold: duration (what users wait), CPU, or both."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Duration before ms" Binding="{Binding BaselineAvgDurationMs, StringFormat=N1}" Width="128" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average duration per execution in the baseline (milliseconds)."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Duration now ms" Binding="{Binding RecentAvgDurationMs, StringFormat=N1}" Width="118" ElementStyle="{StaticResource DurationAfter}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average duration per execution in the recent period (milliseconds). Red when it rose past the threshold."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Duration change" Binding="{Binding DurationChangePct, StringFormat='{}{0:+#,0;-#,0;0} %'}" Width="110" ElementStyle="{StaticResource DurationAfter}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="How much the average duration changed. Blank when the baseline average was zero."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="CPU before ms" Binding="{Binding BaselineAvgCpuMs, StringFormat=N1}" Width="106" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average CPU time per execution in the baseline (milliseconds)."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="CPU now ms" Binding="{Binding RecentAvgCpuMs, StringFormat=N1}" Width="96" ElementStyle="{StaticResource CpuAfter}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average CPU time per execution in the recent period (milliseconds). Red when it rose past the threshold."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="CPU change" Binding="{Binding CpuChangePct, StringFormat='{}{0:+#,0;-#,0;0} %'}" Width="86" ElementStyle="{StaticResource CpuAfter}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="How much the average CPU time changed. Blank when the baseline average was zero."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Runs before" Binding="{Binding BaselineExecutions, StringFormat=N0}" Width="88" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Executions in the baseline."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Runs now" Binding="{Binding RecentExecutions, StringFormat=N0}" Width="75" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Executions in the recent period."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Extra time ms" Binding="{Binding ExtraTimeMs, StringFormat=N0}" Width="100" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="How much longer the recent executions took than they would have at the baseline average (duration or CPU, whichever regressed more). The list starts with the costliest regression."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Plan change" Binding="{Binding PlanChange}" Width="100" ElementStyle="{StaticResource PlanChangeText}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query Store only. New plan: the plan used most recently never ran in the baseline, the usual sign of a plan regression. Different plan: it ran then, but another was used most."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="Execution plan" Width="132" CanUserSort="False">
+                                <DataGridTemplateColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Now: the plan used most in the recent period (Query Store), or the plan in the plan cache now (monitoring history). Before: the plan used most in the baseline, when it was a different one."/></Style></DataGridTemplateColumn.HeaderStyle>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="Now" Tag="{Binding}" Click="ViewRecentPlan_Click"
+                                                    Style="{StaticResource RefreshButton}" Padding="8,3" FontSize="11" Margin="2,1"/>
+                                            <Button Content="Before" Tag="{Binding}" Click="ViewBaselinePlan_Click"
+                                                    Style="{StaticResource RefreshButton}" Padding="8,3" FontSize="11" Margin="2,1">
+                                                <Button.Visibility>
+                                                    <Binding Path="PlanDiffers">
+                                                        <Binding.Converter><BooleanToVisibilityConverter/></Binding.Converter>
+                                                    </Binding>
+                                                </Button.Visibility>
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Query Text" Binding="{Binding QueryText}" Width="*" MinWidth="200" ElementStyle="{StaticResource SingleLineText}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Statement text, first line. Type part of it in the filter box to find a query."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
+                               Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,60,0,0"
+                               HorizontalAlignment="Center" VerticalAlignment="Top"
+                               IsHitTestVisible="False" Visibility="Collapsed"/>
+                </Grid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Page>

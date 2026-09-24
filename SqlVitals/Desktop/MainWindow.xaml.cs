@@ -368,7 +368,7 @@ public partial class MainWindow : Window
         _currentTag = tag;
 
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
@@ -380,6 +380,7 @@ public partial class MainWindow : Window
             "TempDb"          => BtnTempDb,
             "Memory"          => BtnMemory,
             "QueryStore"      => BtnQueryStore,
+            "QueryRegressions" => BtnRegressions,
             "IndexHealth"     => BtnIndexHealth,
             "ResourceQueries" => BtnResQueries,
             "ImplicitConv"    => BtnImpConv,
@@ -414,6 +415,7 @@ public partial class MainWindow : Window
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
             "QueryStore"      => new QueryStorePage(Repo),
+            "QueryRegressions" => new QueryRegressionsPage(Repo, Monitoring.HistoryFor(_activeConnectionId), SettingsService),
             "IndexHealth"     => new IndexHealthPage(Repo),
             "ResourceQueries" => new ResourceQueriesPage(Repo),
             "ImplicitConv"    => new ImplicitConversionsPage(Repo),

@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.31.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.32.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -39,6 +39,7 @@ live diagnostic data across the app's monitoring screens:
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
+- Query regressions: queries whose average duration or CPU rose past a threshold, before and after side by side, with their execution plans (Query Store, or the monitoring history)
 - Index health (missing, unused, usage, fragmentation) with script generators to create missing indexes, drop unused ones and reorganize or rebuild fragmented ones
 - Resource-intensive queries (reads + CPU)
 - Index usage patterns and fragmentation
@@ -48,7 +49,7 @@ live diagnostic data across the app's monitoring screens:
 - Live stored-procedure tracing (SP Trace)
 - Export / AI report generator
 - Right-click any grid to Copy, Copy with headers, or Export to CSV (UTF-8)
-- Filter box on the Resource Queries, Index Health and Query Store grids, and a column sort that survives Refresh
+- Filter box on the Resource Queries, Index Health, Query Store and Query Regressions grids, and a column sort that survives Refresh
 - Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite; snapshot interval and retention set in Settings)
 - Light theme (default) and dark theme, switchable in Settings
 
@@ -157,6 +158,7 @@ All paths are relative to the repository root.
     │   │   ├── BaseRepository.cs          ← Q() / QFirst() query wrappers
     │   │   ├── SpTraceRepository.cs, TempDbRepository.cs, PlanCacheHealthRepository.cs
     │   │   ├── HistoryRepository.cs       ← Server reads for the 5-minute history snapshot
+    │   │   ├── QueryRegressionRepository.cs ← Query Store stats and plans for Query Regressions
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── History/
     │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
@@ -166,6 +168,9 @@ All paths are relative to the repository root.
     │   │   ├── HistoryReader.cs           ← Read-only: past ranges for the trend pages, averaged into buckets
     │   │   ├── HistoryRange.cs, HistoryGaps.cs ← Range picker choices, bucket sizes; where a chart breaks its line
     │   │   └── HistoryBaseline.cs         ← The same time last week, lined up under the current data
+    │   ├── Regressions/
+    │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
+    │   │   └── QueryRegressionDetector.cs ← Which queries got slower, and by how much (RegressionCriteria)
     │   ├── Scripting/
     │   │   ├── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
     │   │   ├── MissingIndexCreateScript.cs ← Builds the Index Health CREATE script
@@ -353,6 +358,43 @@ It works live and on any past range.
 - **Live**, the baseline is read with half an hour to spare on each side, and read again only when the live window runs past it.
 - Needs a saved connection with a week of history, like the past ranges above.
 
+### Query regressions
+
+The **Query Regressions** page lists the queries that got slower, so an execution plan regression gets caught early. It
+compares each query's **average duration and CPU per execution** in a recent period with a baseline, and flags a query when
+either rose by more than a set percentage.
+
+| Choice | Options | Default |
+|---|---|---|
+| Recent | Last hour, last 4 hours, last 24 hours (ending now) | Last 24 hours |
+| Compared with | *The 7 days before* the recent period, or *the same time last week* (the recent period a week earlier) | The 7 days before |
+| Source | Auto, Query Store, Monitoring history | Auto |
+| Flag a rise of more than | Any percentage above 0 | 50 % |
+| With at least | Executions in **each** period, so one odd run can't flag a query. Lower it to 1 for jobs that run once a day | 5 |
+
+- **Where the data comes from.** *Auto* uses the database's **Query Store** when it is on (read-write or read-only). If it's off,
+  or the server has no Query Store (SQL Server 2014 and earlier), it uses the [monitoring history](#monitoring-history) and says so in the
+  status line. Query Store covers every query in the connection's database, with its plans. The monitoring history covers the
+  whole server, but only the top 20 queries by CPU at each snapshot, and it has no plans. It also needs a saved connection.
+- **Before and after:** each row shows the average duration and CPU (ms) in both periods, the change in percent, and the
+  executions in each. The figures that crossed the threshold are red. *Extra time* is how much longer the recent executions
+  took than they would have at the baseline average. The list starts with the costliest regression and is capped at 200 rows.
+- **Execution plans:** **Now** opens the plan used most in the recent period. With Query Store, **Before** opens the one used most
+  in the baseline when that was a different plan. *Plan change* says **New plan** when the recent plan never ran in the
+  baseline, the usual sign of a plan regression. From the monitoring history, **Now** opens the plan in the plan cache for that
+  `query_hash`, if it's still cached. Plans open in the same window as on Resource Queries, where you can copy them or save them as `.sqlplan`.
+- **Noise is left out:** a metric whose recent average is under 1 ms is never flagged (0.1 → 0.3 ms is +200 % but nothing to act on).
+  A zero baseline gives no percentage.
+- **Clocks:** Query Store periods are on the server's clock and count whole Query Store intervals (by the interval's start time).
+  The monitoring history uses this PC's clock.
+- The threshold and minimum executions are saved per user in `settings.dat` and apply to every connection. **↻ Check** (or
+  **Enter** in either box) runs the check again. Changing Recent, Compared with or Source re-runs it straight away. The
+  sidebar **Refresh** does too.
+- Queries run on demand against the active connection only, never in the background. Reading a week of Query Store runtime
+  stats can take a while on a large Query Store, so the query may run for up to 2 minutes.
+- The logic lives in `SqlVitals/Engine/Regressions/` (`RegressionWindows`, `QueryRegressionDetector`, `RegressionCriteria`),
+  and the SQL in `SqlVitals/Engine/Repositories/QueryRegressionRepository.cs`.
+
 ---
 
 ## How to Build & Run
@@ -461,7 +503,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.31.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.32.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -505,6 +547,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
 | Query Store | `QueryStore` | `QueryStorePage` | `GetQueryStoreAsync` | Filter box. See [Filtering and sorting grids](#filtering-and-sorting-grids) |
+| Query Regressions | `QueryRegressions` | `QueryRegressionsPage` | `GetQueryStoreRegressionStatsAsync`, history reads | Filter box. See [Query regressions](#query-regressions) |
 | Index Health | `IndexHealth` | `IndexHealthPage` | `GetIndexHealthAsync`, `GetIndexUsagePatternsAsync`, `GetIndexFragmentationAsync` | Tabs: Missing, Unused, Usage, Fragmentation. See [Index Health](#index-health) |
 | Resource Queries | `ResourceQueries` | `ResourceQueriesPage` | `GetResourceIntensiveQueriesAsync` | Filter box on each tab. See [Filtering and sorting grids](#filtering-and-sorting-grids) |
 | Implicit Conv. | `ImplicitConv` | `ImplicitConversionsPage` | `GetImplicitConversionsAsync` | |
@@ -572,8 +615,8 @@ comes from `SqlVitals/Engine/Scripting/UpdateStatisticsScript.cs`.
 
 ### Filtering and sorting grids
 
-Every grid on **Resource Queries** (all three tabs), **Index Health** (all four tabs) and **Query
-Store** has a **Filter rows…** box above it. It shows only the rows that contain every word typed,
+Every grid on **Resource Queries** (all three tabs), **Index Health** (all four tabs), **Query
+Store** and **Query Regressions** has a **Filter rows…** box above it. It shows only the rows that contain every word typed,
 in any visible column, ignoring case. Put a phrase in `"double quotes"` to match it as written.
 Cells match as they are displayed and as raw values, so `40,000` and `40000` both find a row that
 shows 40,000, and dates match in the grid's own format (`2026-09-23 14:05`). While a filter is on,
@@ -847,6 +890,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | TempDB file + session usage | `sys.dm_db_session_space_usage` |
 | Memory grants | `sys.dm_exec_query_memory_grants` |
 | Query Store analysis | `sys.query_store_*` |
+| Query regressions | `sys.query_store_runtime_stats` (+ `_interval`, `_plan`, `_query`), or the monitoring history; plans from `sys.query_store_plan` or `sys.dm_exec_query_plan` |
 | Missing + unused indexes, usage patterns | `sys.dm_db_missing_index_*`, `sys.dm_db_index_usage_stats` |
 | Index fragmentation | `sys.dm_db_index_physical_stats` |
 | Plan cache | `sys.dm_exec_cached_plans` |
