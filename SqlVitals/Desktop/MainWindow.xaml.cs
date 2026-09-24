@@ -406,11 +406,11 @@ public partial class MainWindow : Window
 
         IRefreshable page = tag switch
         {
-            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
+            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId)),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "Processes"       => new ProcessesPage(Repo),
-            "WaitTrend"       => new WaitStatsTrendPage(Repo),
+            "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
             "QueryStore"      => new QueryStorePage(Repo),
@@ -421,10 +421,10 @@ public partial class MainWindow : Window
             "StaleStats"      => new StaleStatisticsPage(Repo),
             "DbStorage"       => new DatabaseStoragePage(Repo),
             "AppConnections" => new ApplicationConnectionsPage(Repo),
-            "Perfmon"        => new PerfmonPage(Repo),
+            "Perfmon"        => new PerfmonPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "SpTrace"         => new SpTracePage(Repo),
             "Export"          => new ExportPage(Repo),
-            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId)),
+            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId)),
         };
 
         MainFrame.Navigate(page);

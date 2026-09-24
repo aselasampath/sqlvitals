@@ -11,6 +11,8 @@ using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
@@ -137,7 +139,7 @@ public partial class PerfmonPage : Page, IRefreshable
 
     // cntr_type = 272696576  →  cumulative rate counter  (must diff)
     // everything else        →  instantaneous / absolute
-    private const int RateCntrType = 272696576;
+    private const int RateCntrType = WaitStatsRepository.PerfmonRateCounterType;
 
     // Colour palette for series lines
     private static readonly SKColor[] Palette =
@@ -178,10 +180,24 @@ public partial class PerfmonPage : Page, IRefreshable
     private static string IntervalLabel(int s) =>
         s < 60 ? $"{s}s" : $"{s / 60}m {s % 60:00}s";
 
-    public PerfmonPage(IWaitStatsRepository repo)
+    // Past ranges come from the counters recorded with each history detail snapshot. The live
+    // buffers above are kept while one is shown, so switching back to Live loses nothing.
+    private const string NoLiveDataText = "Select counters from the left panel to begin charting.";
+    private const string NotRecordedText =
+        "Perfmon counters are recorded with each history snapshot (every few minutes) while SqlVitals " +
+        "monitors this connection. Versions before 0.30 didn't record them.";
+    private readonly ConnectionHistory? _history;
+    private HistoryRange _range = HistoryRange.Live;
+    private int _historyVersion;   // bumped per load; a stale load is dropped
+    private HistoryLoad<CounterHistoryBucket>? _historyLoad;
+    private readonly Dictionary<string, ObservableCollection<DateTimePoint>> _historyWindows = [];   // built on demand
+
+    public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null)
     {
-        _repo = repo;
+        _repo    = repo;
+        _history = history;
         InitializeComponent();
+        RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
 
         CmbInterval.ItemsSource   = Intervals.Select(IntervalLabel).ToList();
         CmbInterval.SelectedIndex = 1;   // default 10 s
@@ -211,7 +227,11 @@ public partial class PerfmonPage : Page, IRefreshable
         System.Windows.Navigation.NavigatingCancelEventArgs e) => StopTimer();
 
     // ── IRefreshable — manual refresh (also called by timer) ─────────────────
-    public async System.Threading.Tasks.Task RefreshAsync()
+    // A past range is read again, so "last hour" moves up to now.
+    public System.Threading.Tasks.Task RefreshAsync() =>
+        _range.IsLive ? RefreshLiveAsync() : LoadHistoryAsync();
+
+    private async System.Threading.Tasks.Task RefreshLiveAsync()
     {
         var data = (await _repo.GetPerfmonCountersAsync()).ToList();
 
@@ -254,30 +274,110 @@ public partial class PerfmonPage : Page, IRefreshable
             while (window.Count > MaxPoints) window.RemoveAt(0);
         }
 
+        // A read that finishes after a past range was picked only fills the live buffers.
+        if (!_range.IsLive)
+            return;
+
         UpdateChart();
 
         TxtStatus.Text = $"Last refresh: {now:HH:mm:ss}  •  {data.Count} counters retrieved";
     }
 
-    // ── Master list builder ──────────────────────────────────────────────────
-    private void PopulateMasterList(List<SqlVitals.Engine.Models.PerfmonCounter> data)
+    // ── History ──────────────────────────────────────────────────────────────
+    private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
-        // Build items from the server-returned counters
+        _range = range;
+        var live = range.IsLive;
+
+        // Live refresh is stopped while a past range is shown; Start picks it up again.
+        if (!live)
+            StopTimer();
+        BtnAutoRefresh.IsEnabled = live;
+        CmbInterval.IsEnabled    = live;
+
+        if (live)
+        {
+            _historyVersion++;
+            _historyLoad = null;
+            _historyWindows.Clear();
+            TxtStatus.Text = "Live — press Start or use manual Refresh.";
+            RebuildSeries();
+            UpdateChart();
+            return;
+        }
+
+        try
+        {
+            await LoadHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            // Only the latest pick owns the status line.
+            if (_range != range)
+                return;
+            TxtStatus.Text = $"Could not read the history: {ex.Message}";
+            MainWindow.ReportBackgroundError(this, "Perfmon history", ex);
+        }
+    }
+
+    private async System.Threading.Tasks.Task LoadHistoryAsync()
+    {
+        if (_history is null || _range.IsLive)
+            return;
+
+        var version = ++_historyVersion;
+        TxtStatus.Text = $"Reading {_range.Label.ToLowerInvariant()} from history…";
+
+        var load = await _history.LoadAsync(_range, (reader, id, from, to, bucket) => reader.ReadCounters(id, from, to, bucket));
+        if (version != _historyVersion)
+            return;   // the user picked something else meanwhile
+
+        _historyLoad = load;
+        _historyWindows.Clear();
+
+        // Opened on a past range before any live read: offer the counters that were recorded.
+        if (_allItems.Count == 0)
+            PopulateMasterList(load.Items.SelectMany(b => b.Values.Keys).Distinct());
+
+        RebuildSeries();
+        UpdateChart();
+        TxtStatus.Text = load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList());
+    }
+
+    // The counter averaged over each bucket, with breaks where nothing was recorded. A bucket
+    // without this counter had it at zero: zero, not a break.
+    private ObservableCollection<DateTimePoint> BuildHistoryWindow(string counterName)
+    {
+        var window = new ObservableCollection<DateTimePoint>();
+        if (_historyLoad is not { } load)
+            return window;
+
+        foreach (var (time, bucket) in HistoryGaps.WithGaps(load.Items, b => b.TimeUtc, load.Bucket))
+            window.Add(new DateTimePoint(time.ToLocalTime(),
+                bucket is null ? null : bucket.Values.GetValueOrDefault(counterName)));
+        return window;
+    }
+
+    // ── Master list builder ──────────────────────────────────────────────────
+    private void PopulateMasterList(List<SqlVitals.Engine.Models.PerfmonCounter> data) =>
+        PopulateMasterList(data
+            .GroupBy(c => c.CounterName)
+            .Select(g => new CounterItem { CounterName = g.Key, ObjectShort = ShortObjectName(g.First().ObjectName) }));
+
+    // From the history, which keeps counter names only.
+    private void PopulateMasterList(IEnumerable<string> counterNames) =>
+        PopulateMasterList(counterNames.Select(n => new CounterItem { CounterName = n }));
+
+    private void PopulateMasterList(IEnumerable<CounterItem> items)
+    {
         // Keep only counters that appear in at least one group definition
         var allGroupCounters = Groups.Values
             .SelectMany(g => g)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        _allItems = data
+        _allItems = items
             .Where(c => allGroupCounters.Contains(c.CounterName))
-            .GroupBy(c => c.CounterName)
-            .Select(g => new CounterItem
-            {
-                CounterName = g.Key,
-                ObjectShort = ShortObjectName(g.First().ObjectName),
-                IsChecked   = false,
-            })
             .OrderBy(c => c.CounterName)
             .ToList();
 
@@ -333,11 +433,15 @@ public partial class PerfmonPage : Page, IRefreshable
         var selected = _allItems.Where(i => i.IsChecked).Take(MaxSeries).ToList();
 
         // Ensure rolling windows exist for all selected
+        var windows = _range.IsLive ? _windows : _historyWindows;
         foreach (var item in selected)
-            _windows.TryAdd(item.CounterName, []);
+            if (!windows.ContainsKey(item.CounterName))
+                windows[item.CounterName] = _range.IsLive ? [] : BuildHistoryWindow(item.CounterName);
 
-        if (selected.Count == 0)
+        var history = _range.IsLive ? null : _historyLoad;
+        if (selected.Count == 0 || history is { Items.Count: 0 })
         {
+            TxtNoData.Text = selected.Count == 0 ? NoLiveDataText : history!.NoData(NotRecordedText);
             PerfmonChart.Series    = [];
             TxtNoData.Visibility   = Visibility.Visible;
             return;
@@ -348,7 +452,7 @@ public partial class PerfmonPage : Page, IRefreshable
         var series = selected.Select((item, idx) =>
         {
             var color  = Palette[idx % Palette.Length];
-            var window = _windows[item.CounterName];
+            var window = windows[item.CounterName];
             return (ISeries)new LineSeries<DateTimePoint>
             {
                 Values         = window,
@@ -364,13 +468,17 @@ public partial class PerfmonPage : Page, IRefreshable
 
         PerfmonChart.Series = series;
 
+        // A past range is shown whole, so missing history reads as missing rather than cropped.
+        var axisFormat = history is null ? "HH:mm:ss" : ConnectionHistory.AxisFormat(history.Span);
         PerfmonChart.XAxes = new[]
         {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
+            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString(axisFormat))
             {
                 LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
                 SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 11,
+                MinLimit        = history?.FromUtc.ToLocalTime().Ticks,
+                MaxLimit        = history?.ToUtc.ToLocalTime().Ticks,
             }
         };
 

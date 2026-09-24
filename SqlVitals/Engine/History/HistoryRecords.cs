@@ -31,7 +31,14 @@ public sealed record HistoryDetail(
     IReadOnlyList<WaitTypeTotals> Waits,
     IReadOnlyList<FileIoTotals>   Files,
     IReadOnlyList<QueryDelta>     TopQueries,
-    HistoryMemory?                Memory);
+    HistoryMemory?                Memory,
+    IReadOnlyList<CounterValue>?  Counters = null);
+
+/// <summary>
+/// A Perfmon counter over the interval: per second for a rate counter, the value at the end
+/// of the interval for any other.
+/// </summary>
+public sealed record CounterValue(string CounterName, double Value);
 
 /// <summary>Work one query_hash did during the interval.</summary>
 public sealed record QueryDelta(

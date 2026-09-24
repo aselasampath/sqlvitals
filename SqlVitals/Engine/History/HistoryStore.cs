@@ -15,7 +15,8 @@ namespace SqlVitals.Engine.History;
 /// </summary>
 public sealed class HistoryStore(string path) : IDisposable
 {
-    public const int SchemaVersion = 1;
+    /// <summary>1: the tables from #28. 2: adds counter_values (#30).</summary>
+    public const int SchemaVersion = 2;
 
     private const long DayMs          = 24L * 60 * 60 * 1000;
     private const int  PurgeBatchSize = 500;
@@ -114,6 +115,13 @@ public sealed class HistoryStore(string path) : IDisposable
             last_seen_utc   INTEGER NOT NULL,
             PRIMARY KEY (connection_id, query_hash)
         ) WITHOUT ROWID;
+
+        CREATE TABLE IF NOT EXISTS counter_values (
+            snapshot_id     INTEGER NOT NULL,
+            counter_name    TEXT    NOT NULL,
+            value           REAL    NOT NULL,
+            PRIMARY KEY (snapshot_id, counter_name)
+        ) WITHOUT ROWID;
         """;
 
     private SqliteConnection? _conn;
@@ -171,6 +179,7 @@ public sealed class HistoryStore(string path) : IDisposable
             conn.ExecuteScalar<string>("PRAGMA journal_mode = WAL;");
             conn.Execute("PRAGMA synchronous = NORMAL;");
 
+            // Every table is CREATE IF NOT EXISTS, so running the script upgrades any older file.
             if (version < SchemaVersion)
             {
                 using var tx = conn.BeginTransaction();
@@ -322,6 +331,13 @@ public sealed class HistoryStore(string path) : IDisposable
             record.QueryTexts.Select(t => new { connectionId, t.QueryHash, t.DatabaseName, t.QueryText, capturedMs }),
             tx);
 
+        conn.Execute("""
+            INSERT OR IGNORE INTO counter_values (snapshot_id, counter_name, value)
+            VALUES (@snapshotId, @CounterName, @Value)
+            """,
+            (d.Counters ?? []).Select(c => new { snapshotId, c.CounterName, c.Value }),
+            tx);
+
         // Text is fetched once per query per session; keep it as long as the query keeps showing up.
         conn.Execute("""
             UPDATE query_texts SET last_seen_utc = MAX(last_seen_utc, @capturedMs)
@@ -369,6 +385,7 @@ public sealed class HistoryStore(string path) : IDisposable
             conn.Execute("DELETE FROM wait_deltas      WHERE snapshot_id IN @ids;", new { ids }, tx);
             conn.Execute("DELETE FROM file_io_deltas   WHERE snapshot_id IN @ids;", new { ids }, tx);
             conn.Execute("DELETE FROM query_deltas     WHERE snapshot_id IN @ids;", new { ids }, tx);
+            conn.Execute("DELETE FROM counter_values   WHERE snapshot_id IN @ids;", new { ids }, tx);
             conn.Execute("DELETE FROM detail_snapshots WHERE snapshot_id IN @ids;", new { ids }, tx);
             tx.Commit();
         }
@@ -390,6 +407,7 @@ public sealed class HistoryStore(string path) : IDisposable
                 DELETE FROM wait_deltas;
                 DELETE FROM file_io_deltas;
                 DELETE FROM query_deltas;
+                DELETE FROM counter_values;
                 DELETE FROM detail_snapshots;
                 DELETE FROM query_texts;
                 DELETE FROM metric_samples;
@@ -431,7 +449,7 @@ public sealed class HistoryStore(string path) : IDisposable
         return total;
     }
 
-    /// <summary>Samples for one connection, oldest first; for tests and a future History page.</summary>
+    /// <summary>Samples for one connection as stored, oldest first; for tests. Pages use <see cref="HistoryReader"/>.</summary>
     public IReadOnlyList<StoredMetricSample> ReadSamples(Guid connectionId, DateTime fromUtc, DateTime toUtc)
     {
         var rows = Connection.Query("""

@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.28.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.30.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -129,7 +129,8 @@ All paths are relative to the repository root.
     │   ├── Pages/
     │   │   ├── IRefreshable.cs            ← Interface every page must implement
     │   │   └── ...Page.xaml/.cs           ← One file pair per screen
-    │   ├── Controls/                      ← ProcessMapControl, GridFilterBox (grid filter box)
+    │   ├── Controls/                      ← ProcessMapControl, GridFilterBox (grid filter box),
+    │   │                                     TimeRangePicker (Live / 1h / 24h / 7d / Custom on trend pages)
     │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
     │   ├── Helpers/                       ← ChartTheme, ClipboardHelper, DataGridExport (grid right-click menu),
     │   │                                     DataGridRefresh (reload a grid keeping its sort and filter)
@@ -139,6 +140,7 @@ All paths are relative to the repository root.
     │   │   ├── RepositoryFactory.cs       ← Builds the repository for the active connection
     │   │   ├── MonitoringManager.cs       ← Background live-metrics collectors, one per connection
     │   │   ├── MonitoringSession.cs
+    │   │   ├── ConnectionHistory.cs       ← A connection's history for the trend pages; reads off the UI thread
     │   │   └── ExportService.cs           ← Concurrent multi-group AI export
     │   └── Styles/
     │       ├── Theme.xaml
@@ -160,7 +162,9 @@ All paths are relative to the repository root.
     │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
     │   │   ├── HistoryWriter.cs           ← Background queue + writer thread shared by all connections
     │   │   ├── HistoryRecorder.cs         ← Per connection: queues samples, takes detail snapshots
-    │   │   └── HistoryDetailTracker.cs    ← Turns cumulative DMV totals into per-interval changes
+    │   │   ├── HistoryDetailTracker.cs    ← Turns cumulative DMV totals into per-interval changes
+    │   │   ├── HistoryReader.cs           ← Read-only: past ranges for the trend pages, averaged into buckets
+    │   │   └── HistoryRange.cs, HistoryGaps.cs ← Range picker choices, bucket sizes; where a chart breaks its line
     │   ├── Scripting/
     │   │   ├── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
     │   │   ├── MissingIndexCreateScript.cs ← Builds the Index Health CREATE script
@@ -302,7 +306,7 @@ CLI, DuckDB). Why SQLite over DuckDB, LiteDB or flat files is recorded on
 | Tier | How often | What | Tables |
 |---|---|---|---|
 | Samples | Every Live Metrics interval (10 s by default) | The Live Metrics sample: CPU %, wait rate per category, batch requests, compilations, transactions, physical I/O, page life expectancy, memory grants pending, buffer cache hit ratio. No extra server query. | `metric_samples` |
-| Details | Every 5 minutes by default (1, 5, 15 or 30 in Settings) | Change over the interval in waits per type (`sys.dm_os_wait_stats`, idle waits excluded), file I/O per file (`sys.dm_io_virtual_file_stats`), and the top 20 queries by CPU (`sys.dm_exec_query_stats`, grouped by `query_hash`). Also memory: total/target server memory, cache sizes. | `detail_snapshots`, `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts` |
+| Details | Every 5 minutes by default (1, 5, 15 or 30 in Settings) | Change over the interval in waits per type (`sys.dm_os_wait_stats`, idle waits excluded), file I/O per file (`sys.dm_io_virtual_file_stats`), and the top 20 queries by CPU (`sys.dm_exec_query_stats`, grouped by `query_hash`). Also memory: total/target server memory, cache sizes. Also the Perfmon page's counters (`sys.dm_os_performance_counters`): rates per second over the interval, other counters as they stood; zeros aren't stored. | `detail_snapshots`, `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts`, `counter_values` |
 
 - **Times** are UTC epoch milliseconds from this PC (`captured_utc`). The server's own clock is kept beside it as text (`server_time`).
 - **Settings → Monitoring History** sets the detail snapshot interval (1, 5, 15 or 30 minutes; default 5) and how long history is kept (7, 14, 30 or 90 days; default 14). Changes apply straight away to every monitored connection. A shorter interval shows more detail but adds load on the server and uses more disk; Live Metrics samples are saved at their own interval whatever is chosen here.
@@ -314,6 +318,28 @@ CLI, DuckDB). Why SQLite over DuckDB, LiteDB or flat files is recorded on
 - **The first sample** of each session is not stored: its rates are all zero, with nothing to diff against.
 - **Never breaks live monitoring.** Records go into a bounded in-memory queue; one background thread writes them in batches. If the disk is slow the oldest queued records are dropped. Failures are written to the app log (at most one line a minute) and never change a connection's health dot. A damaged file is renamed to `history.corrupt-<timestamp>.db` and a new one started. A file from a newer SqlVitals turns history off rather than being changed.
 - The ad-hoc Live Metrics session (no saved connection) is not recorded.
+- **Schema version** is kept in `PRAGMA user_version`: 1 from 0.28, 2 from 0.30 (adds `counter_values`). A newer SqlVitals upgrades an older file in place and keeps its data. An older SqlVitals leaves a newer file alone and turns history off.
+
+### Time ranges on trend pages
+
+**Live Metrics**, **Wait Trend** and **Perfmon** have a range picker in their toolbar: **Live**, **1h**, **24h**, **7d** and **Custom…**
+(a start and end date and time on this PC's clock). Anything but Live is read from the [monitoring history](#monitoring-history),
+so it's there after a restart, and for time when the page wasn't open.
+
+| Page | Past ranges show | Detail |
+|---|---|---|
+| Live Metrics | Every chart, from the Live Metrics samples | One point per sample (10 s by default) on 1h |
+| Wait Trend | Waits per type, any of the four metrics | One point per detail snapshot (5 min by default) |
+| Perfmon | The counters in the list | One point per detail snapshot; recorded from 0.30 on |
+
+- **Long ranges are averaged** into buckets so a chart gets at most 600 points: 10 s on 1h, 5 min on 24h, 30 min on 7d. The status line says how many points there are and how far apart.
+- **Gaps stay gaps.** When the app was closed or monitoring paused, the line breaks instead of joining across the gap. The axis always spans the whole range picked.
+- **Times:** Live Metrics plots past ranges on the server's clock, as it plots live samples. Wait Trend and Perfmon use this PC's clock for both.
+- **Collection carries on** while a past range is shown on Live Metrics, so nothing goes unrecorded. Wait Trend and Perfmon stop their own live polling; press Live, then Start, to resume.
+- **Refresh** re-reads the range, so *last hour* moves up to now.
+- **Wait Trend** starts a past range on the range's top waits if none of the selected wait types were recorded in it. The live list's default top 20 is mostly idle waits, and history leaves those out. **Top Waits** picks the range's top 20.
+- History is read on a background thread, through its own short-lived connection to the file, so it never holds up the UI or the history writer.
+- Needs a saved connection. The ad-hoc one isn't recorded, so the picker's history choices are disabled for it.
 
 ---
 
@@ -423,7 +449,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.28.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.30.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.

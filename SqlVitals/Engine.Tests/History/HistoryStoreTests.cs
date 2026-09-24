@@ -27,7 +27,8 @@ public sealed class HistoryStoreTests : IDisposable
                 [new WaitTypeTotals("PAGEIOLATCH_SH", 12, 340, 4)],
                 [new FileIoTotals("Sales", 1, "Sales_data", "ROWS", 10, 81920, 55, 2, 16384, 3)],
                 [new QueryDelta("0xAB", 30, 600_000, 900_000, 1_200, 4)],
-                new HistoryMemory(8_000_000, 16_000_000, 6_000_000, 500_000, 20_000, 100_000, 2)),
+                new HistoryMemory(8_000_000, 16_000_000, 6_000_000, 500_000, 20_000, 100_000, 2),
+                [new CounterValue("Batch Requests/sec", 125.5)]),
             texts);
 
     private SqliteConnection Raw()
@@ -48,7 +49,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal("wal", raw.ExecuteScalar<string>("PRAGMA journal_mode;"));
         Assert.Equal(2, raw.ExecuteScalar<long>("PRAGMA auto_vacuum;"));   // 2 = incremental
         Assert.Equal(
-            new[] { "connections", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
+            new[] { "connections", "counter_values", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
             raw.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;"));
     }
 
@@ -114,6 +115,31 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal(55L, raw.ExecuteScalar<long>("SELECT read_stall_ms FROM file_io_deltas WHERE database_name = 'Sales';"));
         Assert.Equal(600_000L, raw.ExecuteScalar<long>("SELECT worker_time_us FROM query_deltas WHERE query_hash = '0xAB';"));
         Assert.Equal("SELECT * FROM dbo.Orders WHERE Id = @p", raw.ExecuteScalar<string>("SELECT query_text FROM query_texts;"));
+        Assert.Equal(125.5, raw.ExecuteScalar<double>("SELECT value FROM counter_values WHERE counter_name = 'Batch Requests/sec';"));
+    }
+
+    [Fact]
+    public void Open_UpgradesAVersion1FileAndKeepsItsData()
+    {
+        // The tables exactly as SqlVitals 0.29 created them: everything but counter_values.
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([new MetricSampleRecord(Conn, T0, Sample(10))]);
+        }
+        using (var raw = Raw())
+            raw.Execute("DROP TABLE counter_values; PRAGMA user_version = 1;");
+
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            Assert.Single(store.ReadSamples(Conn.Id, T0, T0.AddSeconds(1)));
+            store.Write([Detail(T0)]);
+        }
+
+        using var check = Raw();
+        Assert.Equal(HistoryStore.SchemaVersion, check.ExecuteScalar<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM counter_values;"));
     }
 
     [Fact]
@@ -153,6 +179,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM wait_deltas;"));
         Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM file_io_deltas;"));
         Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM query_deltas;"));
+        Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM counter_values;"));
         // The recent snapshot saw 0xAB again, so its text (first stored 20 days ago) is kept.
         Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM query_texts;"));
     }
@@ -188,7 +215,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.True(after < before / 10, $"{before:N0} bytes before, {after:N0} after");
         using var raw = Raw();
         foreach (var table in new[] { "connections", "metric_samples", "detail_snapshots", "wait_deltas",
-                                      "file_io_deltas", "query_deltas", "query_texts" })
+                                      "file_io_deltas", "query_deltas", "query_texts", "counter_values" })
             Assert.Equal(0L, raw.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table};"));
     }
 

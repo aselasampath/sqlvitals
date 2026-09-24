@@ -16,6 +16,7 @@ using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
@@ -36,6 +37,15 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private bool                          _itemsReady = false;
     private DateTime?                     _lastPlotted;
     private bool                          _refreshingMap;
+
+    // A past range from the monitoring history replaces the live samples on the charts while
+    // it is picked; the session keeps collecting (and recording) meanwhile.
+    private readonly ConnectionHistory?   _history;
+    private HistoryRange                  _range = HistoryRange.Live;
+    private int                           _historyVersion;   // bumped per load; a stale load is dropped
+    private string                        _axisFormat = "HH:mm:ss";
+    private double?                       _xMin, _xMax;      // the picked range; null while live
+    private readonly (ObservableCollection<DateTimePoint> Series, Func<LiveMetricSample, double> Value)[] _plotted;
 
     private static readonly int[] Intervals =
         Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
@@ -94,12 +104,34 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private static readonly SKColor ColMgP   = SKColor.Parse("#FF4444");
     private static readonly SKColor ColBuf   = SKColor.Parse("#22C55E");
 
-    public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringSession? session = null)
+    public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringSession? session = null,
+                                    ConnectionHistory? history = null)
     {
         _repo        = repo;
         _ownsSession = session is null;
         _session     = session ?? new MonitoringSession(null, repo, string.Empty);
+        _history     = history;
+        _plotted =
+        [
+            (_waitCpu,    s => s.WaitCpuMsPerSec),
+            (_waitIo,     s => s.WaitIoMsPerSec),
+            (_waitLock,   s => s.WaitLockMsPerSec),
+            (_waitMem,    s => s.WaitMemoryMsPerSec),
+            (_waitNet,    s => s.WaitNetworkMsPerSec),
+            (_waitOther,  s => s.WaitOtherMsPerSec),
+            (_cpuPct,     s => s.SqlCpuPct),
+            (_batches,    s => s.BatchRequestsPerSec),
+            (_compiles,   s => s.CompilationsPerSec),
+            (_recompiles, s => s.RecompilationsPerSec),
+            (_txns,       s => s.TransactionsPerSec),
+            (_physReads,  s => s.PhysicalReadsPerSec),
+            (_physWrites, s => s.PhysicalWritesPerSec),
+            (_ple,        s => s.PageLifeExpectancySec),
+            (_mgPending,  s => s.MemoryGrantsPending),
+            (_bufCache,   s => s.BufferCacheHitRatio),
+        ];
         InitializeComponent();
+        RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
 
         // Populate interval ComboBox with the session's current interval (default 10 s)
         CmbInterval.ItemsSource   = Intervals.Select(IntervalLabel).ToList();
@@ -159,15 +191,109 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     }
 
     // ?? IRefreshable ??????????????????????????????????????????????????
-    // Takes a sample now (joining one already in flight). Session_SampleAdded plots it; a
-    // failure propagates so MainWindow can report it.
-    public System.Threading.Tasks.Task RefreshAsync() => _session.CollectNowAsync();
+    // Live: takes a sample now (joining one already in flight), which Session_SampleAdded plots.
+    // A past range: reads it again, so "last hour" moves up to now. A failure propagates so
+    // MainWindow can report it.
+    public System.Threading.Tasks.Task RefreshAsync() =>
+        _range.IsLive ? _session.CollectNowAsync() : LoadHistoryAsync();
 
     private void Session_SampleAdded(MonitoringSession session, LiveMetricSample sample)
     {
-        PlotNewSamples();
-        ForceChartUpdate();
+        if (_range.IsLive)
+        {
+            PlotNewSamples();
+            ForceChartUpdate();
+        }
         _ = RefreshProcessMapAsync();
+    }
+
+    // Time range
+    private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
+    {
+        _range = range;
+        if (range.IsLive)
+        {
+            ShowLive();
+            return;
+        }
+
+        try
+        {
+            await LoadHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            // Only the latest pick owns the status line.
+            if (_range == range)
+            {
+                TxtHistoryStatus.Text = $"Could not read the history: {ex.Message}";
+                MainWindow.ReportBackgroundError(this, "Live Metrics history", ex);
+            }
+        }
+    }
+
+    private void ShowLive()
+    {
+        _historyVersion++;
+        _axisFormat = "HH:mm:ss";
+        _xMin = _xMax = null;
+        TxtHistoryStatus.Text = "";
+
+        foreach (var (series, _) in _plotted)
+            series.Clear();
+        _lastPlotted = null;
+        PlotNewSamples();
+        ApplyXAxisLimits();
+        ForceChartUpdate();
+    }
+
+    private async System.Threading.Tasks.Task LoadHistoryAsync()
+    {
+        if (_history is null || _range.IsLive)
+            return;
+
+        var version = ++_historyVersion;
+        TxtHistoryStatus.Text = $"Reading {_range.Label.ToLowerInvariant()} from history…";
+
+        var load = await _history.LoadAsync(_range, (reader, id, from, to, bucket) => reader.ReadMetrics(id, from, to, bucket));
+        if (version != _historyVersion)
+            return;   // the user picked something else meanwhile
+
+        // On the server's clock, like the live samples, so switching to a past range doesn't
+        // shift the axis by the server's time zone. The range's ends use the latest offset.
+        var offset = load.Items.Count > 0 ? load.Items[^1].ServerClockOffset : TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
+        _axisFormat = ConnectionHistory.AxisFormat(load.Span);
+        _xMin = (load.FromUtc + offset).Ticks;
+        _xMax = (load.ToUtc + offset).Ticks;
+
+        foreach (var (series, _) in _plotted)
+            series.Clear();
+        var pointOffset = offset;
+        foreach (var (time, point) in HistoryGaps.WithGaps(load.Items, p => p.TimeUtc, load.Bucket))
+        {
+            if (point is not null)
+                pointOffset = point.ServerClockOffset;
+            foreach (var (series, value) in _plotted)
+                series.Add(new DateTimePoint(time + pointOffset, point is null ? null : value(point.Averages)));
+        }
+
+        TxtHistoryStatus.Text = load.Items.Count == 0
+            ? load.NoData("Live Metrics samples are recorded while SqlVitals monitors this connection.")
+            : load.Describe(load.Items.Select(p => p.TimeUtc).ToList(), "the server's clock");
+
+        ApplyXAxisLimits();
+        ForceChartUpdate();
+    }
+
+    // Shows the whole picked range, so missing history reads as missing rather than being cropped.
+    private void ApplyXAxisLimits()
+    {
+        foreach (var chart in _charts.Values)
+            foreach (var axis in chart.XAxes)
+            {
+                axis.MinLimit = _xMin;
+                axis.MaxLimit = _xMax;
+            }
     }
 
     private void Session_StateChanged(MonitoringSession session)
@@ -256,36 +382,12 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     // Rates are computed by LiveMetricSample.From in the session; the page only plots them.
     private void AppendSample(LiveMetricSample s)
     {
-        var t = s.Time;
-
-        Append(_waitCpu,    t, s.WaitCpuMsPerSec);
-        Append(_waitIo,     t, s.WaitIoMsPerSec);
-        Append(_waitLock,   t, s.WaitLockMsPerSec);
-        Append(_waitMem,    t, s.WaitMemoryMsPerSec);
-        Append(_waitNet,    t, s.WaitNetworkMsPerSec);
-        Append(_waitOther,  t, s.WaitOtherMsPerSec);
-
-        Append(_cpuPct,     t, s.SqlCpuPct);
-
-        Append(_batches,    t, s.BatchRequestsPerSec);
-        Append(_compiles,   t, s.CompilationsPerSec);
-        Append(_recompiles, t, s.RecompilationsPerSec);
-        Append(_txns,       t, s.TransactionsPerSec);
-
-        Append(_physReads,  t, s.PhysicalReadsPerSec);
-        Append(_physWrites, t, s.PhysicalWritesPerSec);
-
-        Append(_ple,        t, s.PageLifeExpectancySec);
-        Append(_mgPending,  t, s.MemoryGrantsPending);
-        Append(_bufCache,   t, s.BufferCacheHitRatio);
-    }
-
-    private static void Append(ObservableCollection<DateTimePoint> series,
-                                DateTime t, double val)
-    {
-        series.Add(new DateTimePoint(t, val));
-        while (series.Count > MaxPoints)
-            series.RemoveAt(0);
+        foreach (var (series, value) in _plotted)
+        {
+            series.Add(new DateTimePoint(s.Time, value(s)));
+            while (series.Count > MaxPoints)
+                series.RemoveAt(0);
+        }
     }
 
     // ?? Panel builder ?????????????????????????????????????????????????
@@ -528,15 +630,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         };
 
         // 2. Configure X-Axis (Time)
-        chart.XAxes = new[]
-        {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
-            {
-                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
-                TextSize        = 14,
-            }
-        };
+        chart.XAxes = new[] { TimeAxis() };
 
         // 3. Configure Y-Axes
         chart.YAxes = new[]
@@ -641,20 +735,23 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             ScalesYAt      = scalesAt,
         };
 
-    private static void SetDateTimeAxes(
+    // Labels follow the range on screen: seconds while live, dates on ranges over a day.
+    private DateTimeAxis TimeAxis() =>
+        new(TimeSpan.FromSeconds(1), dt => dt.ToString(_axisFormat))
+        {
+            LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+            SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
+            TextSize        = 14,
+            MinLimit        = _xMin,
+            MaxLimit        = _xMax,
+        };
+
+    private void SetDateTimeAxes(
         LiveChartsCore.SkiaSharpView.WPF.CartesianChart chart,
         string yLabel,
         double? yMin = null, double? yMax = null)
     {
-        chart.XAxes = new[]
-        {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
-            {
-                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
-                TextSize        = 14,
-            }
-        };
+        chart.XAxes = new[] { TimeAxis() };
         var yAxis = new Axis
         {
             Name            = yLabel,

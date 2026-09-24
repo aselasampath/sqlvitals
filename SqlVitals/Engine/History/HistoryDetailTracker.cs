@@ -53,9 +53,45 @@ public sealed class HistoryDetailTracker
 
         RememberQueries(current);
 
-        return new HistoryDetail(
-            current.ServerTime, (current.ServerTime - previous.ServerTime).TotalSeconds,
-            waits, files, top, current.Memory);
+        var seconds  = (current.ServerTime - previous.ServerTime).TotalSeconds;
+        var counters = DiffCounters(previous.Counters ?? [], current.Counters ?? [], seconds);
+
+        return new HistoryDetail(current.ServerTime, seconds, waits, files, top, current.Memory, counters);
+    }
+
+    // Rate counters become per second over the interval, like the Perfmon page shows them; one
+    // missing from the previous read, or that went backwards, has no true figure. Zeros are left
+    // out to keep the file small: a counter missing from a snapshot that has counters read as 0.
+    private static List<CounterValue> DiffCounters(
+        IReadOnlyList<CounterTotals> previous, IReadOnlyList<CounterTotals> current, double seconds)
+    {
+        var before = new Dictionary<string, CounterTotals>();
+        foreach (var c in previous)
+            before.TryAdd(c.CounterName, c);
+
+        var result = new List<CounterValue>();
+        var seen   = new HashSet<string>();
+        foreach (var now in current)
+        {
+            if (!seen.Add(now.CounterName))
+                continue;
+
+            double value;
+            if (now.IsRate)
+            {
+                if (!before.TryGetValue(now.CounterName, out var then) || now.Value < then.Value)
+                    continue;
+                value = (now.Value - then.Value) / seconds;
+            }
+            else
+            {
+                value = now.Value;
+            }
+
+            if (value != 0)
+                result.Add(new CounterValue(now.CounterName, value));
+        }
+        return result;
     }
 
     // A wait type missing from the previous read had a zero total (only non-zero rows are read).

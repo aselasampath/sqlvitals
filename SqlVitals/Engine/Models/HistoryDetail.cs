@@ -11,7 +11,14 @@ public sealed record HistoryDetailSnapshot(
     IReadOnlyList<WaitTypeTotals>  Waits,
     IReadOnlyList<FileIoTotals>    Files,
     IReadOnlyList<QueryTotals>     Queries,
-    HistoryMemory?                 Memory);
+    HistoryMemory?                 Memory,
+    IReadOnlyList<CounterTotals>?  Counters = null);
+
+/// <summary>
+/// One of the Perfmon page's counters from sys.dm_os_performance_counters. A rate counter holds
+/// a running total that has to be diffed; any other is a value as it stands.
+/// </summary>
+public sealed record CounterTotals(string CounterName, long Value, bool IsRate);
 
 /// <summary>One row of sys.dm_os_wait_stats (benign waits excluded).</summary>
 public sealed record WaitTypeTotals(string WaitType, long WaitingTasks, long WaitTimeMs, long SignalWaitTimeMs);

@@ -2,6 +2,7 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="SqlVitals.Desktop.Pages.LiveMetricsDashboardPage"
       Title="Live Metrics"
       Loaded="Page_Loaded" Unloaded="Page_Unloaded">
@@ -91,7 +92,9 @@
                        VerticalAlignment="Center" Margin="0,0,0,0"/>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                         VerticalAlignment="Center">
-        <!-- Auto-refresh -->
+        <!-- Range: live, or a past range from the monitoring history -->
+        <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0" RangeChanged="RangePicker_RangeChanged"/>
+        <!-- Auto-refresh: collection (and recording) continues while a past range is shown -->
         <TextBlock Text="Auto-refresh:" Foreground="{StaticResource TextMuted}"
                            VerticalAlignment="Center" Margin="0,0,6,0"
                            FontFamily="Segoe UI" FontSize="12"/>
@@ -173,6 +176,9 @@
                               Foreground="#88FFFF"
                               Style="{StaticResource ChipButton}"
                               Checked="Chip_Changed" Unchecked="Chip_Changed"/>
+        <TextBlock x:Name="TxtHistoryStatus" Foreground="{StaticResource TextMuted}"
+                   VerticalAlignment="Center" Margin="10,0,0,0"
+                   FontFamily="Segoe UI" FontSize="11"/>
       </WrapPanel>
     </Border>
 

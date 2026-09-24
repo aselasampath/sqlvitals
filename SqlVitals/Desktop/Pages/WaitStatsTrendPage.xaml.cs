@@ -9,6 +9,8 @@ using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 
@@ -76,16 +78,36 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
     private enum MetricType { WaitTimeMs, SignalWaitMs, ResourceWaitMs, WaitingTasks }
     private MetricType _metric = MetricType.WaitTimeMs;
 
+    // Past ranges come from the history's detail snapshots (waits per type, every few minutes).
+    // The live buffers above are kept while one is shown, so switching back to Live loses nothing.
+    private const string NoLiveDataText = "Select wait types on the left, then start auto-refresh to begin trending";
+    private const string NotRecordedText =
+        "Waits per type are recorded every few minutes while SqlVitals monitors this connection (Settings → Monitoring History).";
+    private readonly ConnectionHistory? _history;
+    private HistoryRange _range = HistoryRange.Live;
+    private int _historyVersion;   // bumped per load; a stale load is dropped
+    private HistoryLoad<WaitHistoryBucket>? _historyLoad;
+    private readonly Dictionary<string, ObservableCollection<DateTimePoint>> _historyWindows = new();   // built on demand
+
     // ── constructor ───────────────────────────────────────────────────────────
-    public WaitStatsTrendPage(IWaitStatsRepository repo)
+    public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null)
     {
-        _repo = repo;
+        _repo    = repo;
+        _history = history;
         InitializeComponent();
+        RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _timer.Tick += Timer_Tick;
     }
 
     // ── IRefreshable ──────────────────────────────────────────────────────────
-    public async Task RefreshAsync() => await LoadSnapshotAsync();
+    // A past range is read again, so "last hour" moves up to now.
+    public async Task RefreshAsync()
+    {
+        if (_range.IsLive)
+            await LoadSnapshotAsync();
+        else
+            await LoadHistoryAsync();
+    }
 
     // ── core data load ───────────────────────────────────────────────────────
     private async Task LoadSnapshotAsync()
@@ -136,6 +158,11 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             }
 
             StoreValues(data, now);
+
+            // A read that finishes after a past range was picked only fills the live buffers.
+            if (!_range.IsLive)
+                return;
+
             RebuildSeries();
 
             int checkedCount = _allItems.Count(i => i.IsChecked);
@@ -143,8 +170,120 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = $"Error: {ex.Message}";
+            if (_range.IsLive)
+                TxtStatus.Text = $"Error: {ex.Message}";
         }
+    }
+
+    // ── history ──────────────────────────────────────────────────────────────
+    private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
+    {
+        _range = range;
+        var live = range.IsLive;
+
+        // Live collection is paused while a past range is shown; Start picks it up again.
+        if (!live)
+            BtnAutoRefresh.IsChecked = false;
+        BtnAutoRefresh.IsEnabled = live;
+        CmbInterval.IsEnabled    = live;
+
+        if (live)
+        {
+            _historyVersion++;
+            _historyLoad = null;
+            _historyWindows.Clear();
+            TxtStatus.Text = "Live — press ▶ Start to trend";
+            RebuildSeries();
+            return;
+        }
+
+        await LoadHistoryAsync();
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (_history is null || _range.IsLive)
+            return;
+
+        var version = ++_historyVersion;
+        TxtStatus.Text = $"Reading {_range.Label.ToLowerInvariant()} from history…";
+        try
+        {
+            var load = await _history.LoadAsync(_range, (reader, id, from, to, bucket) => reader.ReadWaits(id, from, to, bucket));
+            if (version != _historyVersion)
+                return;   // the user picked something else meanwhile
+
+            _historyLoad = load;
+            _historyWindows.Clear();
+
+            // Add waits the list lacks: it was opened on a past range before any live read, or the
+            // range has waits the server no longer lists.
+            var recorded = load.Items.SelectMany(b => b.Waits.Keys).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var known    = _allItems.Select(i => i.WaitType).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var type in recorded.Where(t => !known.Contains(t)).Order())
+                _allItems.Add(new WaitTypeItem(type, ""));
+
+            // The live list starts on the top waits since the server started, mostly idle ones the
+            // history leaves out. Rather than a chart of flat zeros, start on the range's top waits.
+            if (recorded.Count > 0 && !_allItems.Any(i => i.IsChecked && recorded.Contains(i.WaitType)))
+                CheckTopWaits();
+
+            UpdateListDisplay(TxtSearch.Text);
+            UpdateSelCount();
+
+            RebuildSeries();
+            TxtStatus.Text = load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList());
+        }
+        catch (Exception ex)
+        {
+            if (version != _historyVersion)
+                return;
+            TxtStatus.Text = $"Could not read the history: {ex.Message}";
+            MainWindow.ReportBackgroundError(this, "Wait Stats Trend history", ex);
+        }
+    }
+
+    // The chosen metric per second over each bucket, with breaks where nothing was recorded.
+    // A bucket without this wait type had none of it: zero, not a break.
+    private ObservableCollection<DateTimePoint> BuildHistoryWindow(string waitType)
+    {
+        var window = new ObservableCollection<DateTimePoint>();
+        if (_historyLoad is not { } load)
+            return window;
+
+        foreach (var (time, bucket) in HistoryGaps.WithGaps(load.Items, b => b.TimeUtc, load.Bucket))
+        {
+            double? value = null;
+            if (bucket is not null)
+            {
+                bucket.Waits.TryGetValue(waitType, out var w);
+                long total = w is null ? 0 : _metric switch
+                {
+                    MetricType.SignalWaitMs   => w.SignalWaitTimeMs,
+                    MetricType.ResourceWaitMs => w.WaitTimeMs - w.SignalWaitTimeMs,
+                    MetricType.WaitingTasks   => w.WaitingTasks,
+                    _                         => w.WaitTimeMs,
+                };
+                value = bucket.Seconds > 0 ? Math.Max(0, total) / bucket.Seconds : 0;
+            }
+            window.Add(new DateTimePoint(time.ToLocalTime(), value));
+        }
+        return window;
+    }
+
+    // Top 20 by total wait time: over the range on screen, or since the server started when live.
+    private void CheckTopWaits()
+    {
+        IEnumerable<string> ranked = _historyLoad is { } load && !_range.IsLive
+            ? load.Items.SelectMany(b => b.Waits.Values)
+                  .GroupBy(w => w.WaitType)
+                  .OrderByDescending(g => g.Sum(w => w.WaitTimeMs))
+                  .Select(g => g.Key)
+            : _prevValues.OrderByDescending(kv => kv.Value.WaitTimeMs).Select(kv => kv.Key);
+
+        var top20 = ranked.Take(20).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in _allItems)
+            item.IsChecked = top20.Contains(item.WaitType);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -203,8 +342,12 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             ? $"⚠  Max {MaxSeries} series — first {MaxSeries} shown"
             : "";
 
-        if (toShow.Count == 0 || _windows.Count == 0)
+        var hasData = _range.IsLive ? _windows.Count > 0 : _historyLoad is { Items.Count: > 0 };
+        if (toShow.Count == 0 || !hasData)
         {
+            TxtNoData.Text = _range.IsLive || _historyLoad is null ? NoLiveDataText
+                           : toShow.Count == 0 ? "Select wait types on the left to chart them."
+                           : _historyLoad.NoData(NotRecordedText);
             TrendChart.Series = Array.Empty<ISeries>();
             TxtNoData.Visibility = Visibility.Visible;
             return;
@@ -221,12 +364,13 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             _ => ""
         };
 
+        var windows = _range.IsLive ? _windows : _historyWindows;
         var series = toShow.Select((item, idx) =>
         {
-            if (!_windows.TryGetValue(item.WaitType, out var buf))
+            if (!windows.TryGetValue(item.WaitType, out var buf))
             {
-                buf = new ObservableCollection<DateTimePoint>();
-                _windows[item.WaitType] = buf;
+                buf = _range.IsLive ? new ObservableCollection<DateTimePoint>() : BuildHistoryWindow(item.WaitType);
+                windows[item.WaitType] = buf;
             }
 
             var colour = Palette[idx % Palette.Length];
@@ -246,14 +390,20 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         var axisColor = ChartTheme.MutedAxisColor;
         var gridColor = ChartTheme.GridColor;
 
+        // A past range is shown whole, so missing history reads as missing rather than cropped.
+        var history    = _range.IsLive ? null : _historyLoad;
+        var axisFormat = history is null ? "HH:mm:ss" : ConnectionHistory.AxisFormat(history.Span);
+
         TrendChart.Series = series;
         TrendChart.XAxes  = new[]
         {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
+            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString(axisFormat))
             {
                 LabelsPaint     = new SolidColorPaint(axisColor),
                 SeparatorsPaint = new SolidColorPaint(gridColor) { StrokeThickness = 1 },
                 TextSize        = 10,
+                MinLimit        = history?.FromUtc.ToLocalTime().Ticks,
+                MaxLimit        = history?.ToUtc.ToLocalTime().Ticks,
             }
         };
         TrendChart.YAxes = new[]
@@ -291,16 +441,9 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
     // ── event handlers ────────────────────────────────────────────────────────
     private void BtnTopWaits_Click(object sender, RoutedEventArgs e)
     {
-        if (!_initialized) return;
+        if (_range.IsLive ? !_initialized : _historyLoad is null) return;
 
-        var top20 = _prevValues
-            .OrderByDescending(kv => kv.Value.WaitTimeMs)
-            .Take(20)
-            .Select(kv => kv.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var item in _allItems)
-            item.IsChecked = top20.Contains(item.WaitType);
+        CheckTopWaits();
 
         UpdateSelCount();
         RebuildSeries();
@@ -333,8 +476,10 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             _ => MetricType.WaitTimeMs,
         };
 
-        // Clear windows so chart restarts with fresh deltas for the chosen metric
+        // Clear windows so chart restarts with fresh deltas for the chosen metric; history
+        // windows are rebuilt from the range already read.
         _windows.Clear();
+        _historyWindows.Clear();
         RebuildSeries();
     }
 

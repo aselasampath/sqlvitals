@@ -213,4 +213,63 @@ public class HistoryDetailTrackerTests
 
         Assert.Equal(memory, tracker.Add(Snap(T1, memory: memory), 20)!.Memory);
     }
+
+    private static HistoryDetailSnapshot WithCounters(DateTime time, params CounterTotals[] counters) =>
+        Snap(time) with { Counters = counters };
+
+    [Fact]
+    public void Add_RateCountersBecomePerSecondAndOthersAreTakenAsTheyAre()
+    {
+        var tracker = new HistoryDetailTracker();
+        tracker.Add(WithCounters(T0,
+            new("Batch Requests/sec", 10_000, IsRate: true),
+            new("Page life expectancy", 800, IsRate: false)), 20);
+
+        var detail = tracker.Add(WithCounters(T1,
+            new("Batch Requests/sec", 40_000, IsRate: true),     // +30,000 over 300 s
+            new("Page life expectancy", 1_100, IsRate: false)), 20)!;
+
+        Assert.Equal(
+            new[] { new CounterValue("Batch Requests/sec", 100), new CounterValue("Page life expectancy", 1_100) },
+            detail.Counters);
+    }
+
+    [Fact]
+    public void Add_LeavesOutZerosAndRatesWithNoTrueFigure()
+    {
+        var tracker = new HistoryDetailTracker();
+        tracker.Add(WithCounters(T0,
+            new("Number of Deadlocks/sec", 3, IsRate: true),
+            new("Lock Waits/sec", 500, IsRate: true)), 20);
+
+        var detail = tracker.Add(WithCounters(T1,
+            new("Number of Deadlocks/sec", 3, IsRate: true),     // none in the interval
+            new("Lock Waits/sec", 20, IsRate: true),             // went backwards
+            new("Page Splits/sec", 70, IsRate: true),            // not in the previous read
+            new("Processes blocked", 0, IsRate: false)), 20)!;
+
+        Assert.Empty(detail.Counters!);
+    }
+
+    [Fact]
+    public void Add_TakesTheFirstRowOfACounterName()
+    {
+        var tracker = new HistoryDetailTracker();
+        tracker.Add(WithCounters(T0), 20);
+
+        var detail = tracker.Add(WithCounters(T1,
+            new("Lock waits", 12, IsRate: false),
+            new("Lock waits", 999, IsRate: false)), 20)!;
+
+        Assert.Equal(new[] { new CounterValue("Lock waits", 12) }, detail.Counters);
+    }
+
+    [Fact]
+    public void Add_SnapshotsWithoutCountersGiveNone()
+    {
+        var tracker = new HistoryDetailTracker();
+        tracker.Add(Snap(T0), 20);
+
+        Assert.Empty(tracker.Add(Snap(T1), 20)!.Counters!);
+    }
 }
