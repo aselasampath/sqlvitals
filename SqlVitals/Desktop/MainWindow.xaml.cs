@@ -57,6 +57,7 @@ public partial class MainWindow : Window
         var active = store.Active;
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
+        Monitoring.AlertsChanged       += (_, _) => UpdateAlertsButton();
         SyncConnections(store);
 
         Loaded += async (_, _) =>
@@ -173,6 +174,19 @@ public partial class MainWindow : Window
         {
             _isUpdatingSelector = false;
         }
+    }
+
+    // "🔔  Alerts (2)" while any monitored connection has an active alert.
+    private void UpdateAlertsButton()
+    {
+        var active = Monitoring.ActiveAlerts;
+        BtnAlerts.Content = active.Count == 0 ? "🔔  Alerts" : $"🔔  Alerts ({active.Count})";
+        BtnAlerts.ToolTip = active.Count switch
+        {
+            0     => "Health thresholds breached, now and in the past, for every monitored connection",
+            1     => "1 active alert",
+            var n => $"{n} active alerts",
+        };
     }
 
     private void OnMonitoringStateChanged(Guid connectionId)
@@ -368,11 +382,12 @@ public partial class MainWindow : Window
         _currentTag = tag;
 
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
         {
+            "Alerts"          => BtnAlerts,
             "TopWaits"        => BtnTopWaits,
             "ActiveWaits"     => BtnActiveWaits,
             "Processes"       => BtnProcesses,
@@ -408,6 +423,7 @@ public partial class MainWindow : Window
         IRefreshable page = tag switch
         {
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId)),
+            "Alerts"          => new AlertsPage(Monitoring, SettingsService),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "Processes"       => new ProcessesPage(Repo),

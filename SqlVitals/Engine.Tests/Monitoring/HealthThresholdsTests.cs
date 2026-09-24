@@ -57,6 +57,39 @@ public class HealthThresholdsTests
         Assert.Empty(reasons);
     }
 
+    [Fact]
+    public void Grade_ReadsEveryIndicatorInOrderWithItsLimits()
+    {
+        var readings = HealthRules.Grade(Sample(cpuPct: 80, logPct: 95), HealthThresholds.Default);
+
+        Assert.Equal(Enum.GetValues<HealthIndicator>(), readings.Select(r => r.Indicator));
+        var cpu = readings[0];
+        Assert.Equal((HealthLevel.Warning, 80.0, new HealthThreshold(75, 90), "CPU 80%"),
+                     (cpu.Level, cpu.Value, cpu.Limits, cpu.Reason));
+        Assert.Equal(HealthLevel.Critical, readings.Single(r => r.Indicator == HealthIndicator.LogSpace).Level);
+        Assert.All(readings.Where(r => r.Level == HealthLevel.Healthy), r => Assert.Null(r.Reason));
+    }
+
+    [Fact]
+    public void Grade_AnIndicatorWithoutAFigureIsHealthy()
+    {
+        // Nothing blocked, PLE and TempDB not reported: none of them can be past a threshold.
+        var readings = HealthRules.Grade(Sample(ple: 0, blocked: 0, blockSec: 500, tempDbPct: 0), HealthThresholds.Default);
+
+        Assert.All(readings, r => Assert.Equal(HealthLevel.Healthy, r.Level));
+    }
+
+    [Fact]
+    public void Summarize_MatchesEvaluate()
+    {
+        var sample = Sample(cpuPct: 95, ple: 100, grants: 2);
+
+        var (level, reasons) = HealthRules.Summarize(HealthRules.Grade(sample, HealthThresholds.Default));
+
+        Assert.Equal(HealthLevel.Critical, level);
+        Assert.Equal(HealthRules.Evaluate(sample).Reasons, reasons);
+    }
+
     // ── Each indicator ────────────────────────────────────────────────────────
 
     [Theory]

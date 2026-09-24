@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
@@ -195,6 +196,48 @@ public sealed class HistoryReader(string path)
                 r => new QueryTextInfo((string)r.query_hash, (string?)r.database_name, (string)r.query_text));
     }
 
+    /// <summary>
+    /// Alerts active at any time in [<paramref name="fromUtc"/>, <paramref name="toUtc"/>), of one
+    /// connection or, with null, of every connection, newest first. Active alerts are always
+    /// included when they started before the end. Empty for a file from before alerts (schema 3).
+    /// </summary>
+    public IReadOnlyList<StoredAlert> ReadAlerts(Guid? connectionId, DateTime fromUtc, DateTime toUtc)
+    {
+        using var conn = OpenOrNull(out var version);
+        if (conn is null || version < 3)
+            return [];
+
+        return conn.Query("""
+            SELECT a.*, c.name AS connection_name
+            FROM alerts a
+            LEFT JOIN connections c ON c.connection_id = a.connection_id
+            WHERE (@connectionId IS NULL OR a.connection_id = @connectionId)
+              AND a.started_utc < @to
+              AND (a.ended_utc IS NULL OR a.ended_utc >= @from)
+            ORDER BY a.started_utc DESC
+            """,
+            new
+            {
+                connectionId = connectionId?.ToString("D"),
+                from         = HistoryStore.ToEpochMs(fromUtc),
+                to           = HistoryStore.ToEpochMs(toUtc),
+            })
+            .Select(r => new StoredAlert(
+                new Alert(
+                    Guid.Parse((string)r.alert_id),
+                    Guid.Parse((string)r.connection_id),
+                    Enum.TryParse<HealthIndicator>((string)r.indicator, out var indicator) ? indicator : HealthIndicator.Cpu,
+                    Enum.TryParse<HealthLevel>((string)r.severity, out var severity) ? severity : HealthLevel.Warning,
+                    HistoryStore.FromEpochMs((long)r.started_utc),
+                    r.ended_utc is long ended ? HistoryStore.FromEpochMs(ended) : null,
+                    (double)r.value,
+                    (double?)r.threshold,
+                    (string)r.detail,
+                    r.end_reason is string reason && Enum.TryParse<AlertEndReason>(reason, out var why) ? why : null),
+                (string?)r.connection_name ?? string.Empty))
+            .ToList();
+    }
+
     // Null when there is no history to read: no file yet, or one the writer hasn't set up.
     private SqliteConnection? OpenOrNull(out long version)
     {
@@ -267,6 +310,9 @@ public sealed record WaitHistoryBucket(DateTime TimeUtc, double Seconds, IReadOn
 
 /// <summary>Perfmon counters averaged over one bucket; a counter not listed was zero.</summary>
 public sealed record CounterHistoryBucket(DateTime TimeUtc, IReadOnlyDictionary<string, double> Values);
+
+/// <summary>An alert read from the history, with the name its connection was last saved under.</summary>
+public sealed record StoredAlert(Alert Alert, string ConnectionName);
 
 /// <summary>Work one query_hash did over a range of the history; times in microseconds.</summary>
 public sealed record HistoryQueryTotals(string QueryHash, long Executions, long WorkerTimeUs, long ElapsedTimeUs);

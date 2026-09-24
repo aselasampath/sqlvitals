@@ -411,6 +411,40 @@
                 </StackPanel>
             </Border>
 
+            <!-- Alerts card -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="Alerts"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="Every sample of a monitored connection is checked against its health thresholds. An indicator that stays past one raises an alert, listed on the Alerts page with when it started and ended and its worst value."
+                               Foreground="{StaticResource TextMuted}" FontSize="10"
+                               TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0"
+                                   Text="Raise an alert after" />
+                        <StackPanel Grid.Column="1" Margin="0,0,0,4">
+                            <ComboBox x:Name="CmbAlertSamples" Width="160" HorizontalAlignment="Left"
+                                      AutomationProperties.Name="Samples in a row before an alert starts"
+                                      SelectionChanged="AlertSetting_Changed" />
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Samples in a row past a threshold before an alert starts. It ends after the same number back to normal, so a value hovering around a threshold raises one alert, not many. Samples follow each connection's Live Metrics interval: at the default 10 seconds, 3 samples is 30 seconds. Changes apply from the next sample." />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock x:Name="TxtAlertsStatus"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+
             <!-- Appearance card -->
             <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
                 <StackPanel>

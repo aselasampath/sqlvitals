@@ -1,7 +1,9 @@
 using Dapper;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Tests.History;
 
@@ -211,6 +213,52 @@ public sealed class HistoryReaderTests : IDisposable
         Assert.Empty(reader.ReadQueryTotals(Conn.Id, T0, T0.AddHours(1)));
         Assert.Empty(reader.ReadQueryTexts(Conn.Id, ["0xA"]));
         Assert.False(File.Exists(DbPath));
+    }
+
+    [Fact]
+    public void ReadAlerts_ReturnsTheAlertsActiveInTheRangeNewestFirstWithTheirConnectionsName()
+    {
+        var active = Guid.NewGuid();
+        using (var store = OpenStore())
+            store.Write(
+            [
+                HistoryStoreTests.AlertAt(T0.AddHours(-3), T0.AddHours(-2)),              // ended before the range
+                HistoryStoreTests.AlertAt(T0.AddMinutes(-30), T0.AddMinutes(10)),         // overlaps its start
+                HistoryStoreTests.AlertAt(T0.AddMinutes(20), T0.AddMinutes(25)),          // inside
+                HistoryStoreTests.AlertAt(T0.AddHours(-5), id: active),                   // still active
+                HistoryStoreTests.AlertAt(T0.AddHours(2)),                                // starts after the range
+                new AlertRecord(Other, T0, HistoryStoreTests.AlertAt(T0.AddMinutes(5)).Alert with { ConnectionId = Other.Id }),
+            ]);
+        var reader = new HistoryReader(DbPath);
+
+        var mine = reader.ReadAlerts(Conn.Id, T0, T0.AddHours(1));
+
+        Assert.Equal(new[] { T0.AddMinutes(20), T0.AddMinutes(-30), T0.AddHours(-5) }, mine.Select(a => a.Alert.StartedUtc));
+        Assert.All(mine, a => Assert.Equal("Prod", a.ConnectionName));
+        var still = mine.Single(a => a.Alert.Id == active).Alert;
+        Assert.True(still.IsActive);
+        Assert.Null(still.EndReason);
+        var ended = mine[0].Alert;
+        Assert.Equal((HealthIndicator.Cpu, HealthLevel.Warning, 82.0, (double?)75.0, "CPU 82%", AlertEndReason.Recovered),
+                     (ended.Indicator, ended.Severity, ended.Value, ended.Threshold, ended.Detail, ended.EndReason));
+        Assert.Equal(DateTimeKind.Utc, ended.EndedUtc!.Value.Kind);
+
+        var everyone = reader.ReadAlerts(null, T0, T0.AddHours(1));
+        Assert.Equal(4, everyone.Count);
+        Assert.Equal("Test", everyone.Single(a => a.Alert.ConnectionId == Other.Id).ConnectionName);
+    }
+
+    [Fact]
+    public void ReadAlerts_WithoutAFileOrFromAVersion2FileReturnsNothing()
+    {
+        var reader = new HistoryReader(DbPath);
+        Assert.Empty(reader.ReadAlerts(null, T0, T0.AddHours(1)));
+        Assert.False(File.Exists(DbPath));
+
+        Directory.CreateDirectory(_dir);
+        using (var raw = Raw())
+            raw.Execute("PRAGMA user_version = 2; CREATE TABLE metric_samples (x);");
+        Assert.Empty(reader.ReadAlerts(null, T0, T0.AddHours(1)));
     }
 
     [Fact]

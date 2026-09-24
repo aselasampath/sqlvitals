@@ -1,3 +1,4 @@
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
@@ -19,6 +20,13 @@ public sealed record MetricSampleRecord(HistoryConnection Connection, DateTime C
 /// <summary>One detail snapshot (the every-few-minutes tier) plus the text of any new top queries.</summary>
 public sealed record DetailRecord(
     HistoryConnection Connection, DateTime CapturedUtc, HistoryDetail Detail, IReadOnlyList<QueryTextInfo> QueryTexts)
+    : HistoryRecord(Connection, CapturedUtc);
+
+/// <summary>
+/// An alert as it stands after a change (#34). Stored by its id, so a later record of the same
+/// alert replaces the earlier one.
+/// </summary>
+public sealed record AlertRecord(HistoryConnection Connection, DateTime CapturedUtc, Alert Alert)
     : HistoryRecord(Connection, CapturedUtc);
 
 /// <summary>

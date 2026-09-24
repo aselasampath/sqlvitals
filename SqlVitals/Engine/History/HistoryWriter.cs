@@ -106,6 +106,12 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
         return command.Done.Task;
     }
 
+    /// <summary>
+    /// Ends the alerts a previous run left active (see <see cref="HistoryStore.EndAlertsLeftOpen"/>).
+    /// Call it before anything is recorded, so it runs ahead of this run's alerts. Never throws.
+    /// </summary>
+    public void EndAlertsLeftOpen() => _queue.Writer.TryWrite(EndAlertsCommand.Instance);
+
     private void OnDropped(object item)
     {
         switch (item)
@@ -211,6 +217,25 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
             case ClearCommand clear:
                 Clear(clear);
                 break;
+            case EndAlertsCommand:
+                EndAlerts();
+                break;
+        }
+    }
+
+    private void EndAlerts()
+    {
+        // Don't create a file just to find nothing in it.
+        if (_disabled || !File.Exists(Path) || !TryOpen())
+            return;
+
+        try
+        {
+            _store!.EndAlertsLeftOpen();
+        }
+        catch (Exception ex)
+        {
+            _reporter.Report("Could not end the alerts left active by the previous run.", ex);
         }
     }
 
@@ -348,6 +373,11 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     private sealed class PurgeCommand : Command
     {
         public static readonly PurgeCommand Instance = new();
+    }
+
+    private sealed class EndAlertsCommand : Command
+    {
+        public static readonly EndAlertsCommand Instance = new();
     }
 
     private sealed class ClearCommand : Command

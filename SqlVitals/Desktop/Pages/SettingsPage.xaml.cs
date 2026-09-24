@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Desktop;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 
@@ -23,6 +24,10 @@ public partial class SettingsPage : Page
     private bool _isLoadingHistorySettings;
     private int  _savedIntervalMinutes;
     private int  _savedRetentionDays;
+
+    // Set while the alert choice is filled in or put back in code, so it isn't saved.
+    private bool _isLoadingAlertSettings;
+    private int  _savedAlertSamples;
 
     // The saved thresholds every connection without its own uses.
     private HealthThresholds _globalThresholds = HealthThresholds.Default;
@@ -57,6 +62,7 @@ public partial class SettingsPage : Page
         var store = _service.Load();
         TxtTimeout.Text = store.CommandTimeoutSeconds.ToString();
         LoadHistorySettings(store);
+        LoadAlertSettings(store);
         _globalThresholds = store.HealthThresholds;
         GlobalThresholds.Show(_globalThresholds);
         _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
@@ -486,6 +492,61 @@ public partial class SettingsPage : Page
 
         ConnectionThresholds.Visibility = ChkCustomThresholds.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    // ── Alerts ────────────────────────────────────────────────────────────────
+
+    private void LoadAlertSettings(ConnectionStore store)
+    {
+        _isLoadingAlertSettings = true;
+        try
+        {
+            foreach (var samples in AlertSettings.SampleChoices)
+                CmbAlertSamples.Items.Add(new ComboBoxItem { Content = SamplesText(samples), Tag = samples });
+            ShowAlertSettings(store.AlertSamples);
+        }
+        finally
+        {
+            _isLoadingAlertSettings = false;
+        }
+    }
+
+    private void ShowAlertSettings(int samples)
+    {
+        _savedAlertSamples           = samples;
+        CmbAlertSamples.SelectedItem = FindChoice(CmbAlertSamples, samples);
+    }
+
+    private void AlertSetting_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingAlertSettings || CmbAlertSamples.SelectedItem is not ComboBoxItem { Tag: int samples } ||
+            samples == _savedAlertSamples)
+            return;
+
+        try
+        {
+            _service.SetAlertSettings(samples);
+            var store = _service.Load();
+            _monitoring.ApplyAlertSettings(store);
+            _savedAlertSamples = store.AlertSamples;
+            ShowStatus(TxtAlertsStatus,
+                $"Saved: an alert starts after {SamplesText(store.AlertSamples)} in a row past a threshold, " +
+                "and ends after as many back to normal.",
+                success: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtAlertsStatus, $"Could not save the alert settings: {ex.Message}", success: false);
+            // Deferred for the same reason as RevertHistorySettings.
+            Dispatcher.BeginInvoke(() =>
+            {
+                _isLoadingAlertSettings = true;
+                try { ShowAlertSettings(_savedAlertSamples); }
+                finally { _isLoadingAlertSettings = false; }
+            });
+        }
+    }
+
+    private static string SamplesText(int samples) => samples == 1 ? "1 sample" : $"{samples} samples";
 
     // ── Form ──────────────────────────────────────────────────────────────────
 

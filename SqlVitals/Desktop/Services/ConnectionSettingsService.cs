@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Regressions;
@@ -112,6 +113,14 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves how many samples in a row start and end an alert (see <see cref="AlertSettings"/>).</summary>
+    public void SetAlertSettings(int samples)
+    {
+        var store = Load();
+        store.AlertSamples = AlertSettings.NormalizeSamples(samples);
+        Save(store);
+    }
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id)
     {
@@ -151,6 +160,7 @@ public class ConnectionSettingsService
                 RegressionThresholdPct  = RegressionCriteria.NormalizeThreshold(raw.RegressionThresholdPct),
                 RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(raw.RegressionMinExecutions),
                 HealthThresholds        = HealthThresholds.Normalize(raw.HealthThresholds),
+                AlertSamples            = AlertSettings.NormalizeSamples(raw.AlertSamples),
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -219,6 +229,7 @@ public class ConnectionSettingsService
             RegressionThresholdPct  = store.RegressionThresholdPct,
             RegressionMinExecutions = store.RegressionMinExecutions,
             HealthThresholds        = store.HealthThresholds,
+            AlertSamples            = store.AlertSamples,
         };
 
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
@@ -254,6 +265,7 @@ public class ConnectionSettingsService
         public double  RegressionThresholdPct    { get; set; } = RegressionCriteria.DefaultThresholdPct;
         public long    RegressionMinExecutions   { get; set; } = RegressionCriteria.DefaultMinExecutions;
         public HealthThresholds? HealthThresholds { get; set; }
+        public int     AlertSamples              { get; set; } = AlertSettings.DefaultSamples;
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -289,6 +301,12 @@ public class ConnectionStore
     /// <summary>The thresholds a connection's health dot is graded on: its own, or the saved ones.</summary>
     public HealthThresholds ThresholdsFor(ConnectionSettings connection) =>
         connection.HealthThresholds ?? HealthThresholds;
+
+    /// <summary>
+    /// Samples in a row an indicator must stay past a threshold for an alert to start, and back
+    /// to normal for it to end; one of <see cref="AlertSettings.SampleChoices"/>.
+    /// </summary>
+    public int AlertSamples { get; set; } = AlertSettings.DefaultSamples;
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;

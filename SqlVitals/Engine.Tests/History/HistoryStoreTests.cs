@@ -1,5 +1,6 @@
 using Dapper;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -31,6 +32,13 @@ public sealed class HistoryStoreTests : IDisposable
                 [new CounterValue("Batch Requests/sec", 125.5)]),
             texts);
 
+    /// <summary>A CPU warning alert of <see cref="Conn"/>, active unless <paramref name="endedUtc"/> is given.</summary>
+    internal static AlertRecord AlertAt(DateTime startedUtc, DateTime? endedUtc = null, Guid? id = null, Guid? connectionId = null) =>
+        new(Conn, endedUtc ?? startedUtc,
+            new Alert(id ?? Guid.NewGuid(), connectionId ?? Conn.Id, HealthIndicator.Cpu, HealthLevel.Warning,
+                      startedUtc, endedUtc, 82, 75, "CPU 82%",
+                      endedUtc is null ? null : AlertEndReason.Recovered));
+
     private SqliteConnection Raw()
     {
         var conn = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = DbPath, Pooling = false }.ToString());
@@ -49,7 +57,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal("wal", raw.ExecuteScalar<string>("PRAGMA journal_mode;"));
         Assert.Equal(2, raw.ExecuteScalar<long>("PRAGMA auto_vacuum;"));   // 2 = incremental
         Assert.Equal(
-            new[] { "connections", "counter_values", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
+            new[] { "alerts", "connections", "counter_values", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
             raw.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;"));
     }
 
@@ -143,6 +151,110 @@ public sealed class HistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Open_UpgradesAVersion2FileAndKeepsItsData()
+    {
+        // The tables exactly as SqlVitals 0.30–0.33 created them: everything but alerts.
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([new MetricSampleRecord(Conn, T0, Sample(10)), Detail(T0)]);
+        }
+        using (var raw = Raw())
+            raw.Execute("DROP TABLE alerts; PRAGMA user_version = 2;");
+
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            Assert.Single(store.ReadSamples(Conn.Id, T0, T0.AddSeconds(1)));
+            store.Write([AlertAt(T0)]);
+        }
+
+        using var check = Raw();
+        Assert.Equal(3L, check.ExecuteScalar<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM detail_snapshots;"));
+        Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM alerts;"));
+    }
+
+    [Fact]
+    public void Write_AlertIsStoredAndALaterRecordOfItReplacesIt()
+    {
+        using var store = new HistoryStore(DbPath);
+        store.Open();
+        var id = Guid.NewGuid();
+
+        store.Write([AlertAt(T0, id: id)]);
+        using (var raw = Raw())
+        {
+            var row = raw.QuerySingle("SELECT * FROM alerts;");
+            Assert.Equal(id.ToString("D"), (string)row.alert_id);
+            Assert.Equal(Conn.Id.ToString("D"), (string)row.connection_id);
+            Assert.Equal("Cpu", (string)row.indicator);
+            Assert.Equal("Warning", (string)row.severity);
+            Assert.Equal(HistoryStore.ToEpochMs(T0), (long)row.started_utc);
+            Assert.Null(row.ended_utc);
+            Assert.Equal((82.0, 75.0, "CPU 82%"), ((double)row.value, (double)row.threshold, (string)row.detail));
+            Assert.Null(row.end_reason);
+        }
+
+        store.Write([AlertAt(T0, T0.AddMinutes(4), id)]);
+
+        using var after = Raw();
+        var ended = after.QuerySingle("SELECT * FROM alerts;");
+        Assert.Equal(HistoryStore.ToEpochMs(T0.AddMinutes(4)), (long)ended.ended_utc);
+        Assert.Equal("Recovered", (string)ended.end_reason);
+    }
+
+    [Fact]
+    public void EndAlertsLeftOpen_EndsThemAtTheLastSampleTheirConnectionStored()
+    {
+        using var store = new HistoryStore(DbPath);
+        store.Open();
+        var otherConn = Conn with { Id = Guid.NewGuid(), Name = "Test" };
+        var other     = otherConn.Id;
+        store.Write(
+        [
+            AlertAt(T0),                                              // left active: ends at the last sample
+            AlertAt(T0.AddMinutes(20)),                               // left active, no sample since: ends at its start
+            AlertAt(T0.AddMinutes(-30), T0.AddMinutes(-25)),          // already ended: untouched
+            new MetricSampleRecord(Conn, T0.AddMinutes(2), Sample(80)),
+            new MetricSampleRecord(Conn, T0.AddMinutes(5), Sample(80)),
+            AlertAt(T0, connectionId: other) with { Connection = otherConn },   // another connection, never sampled
+        ]);
+
+        Assert.Equal(3, store.EndAlertsLeftOpen());
+
+        using var raw = Raw();
+        var rows = raw.Query("SELECT started_utc, ended_utc, end_reason, connection_id FROM alerts ORDER BY connection_id = @other, started_utc;",
+                             new { other = other.ToString("D") }).ToList();
+        Assert.Equal(HistoryStore.ToEpochMs(T0.AddMinutes(-25)), (long)rows[0].ended_utc);
+        Assert.Equal("Recovered", (string)rows[0].end_reason);
+        Assert.Equal(HistoryStore.ToEpochMs(T0.AddMinutes(5)), (long)rows[1].ended_utc);
+        Assert.Equal("MonitoringStopped", (string)rows[1].end_reason);
+        Assert.Equal(HistoryStore.ToEpochMs(T0.AddMinutes(20)), (long)rows[2].ended_utc);
+        Assert.Equal(HistoryStore.ToEpochMs(T0), (long)rows[3].ended_utc);
+        Assert.Equal(0, store.EndAlertsLeftOpen());
+    }
+
+    [Fact]
+    public void Purge_RemovesAlertsThatEndedBeforeTheCutoffAndKeepsActiveOnes()
+    {
+        using var store = new HistoryStore(DbPath);
+        store.Open();
+        store.Write(
+        [
+            AlertAt(T0.AddDays(-20), T0.AddDays(-19)),   // ended long ago: purged
+            AlertAt(T0.AddDays(-20), T0.AddDays(-1)),    // started long ago, ended recently: kept
+            AlertAt(T0.AddDays(-20)),                    // still active: kept
+        ]);
+
+        store.Purge(T0.AddDays(-14));
+
+        using var raw = Raw();
+        Assert.Equal(2L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM alerts;"));
+        Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM alerts WHERE ended_utc IS NULL;"));
+    }
+
+    [Fact]
     public void Write_DetailWithoutMemoryStoresNulls()
     {
         using var store = new HistoryStore(DbPath);
@@ -205,6 +317,7 @@ public sealed class HistoryStoreTests : IDisposable
         store.Write(Enumerable.Range(0, 20_000)
                               .Select(i => (HistoryRecord)new MetricSampleRecord(Conn, T0.AddSeconds(10 * i), Sample(i)))
                               .Append(Detail(T0, new QueryTextInfo("0xAB", "Sales", "SELECT 1")))
+                              .Append(AlertAt(T0))
                               .ToList());
         store.Purge(T0.AddYears(-1));   // checkpoints the WAL into the file, so the size below is the data
         var before = HistoryStore.SizeOnDisk(DbPath);
@@ -215,7 +328,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.True(after < before / 10, $"{before:N0} bytes before, {after:N0} after");
         using var raw = Raw();
         foreach (var table in new[] { "connections", "metric_samples", "detail_snapshots", "wait_deltas",
-                                      "file_io_deltas", "query_deltas", "query_texts", "counter_values" })
+                                      "file_io_deltas", "query_deltas", "query_texts", "counter_values", "alerts" })
             Assert.Equal(0L, raw.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table};"));
     }
 

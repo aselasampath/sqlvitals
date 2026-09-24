@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.33.0</Version>
+    <Version>0.34.0</Version>
     <AssemblyVersion>0.30.1.0</AssemblyVersion>
     <!-- Exe, taskbar and window icon. Regenerate with Branding/Build-Icon.ps1. -->
     <ApplicationIcon>..\Branding\SqlVitals.ico</ApplicationIcon>
