@@ -84,6 +84,11 @@ public class HistoryRepository(IConfiguration configuration) : BaseRepository(co
             WHERE object_name LIKE '%Memory Manager%'
             """;
 
+        const string countersSql = """
+            SELECT RTRIM(counter_name) AS CounterName, cntr_value AS CntrValue, cntr_type AS CntrType
+            FROM sys.dm_os_performance_counters
+            """ + "\n" + WaitStatsRepository.PerfmonCounterFilter;
+
         using var conn = CreateConnection();
 
         var clock = await QFirst(conn, clockSql)
@@ -122,8 +127,16 @@ public class HistoryRepository(IConfiguration configuration) : BaseRepository(co
             Convert.ToInt64(m.FreeMemoryKB ?? 0L),
             Convert.ToInt64(m.MemoryGrantsOutstanding ?? 0L));
 
+        // First row per name, as the Perfmon page takes it.
+        var counters = (await Q(conn, countersSql))
+            .Select(r => new CounterTotals(
+                (string)r.CounterName, Convert.ToInt64(r.CntrValue),
+                Convert.ToInt32(r.CntrType) == WaitStatsRepository.PerfmonRateCounterType))
+            .DistinctBy(c => c.CounterName)
+            .ToList();
+
         return new HistoryDetailSnapshot(
-            (DateTime)clock.ServerTime, (DateTime)clock.ServerStartTime, waits, files, queries, memory);
+            (DateTime)clock.ServerTime, (DateTime)clock.ServerStartTime, waits, files, queries, memory, counters);
     }
 
     public async Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength)

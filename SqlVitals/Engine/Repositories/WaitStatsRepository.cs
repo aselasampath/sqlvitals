@@ -1451,17 +1451,15 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 22. Perfmon counters (live DMV snapshot) ─────────────────────
-    public async Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync()
-    {
-        const string sql = """
-            SELECT
-                RTRIM(object_name)   AS ObjectName,
-                RTRIM(counter_name)  AS CounterName,
-                RTRIM(instance_name) AS InstanceName,
-                cntr_value           AS CntrValue,
-                cntr_type            AS CntrType,
-                GETDATE()            AS CaptureTime
-            FROM sys.dm_os_performance_counters
+    /// <summary>cntr_type of a cumulative counter, which is diffed into a per-second rate.</summary>
+    public const int PerfmonRateCounterType = 272696576;
+
+    /// <summary>
+    /// The WHERE and ORDER BY picking the Perfmon page's counters from sys.dm_os_performance_counters.
+    /// The monitoring history records the same ones (see HistoryRepository). A name can come back
+    /// once per instance; both take the first row, so the order is fixed down to the instance.
+    /// </summary>
+    internal const string PerfmonCounterFilter = """
             WHERE (
                    object_name LIKE '%SQL Statistics%'
                 OR object_name LIKE '%Buffer Manager%'
@@ -1543,8 +1541,21 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 'Buffer cache hit ratio',
                 'Transactions/sec'
             )
-            ORDER BY object_name, counter_name
+            ORDER BY object_name, counter_name, instance_name
             """;
+
+    public async Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync()
+    {
+        const string sql = """
+            SELECT
+                RTRIM(object_name)   AS ObjectName,
+                RTRIM(counter_name)  AS CounterName,
+                RTRIM(instance_name) AS InstanceName,
+                cntr_value           AS CntrValue,
+                cntr_type            AS CntrType,
+                GETDATE()            AS CaptureTime
+            FROM sys.dm_os_performance_counters
+            """ + "\n" + PerfmonCounterFilter;
 
         using var conn = CreateConnection();
         return (await Q(conn, sql)).Select(r =>

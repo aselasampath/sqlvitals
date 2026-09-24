@@ -42,6 +42,15 @@ public sealed class MonitoringManager : IDisposable
     /// <summary>The local history file every session writes to.</summary>
     public string HistoryPath => _history.Path;
 
+    /// <summary>
+    /// The history of a saved connection, for the trend pages; null for none. It is read from
+    /// the file, so it includes what was recorded before the app was last restarted.
+    /// </summary>
+    public ConnectionHistory? HistoryFor(Guid? connectionId) =>
+        connectionId is { } id ? new ConnectionHistory(_reader ??= new HistoryReader(_history.Path), id) : null;
+
+    private HistoryReader? _reader;
+
     /// <summary>Deletes all monitoring history; fails with the reason when it couldn't.</summary>
     public Task ClearHistoryAsync() => _history.ClearAsync();
 
