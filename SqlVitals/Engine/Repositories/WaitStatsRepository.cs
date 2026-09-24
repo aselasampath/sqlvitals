@@ -37,6 +37,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     // Caches the engine edition, so one instance per connection.
     private readonly HistoryRepository _history = new(configuration);
 
+    private readonly QueryRegressionRepository _regressions = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1786,4 +1788,17 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     public Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength)
         => _history.GetQueryTextsAsync(queryHashes, maxLength);
+
+    // ── Query regressions (delegated to QueryRegressionRepository) ────
+    public Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(Regressions.RegressionWindows windows)
+        => _regressions.GetQueryStoreRegressionStatsAsync(windows);
+
+    public Task<IReadOnlyDictionary<long, string>> GetQueryStoreTextsAsync(IReadOnlyCollection<long> queryIds)
+        => _regressions.GetQueryStoreTextsAsync(queryIds);
+
+    public Task<string?> GetQueryStorePlanAsync(long planId)
+        => _regressions.GetQueryStorePlanAsync(planId);
+
+    public Task<string?> GetCachedPlanForQueryHashAsync(string queryHash)
+        => _regressions.GetCachedPlanForQueryHashAsync(queryHash);
 }

@@ -145,6 +145,56 @@ public sealed class HistoryReader(string path)
         }).ToList();
     }
 
+    /// <summary>
+    /// Work per query_hash over the range, summed from the detail snapshots of one connection.
+    /// Only the top queries by CPU of each snapshot are recorded, so a query appears for the
+    /// snapshots it was busy enough to make that list.
+    /// </summary>
+    public IReadOnlyList<HistoryQueryTotals> ReadQueryTotals(Guid connectionId, DateTime fromUtc, DateTime toUtc)
+    {
+        using var conn = OpenOrNull(out _);
+        if (conn is null)
+            return [];
+
+        return conn.Query("""
+            SELECT q.query_hash, SUM(q.executions) AS executions,
+                   SUM(q.worker_time_us) AS worker_us, SUM(q.elapsed_time_us) AS elapsed_us
+            FROM detail_snapshots s
+            JOIN query_deltas q ON q.snapshot_id = s.snapshot_id
+            WHERE s.connection_id = @connectionId AND s.captured_utc >= @from AND s.captured_utc < @to
+            GROUP BY q.query_hash
+            """,
+            new
+            {
+                connectionId = connectionId.ToString("D"),
+                from         = HistoryStore.ToEpochMs(fromUtc),
+                to           = HistoryStore.ToEpochMs(toUtc),
+            })
+            .Select(r => new HistoryQueryTotals((string)r.query_hash, (long)r.executions, (long)r.worker_us, (long)r.elapsed_us))
+            .ToList();
+    }
+
+    /// <summary>The recorded statement text and database of each hash that has one, by hash.</summary>
+    public IReadOnlyDictionary<string, QueryTextInfo> ReadQueryTexts(Guid connectionId, IReadOnlyCollection<string> queryHashes)
+    {
+        if (queryHashes.Count == 0)
+            return Empty<QueryTextInfo>();
+
+        using var conn = OpenOrNull(out _);
+        if (conn is null)
+            return Empty<QueryTextInfo>();
+
+        return conn.Query("""
+            SELECT query_hash, database_name, query_text
+            FROM query_texts
+            WHERE connection_id = @connectionId AND query_hash IN @queryHashes
+            """,
+            new { connectionId = connectionId.ToString("D"), queryHashes })
+            .ToDictionary(
+                r => (string)r.query_hash,
+                r => new QueryTextInfo((string)r.query_hash, (string?)r.database_name, (string)r.query_text));
+    }
+
     // Null when there is no history to read: no file yet, or one the writer hasn't set up.
     private SqliteConnection? OpenOrNull(out long version)
     {
@@ -217,3 +267,6 @@ public sealed record WaitHistoryBucket(DateTime TimeUtc, double Seconds, IReadOn
 
 /// <summary>Perfmon counters averaged over one bucket; a counter not listed was zero.</summary>
 public sealed record CounterHistoryBucket(DateTime TimeUtc, IReadOnlyDictionary<string, double> Values);
+
+/// <summary>Work one query_hash did over a range of the history; times in microseconds.</summary>
+public sealed record HistoryQueryTotals(string QueryHash, long Executions, long WorkerTimeUs, long ElapsedTimeUs);

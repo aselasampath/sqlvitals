@@ -77,6 +77,7 @@
                         <Button x:Name="BtnTempDb"       Content="🗄️  TempDB"          Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="TempDb" />
                         <Button x:Name="BtnMemory"       Content="🧠  Memory Grants"   Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Memory" />
                         <Button x:Name="BtnQueryStore"   Content="📋  Query Store"     Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="QueryStore" />
+                        <Button x:Name="BtnRegressions"  Content="🐢  Query Regressions" Style="{DynamicResource NavButton}"     Click="Nav_Click" Tag="QueryRegressions" />
                         <Button x:Name="BtnIndexHealth"  Content="🔍  Index Health"    Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="IndexHealth" />
                         <Button x:Name="BtnResQueries"   Content="🔥  Resource Queries" Style="{DynamicResource NavButton}"      Click="Nav_Click" Tag="ResourceQueries" />
                         <Button x:Name="BtnImpConv"      Content="⚠️  Implicit Conv."   Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="ImplicitConv" />

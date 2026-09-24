@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Regressions;
 
 namespace SqlVitals.Desktop.Services;
 
@@ -91,6 +92,15 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves when the Query Regressions page flags a query (see <see cref="RegressionCriteria"/>).</summary>
+    public void SetRegressionSettings(RegressionCriteria criteria)
+    {
+        var store = Load();
+        store.RegressionThresholdPct  = RegressionCriteria.NormalizeThreshold(criteria.ThresholdPct);
+        store.RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(criteria.MinExecutions);
+        Save(store);
+    }
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id)
     {
@@ -127,6 +137,8 @@ public class ConnectionSettingsService
                 ActiveConnectionId     = raw.ActiveConnectionId,
                 HistoryIntervalMinutes = HistorySettings.NormalizeInterval(raw.HistoryIntervalMinutes),
                 HistoryRetentionDays   = HistorySettings.NormalizeRetention(raw.HistoryRetentionDays),
+                RegressionThresholdPct  = RegressionCriteria.NormalizeThreshold(raw.RegressionThresholdPct),
+                RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(raw.RegressionMinExecutions),
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -192,6 +204,8 @@ public class ConnectionSettingsService
             CommandTimeoutSeconds  = store.CommandTimeoutSeconds,
             HistoryIntervalMinutes = store.HistoryIntervalMinutes,
             HistoryRetentionDays   = store.HistoryRetentionDays,
+            RegressionThresholdPct  = store.RegressionThresholdPct,
+            RegressionMinExecutions = store.RegressionMinExecutions,
         };
 
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
@@ -224,6 +238,8 @@ public class ConnectionSettingsService
         // Missing from files written before these settings existed: the defaults apply.
         public int     HistoryIntervalMinutes    { get; set; } = HistorySettings.DefaultIntervalMinutes;
         public int     HistoryRetentionDays      { get; set; } = HistorySettings.DefaultRetentionDays;
+        public double  RegressionThresholdPct    { get; set; } = RegressionCriteria.DefaultThresholdPct;
+        public long    RegressionMinExecutions   { get; set; } = RegressionCriteria.DefaultMinExecutions;
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -243,6 +259,15 @@ public class ConnectionStore
 
     /// <summary>Days of monitoring history kept; one of <see cref="HistorySettings.RetentionChoicesDays"/>.</summary>
     public int HistoryRetentionDays   { get; set; } = HistorySettings.DefaultRetentionDays;
+
+    /// <summary>Percent rise in average duration or CPU that the Query Regressions page flags.</summary>
+    public double RegressionThresholdPct  { get; set; } = RegressionCriteria.DefaultThresholdPct;
+
+    /// <summary>Executions a query needs in each period before the Query Regressions page compares it.</summary>
+    public long   RegressionMinExecutions { get; set; } = RegressionCriteria.DefaultMinExecutions;
+
+    /// <summary>The saved Query Regressions criteria.</summary>
+    public RegressionCriteria RegressionCriteria => new(RegressionThresholdPct, RegressionMinExecutions);
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;
