@@ -3,7 +3,7 @@
 A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
 Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
 
-Current version: **0.30.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Current version: **0.31.1** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -130,9 +130,9 @@ All paths are relative to the repository root.
     │   │   ├── IRefreshable.cs            ← Interface every page must implement
     │   │   └── ...Page.xaml/.cs           ← One file pair per screen
     │   ├── Controls/                      ← ProcessMapControl, GridFilterBox (grid filter box),
-    │   │                                     TimeRangePicker (Live / 1h / 24h / 7d / Custom on trend pages)
+    │   │                                     TimeRangePicker (Live / 1h / 24h / 7d / Custom and Compare to baseline on trend pages)
     │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
-    │   ├── Helpers/                       ← ChartTheme, ClipboardHelper, DataGridExport (grid right-click menu),
+    │   ├── Helpers/                       ← ChartTheme, BaselineSeries (dashed baseline lines), ClipboardHelper, DataGridExport (grid right-click menu),
     │   │                                     DataGridRefresh (reload a grid keeping its sort and filter)
     │   ├── Services/
     │   │   ├── AppLog.cs                  ← Daily diagnostic log in %AppData%\SqlVitals\logs (14-day retention)
@@ -140,7 +140,7 @@ All paths are relative to the repository root.
     │   │   ├── RepositoryFactory.cs       ← Builds the repository for the active connection
     │   │   ├── MonitoringManager.cs       ← Background live-metrics collectors, one per connection
     │   │   ├── MonitoringSession.cs
-    │   │   ├── ConnectionHistory.cs       ← A connection's history for the trend pages; reads off the UI thread
+    │   │   ├── ConnectionHistory.cs       ← A connection's history for the trend pages; reads off the UI thread; BaselineTracker
     │   │   └── ExportService.cs           ← Concurrent multi-group AI export
     │   └── Styles/
     │       ├── Theme.xaml
@@ -164,7 +164,8 @@ All paths are relative to the repository root.
     │   │   ├── HistoryRecorder.cs         ← Per connection: queues samples, takes detail snapshots
     │   │   ├── HistoryDetailTracker.cs    ← Turns cumulative DMV totals into per-interval changes
     │   │   ├── HistoryReader.cs           ← Read-only: past ranges for the trend pages, averaged into buckets
-    │   │   └── HistoryRange.cs, HistoryGaps.cs ← Range picker choices, bucket sizes; where a chart breaks its line
+    │   │   ├── HistoryRange.cs, HistoryGaps.cs ← Range picker choices, bucket sizes; where a chart breaks its line
+    │   │   └── HistoryBaseline.cs         ← The same time last week, lined up under the current data
     │   ├── Scripting/
     │   │   ├── UnusedIndexDropScript.cs   ← Builds the Index Health DROP script
     │   │   ├── MissingIndexCreateScript.cs ← Builds the Index Health CREATE script
@@ -341,6 +342,17 @@ so it's there after a restart, and for time when the page wasn't open.
 - History is read on a background thread, through its own short-lived connection to the file, so it never holds up the UI or the history writer.
 - Needs a saved connection. The ad-hoc one isn't recorded, so the picker's history choices are disabled for it.
 
+### Compare to a baseline
+
+**Compare to baseline**, next to the range picker, overlays **the same time last week** on the trend charts to show whether now is unusual.
+It works live and on any past range.
+
+- **How it looks:** each line gets a dashed, faded twin in its own colour, named *"… · last week"* in the legend and tooltip. On Live Metrics' stacked waits chart it's one dashed *Total waits · last week* line, set against the top of the stack. It adds up only the wait categories that are ticked.
+- **Same wall-clock time:** 09:00 today is compared with 09:00 last week, even across a daylight-saving change. Wait Trend and Perfmon use this PC's clock; Live Metrics uses the server's clock, as its charts do.
+- **Lined up with the chart:** the baseline uses the chart's bucket size and covers only the times the chart shows. Live, that is the live window so far, so the axis doesn't stretch. Last week's gaps stay gaps. Where nothing was recorded, there's no line, and the status line says so.
+- **Live**, the baseline is read with half an hour to spare on each side, and read again only when the live window runs past it.
+- Needs a saved connection with a week of history, like the past ranges above.
+
 ---
 
 ## How to Build & Run
@@ -449,7 +461,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.30.1.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.31.1.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.

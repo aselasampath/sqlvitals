@@ -92,8 +92,9 @@
                        VerticalAlignment="Center" Margin="0,0,0,0"/>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                         VerticalAlignment="Center">
-        <!-- Range: live, or a past range from the monitoring history -->
-        <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0" RangeChanged="RangePicker_RangeChanged"/>
+        <!-- Range: live, or a past range from the monitoring history; and the baseline -->
+        <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0" RangeChanged="RangePicker_RangeChanged"
+                                  BaselineChanged="RangePicker_BaselineChanged"/>
         <!-- Auto-refresh: collection (and recording) continues while a past range is shown -->
         <TextBlock Text="Auto-refresh:" Foreground="{StaticResource TextMuted}"
                            VerticalAlignment="Center" Margin="0,0,6,0"

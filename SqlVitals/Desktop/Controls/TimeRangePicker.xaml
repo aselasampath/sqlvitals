@@ -38,6 +38,39 @@
             </Setter>
         </Style>
 
+        <!-- On/off switch in the same look as the range buttons. -->
+        <Style x:Key="ToggleChip" TargetType="ToggleButton">
+            <Setter Property="Height"      Value="24" />
+            <Setter Property="Padding"     Value="8,0" />
+            <Setter Property="FontFamily"  Value="Segoe UI" />
+            <Setter Property="FontSize"    Value="11" />
+            <Setter Property="Cursor"      Value="Hand" />
+            <Setter Property="Foreground"  Value="{DynamicResource TextMuted}" />
+            <Setter Property="Background"  Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Accent}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="FieldLabel" TargetType="TextBlock">
             <Setter Property="Foreground"        Value="{DynamicResource TextMuted}" />
             <Setter Property="FontFamily"        Value="Segoe UI" />
@@ -61,67 +94,77 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid>
-        <Border Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
-                BorderThickness="1" CornerRadius="4" Padding="2">
-            <StackPanel Orientation="Horizontal">
-                <RadioButton x:Name="BtnLive"   Content="Live"   Style="{StaticResource RangeButton}" IsChecked="True"
-                             Click="Preset_Click" ToolTip="Live data, collected as you watch" />
-                <RadioButton x:Name="BtnHour"   Content="1h"     Style="{StaticResource RangeButton}"
-                             Click="Preset_Click" ToolTip="The last hour, from the monitoring history" />
-                <RadioButton x:Name="BtnDay"    Content="24h"    Style="{StaticResource RangeButton}"
-                             Click="Preset_Click" ToolTip="The last 24 hours, from the monitoring history" />
-                <RadioButton x:Name="BtnWeek"   Content="7d"     Style="{StaticResource RangeButton}"
-                             Click="Preset_Click" ToolTip="The last 7 days, from the monitoring history" />
-                <RadioButton x:Name="BtnCustom" Content="Custom…" Style="{StaticResource RangeButton}"
-                             Click="Custom_Click" ToolTip="Pick a start and end from the monitoring history" />
-            </StackPanel>
-        </Border>
-
-        <!-- Stays open until Show, Cancel or Esc: with StaysOpen=False a click in a date's
-             calendar, itself a popup, would close this one. -->
-        <Popup x:Name="CustomPopup" PlacementTarget="{Binding ElementName=BtnCustom}" Placement="Bottom"
-               StaysOpen="True" AllowsTransparency="True" VerticalOffset="4" Closed="CustomPopup_Closed">
+    <StackPanel Orientation="Horizontal">
+        <Grid>
             <Border Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
-                    BorderThickness="1" CornerRadius="4" Padding="12" Width="300"
-                    PreviewKeyDown="CustomPopup_PreviewKeyDown">
-                <StackPanel>
-                    <TextBlock Text="Custom range" Foreground="{DynamicResource TextPrimary}"
-                               FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,10" />
-
-                    <Grid Margin="0,0,0,6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="40" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="From" Style="{StaticResource FieldLabel}" />
-                        <DatePicker x:Name="FromDate" Grid.Column="1" Height="24" FontSize="12" />
-                        <TextBox x:Name="FromTime" Grid.Column="2" Style="{StaticResource TimeBox}" />
-                    </Grid>
-
-                    <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="40" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="To" Style="{StaticResource FieldLabel}" />
-                        <DatePicker x:Name="ToDate" Grid.Column="1" Height="24" FontSize="12" />
-                        <TextBox x:Name="ToTime" Grid.Column="2" Style="{StaticResource TimeBox}" />
-                    </Grid>
-
-                    <TextBlock x:Name="TxtError" Foreground="{DynamicResource Danger}" FontFamily="Segoe UI" FontSize="11"
-                               TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed" />
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Content="Cancel" Style="{DynamicResource SecondaryButton}" Padding="12,4" Margin="0,0,6,0"
-                                Click="CustomCancel_Click" />
-                        <Button Content="Show" Style="{DynamicResource RefreshButton}" Padding="12,4"
-                                Click="CustomApply_Click" />
-                    </StackPanel>
+                    BorderThickness="1" CornerRadius="4" Padding="2">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="BtnLive"   Content="Live"   Style="{StaticResource RangeButton}" IsChecked="True"
+                                 Click="Preset_Click" ToolTip="Live data, collected as you watch" />
+                    <RadioButton x:Name="BtnHour"   Content="1h"     Style="{StaticResource RangeButton}"
+                                 Click="Preset_Click" ToolTip="The last hour, from the monitoring history" />
+                    <RadioButton x:Name="BtnDay"    Content="24h"    Style="{StaticResource RangeButton}"
+                                 Click="Preset_Click" ToolTip="The last 24 hours, from the monitoring history" />
+                    <RadioButton x:Name="BtnWeek"   Content="7d"     Style="{StaticResource RangeButton}"
+                                 Click="Preset_Click" ToolTip="The last 7 days, from the monitoring history" />
+                    <RadioButton x:Name="BtnCustom" Content="Custom…" Style="{StaticResource RangeButton}"
+                                 Click="Custom_Click" ToolTip="Pick a start and end from the monitoring history" />
                 </StackPanel>
             </Border>
-        </Popup>
-    </Grid>
+
+            <!-- Stays open until Show, Cancel or Esc: with StaysOpen=False a click in a date's
+                 calendar, itself a popup, would close this one. -->
+            <Popup x:Name="CustomPopup" PlacementTarget="{Binding ElementName=BtnCustom}" Placement="Bottom"
+                   StaysOpen="True" AllowsTransparency="True" VerticalOffset="4" Closed="CustomPopup_Closed">
+                <Border Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
+                        BorderThickness="1" CornerRadius="4" Padding="12" Width="300"
+                        PreviewKeyDown="CustomPopup_PreviewKeyDown">
+                    <StackPanel>
+                        <TextBlock Text="Custom range" Foreground="{DynamicResource TextPrimary}"
+                                   FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="From" Style="{StaticResource FieldLabel}" />
+                            <DatePicker x:Name="FromDate" Grid.Column="1" Height="24" FontSize="12" />
+                            <TextBox x:Name="FromTime" Grid.Column="2" Style="{StaticResource TimeBox}" />
+                        </Grid>
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="To" Style="{StaticResource FieldLabel}" />
+                            <DatePicker x:Name="ToDate" Grid.Column="1" Height="24" FontSize="12" />
+                            <TextBox x:Name="ToTime" Grid.Column="2" Style="{StaticResource TimeBox}" />
+                        </Grid>
+
+                        <TextBlock x:Name="TxtError" Foreground="{DynamicResource Danger}" FontFamily="Segoe UI" FontSize="11"
+                                   TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="Cancel" Style="{DynamicResource SecondaryButton}" Padding="12,4" Margin="0,0,6,0"
+                                    Click="CustomCancel_Click" />
+                            <Button Content="Show" Style="{DynamicResource RefreshButton}" Padding="12,4"
+                                    Click="CustomApply_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
+        </Grid>
+
+        <!-- Overlays the same time last week, live or on a past range -->
+        <Border Margin="6,0,0,0" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
+                BorderThickness="1" CornerRadius="4" Padding="2">
+            <ToggleButton x:Name="BtnBaseline" Content="Compare to baseline" Style="{StaticResource ToggleChip}"
+                          Checked="Baseline_Changed" Unchecked="Baseline_Changed"
+                          ToolTip="Overlay the same time last week as dashed lines, to see whether now is unusual" />
+        </Border>
+    </StackPanel>
 </UserControl>
