@@ -57,6 +57,24 @@ public class LiveMetricSampleTests
     }
 
     [Fact]
+    public void From_CarriesTheHealthGauges()
+    {
+        var snap = Snap(T0) with
+        {
+            BlockedSessions = 2, LongestBlockMs = 45_500,
+            LogUsedPct = 72, LogUsedDatabase = "Sales", TempDbUsedPct = 33.3,
+        };
+
+        var sample = LiveMetricSample.From(null, snap);
+
+        Assert.Equal(2, sample.BlockedSessions);
+        Assert.Equal(45.5, sample.LongestBlockSec);
+        Assert.Equal(72, sample.LogUsedPct);
+        Assert.Equal("Sales", sample.LogUsedDatabase);
+        Assert.Equal(33.3, sample.TempDbUsedPct);
+    }
+
+    [Fact]
     public void Evaluate_HealthyWhenNothingIsAboveThreshold()
     {
         var (level, reasons) = HealthRules.Evaluate(LiveMetricSample.From(null, Snap(T0, cpuPct: 20)));

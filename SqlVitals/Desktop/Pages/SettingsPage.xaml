@@ -1,6 +1,7 @@
 <Page x:Class="SqlVitals.Desktop.Pages.SettingsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}"
       FontFamily="Segoe UI">
 
@@ -170,7 +171,20 @@
                             <RowDefinition Height="Auto" />  <!-- 7 Trust server cert -->
                             <RowDefinition Height="Auto" />  <!-- 8 Connection name -->
                             <RowDefinition Height="Auto" />  <!-- 9 Monitor in background -->
+                            <RowDefinition Height="Auto" />  <!-- 10 Custom health thresholds -->
+                            <RowDefinition Height="Auto" />  <!-- 11 This connection's thresholds -->
                         </Grid.RowDefinitions>
+
+                        <!-- Custom health thresholds -->
+                        <StackPanel Grid.Row="10" Grid.Column="1" Margin="0,12,0,0">
+                            <CheckBox x:Name="ChkCustomThresholds" Content="Use its own health thresholds"
+                                      Checked="ChkCustomThresholds_Changed" Unchecked="ChkCustomThresholds_Changed" />
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Grade this connection's health dot on its own thresholds instead of the ones under Health Thresholds below, e.g. for a server that always runs hot." />
+                        </StackPanel>
+                        <controls:HealthThresholdsEditor x:Name="ConnectionThresholds"
+                                                         Grid.Row="11" Grid.ColumnSpan="2" Margin="0,12,0,0"
+                                                         Visibility="Collapsed" />
 
                         <!-- Monitor in background -->
                         <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,12,0,0">
@@ -363,6 +377,35 @@
                     </DockPanel>
 
                     <TextBlock x:Name="TxtHistoryStatus"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+
+            <!-- Health thresholds card -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="Health Thresholds"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="When the health dot beside each connection in the sidebar turns amber or red. Leave a box blank to turn that level off. A connection can use its own thresholds instead (Use its own health thresholds, above)."
+                               Foreground="{StaticResource TextMuted}" FontSize="10"
+                               TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                    <controls:HealthThresholdsEditor x:Name="GlobalThresholds" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button x:Name="BtnSaveThresholds" Style="{StaticResource SecondaryButton}"
+                                Padding="12,5" Margin="0,0,8,0" Click="BtnSaveThresholds_Click"
+                                Content="💾  Save thresholds" />
+                        <Button x:Name="BtnDefaultThresholds" Style="{StaticResource SecondaryButton}"
+                                Padding="12,5" Click="BtnDefaultThresholds_Click"
+                                ToolTip="Put the default thresholds back in the boxes. Click Save thresholds to use them."
+                                Content="↺  Defaults" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="TxtThresholdsStatus"
                                FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
                                Visibility="Collapsed" />
                 </StackPanel>

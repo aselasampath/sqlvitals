@@ -34,5 +34,12 @@ public record LiveMetricSnapshot(
     long LockWaitMs,
     long MemoryWaitMs,
     long NetworkWaitMs,
-    long OtherWaitMs
+    long OtherWaitMs,
+
+    // Health indicators (gauges; zero when the server doesn't report them)
+    int     BlockedSessions   = 0,
+    long    LongestBlockMs    = 0,
+    double  LogUsedPct        = 0,     // the fullest transaction log on the server
+    string? LogUsedDatabase   = null,
+    double  TempDbUsedPct     = 0      // TempDB data files, of their current size
 );

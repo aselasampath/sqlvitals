@@ -67,6 +67,17 @@ public sealed class MonitoringManager : IDisposable
                 recorder.DetailInterval = _detailInterval;
     }
 
+    /// <summary>
+    /// Gives every running session its connection's health thresholds (its own, or the ones in
+    /// Settings). The dots update straight away.
+    /// </summary>
+    public void ApplyHealthThresholds(ConnectionStore store)
+    {
+        foreach (var conn in store.Connections)
+            if (_sessions.TryGetValue(conn.Id, out var session))
+                session.Thresholds = store.ThresholdsFor(conn);
+    }
+
     /// <summary>Starts, stops or recreates sessions to match the saved connections.</summary>
     public void Sync(ConnectionStore store)
     {
@@ -120,7 +131,10 @@ public sealed class MonitoringManager : IDisposable
             var session = new MonitoringSession(
                 id, repo, RepositoryFactory.Fingerprint(conn, store.CommandTimeoutSeconds),
                 _intervals.TryGetValue(id, out var seconds) ? seconds : MonitoringSession.DefaultIntervalSeconds,
-                recorder);
+                recorder)
+            {
+                Thresholds = store.ThresholdsFor(conn),
+            };
 
             session.StateChanged += OnSessionStateChanged;
             _sessions[id] = session;
@@ -128,6 +142,9 @@ public sealed class MonitoringManager : IDisposable
             if (!_paused.Contains(id))
                 session.Start();
         }
+
+        // Thresholds aren't part of the fingerprint, so an edit reaches the running sessions here.
+        ApplyHealthThresholds(store);
 
         // Forget preferences for connections that were deleted.
         var existing = store.Connections.Select(c => c.Id).ToHashSet();

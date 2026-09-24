@@ -1414,6 +1414,25 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                    AND record LIKE '%<SystemHealth>%'
                  ) AS x
                  ORDER BY timestamp DESC) AS SqlCpuUtilizationPct,
+                -- Health indicators: blocking, the fullest log, TempDB data space
+                (SELECT COUNT(*) FROM sys.dm_exec_requests
+                 WHERE blocking_session_id > 0 AND blocking_session_id <> session_id) AS BlockedSessions,
+                (SELECT MAX(wait_time) FROM sys.dm_exec_requests
+                 WHERE blocking_session_id > 0 AND blocking_session_id <> session_id) AS LongestBlockMs,
+                (SELECT TOP (1) cntr_value FROM sys.dm_os_performance_counters
+                 WHERE counter_name='Percent Log Used' AND object_name LIKE '%:Databases%'
+                   AND instance_name NOT IN ('_Total','mssqlsystemresource')
+                 ORDER BY cntr_value DESC, instance_name) AS LogUsedPct,
+                (SELECT TOP (1) RTRIM(instance_name) FROM sys.dm_os_performance_counters
+                 WHERE counter_name='Percent Log Used' AND object_name LIKE '%:Databases%'
+                   AND instance_name NOT IN ('_Total','mssqlsystemresource')
+                 ORDER BY cntr_value DESC, instance_name) AS LogUsedDatabase,
+                (SELECT TOP (1) CAST(100.0 - f.cntr_value * 100.0 / NULLIF(s.cntr_value,0) AS DECIMAL(10,2))
+                 FROM sys.dm_os_performance_counters f
+                 CROSS JOIN sys.dm_os_performance_counters s
+                 WHERE f.counter_name='Free Space in tempdb (KB)' AND f.object_name LIKE '%:Transactions%'
+                   AND s.counter_name='Data File(s) Size (KB)' AND s.object_name LIKE '%:Databases%'
+                   AND s.instance_name='tempdb') AS TempDbUsedPct,
                 -- Cumulative specific waits (caller will diff these)
                 (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('SOS_SCHEDULER_YIELD','THREADPOOL','CMEMTHREAD','CMEMPARTITIONED','EE_PMOLOCK','EXCHANGE','CXPACKET','CXCONSUMER','CXSYNC_PORT','CXSYNC_CONSUMER')) AS CpuWaitMs,
                 (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('ASYNC_IO_COMPLETION','IO_COMPLETION','PAGEIOLATCH_SH','PAGEIOLATCH_EX','PAGEIOLATCH_UP','PAGEIOLATCH_NL','PAGEIOLATCH_DT','PAGEIOLATCH_KP','WRITELOG','WRITE_COMPLETION','IO_QUEUE_LIMIT','IO_RETRY','BACKUPIO','BACKUPBUFFER','BACKUPTHREAD','LOGMGR','LOGMGR_QUEUE','LOGMGR_FLUSH','LOGMGR_RESERVE_APPEND','LOG_RATE_GOVERNOR')) AS IoWaitMs,
@@ -1448,7 +1467,12 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             (long)(r.PageLifeExpectancy ?? 0),
             (long)(r.MemoryGrantsPending ?? 0),
             Convert.ToDouble(r.BufferCacheHitRatio ?? 0),
-            total, cpu, io, lockWait, mem, net, other
+            total, cpu, io, lockWait, mem, net, other,
+            BlockedSessions: Convert.ToInt32(r.BlockedSessions ?? 0),
+            LongestBlockMs:  Convert.ToInt64(r.LongestBlockMs ?? 0),
+            LogUsedPct:      Convert.ToDouble(r.LogUsedPct ?? 0),
+            LogUsedDatabase: (string?)r.LogUsedDatabase,
+            TempDbUsedPct:   Math.Clamp(Convert.ToDouble(r.TempDbUsedPct ?? 0), 0, 100)
         );
     }
 
