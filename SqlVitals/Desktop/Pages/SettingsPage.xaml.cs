@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 using SqlVitals.Desktop;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -22,6 +23,9 @@ public partial class SettingsPage : Page
     private bool _isLoadingHistorySettings;
     private int  _savedIntervalMinutes;
     private int  _savedRetentionDays;
+
+    // The saved thresholds every connection without its own uses.
+    private HealthThresholds _globalThresholds = HealthThresholds.Default;
 
     // Tells the running app the saved connections changed so it can pick up a new or edited
     // active connection. The bool asks it to open the dashboard afterwards.
@@ -53,6 +57,8 @@ public partial class SettingsPage : Page
         var store = _service.Load();
         TxtTimeout.Text = store.CommandTimeoutSeconds.ToString();
         LoadHistorySettings(store);
+        _globalThresholds = store.HealthThresholds;
+        GlobalThresholds.Show(_globalThresholds);
         _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
         Loaded   += (_, _) => { UpdateHistorySize(); _historySizeTimer.Start(); };
         Unloaded += (_, _) => _historySizeTimer.Stop();
@@ -169,6 +175,16 @@ public partial class SettingsPage : Page
     {
         if (!TryReadInputs(out var settings))
             return;
+
+        if (ChkCustomThresholds.IsChecked == true)
+        {
+            if (!ConnectionThresholds.TryRead(out var thresholds, out var thresholdError))
+            {
+                SetStatus($"This connection's health thresholds — {thresholdError}", success: false);
+                return;
+            }
+            settings.HealthThresholds = thresholds;
+        }
 
         var store = _service.Load();
         var duplicate = store.Connections.FirstOrDefault(c =>
@@ -422,6 +438,55 @@ public partial class SettingsPage : Page
 
     private static string MinutesText(int minutes) => minutes == 1 ? "1 minute" : $"{minutes} minutes";
 
+    // ── Health thresholds ─────────────────────────────────────────────────────
+
+    private void BtnSaveThresholds_Click(object sender, RoutedEventArgs e)
+    {
+        if (!GlobalThresholds.TryRead(out var thresholds, out var error))
+        {
+            ShowStatus(TxtThresholdsStatus, error, success: false);
+            return;
+        }
+
+        try
+        {
+            _service.SetHealthThresholds(thresholds!);
+            var store = _service.Load();
+            _monitoring.ApplyHealthThresholds(store);
+            _globalThresholds = store.HealthThresholds;
+
+            // A connection without its own thresholds shows the shared ones in the form.
+            if (ChkCustomThresholds.IsChecked != true)
+                ConnectionThresholds.Show(_globalThresholds);
+
+            var own = store.Connections.Count(c => c.HealthThresholds is not null);
+            ShowStatus(TxtThresholdsStatus,
+                own == 0
+                    ? "Saved. Every connection's health dot now uses these thresholds."
+                    : $"Saved. Every connection's health dot now uses these thresholds, except {own} with its own.",
+                success: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtThresholdsStatus, $"Could not save the thresholds: {ex.Message}", success: false);
+        }
+    }
+
+    private void BtnDefaultThresholds_Click(object sender, RoutedEventArgs e)
+    {
+        GlobalThresholds.Show(HealthThresholds.Default);
+        ShowStatus(TxtThresholdsStatus, "Defaults restored in the boxes. Click Save thresholds to use them.", success: null);
+    }
+
+    private void ChkCustomThresholds_Changed(object sender, RoutedEventArgs e)
+    {
+        // Fires during InitializeComponent, before the editor below exists.
+        if (ConnectionThresholds is null)
+            return;
+
+        ConnectionThresholds.Visibility = ChkCustomThresholds.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     // ── Form ──────────────────────────────────────────────────────────────────
 
     private void LoadIntoForm(ConnectionSettings settings)
@@ -442,6 +507,10 @@ public partial class SettingsPage : Page
         TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
         TxtAdditionalParameters.Text        = settings.AdditionalParameters;
         ChkMonitorInBackground.IsChecked    = settings.MonitorInBackground;
+
+        // Starts from the shared thresholds, so ticking the box begins from what the dot uses now.
+        ConnectionThresholds.Show(settings.HealthThresholds ?? _globalThresholds);
+        ChkCustomThresholds.IsChecked       = settings.HealthThresholds is not null;
 
         _databaseListSource = null;
         ApplyAuthenticationLayout();

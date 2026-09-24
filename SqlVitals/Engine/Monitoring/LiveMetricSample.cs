@@ -33,7 +33,14 @@ public sealed record LiveMetricSample(
     // Memory gauges
     double PageLifeExpectancySec,
     double MemoryGrantsPending,
-    double BufferCacheHitRatio)
+    double BufferCacheHitRatio,
+
+    // Health gauges, not kept in the history
+    double  BlockedSessions = 0,
+    double  LongestBlockSec = 0,
+    double  LogUsedPct      = 0,
+    string? LogUsedDatabase = null,
+    double  TempDbUsedPct   = 0)
 {
     /// <summary>
     /// Builds a sample from the current snapshot and the one before it. Rates are zero for the
@@ -67,7 +74,12 @@ public sealed record LiveMetricSample(
             PhysicalWritesPerSec:  Rate(current.PhysicalWritesPerSec,    previous?.PhysicalWritesPerSec    ?? 0),
             PageLifeExpectancySec: current.PageLifeExpectancy,
             MemoryGrantsPending:   current.MemoryGrantsPending,
-            BufferCacheHitRatio:   current.BufferCacheHitRatio);
+            BufferCacheHitRatio:   current.BufferCacheHitRatio,
+            BlockedSessions:       current.BlockedSessions,
+            LongestBlockSec:       current.LongestBlockMs / 1000.0,
+            LogUsedPct:            current.LogUsedPct,
+            LogUsedDatabase:       current.LogUsedDatabase,
+            TempDbUsedPct:         current.TempDbUsedPct);
     }
 }
 
@@ -85,37 +97,65 @@ public enum HealthLevel
 /// <summary>Traffic-light rules applied to each background sample.</summary>
 public static class HealthRules
 {
-    public const double CpuWarningPct  = 75;
-    public const double CpuCriticalPct = 90;
+    /// <summary>Grades a sample on the default thresholds.</summary>
+    public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample) =>
+        Evaluate(sample, HealthThresholds.Default);
 
-    /// <summary>The classic 300 s page life expectancy floor for buffer pool pressure.</summary>
-    public const double PleWarningSec  = 300;
-
-    public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample)
+    /// <summary>
+    /// Grades a sample: the worst level any indicator reached, and one reason per indicator
+    /// past its warning or critical threshold.
+    /// </summary>
+    public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample, HealthThresholds thresholds)
     {
         var reasons = new List<string>();
         var level   = HealthLevel.Healthy;
 
-        void Raise(HealthLevel to, string reason)
+        void Check(HealthIndicator indicator, double value, Func<string> reason)
         {
-            reasons.Add(reason);
+            var info      = HealthThresholds.Info(indicator);
+            var threshold = thresholds.Get(indicator);
+
+            bool Past(double? limit) =>
+                limit is { } l && (info.LowerIsWorse ? value < l : value >= l);
+
+            var to = Past(threshold.Critical) ? HealthLevel.Critical
+                   : Past(threshold.Warning)  ? HealthLevel.Warning
+                   : HealthLevel.Healthy;
+            if (to == HealthLevel.Healthy)
+                return;
+
+            reasons.Add(reason());
             if (to > level) level = to;
         }
 
-        if (sample.SqlCpuPct >= CpuCriticalPct)
-            Raise(HealthLevel.Critical, $"CPU {sample.SqlCpuPct:0}%");
-        else if (sample.SqlCpuPct >= CpuWarningPct)
-            Raise(HealthLevel.Warning, $"CPU {sample.SqlCpuPct:0}%");
+        Check(HealthIndicator.Cpu, sample.SqlCpuPct, () => $"CPU {sample.SqlCpuPct:0}%");
 
-        if (sample.MemoryGrantsPending > 0)
-            Raise(HealthLevel.Warning, $"{sample.MemoryGrantsPending:0} memory grant(s) pending");
+        if (sample.BlockedSessions > 0)
+            Check(HealthIndicator.Blocking, sample.LongestBlockSec,
+                  () => $"Blocking {FormatSeconds(sample.LongestBlockSec)} ({sample.BlockedSessions:0} blocked)");
 
         // Zero means the counter wasn't reported (some Azure SQL tiers), not an empty buffer pool.
-        if (sample.PageLifeExpectancySec > 0 && sample.PageLifeExpectancySec < PleWarningSec)
-            Raise(HealthLevel.Warning, $"PLE {sample.PageLifeExpectancySec:0}s");
+        if (sample.PageLifeExpectancySec > 0)
+            Check(HealthIndicator.PageLifeExpectancy, sample.PageLifeExpectancySec,
+                  () => $"PLE {sample.PageLifeExpectancySec:0}s");
+
+        Check(HealthIndicator.MemoryGrantsPending, sample.MemoryGrantsPending,
+              () => $"{sample.MemoryGrantsPending:0} memory grant(s) pending");
+
+        Check(HealthIndicator.LogSpace, sample.LogUsedPct,
+              () => string.IsNullOrWhiteSpace(sample.LogUsedDatabase)
+                  ? $"Log {sample.LogUsedPct:0}% full"
+                  : $"Log {sample.LogUsedPct:0}% full ({sample.LogUsedDatabase})");
+
+        // Zero means TempDB's counters weren't reported (Azure SQL Database).
+        if (sample.TempDbUsedPct > 0)
+            Check(HealthIndicator.TempDbSpace, sample.TempDbUsedPct, () => $"TempDB {sample.TempDbUsedPct:0}% full");
 
         return (level, reasons);
     }
+
+    private static string FormatSeconds(double seconds) =>
+        seconds < 60 ? $"{seconds:0}s" : $"{seconds / 60:0.#} min";
 
     /// <summary>
     /// Delay before the next collection. Doubles per consecutive failure, capped at five minutes,

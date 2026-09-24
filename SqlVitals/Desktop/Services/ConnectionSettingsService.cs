@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Regressions;
 
 namespace SqlVitals.Desktop.Services;
@@ -40,6 +41,8 @@ public class ConnectionSettingsService
         foreach (var conn in store.Connections)
         {
             conn.CommandTimeoutSeconds = store.CommandTimeoutSeconds;
+            if (conn.HealthThresholds is not null)
+                conn.HealthThresholds = HealthThresholds.Normalize(conn.HealthThresholds);
             if (string.IsNullOrEmpty(conn.Password) && _sessionPasswords.TryGetValue(conn.Id, out var pwd))
                 conn.Password = pwd;
         }
@@ -101,6 +104,14 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves the health-dot thresholds used by every connection without its own.</summary>
+    public void SetHealthThresholds(HealthThresholds thresholds)
+    {
+        var store = Load();
+        store.HealthThresholds = HealthThresholds.Normalize(thresholds);
+        Save(store);
+    }
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id)
     {
@@ -139,6 +150,7 @@ public class ConnectionSettingsService
                 HistoryRetentionDays   = HistorySettings.NormalizeRetention(raw.HistoryRetentionDays),
                 RegressionThresholdPct  = RegressionCriteria.NormalizeThreshold(raw.RegressionThresholdPct),
                 RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(raw.RegressionMinExecutions),
+                HealthThresholds        = HealthThresholds.Normalize(raw.HealthThresholds),
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -206,6 +218,7 @@ public class ConnectionSettingsService
             HistoryRetentionDays   = store.HistoryRetentionDays,
             RegressionThresholdPct  = store.RegressionThresholdPct,
             RegressionMinExecutions = store.RegressionMinExecutions,
+            HealthThresholds        = store.HealthThresholds,
         };
 
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
@@ -240,6 +253,7 @@ public class ConnectionSettingsService
         public int     HistoryRetentionDays      { get; set; } = HistorySettings.DefaultRetentionDays;
         public double  RegressionThresholdPct    { get; set; } = RegressionCriteria.DefaultThresholdPct;
         public long    RegressionMinExecutions   { get; set; } = RegressionCriteria.DefaultMinExecutions;
+        public HealthThresholds? HealthThresholds { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -268,6 +282,13 @@ public class ConnectionStore
 
     /// <summary>The saved Query Regressions criteria.</summary>
     public RegressionCriteria RegressionCriteria => new(RegressionThresholdPct, RegressionMinExecutions);
+
+    /// <summary>Health-dot thresholds for every connection that doesn't override them.</summary>
+    public HealthThresholds HealthThresholds { get; set; } = HealthThresholds.Default;
+
+    /// <summary>The thresholds a connection's health dot is graded on: its own, or the saved ones.</summary>
+    public HealthThresholds ThresholdsFor(ConnectionSettings connection) =>
+        connection.HealthThresholds ?? HealthThresholds;
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;
@@ -308,6 +329,9 @@ public class ConnectionSettings
 
     /// <summary>Keep collecting live metrics for this connection while another one is active.</summary>
     public bool        MonitorInBackground    { get; set; } = true;
+
+    /// <summary>This connection's own health-dot thresholds; null uses the ones in Settings.</summary>
+    public HealthThresholds? HealthThresholds { get; set; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public int CommandTimeoutSeconds { get; set; } = 30;

@@ -30,6 +30,8 @@ public sealed class MonitoringSession : IDisposable
     private int                             _consecutiveFailures;
     private DateTime                        _nextDueUtc;
     private int                             _intervalSeconds;
+    private HealthThresholds                _thresholds = HealthThresholds.Default;
+    private DateTime                        _lastSuccess;
     private bool                            _disposed;
 
     /// <param name="history">
@@ -79,6 +81,25 @@ public sealed class MonitoringSession : IDisposable
             _intervalSeconds = seconds;
             _nextDueUtc = DateTime.UtcNow + CurrentDelay();
             StateChanged?.Invoke(this);
+        }
+    }
+
+    /// <summary>
+    /// What the health dot is graded on. A change re-grades the latest sample straight away,
+    /// rather than at the next collection.
+    /// </summary>
+    public HealthThresholds Thresholds
+    {
+        get => _thresholds;
+        set
+        {
+            if (value == _thresholds) return;
+            _thresholds = value;
+            if (_consecutiveFailures == 0 && _samples.Count > 0)
+            {
+                GradeHealth(_samples[^1]);
+                StateChanged?.Invoke(this);
+            }
         }
     }
 
@@ -166,12 +187,8 @@ public sealed class MonitoringSession : IDisposable
                 _samples.RemoveRange(0, _samples.Count - MaxPoints);
 
             _consecutiveFailures = 0;
-            var (level, reasons) = HealthRules.Evaluate(sample);
-            Health     = level;
-            HealthText = (reasons.Count == 0
-                             ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
-                             : string.Join(" · ", reasons))
-                         + $" · updated {DateTime.Now:HH:mm:ss}";
+            _lastSuccess         = DateTime.Now;
+            GradeHealth(sample);
 
             // Neither call throws or waits on the disk. The first sample's rates are all zero
             // (nothing to diff against), so it isn't history. Details are only read from a
@@ -204,6 +221,16 @@ public sealed class MonitoringSession : IDisposable
             if (!_disposed)
                 StateChanged?.Invoke(this);
         }
+    }
+
+    private void GradeHealth(LiveMetricSample sample)
+    {
+        var (level, reasons) = HealthRules.Evaluate(sample, _thresholds);
+        Health     = level;
+        HealthText = (reasons.Count == 0
+                         ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
+                         : string.Join(" · ", reasons))
+                     + $" · updated {_lastSuccess:HH:mm:ss}";
     }
 
     private TimeSpan CurrentDelay() =>
