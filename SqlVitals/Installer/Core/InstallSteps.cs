@@ -42,7 +42,7 @@ internal sealed class EnsureAppClosedStep : IInstallStep
         if (SystemRequirements.RunningAppProcesses(context.InstallDir).Count > 0)
             throw new InstallStepException(
                 "SqlVitals is open, so its files can't be changed.",
-                "Save any work, close every SqlVitals window, then click Retry.");
+                SystemRequirements.QuitAppAdvice + " Then click Retry.");
     }
 
     public void Rollback(InstallContext context) { }

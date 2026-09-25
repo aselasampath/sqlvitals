@@ -80,6 +80,7 @@ public class ConnectionSettingsService
     {
         var store = Load();
         store.Connections.RemoveAll(c => c.Id == id);
+        store.NotificationsMuted.Remove(id);
         if (store.ActiveConnectionId == id)
             store.ActiveConnectionId = null;
 
@@ -118,6 +119,36 @@ public class ConnectionSettingsService
     {
         var store = Load();
         store.AlertSamples = AlertSettings.NormalizeSamples(samples);
+        Save(store);
+    }
+
+    /// <summary>
+    /// Turns Windows notifications for a connection's alerts off or on. Saved on its own, without
+    /// the connection form, so a server that is down can still be muted.
+    /// </summary>
+    public void SetNotificationsMuted(Guid id, bool muted)
+    {
+        var store = Load();
+        if (muted && store.Connections.Any(c => c.Id == id))
+            store.NotificationsMuted.Add(id);
+        else
+            store.NotificationsMuted.Remove(id);
+        Save(store);
+    }
+
+    /// <summary>Saves whether minimizing or closing the window leaves SqlVitals running in the tray.</summary>
+    public void SetKeepRunningInTray(bool keepRunning)
+    {
+        var store = Load();
+        store.KeepRunningInTray = keepRunning;
+        Save(store);
+    }
+
+    /// <summary>Remembers that the "still running in the tray" notification has been shown once.</summary>
+    public void SetTrayHintShown()
+    {
+        var store = Load();
+        store.TrayHintShown = true;
         Save(store);
     }
 
@@ -161,6 +192,8 @@ public class ConnectionSettingsService
                 RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(raw.RegressionMinExecutions),
                 HealthThresholds        = HealthThresholds.Normalize(raw.HealthThresholds),
                 AlertSamples            = AlertSettings.NormalizeSamples(raw.AlertSamples),
+                KeepRunningInTray       = raw.KeepRunningInTray,
+                TrayHintShown           = raw.TrayHintShown,
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -190,6 +223,10 @@ public class ConnectionSettingsService
                 // old file in place would hand out a different Id on every load.
                 try { Save(store); } catch { /* retried on the next load */ }
             }
+
+            // Only saved connections can be muted; anything else is dropped on the next save.
+            var known = store.Connections.Select(c => c.Id).ToHashSet();
+            store.NotificationsMuted = (raw.NotificationsMuted ?? []).Where(known.Contains).ToHashSet();
 
             // Guard against hand-edited files; persist so the Ids stay stable.
             var missingIds = store.Connections.Where(c => c.Id == Guid.Empty).ToList();
@@ -230,6 +267,9 @@ public class ConnectionSettingsService
             RegressionMinExecutions = store.RegressionMinExecutions,
             HealthThresholds        = store.HealthThresholds,
             AlertSamples            = store.AlertSamples,
+            NotificationsMuted      = store.NotificationsMuted.Count > 0 ? store.NotificationsMuted.ToList() : null,
+            KeepRunningInTray       = store.KeepRunningInTray,
+            TrayHintShown           = store.TrayHintShown,
         };
 
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
@@ -266,6 +306,9 @@ public class ConnectionSettingsService
         public long    RegressionMinExecutions   { get; set; } = RegressionCriteria.DefaultMinExecutions;
         public HealthThresholds? HealthThresholds { get; set; }
         public int     AlertSamples              { get; set; } = AlertSettings.DefaultSamples;
+        public List<Guid>? NotificationsMuted    { get; set; }
+        public bool    KeepRunningInTray         { get; set; } = true;
+        public bool    TrayHintShown             { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -307,6 +350,21 @@ public class ConnectionStore
     /// to normal for it to end; one of <see cref="AlertSettings.SampleChoices"/>.
     /// </summary>
     public int AlertSamples { get; set; } = AlertSettings.DefaultSamples;
+
+    /// <summary>Saved connections whose alerts raise no Windows notification (#35).</summary>
+    public HashSet<Guid> NotificationsMuted { get; set; } = new();
+
+    /// <summary>Whether a connection's alerts raise a Windows notification.</summary>
+    public bool NotifiesFor(Guid connectionId) => !NotificationsMuted.Contains(connectionId);
+
+    /// <summary>
+    /// Minimizing or closing the window hides it to the notification area, and monitoring
+    /// carries on; off, they minimize to the taskbar and exit as usual.
+    /// </summary>
+    public bool KeepRunningInTray { get; set; } = true;
+
+    /// <summary>The one-time "still running in the tray" notification has been shown.</summary>
+    public bool TrayHintShown { get; set; }
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;

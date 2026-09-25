@@ -163,6 +163,14 @@ public static class SystemRequirements
         { NeedsElevation = !input.IsElevated };
     }
 
+    /// <summary>
+    /// How to quit SqlVitals. From 0.35 closing its window can leave it running in the
+    /// notification area, where it's easy to miss.
+    /// </summary>
+    internal const string QuitAppAdvice =
+        "Save any work and close every SqlVitals window. If its icon is still in the notification area " +
+        "(beside the clock; it may be under ^), right-click it and choose Exit.";
+
     internal static RequirementResult CheckNotRunning(IReadOnlyCollection<int> processIds)
     {
         const string name = "SqlVitals not running";
@@ -170,7 +178,7 @@ public static class SystemRequirements
             ? new RequirementResult(name, CheckStatus.Passed, "No running copy of SqlVitals will be affected.")
             : new RequirementResult(name, CheckStatus.Failed,
                 "SqlVitals is open, so its files can't be replaced.",
-                "Save any work, close every SqlVitals window, then click Check again.");
+                QuitAppAdvice + " Then click Check again.");
     }
 
     // ── System probes ─────────────────────────────────────────────────────────
