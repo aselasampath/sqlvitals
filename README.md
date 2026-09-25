@@ -47,7 +47,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.36.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.37.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -76,8 +76,8 @@ quick to start as SSMS.
   notification**.
 - **"What happened at 2 a.m.?"** answered from a local history of metrics, waits, file I/O and top queries, with a
   dashed **same time last week** baseline on the charts.
-- **A visual blocking map** that shows the head blocker (often a sleeping session with an open transaction) and its
-  SQL.
+- **Live blocking chains as a tree**, head blocker at the root and named at the top of the page with how many
+  sessions wait behind it. Often a sleeping session with an open transaction; its last SQL is shown even so.
 - **Maintenance scripts, not guesswork.** Missing and unused indexes, fragmentation and stale statistics become
   `CREATE` / `DROP` / `REBUILD` / `UPDATE STATISTICS` scripts. You review them; SqlVitals never runs them.
 - **Easy to approve for production:** read-only, `READ UNCOMMITTED` reads with timeouts, one light query per server
@@ -169,6 +169,7 @@ SqlVitals connects **directly** to a SQL Server or Azure SQL database and surfac
 live diagnostic data across the app's monitoring screens:
 
 - Wait statistics (cumulative, active, categories, top types)
+- Live blocking chains: each chain drawn as a tree from `blocking_session_id` with the head blocker at the root, the head blockers listed at the top (click one to go to it), a *Blocking chains only* filter, and an auto-refresh whose interval is remembered
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
@@ -328,7 +329,8 @@ All paths are relative to the repository root.
     │   ├── Filtering/
     │   │   └── RowFilter.cs               ← Term parsing and row matching for the grid filter boxes
     │   ├── Monitoring/                    ← LiveMetricSample, HealthRules; HealthThresholds (health-dot thresholds);
-    │   │                                     HealthScore (the 0–100 score and the checks that lowered it)
+    │   │                                     HealthScore (the 0–100 score and the checks that lowered it);
+    │   │                                     BlockingChains (head blockers, chains and the process tree)
     │   ├── Controllers/                   ← REST endpoints (only used if running as API)
     │   ├── Errors/                        ← WaitStatsException
     │   ├── ApiHost.cs / Program.cs        ← Web API host (not used by the desktop app)
@@ -734,7 +736,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.36.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.37.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -785,7 +787,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Alerts | `Alerts` | `AlertsPage` | *(history reads, no server query)* | Every connection's alerts; filter box. See [Alerts](#alerts) |
 | Top Waits | `TopWaits` | `TopWaitsPage` | `GetTopWaitTypesAsync`, `GetCumulativeWaitsAsync` | |
 | Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` | |
-| Processes | `Processes` | `ProcessesPage` | `GetProcessesAsync` | Full-page blocking map with SPID search, session details and its own auto-refresh |
+| Processes | `Processes` | `ProcessesPage` | `GetProcessesAsync` | Blocking chains as trees with the head blockers listed, SPID search, session details and its own remembered auto-refresh |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
@@ -1141,6 +1143,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | Stale statistics | `sys.stats`, `sys.dm_db_stats_properties` |
 | DB files, TempDB files, config | `sys.database_files`, `sys.master_files`, `sys.configurations` |
 | Live metrics, Perfmon | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database) |
+| Processes (blocking chains) | `sys.dm_exec_sessions`, `sys.dm_exec_requests` (`blocking_session_id`), `sys.dm_exec_connections` (a sleeping session's last batch), `sys.dm_exec_sql_text` |
 | Health dot (blocking, log, TempDB) | `sys.dm_exec_requests`, `sys.dm_os_performance_counters` |
 | SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 

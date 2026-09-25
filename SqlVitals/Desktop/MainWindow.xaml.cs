@@ -559,7 +559,7 @@ public partial class MainWindow : Window
             "Alerts"          => new AlertsPage(Monitoring, SettingsService, alertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
-            "Processes"       => new ProcessesPage(Repo),
+            "Processes"       => new ProcessesPage(Repo, SettingsService),
             "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
