@@ -40,6 +40,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     private readonly QueryRegressionRepository _regressions = new(configuration);
 
+    private readonly DeadlockRepository _deadlocks = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1862,4 +1864,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     public Task<string?> GetCachedPlanForQueryHashAsync(string queryHash)
         => _regressions.GetCachedPlanForQueryHashAsync(queryHash);
+
+    // ── Deadlock history (delegated to DeadlockRepository) ────────────
+    public Task<Deadlocks.DeadlockHistory> GetDeadlockHistoryAsync()
+        => _deadlocks.GetDeadlockHistoryAsync();
 }
