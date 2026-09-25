@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4125.3">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT c.Region, COUNT(*) FROM dbo.Orders o JOIN dbo.Customers c ON c.CustomerId = o.CustomerId GROUP BY c.Region" StatementId="1" StatementCompId="1" StatementType="SELECT" RetrievedFromCache="true" StatementSubTreeCost="5" StatementEstRows="4" StatementOptmLevel="FULL">
+          <QueryPlan DegreeOfParallelism="4" MemoryGrant="9856" CachedPlanSize="56" CompileTime="12" CompileCPU="12" CompileMemory="712">
+            <MemoryGrantInfo SerialRequiredMemory="4608" SerialDesiredMemory="9344" RequestedMemory="9856" GrantWaitTime="0" GrantedMemory="9856" MaxUsedMemory="0" MaxQueryMemory="1575216" />
+            <RelOp NodeId="0" PhysicalOp="Parallelism" LogicalOp="Gather Streams" EstimateRows="4" EstimateIO="0" EstimateCPU="0.0285" AvgRowSize="16" EstimatedTotalSubtreeCost="5" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                <ColumnReference Column="Expr1002" />
+              </OutputList>
+              <Parallelism>
+                <RelOp NodeId="1" PhysicalOp="Hash Match" LogicalOp="Aggregate" EstimateRows="4" EstimateIO="0" EstimateCPU="0.35" AvgRowSize="16" EstimatedTotalSubtreeCost="4.9" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                    <ColumnReference Column="Expr1002" />
+                  </OutputList>
+                  <MemoryFractions Input="0.5" Output="1" />
+                  <Hash>
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Column="Expr1002" />
+                        <ScalarOperator ScalarString="COUNT(*)" />
+                      </DefinedValue>
+                    </DefinedValues>
+                    <HashKeysBuild>
+                      <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                    </HashKeysBuild>
+                    <RelOp NodeId="2" PhysicalOp="Parallelism" LogicalOp="Repartition Streams" EstimateRows="200000" EstimateIO="0" EstimateCPU="0.19" AvgRowSize="12" EstimatedTotalSubtreeCost="4.5" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList>
+                        <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                      </OutputList>
+                      <Parallelism PartitioningType="Hash">
+                        <PartitionColumns>
+                          <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                        </PartitionColumns>
+                        <RelOp NodeId="3" PhysicalOp="Hash Match" LogicalOp="Inner Join" EstimateRows="200000" EstimateIO="0" EstimateCPU="0.5" AvgRowSize="12" EstimatedTotalSubtreeCost="4.3" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                          <OutputList>
+                            <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                          </OutputList>
+                          <MemoryFractions Input="1" Output="0.5" />
+                          <Hash BitmapCreator="1">
+                            <DefinedValues />
+                            <HashKeysBuild>
+                              <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="CustomerId" />
+                            </HashKeysBuild>
+                            <HashKeysProbe>
+                              <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="CustomerId" />
+                            </HashKeysProbe>
+                            <ProbeResidual>
+                              <ScalarOperator ScalarString="[SalesDb].[dbo].[Customers].[CustomerId] as [c].[CustomerId]=[SalesDb].[dbo].[Orders].[CustomerId] as [o].[CustomerId]" />
+                            </ProbeResidual>
+                            <RelOp NodeId="4" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="20000" EstimateIO="0.24" EstimateCPU="0.006" AvgRowSize="16" EstimatedTotalSubtreeCost="0.3" TableCardinality="20000" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                              <OutputList>
+                                <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="CustomerId" />
+                                <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Region" />
+                              </OutputList>
+                              <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                <Object Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Index="[PK_Customers]" Alias="[c]" IndexKind="Clustered" Storage="RowStore" />
+                              </IndexScan>
+                            </RelOp>
+                            <RelOp NodeId="5" PhysicalOp="Index Scan" LogicalOp="Index Scan" EstimateRows="200000" EstimateIO="3.2" EstimateCPU="0.055" AvgRowSize="11" EstimatedTotalSubtreeCost="3.5" TableCardinality="200000" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                              <OutputList>
+                                <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="CustomerId" />
+                              </OutputList>
+                              <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[IX_Orders_CustomerId]" Alias="[o]" IndexKind="NonClustered" Storage="RowStore" />
+                              </IndexScan>
+                            </RelOp>
+                          </Hash>
+                        </RelOp>
+                      </Parallelism>
+                    </RelOp>
+                  </Hash>
+                </RelOp>
+              </Parallelism>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

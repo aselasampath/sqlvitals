@@ -1,14 +1,20 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Xml.Linq;
 using Microsoft.Win32;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Engine.ExecutionPlans;
 
 namespace SqlVitals.Desktop.Windows;
 
 public partial class QueryExecutionPlanWindow : Window
 {
+    private const string NoPlanMessage =
+        "No execution plan available — the plan may have been evicted from cache.";
+
     private readonly string? _planXml;
+    private bool _xmlShown;
 
     public QueryExecutionPlanWindow(string? planXml, string? queryText)
     {
@@ -17,17 +23,25 @@ public partial class QueryExecutionPlanWindow : Window
 
         QueryTextPreview.Text = queryText?.Trim();
 
+        PlanView.Show(ShowplanParser.Parse(planXml), NoPlanMessage);
+        BtnExportPng.IsEnabled = PlanView.HasDiagram;
+
         if (string.IsNullOrWhiteSpace(planXml))
         {
             NoPlanHint.Visibility = Visibility.Visible;
             BtnCopy.IsEnabled = false;
             BtnSave.IsEnabled = false;
-            PlanXmlBox.Text = "(No execution plan available — the plan may have been evicted from cache.)";
+            PlanXmlBox.Text = $"({NoPlanMessage})";
+            _xmlShown = true;
         }
-        else
-        {
-            PlanXmlBox.Text = FormatXml(planXml);
-        }
+    }
+
+    // Formatting a large plan takes a moment, so the XML is only laid out when asked for.
+    private void PlanTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, PlanTabs) || _xmlShown || !XmlTab.IsSelected) return;
+        PlanXmlBox.Text = FormatXml(_planXml!);
+        _xmlShown = true;
     }
 
     private static string FormatXml(string xml)
@@ -39,6 +53,34 @@ public partial class QueryExecutionPlanWindow : Window
         catch
         {
             return xml;
+        }
+    }
+
+    private void BtnExportPng_Click(object sender, RoutedEventArgs e)
+    {
+        if (!PlanView.HasDiagram) return;
+
+        var dlg = new SaveFileDialog
+        {
+            Title = "Export Execution Plan Diagram",
+            Filter = "PNG image (*.png)|*.png",
+            FileName = "ExecutionPlan"
+        };
+
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            // Rendering needs the diagram laid out, which it isn't while the XML tab shows.
+            GraphicalTab.IsSelected = true;
+            PlanView.UpdateLayout();
+            PlanView.ExportPng(dlg.FileName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Failed to export the diagram:\n{ex.Message}",
+                "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -65,7 +107,7 @@ public partial class QueryExecutionPlanWindow : Window
         {
             File.WriteAllText(dlg.FileName, _planXml, System.Text.Encoding.UTF8);
             MessageBox.Show(
-                "Plan saved successfully.\nOpen it in SSMS or Azure Data Studio for the graphical view.",
+                "Plan saved successfully.\nIt can also be opened in SSMS or Azure Data Studio.",
                 "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)

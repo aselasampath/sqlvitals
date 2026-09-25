@@ -1,0 +1,139 @@
+<UserControl x:Class="SqlVitals.Desktop.Controls.ExecutionPlanView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:plans="clr-namespace:SqlVitals.Engine.ExecutionPlans;assembly=SqlVitals.Engine"
+             FontFamily="Segoe UI"
+             PreviewKeyDown="View_PreviewKeyDown">
+
+    <UserControl.Resources>
+        <Style x:Key="ToolButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Padding"   Value="10,4" />
+            <Setter Property="MinWidth"  Value="30" />
+            <Setter Property="Margin"    Value="4,0,0,0" />
+        </Style>
+
+        <!-- The theme's ScrollBar style sets Width=6, which squashes a horizontal bar; the
+             diagram is often wider than the window, so give that one a height instead. -->
+        <Style TargetType="ScrollBar" BasedOn="{StaticResource {x:Type ScrollBar}}">
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width"  Value="Auto" />
+                    <Setter Property="Height" Value="8" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="TreeViewItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Padding"    Value="2,1" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
+            <TextBlock x:Name="PlanSummary" DockPanel.Dock="Left" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextMuted}" FontSize="11" />
+
+            <StackPanel x:Name="Toolbar" DockPanel.Dock="Right" Orientation="Horizontal">
+                <TextBlock Text="Find" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="{DynamicResource TextMuted}" FontSize="11" />
+                <TextBox x:Name="FindBox" Width="190" VerticalContentAlignment="Center" Padding="4,3"
+                         Background="{DynamicResource BgCard}" Foreground="{DynamicResource TextPrimary}"
+                         BorderBrush="{DynamicResource Border}" CaretBrush="{DynamicResource TextPrimary}"
+                         TextChanged="FindBox_TextChanged" KeyDown="FindBox_KeyDown"
+                         ToolTip="Highlight operators whose name, object or predicate contains this text (Ctrl+F). Enter goes to the next match, Shift+Enter the previous one, Esc clears." />
+                <TextBlock x:Name="MatchLabel" MinWidth="70" Margin="6,0,10,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMuted}" FontSize="11" />
+
+                <Button x:Name="BtnZoomOut" Content="−" Style="{StaticResource ToolButton}"
+                        Click="BtnZoomOut_Click" ToolTip="Zoom out (Ctrl+minus, or Ctrl+mouse wheel)" />
+                <TextBlock x:Name="ZoomLabel" Text="100%" Width="44" TextAlignment="Center" Margin="4,0,0,0"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" FontSize="11" />
+                <Button x:Name="BtnZoomIn" Content="+" Style="{StaticResource ToolButton}"
+                        Click="BtnZoomIn_Click" ToolTip="Zoom in (Ctrl+plus, or Ctrl+mouse wheel)" />
+                <Button x:Name="BtnZoomFit" Content="Fit" Style="{StaticResource ToolButton}"
+                        Click="BtnZoomFit_Click" ToolTip="Zoom to fit the whole plan" />
+                <Button x:Name="BtnZoomReset" Content="1:1" Style="{StaticResource ToolButton}"
+                        Click="BtnZoomReset_Click" ToolTip="Actual size (Ctrl+0)" />
+            </StackPanel>
+        </DockPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="200" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="320" MinWidth="160" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Diagram -->
+            <Border Grid.Column="0" Background="{DynamicResource BgCard}"
+                    BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <ScrollViewer x:Name="DiagramScroll"
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseWheel="DiagramScroll_PreviewMouseWheel"
+                                  PreviewMouseDown="DiagramScroll_PreviewMouseDown"
+                                  PreviewMouseMove="DiagramScroll_PreviewMouseMove"
+                                  PreviewMouseUp="DiagramScroll_PreviewMouseUp"
+                                  LostMouseCapture="DiagramScroll_LostMouseCapture">
+                        <Border x:Name="ZoomHost" HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <Border.LayoutTransform>
+                                <ScaleTransform x:Name="ZoomTransform" ScaleX="1" ScaleY="1" />
+                            </Border.LayoutTransform>
+                            <StackPanel x:Name="DiagramRoot" Margin="16" Background="Transparent" />
+                        </Border>
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="EmptyMessage" Visibility="Collapsed"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24"
+                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="520"
+                               Foreground="{DynamicResource TextMuted}" FontSize="13" />
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent"
+                          ResizeBehavior="PreviousAndNext" ToolTip="Drag to resize the Properties panel" />
+
+            <!-- Properties -->
+            <Border Grid.Column="2" Background="{DynamicResource BgCard}"
+                    BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="#22808080" CornerRadius="6,6,0,0" Padding="12,6">
+                        <StackPanel>
+                            <TextBlock Text="Properties" Foreground="{DynamicResource TextMuted}"
+                                       FontSize="11" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SelectedTitle" Foreground="{DynamicResource TextPrimary}"
+                                       FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Text="Click an operator to see its properties." TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <TreeView x:Name="PropertiesTree" Background="Transparent" BorderThickness="0" Padding="4"
+                              Foreground="{DynamicResource TextPrimary}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <TreeView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy value" Click="CopyProperty_Click" />
+                            </ContextMenu>
+                        </TreeView.ContextMenu>
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate DataType="{x:Type plans:PlanProperty}"
+                                                      ItemsSource="{Binding Children}">
+                                <TextBlock TextWrapping="Wrap" MaxWidth="260" FontSize="11.5" Margin="0,1">
+                                    <Run Text="{Binding Name, Mode=OneWay}" Foreground="{DynamicResource TextMuted}" />
+                                    <Run Text="{Binding Value, Mode=OneWay}" />
+                                </TextBlock>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

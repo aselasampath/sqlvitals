@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.607" Build="18.0.256.210">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SET @Status = 9" StatementId="1" StatementCompId="3" StatementType="ASSIGN" RetrievedFromCache="true" />
+        <StmtCond StatementText="IF EXISTS (SELECT * FROM dbo.Orders WHERE Status = @Status)" StatementId="2" StatementCompId="4" StatementType="COND WITH QUERY" RetrievedFromCache="true" StatementSubTreeCost="0.01" StatementEstRows="1">
+          <Condition>
+            <QueryPlan CachedPlanSize="24" CompileTime="1" CompileCPU="1" CompileMemory="160">
+              <RelOp NodeId="0" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1" EstimateIO="0" EstimateCPU="0.0000001" AvgRowSize="11" EstimatedTotalSubtreeCost="0.01" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                <OutputList>
+                  <ColumnReference Column="Expr1002" />
+                </OutputList>
+                <ComputeScalar>
+                  <DefinedValues>
+                    <DefinedValue>
+                      <ColumnReference Column="Expr1002" />
+                      <ScalarOperator ScalarString="CASE WHEN [Expr1003] THEN (1) ELSE (0) END" />
+                    </DefinedValue>
+                  </DefinedValues>
+                  <RelOp NodeId="1" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="1" EstimateIO="0.0075" EstimateCPU="0.0019" AvgRowSize="9" EstimatedTotalSubtreeCost="0.0095" TableCardinality="200000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                    <OutputList />
+                    <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                      <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]" IndexKind="Clustered" Storage="RowStore" />
+                      <Predicate>
+                        <ScalarOperator ScalarString="[SalesDb].[dbo].[Orders].[Status]=[@Status]" />
+                      </Predicate>
+                    </IndexScan>
+                  </RelOp>
+                </ComputeScalar>
+              </RelOp>
+            </QueryPlan>
+          </Condition>
+          <Then>
+            <Statements>
+              <StmtSimple StatementText="SELECT TOP (10) OrderId FROM dbo.Orders WHERE Status = @Status" StatementId="3" StatementCompId="5" StatementType="SELECT" RetrievedFromCache="true" StatementSubTreeCost="0.03" StatementEstRows="10">
+                <QueryPlan CachedPlanSize="16" CompileTime="1" CompileCPU="1" CompileMemory="128">
+                  <RelOp NodeId="0" PhysicalOp="Top" LogicalOp="Top" EstimateRows="10" EstimateIO="0" EstimateCPU="0.000001" AvgRowSize="11" EstimatedTotalSubtreeCost="0.03" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                    <OutputList>
+                      <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="OrderId" />
+                    </OutputList>
+                    <Top RowCount="0" IsPercent="0" WithTies="0">
+                      <TopExpression>
+                        <ScalarOperator ScalarString="(10)" />
+                      </TopExpression>
+                      <RelOp NodeId="1" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="10" EstimateIO="0.0075" EstimateCPU="0.0019" AvgRowSize="11" EstimatedTotalSubtreeCost="0.0299" TableCardinality="200000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                        <OutputList>
+                          <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="OrderId" />
+                        </OutputList>
+                        <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                          <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]" IndexKind="Clustered" Storage="RowStore" />
+                          <Predicate>
+                            <ScalarOperator ScalarString="[SalesDb].[dbo].[Orders].[Status]=[@Status]" />
+                          </Predicate>
+                        </IndexScan>
+                      </RelOp>
+                    </Top>
+                  </RelOp>
+                </QueryPlan>
+              </StmtSimple>
+            </Statements>
+          </Then>
+          <Else>
+            <Statements>
+              <StmtSimple StatementText="SELECT 0 AS OrderId" StatementId="4" StatementCompId="7" StatementType="SELECT" RetrievedFromCache="true" StatementSubTreeCost="0.01" StatementEstRows="1">
+                <QueryPlan CachedPlanSize="8" CompileTime="0" CompileCPU="0" CompileMemory="64">
+                  <RelOp NodeId="0" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateIO="0" EstimateCPU="0.0000011" AvgRowSize="11" EstimatedTotalSubtreeCost="0.01" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                    <OutputList>
+                      <ColumnReference Column="Expr1000" />
+                    </OutputList>
+                    <ConstantScan>
+                      <Values>
+                        <Row>
+                          <ScalarOperator ScalarString="(0)" />
+                        </Row>
+                      </Values>
+                    </ConstantScan>
+                  </RelOp>
+                </QueryPlan>
+              </StmtSimple>
+            </Statements>
+          </Else>
+        </StmtCond>
+        <StmtSimple StatementText="UPDATE dbo.Orders SET Status = Status + 1 WHERE OrderId = @OrderId" StatementId="5" StatementCompId="9" StatementType="UPDATE" RetrievedFromCache="true" StatementSubTreeCost="0.05" StatementEstRows="1">
+          <QueryPlan CachedPlanSize="24" CompileTime="2" CompileCPU="2" CompileMemory="216">
+            <RelOp NodeId="0" PhysicalOp="Clustered Index Update" LogicalOp="Update" EstimateRows="1" EstimateIO="0.01" EstimateCPU="0.000001" AvgRowSize="9" EstimatedTotalSubtreeCost="0.05" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList />
+              <Update DMLRequestSort="0">
+                <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]" IndexKind="Clustered" Storage="RowStore" />
+                <SetPredicate>
+                  <ScalarOperator ScalarString="[SalesDb].[dbo].[Orders].[Status] = [Expr1002]" />
+                </SetPredicate>
+                <RelOp NodeId="1" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1" EstimateIO="0" EstimateCPU="0.0000001" AvgRowSize="15" EstimatedTotalSubtreeCost="0.0034" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Column="Expr1002" />
+                  </OutputList>
+                  <ComputeScalar>
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Column="Expr1002" />
+                        <ScalarOperator ScalarString="CONVERT_IMPLICIT(tinyint,[SalesDb].[dbo].[Orders].[Status]+(1),0)" />
+                      </DefinedValue>
+                    </DefinedValues>
+                    <RelOp NodeId="2" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="15" EstimatedTotalSubtreeCost="0.0033" TableCardinality="200000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList>
+                        <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="Status" />
+                      </OutputList>
+                      <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                        <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]" IndexKind="Clustered" Storage="RowStore" />
+                        <SeekPredicates>
+                          <SeekPredicateNew>
+                            <SeekKeys>
+                              <Prefix ScanType="EQ">
+                                <RangeColumns>
+                                  <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="OrderId" />
+                                </RangeColumns>
+                                <RangeExpressions>
+                                  <ScalarOperator ScalarString="[@OrderId]" />
+                                </RangeExpressions>
+                              </Prefix>
+                            </SeekKeys>
+                          </SeekPredicateNew>
+                        </SeekPredicates>
+                      </IndexScan>
+                    </RelOp>
+                  </ComputeScalar>
+                </RelOp>
+              </Update>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT COUNT(*) FROM dbo.Customers" StatementId="1" StatementCompId="2" StatementType="SELECT" RetrievedFromCache="false" StatementSubTreeCost="0.02" StatementEstRows="1">
+          <QueryPlan CachedPlanSize="16" CompileTime="1" CompileCPU="1" CompileMemory="120">
+            <RelOp NodeId="0" PhysicalOp="Stream Aggregate" LogicalOp="Aggregate" EstimateRows="1" EstimateIO="0" EstimateCPU="0.002" AvgRowSize="11" EstimatedTotalSubtreeCost="0.02" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Column="Expr1001" />
+              </OutputList>
+              <StreamAggregate>
+                <DefinedValues>
+                  <DefinedValue>
+                    <ColumnReference Column="Expr1001" />
+                    <ScalarOperator ScalarString="Count(*)" />
+                  </DefinedValue>
+                </DefinedValues>
+                <RelOp NodeId="1" PhysicalOp="Index Scan" LogicalOp="Index Scan" EstimateRows="20000" EstimateIO="0.0135" EstimateCPU="0.0022" AvgRowSize="9" EstimatedTotalSubtreeCost="0.018" TableCardinality="20000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList />
+                  <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <Object Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Index="[IX_Customers_Region]" IndexKind="NonClustered" Storage="RowStore" />
+                  </IndexScan>
+                </RelOp>
+              </StreamAggregate>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>
