@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Extensions.Configuration;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Pages;
@@ -35,6 +36,13 @@ public partial class MainWindow : Window
     internal readonly MonitoringManager Monitoring = new();
     private List<ConnectionSelectorItem> _selectorItems = new();
 
+    // The notification-area icon: Windows notifications for alerts, and the way back to the
+    // window while it's hidden (#35).
+    private readonly TrayIcon _tray;
+
+    // What restoring from the tray goes back to: normal or maximized.
+    private WindowState _restoreState = WindowState.Normal;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -56,8 +64,18 @@ public partial class MainWindow : Window
         var store  = SettingsService.Load();
         var active = store.Active;
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
+
+        _tray = new TrayIcon(SettingsService);
+        _tray.OpenRequested   += ShowFromTray;
+        _tray.AlertsRequested += async connectionId =>
+        {
+            ShowFromTray();
+            await NavigateTo("Alerts", alertsConnectionId: connectionId);
+        };
+        _tray.ExitRequested   += ExitApp;
+
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
-        Monitoring.AlertsChanged       += (_, _) => UpdateAlertsButton();
+        Monitoring.AlertsChanged       += OnAlertsChanged;
         SyncConnections(store);
 
         Loaded += async (_, _) =>
@@ -176,10 +194,28 @@ public partial class MainWindow : Window
         }
     }
 
-    // "🔔  Alerts (2)" while any monitored connection has an active alert.
+    private void OnAlertsChanged(Guid connectionId, IReadOnlyList<AlertChange> changes)
+    {
+        UpdateAlertsButton();
+
+        // Only an alert starting or turning critical notifies; the settings are only read then.
+        if (!changes.Any(c => c.Kind is AlertChangeKind.Started or AlertChangeKind.Escalated))
+            return;
+
+        var store = SettingsService.Load();
+        if (!store.NotifiesFor(connectionId))
+            return;
+
+        var name = store.Connections.FirstOrDefault(c => c.Id == connectionId)?.DisplayName ?? "a deleted connection";
+        if (AlertNotification.From(connectionId, name, changes) is { } notification)
+            _tray.Notify(notification);
+    }
+
+    // "🔔  Alerts (2)" while any monitored connection has an active alert; the tray icon says the same.
     private void UpdateAlertsButton()
     {
         var active = Monitoring.ActiveAlerts;
+        _tray.ShowActiveAlerts(active);
         BtnAlerts.Content = active.Count == 0 ? "🔔  Alerts" : $"🔔  Alerts ({active.Count})";
         BtnAlerts.ToolTip = active.Count switch
         {
@@ -264,12 +300,70 @@ public partial class MainWindow : Window
         }
     }
 
+    // ── Notification area (#35) ───────────────────────────────────────────────
+
+    private bool KeepRunningInTray => SettingsService.Load().KeepRunningInTray;
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+
+        if (WindowState != WindowState.Minimized)
+            _restoreState = WindowState;
+        else if (KeepRunningInTray)
+            HideToTray();
+    }
+
+    // Monitoring, history and alerts carry on; only the window goes. Windows it owns (a plan or
+    // script window) hide and come back with it.
+    private void HideToTray()
+    {
+        Hide();
+
+        var store = SettingsService.Load();
+        if (store.TrayHintShown)
+            return;
+
+        _tray.Inform("SqlVitals is still running",
+            "Monitoring carries on and alerts still notify you. Click the SqlVitals icon here to open it, " +
+            "or right-click it and choose Exit to quit.");
+        try { SettingsService.SetTrayHintShown(); }
+        catch (Exception ex) { AppLog.Error("Tray: could not save that the hint was shown", ex); }
+    }
+
+    /// <summary>Brings the window back from the tray (or from behind other windows) as it was.</summary>
+    internal void ShowFromTray()
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = _restoreState;
+        Show();
+        Activate();
+    }
+
+    // Exit in the tray menu: quit for real, with the usual clean-up in OnClosing.
+    private void ExitApp()
+    {
+        ((App)Application.Current).IsExiting = true;
+        Close();
+    }
+
     // Last line of defence for the live SP trace: SpTracePage drops its event session when
     // the user navigates away, but closing the window while that page is open does not
     // raise Unloaded reliably. Without this the session keeps collecting on the monitored
     // server after the app is gone.
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // Closing the window only hides it, unless the user asked to exit or Windows is ending
+        // the session.
+        if (!((App)Application.Current).IsExiting && KeepRunningInTray)
+        {
+            e.Cancel = true;
+            HideToTray();
+            return;
+        }
+
+        _tray.Dispose();
+
         // Background collectors hold no server-side state; just stop them polling.
         Monitoring.Dispose();
 
@@ -366,12 +460,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, Guid? settingsConnectionId = null)
+    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, Guid? settingsConnectionId = null,
+                                                         Guid? alertsConnectionId = null)
     {
         var version = ++_loadVersion;
 
         // Without a connection every data page would just fail — point the user at Settings.
-        if (!_isConnectionConfigured && tag != "Settings")
+        // Alerts only reads the local history, and a notification can lead there with none active.
+        if (!_isConnectionConfigured && tag is not ("Settings" or "Alerts"))
         {
             tag = "Settings";
             settingsMessage ??= SettingsService.Load().Connections.Count == 0
@@ -423,7 +519,7 @@ public partial class MainWindow : Window
         IRefreshable page = tag switch
         {
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId)),
-            "Alerts"          => new AlertsPage(Monitoring, SettingsService),
+            "Alerts"          => new AlertsPage(Monitoring, SettingsService, alertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "Processes"       => new ProcessesPage(Repo),

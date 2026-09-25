@@ -45,7 +45,8 @@ public partial class AlertsPage : Page, IRefreshable
     // Bumped per load; a slower, earlier load's result is dropped.
     private int _loadVersion;
 
-    public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings)
+    /// <param name="connectionId">The connection to filter on at first, e.g. the one a notification was about; null for all.</param>
+    public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings, Guid? connectionId = null)
     {
         _monitoring = monitoring;
         _settings   = settings;
@@ -54,7 +55,8 @@ public partial class AlertsPage : Page, IRefreshable
         CmbConnection.Items.Add(new ComboBoxItem { Content = "All connections", Tag = null });
         foreach (var conn in settings.Load().Connections.OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase))
             CmbConnection.Items.Add(new ComboBoxItem { Content = conn.DisplayName, Tag = conn.Id, ToolTip = conn.Summary });
-        CmbConnection.SelectedIndex = 0;
+        CmbConnection.SelectedItem = CmbConnection.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is Guid id && id == connectionId)
+                                     ?? CmbConnection.Items[0];
 
         foreach (var period in Periods)
             CmbPeriod.Items.Add(new ComboBoxItem { Content = period.Label, Tag = period });

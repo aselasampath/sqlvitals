@@ -427,6 +427,10 @@
                             <ColumnDefinition Width="170" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
                         <TextBlock Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0"
                                    Text="Raise an alert after" />
@@ -437,9 +441,49 @@
                             <TextBlock Style="{StaticResource FieldHint}"
                                        Text="Samples in a row past a threshold before an alert starts. It ends after the same number back to normal, so a value hovering around a threshold raises one alert, not many. Samples follow each connection's Live Metrics interval: at the default 10 seconds, 3 samples is 30 seconds. Changes apply from the next sample." />
                         </StackPanel>
+
+                        <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,14,12,0"
+                                   Text="Windows notifications" />
+                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,4">
+                            <ItemsControl x:Name="LstNotifyConnections"
+                                          AutomationProperties.Name="Connections that raise Windows notifications">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Notifies, Mode=OneWay}"
+                                                  ToolTip="{Binding Summary, Mode=OneWay}" Margin="0,0,0,4"
+                                                  AutomationProperties.Name="{Binding Name, Mode=OneWay}"
+                                                  Click="ChkNotify_Click">
+                                            <TextBlock Text="{Binding Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="TxtNoNotifyConnections" Style="{StaticResource FieldHint}" Margin="0,7,0,0"
+                                       Text="No saved connections yet." Visibility="Collapsed" />
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Untick a connection to mute it. A ticked connection raises a Windows notification when one of its alerts starts or turns critical; clicking it opens the Alerts page for that connection. Also in the SqlVitals icon's menu in the notification area (Notifications). Windows' own Do Not Disturb and notification settings still apply." />
+                        </StackPanel>
                     </Grid>
 
                     <TextBlock x:Name="TxtAlertsStatus"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+
+            <!-- Notification area card -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="Notification Area"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Margin="0,0,0,12" />
+                    <CheckBox x:Name="ChkKeepRunningInTray"
+                              Content="Keep SqlVitals running in the notification area when the window is minimized or closed"
+                              Click="ChkKeepRunningInTray_Click" />
+                    <TextBlock Style="{StaticResource FieldHint}"
+                               Text="Monitoring, history and alerts carry on while the window is hidden. Click the SqlVitals icon in the notification area (beside the clock; it may be under ^) to bring the window back, or right-click it and choose Exit to quit. When this is off, minimizing goes to the taskbar and closing the window exits SqlVitals." />
+                    <TextBlock x:Name="TxtTrayStatus"
                                FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
                                Visibility="Collapsed" />
                 </StackPanel>

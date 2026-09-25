@@ -4,16 +4,31 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- Only for NotifyIcon: the notification-area icon and its Windows notifications. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>SqlVitals.Desktop</AssemblyName>
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.34.2</Version>
-    <AssemblyVersion>0.30.1.0</AssemblyVersion>
+    <Version>0.35.0</Version>
+    <!-- The name Windows shows on notifications and in Task Manager. -->
+    <AssemblyTitle>SqlVitals</AssemblyTitle>
+    <Product>SqlVitals</Product>
     <!-- Exe, taskbar and window icon. Regenerate with Branding/Build-Icon.ps1. -->
     <ApplicationIcon>..\Branding\SqlVitals.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- WPF code here; keep WinForms types out of every file's scope (Application, MessageBox…). -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <!-- The notification-area icon, loaded at the small-icon size. -->
+  <ItemGroup>
+    <Resource Include="..\Branding\SqlVitals.ico" Link="SqlVitals.ico" />
+  </ItemGroup>
 
   <!-- Reuse models + repository directly — no HTTP, no Kestrel -->
   <ItemGroup>

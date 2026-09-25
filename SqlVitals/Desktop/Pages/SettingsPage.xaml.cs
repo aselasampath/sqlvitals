@@ -63,6 +63,7 @@ public partial class SettingsPage : Page
         TxtTimeout.Text = store.CommandTimeoutSeconds.ToString();
         LoadHistorySettings(store);
         LoadAlertSettings(store);
+        ChkKeepRunningInTray.IsChecked = store.KeepRunningInTray;
         _globalThresholds = store.HealthThresholds;
         GlobalThresholds.Show(_globalThresholds);
         _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
@@ -108,6 +109,19 @@ public partial class SettingsPage : Page
         {
             _isPopulatingList = false;
         }
+
+        PopulateNotificationList(store);
+    }
+
+    // The same connections, under Alerts → Windows notifications.
+    private void PopulateNotificationList(ConnectionStore store)
+    {
+        var items = store.Connections
+            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .Select(c => new NotifyItem(c.Id, c.DisplayName, c.Summary, store.NotifiesFor(c.Id)))
+            .ToList();
+        LstNotifyConnections.ItemsSource  = items;
+        TxtNoNotifyConnections.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void LstConnections_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -547,6 +561,51 @@ public partial class SettingsPage : Page
     }
 
     private static string SamplesText(int samples) => samples == 1 ? "1 sample" : $"{samples} samples";
+
+    // Saved straight away, like the other choices on this card: muting doesn't need the server.
+    private void ChkNotify_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: NotifyItem item } box)
+            return;
+
+        var notify = box.IsChecked == true;
+        try
+        {
+            _service.SetNotificationsMuted(item.Id, muted: !notify);
+            ShowStatus(TxtAlertsStatus,
+                notify
+                    ? $"Saved: alerts on \"{item.Name}\" raise a Windows notification."
+                    : $"Saved: alerts on \"{item.Name}\" are muted. They are still listed on the Alerts page.",
+                success: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtAlertsStatus, $"Could not save the notification setting: {ex.Message}", success: false);
+            box.IsChecked = !notify;
+        }
+    }
+
+    private void ChkKeepRunningInTray_Click(object sender, RoutedEventArgs e)
+    {
+        var keep = ChkKeepRunningInTray.IsChecked == true;
+        try
+        {
+            _service.SetKeepRunningInTray(keep);
+            ShowStatus(TxtTrayStatus,
+                keep
+                    ? "Saved: minimizing or closing the window keeps SqlVitals running in the notification area."
+                    : "Saved: closing the window exits SqlVitals and stops monitoring.",
+                success: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtTrayStatus, $"Could not save the setting: {ex.Message}", success: false);
+            ChkKeepRunningInTray.IsChecked = !keep;
+        }
+    }
+
+    /// <summary>Row under Alerts → Windows notifications.</summary>
+    public sealed record NotifyItem(Guid Id, string Name, string Summary, bool Notifies);
 
     // ── Form ──────────────────────────────────────────────────────────────────
 

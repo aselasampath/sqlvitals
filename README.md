@@ -46,7 +46,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.34.2** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.35.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -97,6 +97,7 @@ live diagnostic data across the app's monitoring screens:
 - Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite; snapshot interval and retention set in Settings)
 - A health dot per connection in the sidebar, graded on thresholds you set in Settings (CPU, blocking, page life expectancy, memory grants pending, log and TempDB space), for every connection or just one
 - Alerts: a threshold breached for a few samples in a row is recorded with its start, end and worst value, and listed on the Alerts page (active and past, filtered by connection)
+- Windows notifications when an alert starts or turns critical (click to open the Alerts page for that connection; mute per connection), and a notification-area icon: minimizing or closing the window keeps SqlVitals monitoring in the background
 - Light theme (default) and dark theme, switchable in Settings
 
 ---
@@ -189,6 +190,7 @@ All paths are relative to the repository root.
     │   │   ├── RepositoryFactory.cs       ← Builds the repository for the active connection
     │   │   ├── MonitoringManager.cs       ← Background live-metrics collectors, one per connection
     │   │   ├── MonitoringSession.cs
+    │   │   ├── TrayIcon.cs                ← Notification-area icon, its menu, and the Windows notifications for alerts
     │   │   ├── ConnectionHistory.cs       ← A connection's history for the trend pages; reads off the UI thread; BaselineTracker
     │   │   └── ExportService.cs           ← Concurrent multi-group AI export
     │   └── Styles/
@@ -219,6 +221,7 @@ All paths are relative to the repository root.
     │   ├── Alerts/
     │   │   ├── AlertTracker.cs            ← Per connection: turns graded samples into alerts (start / escalate / end)
     │   │   ├── Alert.cs                   ← Alert, AlertChange, AlertText (how the Alerts page words figures)
+    │   │   ├── AlertNotification.cs       ← The Windows notification's title and text for what a sample did to the alerts
     │   │   └── AlertSettings.cs           ← Samples in a row before an alert starts (Settings choices)
     │   ├── Regressions/
     │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
@@ -396,6 +399,29 @@ of what went wrong and when. The **Alerts** page (sidebar, under Live Metrics) l
 - Alerts are kept for the history's retention (counted from when they ended), and removed by *Clear history*. An active
   alert is never purged.
 - The logic is pure and unit tested: `SqlVitals/Engine/Alerts/AlertTracker.cs`, fed by `HealthRules.Grade`.
+
+### Notifications and the notification area
+
+SqlVitals keeps an icon in the Windows notification area (beside the clock) while it runs, so it can watch your servers
+in the background (#35).
+
+- **A Windows notification** appears when an alert **starts** or a warning alert **turns critical**, e.g.
+  *Critical: CPU on Sales-Prod · CPU 97% (threshold ≥ 90 %)*. Alerts that start on the same sample share one notification
+  (*2 alerts on Sales-Prod (1 critical)*). Getting worse or ending doesn't notify; the Alerts page shows those.
+- **Clicking the notification** brings SqlVitals back and opens the **Alerts** page filtered to that connection.
+- **Mute a connection** in **Settings → Alerts → Windows notifications** (untick it), or from the icon's menu
+  (**Notifications**). It saves straight away, without testing the connection, so a server that's down can be muted. Its
+  alerts are still recorded and listed. Windows' Do Not Disturb and its own notification settings for SqlVitals still apply.
+- **Minimizing or closing the window** hides it to the notification area; monitoring, history and alerts carry on. The
+  first time, a notification says so. Click the icon to bring the window back, or right-click it for **Open SqlVitals**,
+  **Alerts**, **Notifications** and **Exit**. Turn this off in **Settings → Notification Area**: then minimizing goes to the
+  taskbar and closing the window exits.
+- **One copy per Windows session.** Starting SqlVitals again (Start menu, desktop shortcut) shows the running copy instead
+  of starting a second one that would monitor the same servers, write the same history and notify twice.
+- **Exit** from the icon's menu, or Windows signing out or shutting down, quits for real: active alerts end as *Monitoring
+  stopped*, and a running SP Trace session is dropped, as closing the window did before.
+- Built on WinForms' `NotifyIcon`, whose balloon Windows 10 and 11 show as an ordinary notification, so there's no app
+  registration or extra package. The wording is pure and unit tested: `SqlVitals/Engine/Alerts/AlertNotification.cs`.
 
 ### Monitoring history
 
@@ -601,7 +627,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.34.2.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.35.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -1241,7 +1267,8 @@ var gridColor = ChartTheme.GridColor;
 
 ### Build error: "file locked by SqlVitals.Desktop process"
 
-The app is already running. Kill it before rebuilding:
+The app is already running, possibly hidden in the notification area (closing the window doesn't exit it by default).
+Exit it from its icon's menu, or kill it before rebuilding:
 
 ```powershell
 Get-Process -Name "SqlVitals.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
