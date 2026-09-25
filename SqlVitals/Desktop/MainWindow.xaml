@@ -115,6 +115,8 @@
                         <Button x:Name="BtnProcesses"    Content="🔗  Processes"       Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Processes" />
                         <Button x:Name="BtnDeadlocks"    Content="💥  Deadlocks"       Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Deadlocks"
                                 ToolTip="Recent deadlocks from the system_health session: victim, participants, objects and statements" />
+                        <Button x:Name="BtnAgentJobs"    Content="🕒  Agent Jobs"      Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="AgentJobs"
+                                ToolTip="SQL Agent jobs from msdb: last run, duration against the average, next run; failed and long-running jobs first" />
                         <Button x:Name="BtnWaitTrend"    Content="📈  Wait Trend"      Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="WaitTrend" />
                         <Button x:Name="BtnTempDb"       Content="🗄️  TempDB"          Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="TempDb" />
                         <Button x:Name="BtnMemory"       Content="🧠  Memory Grants"   Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Memory" />

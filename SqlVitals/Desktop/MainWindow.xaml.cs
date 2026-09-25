@@ -97,7 +97,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            await DisableTempDbIfAzureSqlAsync();
+            await DisablePagesAzureSqlLacksAsync();
             await NavigateTo("LiveMetrics");
         };
     }
@@ -151,9 +151,12 @@ public partial class MainWindow : Window
             try { await previous.StopTraceAsync(); } catch { /* old server may be unreachable */ }
         });
 
-        BtnTempDb.IsEnabled = true;
-        BtnTempDb.ToolTip = null;
-        await DisableTempDbIfAzureSqlAsync();
+        foreach (var page in PagesAzureSqlLacks)
+        {
+            page.Button.IsEnabled = true;
+            page.Button.ToolTip   = page.ToolTip;
+        }
+        await DisablePagesAzureSqlLacksAsync();
     }
 
     // ── Connection selector ───────────────────────────────────────────────────
@@ -306,33 +309,46 @@ public partial class MainWindow : Window
         await SwapRepositoryAsync(store);
 
         // Reopen the current page as a fresh instance so nothing from the previous database
-        // stays on screen. TempDB may have just been disabled for an Azure SQL database.
-        var tag = _currentTag == "TempDb" && !BtnTempDb.IsEnabled ? "LiveMetrics" : _currentTag;
+        // stays on screen. The page may have just been disabled for an Azure SQL database.
+        var tag = PagesAzureSqlLacks.Any(p => p.Tag == _currentTag && !p.Button.IsEnabled) ? "LiveMetrics" : _currentTag;
         await NavigateTo(tag, tag == "Settings" ? $"Switched to \"{target.DisplayName}\"." : null, target.Id);
     }
 
     private async void ManageConnections_Click(object sender, RoutedEventArgs e) =>
         await NavigateTo("Settings");
 
-    // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database
-    // doesn't expose (see README → Azure SQL vs On-Premises Compatibility). Disable the
-    // tab up front instead of letting the user hit a query error after navigating to it.
-    private async System.Threading.Tasks.Task DisableTempDbIfAzureSqlAsync()
+    // Pages Azure SQL Database has nothing for (see README → Azure SQL vs On-Premises
+    // Compatibility), with their own tooltip, captured on first use, to restore on another server.
+    private (Button Button, string Tag, object? ToolTip, string Reason)[]? _pagesAzureSqlLacks;
+    private (Button Button, string Tag, object? ToolTip, string Reason)[] PagesAzureSqlLacks => _pagesAzureSqlLacks ??=
+    [
+        // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database doesn't expose.
+        (BtnTempDb,    "TempDb",    BtnTempDb.ToolTip,    "Not available on Azure SQL Database (sys.master_files is not accessible)"),
+        // There is no SQL Server Agent, so msdb has no jobs (#39).
+        (BtnAgentJobs, "AgentJobs", BtnAgentJobs.ToolTip, "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
+    ];
+
+    // Disable those pages up front instead of letting the user hit a query error after navigating to one.
+    private async System.Threading.Tasks.Task DisablePagesAzureSqlLacksAsync()
     {
         if (!_isConnectionConfigured)
             return;
 
         try
         {
-            if (await Repo.IsAzureSqlDatabaseAsync())
+            if (!await Repo.IsAzureSqlDatabaseAsync())
+                return;
+
+            foreach (var page in PagesAzureSqlLacks)
             {
-                BtnTempDb.IsEnabled = false;
-                BtnTempDb.ToolTip = "Not available on Azure SQL Database (sys.master_files is not accessible)";
+                page.Button.IsEnabled = false;
+                page.Button.ToolTip   = page.Reason;
+                ToolTipService.SetShowOnDisabled(page.Button, true);
             }
         }
         catch
         {
-            // Edition check failed (e.g. server unreachable) — leave the tab enabled.
+            // Edition check failed (e.g. server unreachable) — leave the pages enabled.
         }
     }
 
@@ -514,7 +530,7 @@ public partial class MainWindow : Window
         _currentTag = tag;
 
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnAgentJobs, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
@@ -524,6 +540,7 @@ public partial class MainWindow : Window
             "ActiveWaits"     => BtnActiveWaits,
             "Processes"       => BtnProcesses,
             "Deadlocks"       => BtnDeadlocks,
+            "AgentJobs"       => BtnAgentJobs,
             "WaitTrend"       => BtnWaitTrend,
             "TempDb"          => BtnTempDb,
             "Memory"          => BtnMemory,
@@ -562,6 +579,7 @@ public partial class MainWindow : Window
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "Processes"       => new ProcessesPage(Repo, SettingsService),
             "Deadlocks"       => new DeadlocksPage(Repo),
+            "AgentJobs"       => new AgentJobsPage(Repo),
             "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),

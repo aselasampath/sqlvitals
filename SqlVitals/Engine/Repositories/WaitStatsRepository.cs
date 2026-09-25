@@ -42,6 +42,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     private readonly DeadlockRepository _deadlocks = new(configuration);
 
+    private readonly AgentJobRepository _agentJobs = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1868,4 +1870,11 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     // ── Deadlock history (delegated to DeadlockRepository) ────────────
     public Task<Deadlocks.DeadlockHistory> GetDeadlockHistoryAsync()
         => _deadlocks.GetDeadlockHistoryAsync();
+
+    // ── SQL Agent jobs (delegated to AgentJobRepository) ──────────────
+    public Task<AgentJobs.AgentJobList> GetAgentJobsAsync()
+        => _agentJobs.GetAgentJobsAsync();
+
+    public Task<IReadOnlyList<AgentJobs.JobRun>> GetAgentJobRunsAsync(Guid jobId, DateTime? runningSince)
+        => _agentJobs.GetAgentJobRunsAsync(jobId, runningSince);
 }
