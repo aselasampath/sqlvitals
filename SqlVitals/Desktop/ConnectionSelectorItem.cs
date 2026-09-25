@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Media;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Monitoring;
 
@@ -11,11 +13,6 @@ namespace SqlVitals.Desktop;
 /// </summary>
 public sealed class ConnectionSelectorItem : INotifyPropertyChanged
 {
-    private static readonly Brush Green = Frozen(0x22, 0xC5, 0x5E);
-    private static readonly Brush Amber = Frozen(0xFB, 0xBF, 0x24);
-    private static readonly Brush Red   = Frozen(0xEF, 0x44, 0x44);
-    private static readonly Brush Grey  = Frozen(0x94, 0xA3, 0xB8);
-
     public ConnectionSelectorItem(ConnectionSettings settings) => Settings = settings;
 
     public ConnectionSettings Settings { get; }
@@ -27,11 +24,25 @@ public sealed class ConnectionSelectorItem : INotifyPropertyChanged
     /// <summary>Dot fill; transparent (outline only) when the connection isn't monitored.</summary>
     public Brush HealthFill { get; private set; } = Brushes.Transparent;
 
-    public Brush HealthStroke { get; private set; } = Grey;
+    public Brush HealthStroke { get; private set; } = HealthBrushes.Grey;
 
     public string HealthText { get; private set; } = string.Empty;
 
-    public string ToolTipText => $"{Settings.Summary}\n{HealthText}";
+    /// <summary>The latest health score (#36); null while not monitored or before the first sample.</summary>
+    public HealthScore? Score { get; private set; }
+
+    public string ScoreText => Score?.Value.ToString() ?? string.Empty;
+
+    public Brush ScoreBrush => Score is { } score ? HealthBrushes.For(score.Level) : HealthBrushes.Grey;
+
+    public Visibility ScoreVisibility => Score is null ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>Dimmed while paused: the score is the last one taken, not a current one.</summary>
+    public double ScoreOpacity { get; private set; } = 1;
+
+    public string ToolTipText => Score is { } score
+        ? $"{Settings.Summary}\n{score.Summary()}\n{HealthText}\nClick the score to see which checks lowered it."
+        : $"{Settings.Summary}\n{HealthText}";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -41,34 +52,23 @@ public sealed class ConnectionSelectorItem : INotifyPropertyChanged
         if (session is null)
         {
             HealthFill   = Brushes.Transparent;
-            HealthStroke = Grey;
+            HealthStroke = HealthBrushes.Grey;
             HealthText   = monitoring.NotMonitoredReason(Settings.Id);
+            Score        = null;
         }
         else
         {
-            var fill = session.Health switch
-            {
-                HealthLevel.Healthy     => Green,
-                HealthLevel.Warning     => Amber,
-                HealthLevel.Critical    => Red,
-                HealthLevel.Unavailable => Red,
-                _                       => Grey,
-            };
+            var fill = HealthBrushes.For(session.Health);
             HealthFill   = session.IsRunning ? fill : Brushes.Transparent;
             HealthStroke = fill;
             HealthText   = session.IsRunning ? session.HealthText : "Paused · " + session.HealthText;
+            Score        = session.Score;
+            ScoreOpacity = session.IsRunning ? 1 : 0.5;
         }
 
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HealthFill)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HealthStroke)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HealthText)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTipText)));
-    }
-
-    private static Brush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
+        foreach (var name in new[] { nameof(HealthFill), nameof(HealthStroke), nameof(HealthText), nameof(Score),
+                                     nameof(ScoreText), nameof(ScoreBrush), nameof(ScoreVisibility), nameof(ScoreOpacity),
+                                     nameof(ToolTipText) })
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }

@@ -74,6 +74,12 @@ public sealed class MonitoringSession : IDisposable
     /// <summary>One-line, credential-free description of the latest result, for tooltips.</summary>
     public string HealthText { get; private set; } = "Waiting for the first sample…";
 
+    /// <summary>
+    /// The latest result as a 0–100 score, with the checks that lowered it (#36); null until the
+    /// first collection finishes.
+    /// </summary>
+    public HealthScore? Score { get; private set; }
+
     public DateTime? LastSampleTime => _samples.Count > 0 ? _samples[^1].Time : null;
 
     public int IntervalSeconds
@@ -247,6 +253,7 @@ public sealed class MonitoringSession : IDisposable
             HealthText = $"Monitoring failed at {DateTime.Now:HH:mm:ss}: " +
                          ConnectionSettingsService.RedactSecrets(detail) +
                          $" Retrying in {FormatDelay(CurrentDelay())}.";
+            Score      = HealthScore.Unavailable(HealthText, DateTime.Now);
             throw;
         }
         finally
@@ -264,6 +271,7 @@ public sealed class MonitoringSession : IDisposable
     {
         var (level, reasons) = HealthRules.Summarize(readings);
         Health     = level;
+        Score      = HealthScore.From(readings, _lastSuccess);
         HealthText = (reasons.Count == 0
                          ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
                          : string.Join(" · ", reasons))

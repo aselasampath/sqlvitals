@@ -119,10 +119,14 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private static readonly SKColor ColMgP   = SKColor.Parse("#FF4444");
     private static readonly SKColor ColBuf   = SKColor.Parse("#22C55E");
 
+    // Named in the health score's breakdown.
+    private readonly string               _connectionName;
+
     public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringSession? session = null,
-                                    ConnectionHistory? history = null)
+                                    ConnectionHistory? history = null, string? connectionName = null)
     {
         _repo        = repo;
+        _connectionName = connectionName ?? "This connection";
         _ownsSession = session is null;
         _session     = session ?? new MonitoringSession(null, repo, string.Empty);
         _history     = history;
@@ -194,6 +198,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         SyncRunButton();
         _timer.Start();
         UpdateCountdown();
+        UpdateHealthScore();
     }
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
@@ -446,6 +451,35 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     {
         SyncRunButton();
         UpdateCountdown();
+        UpdateHealthScore();
+    }
+
+    // ── Health score (#36) ──────────────────────────────────────────────────
+    // Always the latest sample's, also while a past range is on the charts.
+    private void UpdateHealthScore()
+    {
+        var score = _session.Score;
+        var brush = score is null ? HealthBrushes.Grey : HealthBrushes.For(score.Level);
+        RunHealthScore.Text        = score?.Value.ToString() ?? "—";
+        RunHealthScore.Foreground  = brush;
+        BtnHealthScore.BorderBrush = brush;
+        BtnHealthScore.Opacity     = _session.IsRunning ? 1 : 0.6;
+        BtnHealthScore.ToolTip     = score is null
+            ? _session.HealthText
+            : $"{score.Summary()}\nClick to see which checks lowered it.";
+
+        if (HealthScorePopup.IsOpen)
+            ShowHealthScoreDetails();
+    }
+
+    private void ShowHealthScoreDetails() =>
+        HealthScoreDetails.Show(_connectionName, _session.Score, _session.HealthText, paused: !_session.IsRunning);
+
+    private void BtnHealthScore_Click(object sender, RoutedEventArgs e)
+    {
+        // Clicking anywhere else closes it (StaysOpen is false).
+        ShowHealthScoreDetails();
+        HealthScorePopup.IsOpen = true;
     }
 
     // Appends every session sample not plotted yet, so the page catches up whether the
