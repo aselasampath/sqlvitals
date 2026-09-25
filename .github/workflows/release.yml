@@ -1,0 +1,153 @@
+# Builds SqlVitals Setup when a version tag is pushed and publishes it on the GitHub Release for that tag.
+# The tag must match <Version> in SqlVitals/Desktop/SqlVitals.Desktop.csproj, e.g. v0.34.0 for 0.34.0.
+# A tag with a suffix (v1.0.0-beta.1) is published as a pre-release.
+name: Release – Build and publish SqlVitals Setup
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  contents: write   # create the release and upload its files
+
+# Never cancel a release half-way; a second push of the same tag waits for the first run.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish Setup
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # Fails before building anything if the tag and the project disagree, so the tag,
+      # the Setup file name and the version shown in Settings → Apps always match.
+      - name: Check tag matches release number
+        id: version
+        shell: pwsh
+        run: |
+          [xml] $proj = Get-Content SqlVitals/Desktop/SqlVitals.Desktop.csproj
+          $version = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if (-not $version) { throw 'No <Version> in SqlVitals.Desktop.csproj' }
+          if ($env:TAG -ne "v$version") {
+            throw "Tag $env:TAG doesn't match <Version>$version</Version> in SqlVitals.Desktop.csproj. Tag v$version instead, or bump <Version> first."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$(($version -like '*-*').ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "Release number: $version"
+
+      - name: Test installer logic
+        run: dotnet test SqlVitals/Installer.Tests/SqlVitals.Installer.Tests.csproj -c Release
+
+      - name: Test engine
+        run: dotnet test SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj -c Release
+
+      # Unsigned until a signing certificate is set up (#49).
+      - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}
+        shell: pwsh
+        run: ./SqlVitals/Installer/Build-Installer.ps1 -Configuration Release
+
+      - name: Check output
+        id: output
+        shell: pwsh
+        run: |
+          $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
+          if (-not (Test-Path $exe)) { throw "Expected $exe was not produced." }
+          "exe=$exe" >> $env:GITHUB_OUTPUT
+          "sha256=$((Get-Content "$exe.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Setup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SqlVitals-Setup-${{ steps.version.outputs.version }}
+          path: |
+            ${{ steps.output.outputs.exe }}
+            ${{ steps.output.outputs.exe }}.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0   # the exe is already compressed
+
+      # Releases in this repository are immutable once published, so the release is created as a
+      # draft, its files are uploaded and checked, and only then is it published.
+      - name: Publish GitHub Release
+        id: release
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $exe     = '${{ steps.output.outputs.exe }}'
+          $files   = @($exe, "$exe.sha256")
+
+          $existing = gh release view $env:TAG --json isDraft,url 2>$null | ConvertFrom-Json
+          if ($existing -and -not $existing.isDraft) {
+            "status=A published release for $env:TAG already exists and was left unchanged. Setup is in this run's artifacts." >> $env:GITHUB_OUTPUT
+            "url=$($existing.url)" >> $env:GITHUB_OUTPUT
+            Write-Warning "Release $env:TAG is already published; not changing it."
+            return
+          }
+
+          if ($existing) {
+            gh release upload $env:TAG @files --clobber
+          } else {
+            @(
+              "## Install"
+              ""
+              "Download **SqlVitals-Setup-$version.exe** below and run it. It needs no admin rights and no .NET install, and upgrades an existing SqlVitals in place, keeping your connections and history."
+              ""
+              "SHA-256: ``${{ steps.output.outputs.sha256 }}``"
+              ""
+              "Setup isn't code-signed yet, so Windows SmartScreen may ask you to confirm (**More info → Run anyway**)."
+              ""
+            ) | Out-File release-notes.md -Encoding utf8
+            $flags = @('--draft', '--verify-tag', '--generate-notes')   # generated notes go below the install section
+            if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { $flags += '--prerelease' }
+            gh release create $env:TAG @files @flags --title "SqlVitals $version" --notes-file release-notes.md
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Creating the draft release failed.' }
+
+          # Check every file arrived intact before the release becomes immutable.
+          $assets = (gh release view $env:TAG --json assets | ConvertFrom-Json).assets
+          foreach ($file in $files | ForEach-Object { Get-Item $_ }) {
+            $asset = $assets | Where-Object name -eq $file.Name
+            if (-not $asset -or $asset.size -ne $file.Length) {
+              throw "Release file $($file.Name) is missing or incomplete; the release was left as a draft."
+            }
+          }
+
+          gh release edit $env:TAG --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the release failed; it was left as a draft.' }
+          "status=Published." >> $env:GITHUB_OUTPUT
+          "url=$(gh release view $env:TAG --json url --jq .url)" >> $env:GITHUB_OUTPUT
+
+      - name: Summary
+        shell: pwsh
+        run: |
+          $info = Get-Item '${{ steps.output.outputs.exe }}'
+          @(
+            "### SqlVitals Setup ${{ steps.version.outputs.version }}"
+            ""
+            "| | |"
+            "|---|---|"
+            "| File | ``$($info.Name)`` |"
+            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB |"
+            "| SHA-256 | ``${{ steps.output.outputs.sha256 }}`` |"
+            "| Commit | ``${{ github.sha }}`` |"
+            "| Release | ${{ steps.release.outputs.url }} |"
+            ""
+            "${{ steps.release.outputs.status }} Setup is also under **Artifacts** below for 90 days."
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

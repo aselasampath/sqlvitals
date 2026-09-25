@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/SQL%20Server%20%7C%20Azure%20SQL-supported-CC2927?logo=microsoftsqlserver" alt="SQL Server and Azure SQL">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
   <a href="https://github.com/aselasampath/sqlvitals/actions/workflows/pr-setup.yml"><img src="https://github.com/aselasampath/sqlvitals/actions/workflows/pr-setup.yml/badge.svg" alt="PR build"></a>
+  <a href="https://github.com/aselasampath/sqlvitals/releases/latest"><img src="https://img.shields.io/github/v/release/aselasampath/sqlvitals" alt="Latest release"></a>
 </p>
 
 **SqlVitals** is a free, open-source Windows desktop app that shows what your SQL Server or Azure SQL
@@ -41,9 +42,9 @@ monitoring platform first.
 - 📤 **Easy to share.** Copy or export any grid to CSV, or export a structured report ready to paste into an AI
   assistant.
 
-**Get started:** [build and run it from source](#how-to-build--run), or build the one-file
-[SqlVitals Setup](#installer-sqlvitals-setup) installer (no admin rights needed, .NET runtime included). Tagged
-builds are on the [Releases](https://github.com/aselasampath/sqlvitals/releases) page.
+**Get started:** download `SqlVitals-Setup-<version>.exe` from the latest
+[release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
+runtime included). You can also [build and run it from source](#how-to-build--run).
 
 Built with **WPF on .NET 8**. Current version: **0.34.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
@@ -163,6 +164,7 @@ All paths are relative to the repository root.
 ├── README.md
 ├── LICENSE
 ├── .github/workflows/pr-setup.yml         ← CI: tests + Setup build on every PR to main
+├── .github/workflows/release.yml          ← Release: tag vX.Y.Z → tests, Setup build, GitHub Release
 ├── TODO/wait-stats-ui/                    ← Parked React web UI (not part of the solution)
 │
 └── SqlVitals/
@@ -602,6 +604,15 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
+
+**Releases:** pushing a version tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It checks that the tag matches `<Version>` (tag `v0.34.0` for `0.34.0`), runs the tests and builds Setup. It then uploads `SqlVitals-Setup-<version>` as a workflow artifact (kept for 90 days) and attaches the `.exe` and `.sha256` to the GitHub Release for the tag, with generated release notes. Releases here are immutable, so the workflow publishes the release only after both files are uploaded and checked. A tag with a suffix, such as `v1.0.0-beta.1`, becomes a pre-release.
+
+```powershell
+# After the PR that bumps <Version> is merged:
+git switch main; git pull
+git tag v0.34.0
+git push origin v0.34.0      # → Actions: "Release – Build and publish SqlVitals Setup"
+```
 
 The script publishes `SqlVitals.Desktop` **self-contained** for win-x64, so the .NET 8 runtime is bundled. It then writes a manifest with the size and SHA-256 hash of every file, zips it, and embeds the zip in `SqlVitals.Setup.exe`. The version comes from `SqlVitals.Desktop.csproj`.
 
