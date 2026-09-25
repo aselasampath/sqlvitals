@@ -51,26 +51,115 @@ Built with **WPF on .NET 8**. Current version: **0.36.0** (set in `SqlVitals/Des
 
 ---
 
+## Why SqlVitals?
+
+**SSMS is where you *administer* SQL Server. The Azure portal and Azure Monitor are where you see *platform
+metrics* for Azure resources. SqlVitals is where you *diagnose*: it watches every server you look after,
+remembers what happened, tells you when something goes wrong and takes you from symptom to cause to a fix
+script in a few clicks. It's free, and you can start in minutes with nothing to set up on the server or in Azure.**
+
+The gap it fills: SSMS shows one server, only while you're looking, and forgets it when you close the window.
+Azure's monitoring covers Azure resources, at one-minute granularity, and its deeper data needs a Log Analytics
+workspace, which you set up and pay for per GB. A commercial monitoring product needs a server, a repository
+database and a budget. SqlVitals sits between them: continuous and remembering like a monitoring product, and as
+quick to start as SSMS.
+
+### What each role gets at a glance
+
+**🧑‍💼 DBA: which server needs me, and why?**
+
+- **A 0–100 health score and a 🟢 🟠 🔴 dot for every server** in one list, on-premises and Azure side by side.
+  Click a score to see exactly which checks lowered it: CPU, blocking, page life expectancy, memory grants, log
+  or TempDB space.
+- **It keeps watching while you work elsewhere**, even with the window closed to the notification area. A threshold
+  breached for a few samples in a row becomes an **alert** with its start, end and worst value, and a **Windows
+  notification**.
+- **"What happened at 2 a.m.?"** answered from a local history of metrics, waits, file I/O and top queries, with a
+  dashed **same time last week** baseline on the charts.
+- **A visual blocking map** that shows the head blocker (often a sleeping session with an open transaction) and its
+  SQL.
+- **Maintenance scripts, not guesswork.** Missing and unused indexes, fragmentation and stale statistics become
+  `CREATE` / `DROP` / `REBUILD` / `UPDATE STATISTICS` scripts. You review them; SqlVitals never runs them.
+- **Easy to approve for production:** read-only, `READ UNCOMMITTED` reads with timeouts, one light query per server
+  every 10 s in the background plus a snapshot every 5 minutes, and `VIEW SERVER STATE` (or `VIEW DATABASE STATE` on Azure SQL Database) is enough
+  for every screen except the Extended Events mode of SP Trace.
+
+**👩‍💻 Database developer: why is *my* query slow, and did my release make it worse?**
+
+- **Query Regressions:** queries whose duration or CPU rose past a threshold, before and after side by side, with
+  both execution plans. Without Query Store, it uses SqlVitals' own history instead.
+- **Graphical execution plans like SSMS**, with costly operators, warnings, bad row estimates and missing-index
+  hints highlighted. Open them straight from the busiest queries, a regression or a traced procedure call.
+- **The usual culprits, already found:** implicit conversions that force scans, the most expensive queries by CPU
+  and reads, queries that fail to parameterise or are badly estimated, stale statistics and missing indexes.
+- **Live stored-procedure trace:** every call with its duration, CPU and reads as it happens. It creates a
+  temporary Extended Events session and cleans it up afterwards.
+- **No DMV knowledge needed:** the queries behind every screen are written, tuned and safe for Azure SQL and
+  on-premises alike.
+
+**🛠️ Operations and on-call: is it the database, and who do I call?**
+
+- **Green, amber or red, and a number.** Anyone can read it without knowing SQL Server internals, and hovering or
+  clicking says what's wrong in plain words.
+- **Notifications, not dashboards to stare at.** An alert that starts or turns critical pops up in Windows. Clicking
+  it opens the timeline for that server.
+- **"Is the server even up?"** An unreachable server shows 🔴 and a score of 0 with the connection error.
+- **A report to hand over:** export the server's state as structured text, ready to paste into a ticket, a chat or
+  an AI assistant. Copy or export any grid to CSV.
+- **Installs in a minute** without admin rights, with the .NET runtime included.
+
+### How it compares
+
+| | SqlVitals | SSMS | Azure portal / Azure Monitor |
+|---|---|---|---|
+| On-premises SQL Server and Azure SQL in one view | ✅ | ✅ | Azure SQL. On-premises needs Azure Arc |
+| Several servers watched continuously, with a health score each | ✅ | ❌ Activity Monitor: one server, while open | ⚠️ Per-resource metrics and alert rules you configure |
+| History of waits, metrics and top queries, compared with last week | ✅ Local, retention you choose | ⚠️ Query Store reports, per database | ⚠️ Platform metrics; deeper data needs Log Analytics (billed per GB) |
+| Sample interval | 5 s to 2 min | Activity Monitor refresh | 1 minute |
+| Alerts with start, end and worst value, plus desktop notifications | ✅ Built in | ⚠️ SQL Agent alerts, set up per server (on-premises) | ✅ Alert rules and action groups, set up per resource |
+| Blocking chain map with the head blocker | ✅ | ⚠️ A column in Activity Monitor | ❌ |
+| Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
+| Fix scripts for indexes and statistics | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning recommendations, Azure SQL only |
+| Nothing to install on the server, no workspace, no cost | ✅ | ✅ | ⚠️ Log Analytics and some features are billed |
+
+*A fair summary of the built-in tools as usually used; SSMS and Azure change often, and both do far more than
+this table shows.*
+
+### What SqlVitals is not
+
+Being clear about this is part of the pitch:
+
+- **Not an administration tool.** It never changes your server. Keep SSMS (or Azure Data Studio) for creating
+  objects, security, backups and running the scripts SqlVitals generates.
+- **Not a team monitoring platform.** History and alerts live on the PC running SqlVitals, and are collected only
+  while it runs (it keeps running in the notification area). There's no shared web dashboard, central repository or
+  paging. If you need 24/7 monitoring for a team with long retention, use a server-based product. SqlVitals is a good
+  way to find out what you need from one.
+- **Windows only.** It's a WPF desktop app.
+
+---
+
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Architecture](#architecture)
-3. [Solution Structure](#solution-structure)
-4. [Tech Stack & NuGet Packages](#tech-stack--nuget-packages)
-5. [Configuration](#configuration)
-6. [How to Build & Run](#how-to-build--run)
+1. [Why SqlVitals?](#why-sqlvitals)
+2. [Overview](#overview)
+3. [Architecture](#architecture)
+4. [Solution Structure](#solution-structure)
+5. [Tech Stack & NuGet Packages](#tech-stack--nuget-packages)
+6. [Configuration](#configuration)
+7. [How to Build & Run](#how-to-build--run)
    - [Installer (SqlVitals Setup)](#installer-sqlvitals-setup)
-7. [Navigation & Pages](#navigation--pages)
-8. [Adding a New Page — Step-by-Step](#adding-a-new-page--step-by-step)
-9. [Repository Pattern](#repository-pattern)
-10. [Where the SQL Lives](#where-the-sql-lives)
-11. [Data Models](#data-models)
-12. [Query Wrapper (NOLOCK + Timeout)](#query-wrapper-nolock--timeout)
-13. [Azure SQL vs On-Premises Compatibility](#azure-sql-vs-on-premises-compatibility)
-14. [Export / AI Report Feature](#export--ai-report-feature)
-15. [Live SP Trace](#live-sp-trace)
-16. [Styling & Themes](#styling--themes)
-17. [Common Errors & Fixes](#common-errors--fixes)
+8. [Navigation & Pages](#navigation--pages)
+9. [Adding a New Page — Step-by-Step](#adding-a-new-page--step-by-step)
+10. [Repository Pattern](#repository-pattern)
+11. [Where the SQL Lives](#where-the-sql-lives)
+12. [Data Models](#data-models)
+13. [Query Wrapper (NOLOCK + Timeout)](#query-wrapper-nolock--timeout)
+14. [Azure SQL vs On-Premises Compatibility](#azure-sql-vs-on-premises-compatibility)
+15. [Export / AI Report Feature](#export--ai-report-feature)
+16. [Live SP Trace](#live-sp-trace)
+17. [Styling & Themes](#styling--themes)
+18. [Common Errors & Fixes](#common-errors--fixes)
 
 ---
 
