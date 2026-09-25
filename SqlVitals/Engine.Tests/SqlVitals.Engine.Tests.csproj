@@ -22,4 +22,9 @@
     <ProjectReference Include="..\Engine\SqlVitals.Engine.csproj" />
   </ItemGroup>
 
+  <!-- Sample showplans for the execution plan parser tests -->
+  <ItemGroup>
+    <None Update="ExecutionPlans\Plans\*.sqlplan" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

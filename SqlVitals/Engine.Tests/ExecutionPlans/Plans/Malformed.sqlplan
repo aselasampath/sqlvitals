@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4125.3">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT * FROM dbo.Orders" StatementId="1" StatementType="SELECT" StatementSubTreeCost="3.2">
+          <QueryPlan DegreeOfParallelism="1">
+            <RelOp NodeId="0" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="200000" EstimatedTotalSubtreeCost="3.2">
+              <IndexScan Ordered="0">
+                <Object Database="[SalesDb]" Schema="[dbo]" Table="[Ord

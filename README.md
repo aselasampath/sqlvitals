@@ -87,6 +87,7 @@ live diagnostic data across the app's monitoring screens:
 - Resource-intensive queries (reads + CPU)
 - Index usage patterns and fragmentation
 - Implicit type conversions
+- Graphical execution plans like SSMS: each statement's operator tree with icons, costs, row-count arrows, warnings, bad estimates (actual plans) and missing-index hints; hover for details, click for every property, find, zoom, pan and export as PNG. The raw XML is on a second tab
 - Stale statistics, with a script generator to update them (default sampling or FULLSCAN)
 - Database storage, file sizes, and server configuration
 - Live stored-procedure tracing (SP Trace)
@@ -479,7 +480,7 @@ either rose by more than a set percentage.
 - **Execution plans:** **Now** opens the plan used most in the recent period. With Query Store, **Before** opens the one used most
   in the baseline when that was a different plan. *Plan change* says **New plan** when the recent plan never ran in the
   baseline, the usual sign of a plan regression. From the monitoring history, **Now** opens the plan in the plan cache for that
-  `query_hash`, if it's still cached. Plans open in the same window as on Resource Queries, where you can copy them or save them as `.sqlplan`.
+  `query_hash`, if it's still cached. Plans open in the same window as on Resource Queries: a graphical plan like SSMS, with the XML on a second tab to copy or save as `.sqlplan`.
 - **Noise is left out:** a metric whose recent average is under 1 ms is never flagged (0.1 → 0.3 ms is +200 % but nothing to act on).
   A zero baseline gives no percentage.
 - **Clocks:** Query Store periods are on the server's clock and count whole Query Store intervals (by the interval's start time).
