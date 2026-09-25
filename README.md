@@ -28,7 +28,8 @@ monitoring platform first.
 
 - 🩺 **See it live.** Live metrics, active waits, blocking chains and a live stored-procedure trace.
 - 🔔 **Know when something's wrong.** Every saved connection can be watched in the background. A health dot
-  in the sidebar shows its state, and alerts record which threshold was crossed, when, for how long and how badly.
+  and a 0–100 health score in the sidebar show its state, and alerts record which threshold was crossed, when, for how
+  long and how badly.
 - 🕰️ **Go back in time.** A local history on your PC keeps metrics, waits and top queries, so you can look into
   last night's incident or compare today with the same time last week.
 - 📉 **Catch regressions early.** Query Regressions flags queries that got slower, with their before
@@ -46,7 +47,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.35.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.36.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -96,6 +97,7 @@ live diagnostic data across the app's monitoring screens:
 - Filter box on the Resource Queries, Index Health, Query Store and Query Regressions grids, and a column sort that survives Refresh
 - Local monitoring history: every monitored connection's metrics, waits, file I/O, memory and top queries saved to `%LocalAppData%\SqlVitals\history.db` (SQLite; snapshot interval and retention set in Settings)
 - A health dot per connection in the sidebar, graded on thresholds you set in Settings (CPU, blocking, page life expectancy, memory grants pending, log and TempDB space), for every connection or just one
+- A 0–100 health score per connection, from the same checks weighted by importance, in the connection selector and on the Live Metrics dashboard; click it to see which checks lowered it
 - Alerts: a threshold breached for a few samples in a row is recorded with its start, end and worst value, and listed on the Alerts page (active and past, filtered by connection)
 - Windows notifications when an alert starts or turns critical (click to open the Alerts page for that connection; mute per connection), and a notification-area icon: minimizing or closing the window keeps SqlVitals monitoring in the background
 - Light theme (default) and dark theme, switchable in Settings
@@ -180,10 +182,11 @@ All paths are relative to the repository root.
     │   │   └── ...Page.xaml/.cs           ← One file pair per screen
     │   ├── Controls/                      ← ProcessMapControl, GridFilterBox (grid filter box),
     │   │                                     TimeRangePicker (Live / 1h / 24h / 7d / Custom and Compare to baseline on trend pages),
-    │   │                                     HealthThresholdsEditor (warning / critical boxes per health indicator)
+    │   │                                     HealthThresholdsEditor (warning / critical boxes per health indicator),
+    │   │                                     HealthScoreBreakdown (the checks behind a health score, shown when it's clicked)
     │   ├── Windows/                       ← SqlScriptWindow, QueryExecutionPlanWindow
     │   ├── Helpers/                       ← ChartTheme, BaselineSeries (dashed baseline lines), ClipboardHelper, DataGridExport (grid right-click menu),
-    │   │                                     DataGridRefresh (reload a grid keeping its sort and filter)
+    │   │                                     DataGridRefresh (reload a grid keeping its sort and filter), HealthBrushes (health dot colours)
     │   ├── Services/
     │   │   ├── AppLog.cs                  ← Daily diagnostic log in %AppData%\SqlVitals\logs (14-day retention)
     │   │   ├── ConnectionSettingsService.cs ← Saved connections (DPAPI-encrypted)
@@ -235,7 +238,8 @@ All paths are relative to the repository root.
     │   │   └── DelimitedText.cs           ← CSV / tab-separated text for grid copy and export
     │   ├── Filtering/
     │   │   └── RowFilter.cs               ← Term parsing and row matching for the grid filter boxes
-    │   ├── Monitoring/                    ← LiveMetricSample, HealthRules; HealthThresholds (health-dot thresholds)
+    │   ├── Monitoring/                    ← LiveMetricSample, HealthRules; HealthThresholds (health-dot thresholds);
+    │   │                                     HealthScore (the 0–100 score and the checks that lowered it)
     │   ├── Controllers/                   ← REST endpoints (only used if running as API)
     │   ├── Errors/                        ← WaitStatsException
     │   ├── ApiHost.cs / Program.cs        ← Web API host (not used by the desktop app)
@@ -353,7 +357,7 @@ while you were away (the last 60 samples, about 10 minutes at the default 10 s i
 
   | Indicator | Measured as | Warning | Critical |
   |---|---|---|---|
-  | CPU | SQL Server's CPU % over the last minute (`sys.dm_os_ring_buffers`) | ≥ 75 % | ≥ 90 % |
+  | CPU | SQL Server's CPU % over the last minute (`sys.dm_os_ring_buffers`); on Azure SQL Database, the database's CPU as a share of its service tier's limit (`sys.dm_db_resource_stats`, as the portal's *CPU percentage*) | ≥ 75 % | ≥ 90 % |
   | Blocking | How long the longest-blocked request has waited (`sys.dm_exec_requests`) | ≥ 30 s | ≥ 120 s |
   | Page life expectancy | Buffer Manager counter; lower is worse | < 300 s | off |
   | Memory grants pending | Memory Manager counter | ≥ 1 | off |
@@ -365,6 +369,20 @@ while you were away (the last 60 samples, about 10 minutes at the default 10 s i
   - The critical value must be past the warning one (higher, or lower for page life expectancy). Values out of range in a hand-edited `settings.dat` fall back to the defaults.
   - An indicator the server doesn't report (a counter missing on some Azure SQL tiers) is left out rather than flagged.
   - Blocking, log and TempDB are read by the same live-metrics query (performance counters and `sys.dm_exec_requests`), so there's no extra query. Their figures aren't saved to the history, but an [alert](#alerts) on any of them is.
+- **Health score** (#36): a number from 0 to 100 beside each connection in the sidebar selector, and at the top of the
+  Live Metrics dashboard, so the server that needs attention stands out. **Click it** to see which checks lowered it:
+  each check's current figure, thresholds, weight and the points it cost.
+  - It is built from the same checks and thresholds as the health dot, so the two always agree, and its colour is the
+    dot's. Each indicator is worth a share of the 100 points:
+
+    | Check | CPU | Blocking | Log space | Page life expectancy | Memory grants pending | TempDB space |
+    |---|---|---|---|---|---|---|
+    | Weight | 20 | 20 | 20 | 16 | 12 | 12 |
+
+  - A check past its **warning** threshold loses half its weight; past **critical**, all of it. A check the server
+    doesn't report keeps its points. A server that can't be reached scores **0**.
+  - It is the latest sample's score, like the dot; it is dimmed while the connection is paused, and not shown for a
+    connection that isn't monitored. The logic is pure and unit tested: `SqlVitals/Engine/Monitoring/HealthScore.cs`.
 - **Interval and Start/Stop** on the Live Metrics page apply to that connection's collector, including while it runs in the background.
 - **Unreachable servers** are retried with exponential backoff (up to every 5 minutes), so they aren't hammered.
 - **Only lightweight queries run in the background:** the live-metrics query every interval, and the [history](#monitoring-history) detail snapshot every 5 minutes (configurable). Heavy pages such as Index Health, Query Store and SP Trace still run on demand against the active connection only.
@@ -627,7 +645,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.35.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.36.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -1033,7 +1051,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | Top queries by reads / CPU, implicit conversions | `sys.dm_exec_query_stats` + plan XML |
 | Stale statistics | `sys.stats`, `sys.dm_db_stats_properties` |
 | DB files, TempDB files, config | `sys.database_files`, `sys.master_files`, `sys.configurations` |
-| Live metrics, Perfmon | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` |
+| Live metrics, Perfmon | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database) |
 | Health dot (blocking, log, TempDB) | `sys.dm_exec_requests`, `sys.dm_os_performance_counters` |
 | SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 

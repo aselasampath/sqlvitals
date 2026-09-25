@@ -96,9 +96,11 @@ public enum HealthLevel
 
 /// <summary>
 /// One indicator of one sample, graded: its level, its figure, the thresholds it was graded on
-/// and, when past one, the reason shown in the health dot's tooltip.
+/// and, when past one, the reason shown in the health dot's tooltip. <paramref name="Measured"/>
+/// is false when the sample had no figure for it (nothing blocked, a counter not reported).
 /// </summary>
-public sealed record HealthReading(HealthIndicator Indicator, HealthLevel Level, double Value, HealthThreshold Limits, string? Reason);
+public sealed record HealthReading(HealthIndicator Indicator, HealthLevel Level, double Value, HealthThreshold Limits, string? Reason,
+                                   bool Measured = true);
 
 /// <summary>Traffic-light rules applied to each background sample.</summary>
 public static class HealthRules
@@ -144,7 +146,7 @@ public static class HealthRules
                       : HealthLevel.Healthy;
 
             readings.Add(new HealthReading(indicator, level, value, threshold,
-                                           level == HealthLevel.Healthy ? null : reason()));
+                                           level == HealthLevel.Healthy ? null : reason(), measured));
         }
 
         Check(HealthIndicator.Cpu, sample.SqlCpuPct, measured: true, () => $"CPU {sample.SqlCpuPct:0}%");

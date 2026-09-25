@@ -234,7 +234,43 @@ public partial class MainWindow : Window
         item.UpdateHealth(Monitoring);
         if (ReferenceEquals(CmbConnection.SelectedItem, item))
             CmbConnection.ToolTip = item.ToolTipText;
+        if (_scorePopupConnectionId == connectionId)
+            ShowScoreBreakdown(item);
     }
+
+    // ── Health score (#36) ────────────────────────────────────────────────────
+
+    // The connection whose breakdown is open beside the sidebar; kept current as samples arrive.
+    private Guid? _scorePopupConnectionId;
+
+    // A click on a score in the drop-down opens its breakdown instead of switching connection:
+    // the button takes the click, so the item isn't selected.
+    private void HealthScore_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ConnectionSelectorItem item })
+            return;
+
+        e.Handled = true;
+        CmbConnection.IsDropDownOpen = false;
+
+        // After the drop-down has closed and let go of the mouse, or the popup closes at once.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
+        {
+            _scorePopupConnectionId = item.Settings.Id;
+            ShowScoreBreakdown(item);
+            ScorePopup.IsOpen = true;
+        });
+    }
+
+    private void ShowScoreBreakdown(ConnectionSelectorItem item)
+    {
+        var session = Monitoring.Get(item.Settings.Id);
+        ScoreBreakdown.Show(item.DisplayName, item.Score,
+                            session is null ? Monitoring.NotMonitoredReason(item.Settings.Id) : session.HealthText,
+                            paused: session is { IsRunning: false });
+    }
+
+    private void ScorePopup_Closed(object? sender, EventArgs e) => _scorePopupConnectionId = null;
 
     private async void CmbConnection_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -516,9 +552,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
         IRefreshable page = tag switch
         {
-            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId)),
+            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId), activeName),
             "Alerts"          => new AlertsPage(Monitoring, SettingsService, alertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
@@ -538,7 +575,7 @@ public partial class MainWindow : Window
             "Perfmon"        => new PerfmonPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "SpTrace"         => new SpTracePage(Repo),
             "Export"          => new ExportPage(Repo),
-            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId)),
+            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId), activeName),
         };
 
         MainFrame.Navigate(page);

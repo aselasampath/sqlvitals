@@ -90,6 +90,36 @@
       <TextBlock Text="Live Metrics Dashboard" DockPanel.Dock="Left"
                        Style="{StaticResource SectionHeader}" FontSize="20"
                        VerticalAlignment="Center" Margin="0,0,0,0"/>
+      <!-- Health score of the latest sample (#36); click for the checks that lowered it -->
+      <Button x:Name="BtnHealthScore" DockPanel.Dock="Left" Margin="14,0,0,0" VerticalAlignment="Center"
+              Cursor="Hand" Click="BtnHealthScore_Click" AutomationProperties.Name="Health score">
+        <Button.Template>
+          <ControlTemplate TargetType="{x:Type Button}">
+            <Border x:Name="Bd" Background="{DynamicResource BgCard}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1.5" CornerRadius="13" Padding="10,2" Height="26">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="BorderThickness" Value="2.5"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Button.Template>
+        <TextBlock FontFamily="Segoe UI" VerticalAlignment="Center">
+          <Run Text="Health" FontSize="11" Foreground="{DynamicResource TextMuted}"/><Run
+               Text=" "/><Run x:Name="RunHealthScore" Text="—" FontSize="14" FontWeight="Bold"/><Run
+               Text=" / 100" FontSize="10" Foreground="{DynamicResource TextMuted}"/>
+        </TextBlock>
+      </Button>
+      <Popup x:Name="HealthScorePopup" PlacementTarget="{Binding ElementName=BtnHealthScore}"
+             Placement="Bottom" VerticalOffset="6" StaysOpen="False"
+             AllowsTransparency="True" PopupAnimation="Fade">
+        <controls:HealthScoreBreakdown x:Name="HealthScoreDetails"/>
+      </Popup>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                         VerticalAlignment="Center">
         <!-- Range: live, or a past range from the monitoring history; and the baseline -->

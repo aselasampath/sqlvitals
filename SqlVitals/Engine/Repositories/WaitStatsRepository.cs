@@ -1384,9 +1384,48 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 21. Live metrics dashboard (perf counters + ring buffers) ────
+
+    // SQL Server's CPU %: the scheduler monitor's latest record. Azure SQL Database has no such
+    // records (the query returns nothing, which read as 0 %), so there it is the database's CPU
+    // as a share of its service tier's limit: the latest 15-second row of sys.dm_db_resource_stats,
+    // the same figure as the portal's "CPU percentage". That view doesn't exist elsewhere.
+    internal const string RingBufferCpuSql = """
+        (SELECT TOP 1
+            x.xml_record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int')
+         FROM (
+            SELECT timestamp, CONVERT(XML, record) AS xml_record
+            FROM sys.dm_os_ring_buffers
+            WHERE ring_buffer_type = 'RING_BUFFER_SCHEDULER_MONITOR'
+           AND record LIKE '%<SystemHealth>%'
+         ) AS x
+         ORDER BY timestamp DESC)
+        """;
+
+    internal const string AzureSqlDbCpuSql =
+        "(SELECT TOP (1) avg_cpu_percent FROM sys.dm_db_resource_stats ORDER BY end_time DESC)";
+
+    /// <summary>The live metrics query, with the CPU figure read where this edition keeps it.</summary>
+    internal static string LiveMetricsSql(bool isAzureSqlDb) =>
+        LiveMetricsSqlTemplate.Replace("/*CPU*/", isAzureSqlDb ? AzureSqlDbCpuSql : RingBufferCpuSql);
+
+    // Read on the first live metrics query; one repository per connection.
+    private bool? _liveIsAzureSqlDb;
+
     public async Task<LiveMetricSnapshot> GetLiveMetricsAsync()
     {
-        const string sql = """
+        using var conn = CreateConnection();
+        if (_liveIsAzureSqlDb is null)
+        {
+            var edition = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
+            _liveIsAzureSqlDb = edition is not null && Convert.ToInt32(edition.Edition) == 5;
+        }
+
+        var r = await QFirst(conn, LiveMetricsSql(_liveIsAzureSqlDb.Value));
+        if (r is null) throw new InvalidOperationException("Failed to capture metrics");
+        return ToLiveMetricSnapshot(r);
+    }
+
+    private const string LiveMetricsSqlTemplate = """
             SELECT
                 -- Throughput
                 (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Batch Requests/sec') AS BatchRequestsPerSec,
@@ -1404,16 +1443,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                         JOIN sys.dm_os_performance_counters B ON A.object_name = B.object_name
                         WHERE A.counter_name='Buffer cache hit ratio' AND B.counter_name='Buffer cache hit ratio base'
                         AND A.object_name LIKE '%Buffer Manager%'),0) AS BufferCacheHitRatio,
-                -- CPU (via ring buffer - approximates last minute avg)
-                (SELECT TOP 1
-                    x.xml_record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int')
-                 FROM (
-                    SELECT timestamp, CONVERT(XML, record) AS xml_record
-                    FROM sys.dm_os_ring_buffers
-                    WHERE ring_buffer_type = 'RING_BUFFER_SCHEDULER_MONITOR'
-                   AND record LIKE '%<SystemHealth>%'
-                 ) AS x
-                 ORDER BY timestamp DESC) AS SqlCpuUtilizationPct,
+                -- CPU: see RingBufferCpuSql / AzureSqlDbCpuSql
+                /*CPU*/ AS SqlCpuUtilizationPct,
                 -- Health indicators: blocking, the fullest log, TempDB data space
                 (SELECT COUNT(*) FROM sys.dm_exec_requests
                  WHERE blocking_session_id > 0 AND blocking_session_id <> session_id) AS BlockedSessions,
@@ -1443,10 +1474,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 GETDATE() AS CaptureTime
         """;
 
-        using var conn = CreateConnection();
-        var r = await QFirst(conn, sql);
-        if (r is null) throw new InvalidOperationException("Failed to capture metrics");
-
+    private static LiveMetricSnapshot ToLiveMetricSnapshot(dynamic r)
+    {
         long total  = (long)(r.TotalWaitMs ?? 0);
         long cpu    = (long)(r.CpuWaitMs ?? 0);
         long io     = (long)(r.IoWaitMs ?? 0);
