@@ -44,7 +44,8 @@ public static partial class SpTraceXmlParser
     // sys.dm_xe_session_targets truncates target_data (historically around 2 MB),
     // which can cut the document mid-element. Rather than lose the whole poll, drop
     // everything after the last complete </event> and close the root by hand.
-    private static XElement? TryParseRoot(string xml)
+    // Also used for system_health's ring buffer (DeadlockReportParser).
+    internal static XElement? TryParseRoot(string xml)
     {
         try
         {
