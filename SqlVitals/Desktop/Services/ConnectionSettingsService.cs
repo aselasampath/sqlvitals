@@ -152,6 +152,15 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves the Processes page's auto-refresh: its interval, and whether it starts on its own.</summary>
+    public void SetProcessesRefresh(int seconds, bool autoRefresh)
+    {
+        var store = Load();
+        store.ProcessesRefreshSeconds = ConnectionStore.NormalizeProcessesRefresh(seconds);
+        store.ProcessesAutoRefresh    = autoRefresh;
+        Save(store);
+    }
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id)
     {
@@ -194,6 +203,8 @@ public class ConnectionSettingsService
                 AlertSamples            = AlertSettings.NormalizeSamples(raw.AlertSamples),
                 KeepRunningInTray       = raw.KeepRunningInTray,
                 TrayHintShown           = raw.TrayHintShown,
+                ProcessesRefreshSeconds = ConnectionStore.NormalizeProcessesRefresh(raw.ProcessesRefreshSeconds),
+                ProcessesAutoRefresh    = raw.ProcessesAutoRefresh,
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -270,6 +281,8 @@ public class ConnectionSettingsService
             NotificationsMuted      = store.NotificationsMuted.Count > 0 ? store.NotificationsMuted.ToList() : null,
             KeepRunningInTray       = store.KeepRunningInTray,
             TrayHintShown           = store.TrayHintShown,
+            ProcessesRefreshSeconds = store.ProcessesRefreshSeconds,
+            ProcessesAutoRefresh    = store.ProcessesAutoRefresh,
         };
 
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
@@ -309,6 +322,8 @@ public class ConnectionSettingsService
         public List<Guid>? NotificationsMuted    { get; set; }
         public bool    KeepRunningInTray         { get; set; } = true;
         public bool    TrayHintShown             { get; set; }
+        public int     ProcessesRefreshSeconds   { get; set; } = ConnectionStore.DefaultProcessesRefreshSeconds;
+        public bool    ProcessesAutoRefresh      { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -365,6 +380,17 @@ public class ConnectionStore
 
     /// <summary>The one-time "still running in the tray" notification has been shown.</summary>
     public bool TrayHintShown { get; set; }
+
+    public const int DefaultProcessesRefreshSeconds = 10;
+
+    /// <summary>Seconds between Processes page refreshes: 5 to 120, in steps of 5.</summary>
+    public int ProcessesRefreshSeconds { get; set; } = DefaultProcessesRefreshSeconds;
+
+    /// <summary>The Processes page starts refreshing on its own when opened (#37).</summary>
+    public bool ProcessesAutoRefresh { get; set; }
+
+    public static int NormalizeProcessesRefresh(int seconds) =>
+        seconds is >= 5 and <= 120 && seconds % 5 == 0 ? seconds : DefaultProcessesRefreshSeconds;
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;

@@ -2,6 +2,7 @@ using System.Data;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Scripting;
 
 namespace SqlVitals.Engine.Repositories;
@@ -1324,9 +1325,10 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 20. Process map (Active sessions + blocking) ─────────────────
-    public async Task<IEnumerable<ProcessNode>> GetProcessesAsync()
-    {
-        const string sql = """
+    // A head blocker is often a sleeping session with an open transaction: it has no request, so
+    // its text is the connection's most recent batch and its open transactions are the session's.
+    // A blocker that isn't a user process (a system task) is included too, so its chain has a head.
+    internal const string ProcessesSql = """
             SELECT s.session_id AS SessionId,
                 r.blocking_session_id AS BlockingSessionId,
                 s.login_name AS LoginName,
@@ -1345,19 +1347,27 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 s.memory_usage AS MemoryUsage,
                 s.login_time AS LoginTime,
                 s.last_request_end_time AS LastBatch,
-                r.open_transaction_count AS OpenTran,
+                ISNULL(r.open_transaction_count, s.open_transaction_count) AS OpenTran,
                 r.command AS Command,
-                DB_NAME(r.database_id) AS DatabaseName,
+                DB_NAME(ISNULL(r.database_id, s.database_id)) AS DatabaseName,
                 ISNULL(qt.text, '') AS QueryText
             FROM sys.dm_exec_sessions s
             LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
-            OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) qt
+            OUTER APPLY (SELECT TOP (1) c.most_recent_sql_handle
+                         FROM sys.dm_exec_connections c
+                         WHERE c.session_id = s.session_id
+                         ORDER BY c.last_read DESC) c
+            OUTER APPLY sys.dm_exec_sql_text(ISNULL(r.sql_handle, c.most_recent_sql_handle)) qt
             WHERE s.is_user_process = 1
+               OR s.session_id IN (SELECT blocking_session_id FROM sys.dm_exec_requests
+                                   WHERE blocking_session_id > 0)
             """;
 
+    public async Task<IEnumerable<ProcessNode>> GetProcessesAsync()
+    {
         using var conn = CreateConnection();
-        var rows = await Q(conn, sql);
-        return rows.Select(r => new ProcessNode(
+        var rows = await Q(conn, ProcessesSql);
+        return BlockingChains.Classify(rows.Select(r => new ProcessNode(
             (int)r.SessionId,
             (int)(r.BlockingSessionId ?? 0),
             (string)r.Status,
@@ -1377,10 +1387,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             (int)(r.OpenTran ?? 0),
             (string?)r.Command,
             (string?)r.QueryText,
-             (int)(r.BlockingSessionId ?? 0) > 0 ? "Blocked"
-                : (string)r.Status == "sleeping" ? "Sleeping"
-                : "Active"
-        ));
+            ""   // set by Classify
+        )));
     }
 
     // ── 21. Live metrics dashboard (perf counters + ring buffers) ────
