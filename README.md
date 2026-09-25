@@ -1,9 +1,51 @@
-# SqlVitals — WPF Desktop Application
+<p align="center">
+  <img src="SqlVitals/Branding/sqlvitals-256.png" alt="SqlVitals logo" width="128" height="128">
+</p>
 
-A real-time SQL Server / Azure SQL monitoring desktop application built with **WPF (.NET 8)**.
-Queries SQL Server DMVs directly — no separate server process, no HTTP round-trips.
+<h1 align="center">SqlVitals</h1>
 
-Current version: **0.34.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+<p align="center">
+  <strong>Check the pulse of your SQL Server or Azure SQL database, spot trouble early and fix it with confidence.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows" alt="Platform: Windows 10 | 11">
+  <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet" alt=".NET 8.0">
+  <img src="https://img.shields.io/badge/SQL%20Server%20%7C%20Azure%20SQL-supported-CC2927?logo=microsoftsqlserver" alt="SQL Server and Azure SQL">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+  <a href="https://github.com/aselasampath/sqlvitals/actions/workflows/pr-setup.yml"><img src="https://github.com/aselasampath/sqlvitals/actions/workflows/pr-setup.yml/badge.svg" alt="PR build"></a>
+</p>
+
+**SqlVitals** is a free, open-source Windows desktop app that shows what your SQL Server or Azure SQL
+database is doing right now, and what it was doing while you weren't watching. It reads the server's own
+dynamic management views (DMVs) directly: there's no agent to install on the server, no monitoring database
+to look after and no web service in between. Add a connection, and waits, blocking, TempDB pressure, memory
+grants, slow queries and index problems are on screen in seconds.
+
+Built for DBAs and developers who need a clear answer to *"why is the database slow?"*, without setting up a
+monitoring platform first.
+
+- 🩺 **See it live.** Live metrics, active waits, blocking chains and a live stored-procedure trace.
+- 🔔 **Know when something's wrong.** Every saved connection can be watched in the background. A health dot
+  in the sidebar shows its state, and alerts record which threshold was crossed, when, for how long and how badly.
+- 🕰️ **Go back in time.** A local history on your PC keeps metrics, waits and top queries, so you can look into
+  last night's incident or compare today with the same time last week.
+- 📉 **Catch regressions early.** Query Regressions flags queries that got slower, with their before
+  and after figures and execution plans, so a plan regression stands out.
+- 🛠️ **Fix, not just find.** Generate `CREATE INDEX`, `DROP INDEX`, index maintenance and `UPDATE STATISTICS`
+  scripts from what it finds. SqlVitals never runs them itself: you review them and decide.
+- 🪶 **Light on your servers.** Diagnostic reads run under `READ UNCOMMITTED` with a timeout, only lightweight
+  queries run in the background, and heavy pages run only when you open them.
+- 🔒 **Careful with credentials.** Saved connections are encrypted with Windows DPAPI, and passwords are never
+  written to disk unless you ask for it.
+- 📤 **Easy to share.** Copy or export any grid to CSV, or export a structured report ready to paste into an AI
+  assistant.
+
+**Get started:** [build and run it from source](#how-to-build--run), or build the one-file
+[SqlVitals Setup](#installer-sqlvitals-setup) installer (no admin rights needed, .NET runtime included). Tagged
+builds are on the [Releases](https://github.com/aselasampath/sqlvitals/releases) page.
+
+Built with **WPF on .NET 8**. Current version: **0.34.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
