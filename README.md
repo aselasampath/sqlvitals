@@ -47,7 +47,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.39.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.40.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -83,12 +83,15 @@ quick to start as SSMS.
 - **Broken maintenance and ETL jobs stand out.** Every SQL Agent job with its last run, how long it took against its
   average and when it runs next. Failed jobs are red, jobs running longer than usual amber, and a failed run shows the
   failing step's error.
+- **Know your RPO is met.** Each database's last full, differential and log backup from msdb, and how much work would
+  be lost right now. A database with no full backup, or in FULL recovery without a recent log backup, is flagged against
+  ages you set.
 - **Maintenance scripts, not guesswork.** Missing and unused indexes, fragmentation and stale statistics become
   `CREATE` / `DROP` / `REBUILD` / `UPDATE STATISTICS` scripts. You review them; SqlVitals never runs them.
 - **Easy to approve for production:** read-only, `READ UNCOMMITTED` reads with timeouts, one light query per server
   every 10 s in the background plus a snapshot every 5 minutes, and `VIEW SERVER STATE` (or `VIEW DATABASE STATE` on Azure SQL Database) is enough
-  for every screen except the Extended Events mode of SP Trace, and Agent Jobs, which reads msdb's job tables
-  (sysadmin, or `SELECT` on them).
+  for every screen except the Extended Events mode of SP Trace, and Agent Jobs and Backups, which read msdb's job
+  and backup history tables (sysadmin, or `SELECT` on them).
 
 **👩‍💻 Database developer: why is *my* query slow, and did my release make it worse?**
 
@@ -125,6 +128,7 @@ quick to start as SSMS.
 | Alerts with start, end and worst value, plus desktop notifications | ✅ Built in | ⚠️ SQL Agent alerts, set up per server (on-premises) | ✅ Alert rules and action groups, set up per resource |
 | Blocking chain map with the head blocker | ✅ | ⚠️ A column in Activity Monitor | ❌ |
 | Failed and long-running SQL Agent jobs, run time against the average | ✅ | ⚠️ Job Activity Monitor: one server, no average | ❌ |
+| Last full, differential and log backup of every database, with RPO warnings | ✅ Ages you set | ⚠️ Backup history one database at a time, or a policy you set up | ⚠️ Azure SQL backs itself up; SQL Server needs Azure Backup |
 | Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
 | Fix scripts for indexes and statistics | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning recommendations, Azure SQL only |
 | Nothing to install on the server, no workspace, no cost | ✅ | ✅ | ⚠️ Log Analytics and some features are billed |
@@ -137,7 +141,7 @@ this table shows.*
 Being clear about this is part of the pitch:
 
 - **Not an administration tool.** It never changes your server. Keep SSMS (or Azure Data Studio) for creating
-  objects, security, backups and running the scripts SqlVitals generates.
+  objects, security, backups (SqlVitals only checks that they happen) and running the scripts SqlVitals generates.
 - **Not a team monitoring platform.** History and alerts live on the PC running SqlVitals, and are collected only
   while it runs (it keeps running in the notification area). There's no shared web dashboard, central repository or
   paging. If you need 24/7 monitoring for a team with long retention, use a server-based product. SqlVitals is a good
@@ -179,6 +183,7 @@ live diagnostic data across the app's monitoring screens:
 - Live blocking chains: each chain drawn as a tree from `blocking_session_id` with the head blocker at the root, the head blockers listed at the top (click one to go to it), a *Blocking chains only* filter, and an auto-refresh whose interval is remembered
 - Deadlock history from the built-in `system_health` Extended Events session: victim, other participants, the locks each held and wanted, objects and statements; recurring deadlocks grouped by pattern; each report can be saved as an `.xdl` for SSMS
 - SQL Agent jobs from msdb: each job's last run and outcome, its duration against the average of its successful runs, and its next run; failed jobs and jobs running longer than their average first; each run's steps with the failing step's error. Disabled on Azure SQL Database, which has no Agent
+- Backups from msdb: each database's last full, differential and log backup, how old each is and the data at risk right now; a warning when a database has no full backup or an old one, or uses the FULL or BULK_LOGGED recovery model without a recent log backup, against ages you set (the RPO); the selected database's backup history. Disabled on Azure SQL Database, which backs itself up
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
@@ -313,6 +318,7 @@ All paths are relative to the repository root.
     │   │   ├── QueryRegressionRepository.cs ← Query Store stats and plans for Query Regressions
     │   │   ├── DeadlockRepository.cs      ← Deadlock reports from system_health (event files, else ring buffer)
     │   │   ├── AgentJobRepository.cs      ← SQL Agent jobs and their runs from msdb
+    │   │   ├── BackupRepository.cs        ← Each database's newest backups and one database's history from msdb
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── History/
     │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
@@ -335,6 +341,10 @@ All paths are relative to the repository root.
     │   │   ├── AgentJob.cs                ← A job: last run, running long, next run; whether Agent runs
     │   │   ├── AgentJobHistory.cs         ← Groups sysjobhistory rows into runs and their steps
     │   │   └── MsdbTime.cs                ← msdb's integer dates, times and hhmmss durations
+    │   ├── Backups/
+    │   │   ├── DatabaseBackup.cs          ← A database's last backups, ages, recovery point and RPO warnings; BackupList
+    │   │   ├── BackupRpo.cs               ← The full and log backup ages to warn past; reads "7d", "26h", "90 min"
+    │   │   └── BackupHistoryEntry.cs      ← One backupset row for the selected database's history
     │   ├── Regressions/
     │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
     │   │   └── QueryRegressionDetector.cs ← Which queries got slower, and by how much (RegressionCriteria)
@@ -647,6 +657,40 @@ either rose by more than a set percentage.
 - The logic lives in `SqlVitals/Engine/Regressions/` (`RegressionWindows`, `QueryRegressionDetector`, `RegressionCriteria`),
   and the SQL in `SqlVitals/Engine/Repositories/QueryRegressionRepository.cs`.
 
+### Backups and RPO
+
+The **Backups** page shows each database's last **full**, **differential** and **log** backup from `msdb.dbo.backupset`,
+and warns when a database's recovery point objective (RPO) isn't being met. Two ages are set at the top of the page:
+
+| Warn when | Checked for | Default | Accepts |
+|---|---|---|---|
+| The last full backup is older than | Every online database except tempdb | 7 days | A number of days, or with a unit: `26h`, `1d 12h` (1 hour to 400 days) |
+| The last log backup is older than | Databases in the FULL or BULK_LOGGED recovery model | 1 hour | A number of minutes, or with a unit: `2h`, `90 min` (1 minute to 30 days) |
+
+- **Red** means there is nothing (or no log) to restore: *No full backup* since the database was created or restored;
+  *No log backup* ever, in FULL or BULK_LOGGED recovery; or *Log chain broken*: the database is in FULL recovery but
+  `sys.database_recovery_status.last_log_backup_lsn` is empty (e.g. it was switched from SIMPLE after its last full
+  backup), so no log backup can be taken until a full or differential backup restarts the chain. **Amber** is a full or
+  log backup older than the ages set. The most urgent come first; *Show → Needs attention* hides the rest.
+- **Data at risk** is the time since the newest backup the database could be restored to: the last log backup in FULL
+  recovery, the last full or differential in SIMPLE. It's the RPO you actually have right now.
+- **What counts:** copy-only full backups count as full backups. Only backups finished since the database's
+  `create_date` count, because `backupset` is matched by name: an older backup is of an earlier database with the same
+  name, or of this one before it was restored. The selected database's history still lists them, in grey.
+- **Not checked:** databases that aren't online (restoring, offline, …), the log of `model` (its recovery model is only
+  what new databases start with) and of read-only databases. Database snapshots aren't listed.
+- **Availability groups:** a backup taken on another replica is recorded in *that* replica's msdb, so it can show as
+  missing here. The page says so when any database is in an availability group.
+- Select a database for its backups, newest first (at most 500): type, duration, size and compressed size, `WITH
+  CHECKSUM`, who took it and where it was written.
+- The ages are saved per user in `settings.dat` and apply to every connection. **✓ Apply** (or **Enter** in either box)
+  checks again. Nothing is read in the background: the page reads msdb when it opens, on **↻ Read again** and on the
+  sidebar **Refresh**. `backupset` is read once per load, however many databases there are.
+- Disabled on Azure SQL Database, which backs up every database itself and records nothing in msdb. Azure SQL Managed
+  Instance and SQL Server (every edition, Express included) are supported.
+- The logic lives in `SqlVitals/Engine/Backups/` (`DatabaseBackup`, `BackupRpo`, `BackupHistoryEntry`), and the SQL in
+  `SqlVitals/Engine/Repositories/BackupRepository.cs`.
+
 ---
 
 ## How to Build & Run
@@ -667,6 +711,8 @@ either rose by more than a set percentage.
 | Every page except SP Trace | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
 | SP Trace — DMV fallback mode | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
 | SP Trace — Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
+| Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
+| Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups itself |
 
 **Minimum — everything except per-call tracing:**
 
@@ -676,6 +722,15 @@ GRANT VIEW SERVER STATE TO [your_login];
 
 -- Azure SQL Database (database-scoped, run in the user database)
 GRANT VIEW DATABASE STATE TO [your_user];
+```
+
+**For the Backups page** without sysadmin (read-only; the wiki's *Server Impact and Permissions* page has the Agent Jobs grants too):
+
+```sql
+USE msdb;
+CREATE USER [your_login] FOR LOGIN [your_login];   -- skip if it already has one
+GRANT SELECT ON dbo.backupset         TO [your_login];
+GRANT SELECT ON dbo.backupmediafamily TO [your_login];
 ```
 
 **To also get per-call SP tracing** (Extended Events). Without these the SP Trace page still
@@ -755,7 +810,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.39.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.40.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -809,6 +864,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Processes | `Processes` | `ProcessesPage` | `GetProcessesAsync` | Blocking chains as trees with the head blockers listed, SPID search, session details and its own remembered auto-refresh |
 | Deadlocks | `Deadlocks` | `DeadlocksPage` | `GetDeadlockHistoryAsync` | system_health deadlock reports, a Recurring tab, *Save as .xdl* |
 | Agent Jobs | `AgentJobs` | `AgentJobsPage` | `GetAgentJobsAsync`, `GetAgentJobRunsAsync` | Failed and long-running jobs first; runs and steps of the selected job. Disabled on Azure SQL Database |
+| Backups | `Backups` | `BackupsPage` | `GetBackupStatusAsync`, `GetBackupHistoryAsync` | Last full, differential and log backup per database; RPO warnings first; the selected database's history. Disabled on Azure SQL Database |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
@@ -1167,6 +1223,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | Processes (blocking chains) | `sys.dm_exec_sessions`, `sys.dm_exec_requests` (`blocking_session_id`), `sys.dm_exec_connections` (a sleeping session's last batch), `sys.dm_exec_sql_text` |
 | Deadlocks | `sys.dm_xe_sessions`, `sys.dm_xe_session_targets` (system_health), `sys.fn_xe_file_target_read_file` (its `.xel` files, filtered to `xml_deadlock_report`) |
 | Agent Jobs | `msdb.dbo.sysjobs`, `sysjobhistory` (step 0 rows: outcome, duration, average), `sysjobactivity` + `syssessions` (running now), `sysjobschedules` + `sysschedules` (next run), `syscategories`; `sys.dm_server_services` and the `Agent XPs` option (is Agent running) |
+| Backups | `msdb.dbo.backupset` (newest full, differential and log per database, in one pass), `backupmediafamily` (where it was written), `sys.databases`, `sys.database_recovery_status` (`last_log_backup_lsn`: has the log chain started) |
 | Health dot (blocking, log, TempDB) | `sys.dm_exec_requests`, `sys.dm_os_performance_counters` |
 | SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 
@@ -1221,6 +1278,7 @@ Several server-level DMVs are **not available on Azure SQL Database** (EngineEdi
 | `sys.dm_db_file_space_usage` | ✅ | ✅ | ✅ |
 | system_health session (Deadlocks page) | ✅ | ❌ | ✅ |
 | SQL Server Agent / msdb jobs (Agent Jobs page) | ✅ (not Express) | ❌ | ✅ |
+| msdb backup history (Backups page) | ✅ | ❌ (automatic backups, not in msdb) | ✅ |
 
 `GetDatabaseStorageAsync()` detects the edition at runtime and switches queries:
 
