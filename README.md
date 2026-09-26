@@ -47,7 +47,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.41.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.42.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -89,6 +89,9 @@ quick to start as SSMS.
 - **Find the slow disk.** Read and write latency for every database file, measured over the last few seconds
   rather than since the server started, with the files over your threshold highlighted and the same added up per
   volume, so one slow LUN stands out from one busy database.
+- **Catch the classic misconfigurations.** MAXDOP, cost threshold for parallelism, max server memory, TempDB's data
+  files and every database's auto-shrink, page verify and compatibility level, each marked Pass or Warn with its value,
+  the value recommended for this server's processors and memory, why it matters, and the T-SQL to fix it.
 - **Maintenance scripts, not guesswork.** Missing and unused indexes, fragmentation and stale statistics become
   `CREATE` / `DROP` / `REBUILD` / `UPDATE STATISTICS` scripts. You review them; SqlVitals never runs them.
 - **Easy to approve for production:** read-only, `READ UNCOMMITTED` reads with timeouts, one light query per server
@@ -133,6 +136,7 @@ quick to start as SSMS.
 | Failed and long-running SQL Agent jobs, run time against the average | ✅ | ⚠️ Job Activity Monitor: one server, no average | ❌ |
 | Last full, differential and log backup of every database, with RPO warnings | ✅ Ages you set | ⚠️ Backup history one database at a time, or a policy you set up | ⚠️ Azure SQL backs itself up; SQL Server needs Azure Backup |
 | Read and write latency per database file, now rather than since startup | ✅ Highlighted past a threshold you set | ⚠️ Activity Monitor's Data File I/O: one server, while open | ⚠️ Azure SQL Database: IO percentage, not per-file latency |
+| Server and database settings checked against best practice, with the fix | ✅ Worked out for its processors and memory | ⚠️ Best-practice policies you write yourself (Policy-Based Management) | ⚠️ Azure SQL Database: Azure manages most server settings |
 | Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
 | Fix scripts for indexes and statistics | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning recommendations, Azure SQL only |
 | Nothing to install on the server, no workspace, no cost | ✅ | ✅ | ⚠️ Log Analytics and some features are billed |
@@ -189,6 +193,7 @@ live diagnostic data across the app's monitoring screens:
 - SQL Agent jobs from msdb: each job's last run and outcome, its duration against the average of its successful runs, and its next run; failed jobs and jobs running longer than their average first; each run's steps with the failing step's error. Disabled on Azure SQL Database, which has no Agent
 - Backups from msdb: each database's last full, differential and log backup, how old each is and the data at risk right now; a warning when a database has no full backup or an old one, or uses the FULL or BULK_LOGGED recovery model without a recent log backup, against ages you set (the RPO); the selected database's backup history. Disabled on Azure SQL Database, which backs itself up
 - File I/O latency from `sys.dm_io_virtual_file_stats`: each database file's average read and write latency in milliseconds over the change between two readings a few seconds apart (not the totals since startup), with reads, writes, MB/s and I/O size; files slower than the threshold for data or log files highlighted, and every file on a volume added up per volume
+- Configuration checks against best practice: MAXDOP (for the processors and NUMA nodes SQL Server uses), cost threshold for parallelism, max server memory (for the server's memory), the number, size and growth of TempDB's data files, and each database's auto-shrink, page verify and compatibility level; each Pass or Warn with the current and recommended value and an explanation, and a script of the changes for the warnings (never run by SqlVitals)
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
@@ -325,6 +330,7 @@ All paths are relative to the repository root.
     │   │   ├── AgentJobRepository.cs      ← SQL Agent jobs and their runs from msdb
     │   │   ├── BackupRepository.cs        ← Each database's newest backups and one database's history from msdb
     │   │   ├── FileIoRepository.cs        ← Every file's I/O totals from sys.dm_io_virtual_file_stats, and its volume
+    │   │   ├── ConfigurationRepository.cs ← sp_configure options, processors, memory, TempDB files and database options
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── History/
     │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
@@ -356,6 +362,10 @@ All paths are relative to the repository root.
     │   │   ├── FileIoTracker.cs           ← The first, previous and last readings; starts again after a restart
     │   │   ├── FileLatency.cs             ← Latency per file and per volume over the change between two readings
     │   │   └── FileLatencyThresholds.cs   ← The data and log file thresholds to highlight past; reads "20", "2.5 ms"
+    │   ├── ConfigChecks/
+    │   │   ├── ServerConfiguration.cs     ← What the checks read: options, hardware, TempDB files, database options
+    │   │   ├── ConfigurationChecks.cs     ← The rules: Pass or Warn, recommended values, explanations and fix scripts
+    │   │   └── ConfigCheck.cs             ← One check's result; ConfigCheckList and its combined fix script
     │   ├── Regressions/
     │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
     │   │   └── QueryRegressionDetector.cs ← Which queries got slower, and by how much (RegressionCriteria)
@@ -739,6 +749,41 @@ same for writes.
 - The logic lives in `SqlVitals/Engine/FileIo/` (`FileIoTracker`, `FileLatency`, `FileLatencyThresholds`), and the
   SQL in `SqlVitals/Engine/Repositories/FileIoRepository.cs`.
 
+### Configuration checks
+
+The **Config Checks** page checks the server's configuration against best practice. Each row is **Pass** or **Warn**,
+with the **current** value, the **recommended** value and an **explanation**; warnings come first and are tinted.
+
+| Check | Warns when | Recommended |
+|---|---|---|
+| MAXDOP | A query could use more processors than Microsoft recommends for this server's NUMA layout (0 on more than 8 processors, say) | One NUMA node: the processors, at most 8. Several: the processors per node up to 16, else half of them, at most 16 |
+| Cost threshold for parallelism | Under 25 (the default is 5), unless nothing runs in parallel anyway (MAXDOP 1, one processor) | 50 to start |
+| Max server memory | Not set (2,147,483,647 MB), or leaves Windows less than it needs | Physical memory less 1 GB, 1 GB per 4 GB from 4 to 16 GB and 1 GB per 8 GB above 16 GB |
+| TempDB data files | Fewer than the processors, up to 8 | One per processor up to 8; then four more at a time only if contention remains |
+| TempDB file sizes | The data files' sizes differ by more than 5%, they grow by different amounts, or by a percentage | The same size and the same growth in MB |
+| Auto-shrink | ON, for each database | OFF |
+| Page verify | `NONE` or `TORN_PAGE_DETECTION`, for each database | `CHECKSUM` |
+| Compatibility level | Below the server's own level (160 on SQL Server 2022), for each database | The server's level, after turning Query Store on |
+
+- The processors are the **visible online schedulers** (what SQL Server can use after affinity and the edition's
+  limits), and the NUMA nodes include soft-NUMA. Both, and the physical memory, need `VIEW SERVER STATE`: without it
+  the page says so, still warns about an unlimited max server memory, and marks what it can't work out *Not checked*.
+- **Database checks** give one Warn row per database, and one Pass row for all the rest (*All 24 databases*,
+  *21 other databases*). Snapshots are left out: they take their options from their source.
+- A setting changed with `sp_configure` but not yet `RECONFIGURE`d is judged on the value in use, and the explanation
+  says what it has been set to.
+- Selecting a check shows its full explanation and, for a warning, the **T-SQL to fix it** (`sp_configure` and
+  `RECONFIGURE`; `ALTER DATABASE … SET`; `ADD FILE` / `MODIFY FILE` for TempDB, using the largest file's size and the
+  first file's folder), with **⧉ Copy**. **📝 Script the warnings** puts every fix in one script to review and save.
+  SqlVitals never runs them.
+- **Azure SQL Managed Instance** reports no version, so a database's compatibility level is compared with the highest
+  level any database there uses. On **Azure SQL Database**, Azure manages memory, TempDB and the cost threshold, so
+  only the current database is checked: its MAXDOP database scoped configuration (8 or lower, Azure's default for new
+  databases), auto-shrink, page verify and compatibility level.
+- Read when the page opens and on **↻ Check again** or the sidebar **Refresh**: a handful of light catalog queries,
+  nothing written. The logic lives in `SqlVitals/Engine/ConfigChecks/` (`ConfigurationChecks`), and the SQL in
+  `SqlVitals/Engine/Repositories/ConfigurationRepository.cs`.
+
 ---
 
 ## How to Build & Run
@@ -761,6 +806,7 @@ same for writes.
 | SP Trace — Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
 | Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
 | Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups itself |
+| Config Checks | `VIEW SERVER STATE` for the processors and memory (MAXDOP, max server memory, TempDB file count); the other checks need nothing more | No extra permission: this database's settings only |
 
 **Minimum — everything except per-call tracing:**
 
@@ -858,7 +904,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.41.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.42.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -914,6 +960,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Agent Jobs | `AgentJobs` | `AgentJobsPage` | `GetAgentJobsAsync`, `GetAgentJobRunsAsync` | Failed and long-running jobs first; runs and steps of the selected job. Disabled on Azure SQL Database |
 | Backups | `Backups` | `BackupsPage` | `GetBackupStatusAsync`, `GetBackupHistoryAsync` | Last full, differential and log backup per database; RPO warnings first; the selected database's history. Disabled on Azure SQL Database |
 | File I/O | `FileIo` | `FileIoPage` | `ReadFileIoAsync` | Reads every few seconds while open; latency per file over the last interval or since the first reading, slow files first; per-volume totals |
+| Config Checks | `ConfigChecks` | `ConfigChecksPage` | `GetConfigurationChecksAsync` | Warnings first; the selected check's explanation and fix script; *Script the warnings* for all of them |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
@@ -1274,6 +1321,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | Agent Jobs | `msdb.dbo.sysjobs`, `sysjobhistory` (step 0 rows: outcome, duration, average), `sysjobactivity` + `syssessions` (running now), `sysjobschedules` + `sysschedules` (next run), `syscategories`; `sys.dm_server_services` and the `Agent XPs` option (is Agent running) |
 | Backups | `msdb.dbo.backupset` (newest full, differential and log per database, in one pass), `backupmediafamily` (where it was written), `sys.databases`, `sys.database_recovery_status` (`last_log_backup_lsn`: has the log chain started) |
 | File I/O | `sys.dm_io_virtual_file_stats` (reads, writes, bytes and I/O stall per file, diffed between readings), `sys.master_files` (name, type, path; `sys.database_files` on Azure SQL Database), `sys.dm_os_volume_stats` (the volume, once per file), `sys.dm_os_sys_info` (`sqlserver_start_time`: did it restart) |
+| Config Checks | `sys.configurations` (MAXDOP, cost threshold, max server memory), `sys.dm_os_schedulers` (visible online), `sys.dm_os_nodes` (NUMA), `sys.dm_os_sys_info` (`physical_memory_kb`), `tempdb.sys.database_files`, `sys.databases` (compatibility level, auto-shrink, page verify); `sys.database_scoped_configurations` (MAXDOP) on Azure SQL Database |
 | Health dot (blocking, log, TempDB) | `sys.dm_exec_requests`, `sys.dm_os_performance_counters` |
 | SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 
@@ -1331,6 +1379,7 @@ Several server-level DMVs are **not available on Azure SQL Database** (EngineEdi
 | msdb backup history (Backups page) | ✅ | ❌ (automatic backups, not in msdb) | ✅ |
 | `sys.dm_io_virtual_file_stats` for every database (File I/O page) | ✅ | ⚠️ The current database only | ✅ |
 | `sys.dm_os_volume_stats` (File I/O volumes) | ✅ | ❌ (shown as Azure-managed storage) | ✅ |
+| Server configuration checks (Config Checks page) | ✅ | ⚠️ This database's MAXDOP, auto-shrink, page verify and compatibility level only | ✅ |
 
 `GetDatabaseStorageAsync()` detects the edition at runtime and switches queries:
 
