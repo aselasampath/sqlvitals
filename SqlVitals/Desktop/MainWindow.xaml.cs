@@ -317,7 +317,7 @@ public partial class MainWindow : Window
     private async void ManageConnections_Click(object sender, RoutedEventArgs e) =>
         await NavigateTo("Settings");
 
-    // Pages Azure SQL Database has nothing for (see README → Azure SQL vs On-Premises
+    // Pages Azure SQL Database has nothing for (see the wiki's Server Impact and Permissions →
     // Compatibility), with their own tooltip, captured on first use, to restore on another server.
     private (Button Button, string Tag, object? ToolTip, string Reason)[]? _pagesAzureSqlLacks;
     private (Button Button, string Tag, object? ToolTip, string Reason)[] PagesAzureSqlLacks => _pagesAzureSqlLacks ??=
