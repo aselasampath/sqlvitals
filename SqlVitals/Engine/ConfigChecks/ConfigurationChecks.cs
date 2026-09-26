@@ -232,18 +232,18 @@ public static class ConfigurationChecks
 
         var value     = option.ValueInUse;
         var unlimited = value >= UnlimitedServerMemoryMb;
-        var current   = unlimited ? $"Not set ({UnlimitedServerMemoryMb:N0} MB: no limit)" : FormatMb(value);
+        var current   = unlimited ? "Not set (no limit)" : FormatMb(value);
         var pending   = Pending(option);
 
         if (config.Hardware is not { } hw || hw.PhysicalMemoryMb <= 0)
         {
             return unlimited
                 ? new ConfigCheck(ConfigCheckKind.MaxServerMemory, ConfigCheck.ServerScope, ConfigCheckStatus.Warn, current,
-                    "Physical memory less what Windows needs",
-                    what + " How much memory the server has needs VIEW SERVER STATE to read, so the value to set can't be worked out here." +
+                    "Memory less Windows' share",
+                    what + $" It isn't set: {UnlimitedServerMemoryMb:N0} MB, the default, is no limit. How much memory the server has needs VIEW SERVER STATE to read, so the value to set can't be worked out here." +
                     others + pending)
                 : new ConfigCheck(ConfigCheckKind.MaxServerMemory, ConfigCheck.ServerScope, ConfigCheckStatus.NotChecked, current,
-                    "Physical memory less what Windows needs",
+                    "Memory less Windows' share",
                     what + " How much memory the server has needs VIEW SERVER STATE to read." + pending);
         }
 
@@ -256,7 +256,7 @@ public static class ConfigurationChecks
             return new ConfigCheck(ConfigCheckKind.MaxServerMemory, ConfigCheck.ServerScope, ConfigCheckStatus.Pass, current,
                 $"{recommended:N0} MB or less", what + basis + others + pending);
 
-        var why = unlimited ? " It isn't set."
+        var why = unlimited ? $" It isn't set: {UnlimitedServerMemoryMb:N0} MB, the default, is no limit."
             : value >= physical ? $" At {FormatMb(value)}, more than the server has, it is no limit at all."
             : $" At {FormatMb(value)}, it leaves Windows only {FormatGb(physical - value)}.";
         return new ConfigCheck(ConfigCheckKind.MaxServerMemory, ConfigCheck.ServerScope, ConfigCheckStatus.Warn, current,

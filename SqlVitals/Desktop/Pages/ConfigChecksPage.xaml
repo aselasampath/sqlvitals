@@ -127,8 +127,8 @@
                             <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="150" ElementStyle="{StaticResource SingleLineText}">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Server: a setting of the whole server. Otherwise the database it's about; databases that pass are listed together."/></Style></DataGridTextColumn.HeaderStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Current" Binding="{Binding Current}" Width="190" ElementStyle="{StaticResource CurrentValue}"/>
-                            <DataGridTextColumn Header="Recommended" Binding="{Binding Recommended}" Width="190" ElementStyle="{StaticResource SingleLineText}"/>
+                            <DataGridTextColumn Header="Current" Binding="{Binding Current}" Width="210" ElementStyle="{StaticResource CurrentValue}"/>
+                            <DataGridTextColumn Header="Recommended" Binding="{Binding Recommended}" Width="210" ElementStyle="{StaticResource SingleLineText}"/>
                             <DataGridTextColumn Header="Explanation" Binding="{Binding Explanation}" Width="*" MinWidth="220" ElementStyle="{StaticResource Muted}"/>
                         </DataGrid.Columns>
                     </DataGrid>
