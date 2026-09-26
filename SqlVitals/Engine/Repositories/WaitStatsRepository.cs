@@ -44,6 +44,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     private readonly AgentJobRepository _agentJobs = new(configuration);
 
+    private readonly BackupRepository _backups = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1877,4 +1879,11 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     public Task<IReadOnlyList<AgentJobs.JobRun>> GetAgentJobRunsAsync(Guid jobId, DateTime? runningSince)
         => _agentJobs.GetAgentJobRunsAsync(jobId, runningSince);
+
+    // ── Backups and RPO (delegated to BackupRepository) ───────────────
+    public Task<Backups.BackupList> GetBackupStatusAsync(Backups.BackupRpo rpo)
+        => _backups.GetBackupStatusAsync(rpo);
+
+    public Task<IReadOnlyList<Backups.BackupHistoryEntry>> GetBackupHistoryAsync(string databaseName, DateTime createDate)
+        => _backups.GetBackupHistoryAsync(databaseName, createDate);
 }

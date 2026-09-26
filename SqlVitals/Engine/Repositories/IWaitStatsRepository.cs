@@ -4,7 +4,8 @@ namespace SqlVitals.Engine.Repositories;
 
 
 public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepository, ISpTraceRepository, IHistoryRepository,
-                                        IQueryRegressionRepository, IDeadlockRepository, IAgentJobRepository
+                                        IQueryRegressionRepository, IDeadlockRepository, IAgentJobRepository,
+                                        IBackupRepository
 {
     // ── Engine edition detection ──────────────────────────────────────
     Task<bool> IsAzureSqlDatabaseAsync();

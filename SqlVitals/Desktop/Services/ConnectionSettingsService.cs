@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Regressions;
@@ -106,6 +107,14 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves the RPO the Backups page checks every database against (see <see cref="BackupRpo"/>).</summary>
+    public void SetBackupRpo(BackupRpo rpo)
+    {
+        var store = Load();
+        store.BackupRpo = rpo;
+        Save(store);
+    }
+
     /// <summary>Saves the health-dot thresholds used by every connection without its own.</summary>
     public void SetHealthThresholds(HealthThresholds thresholds)
     {
@@ -200,6 +209,8 @@ public class ConnectionSettingsService
                 RegressionThresholdPct  = RegressionCriteria.NormalizeThreshold(raw.RegressionThresholdPct),
                 RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(raw.RegressionMinExecutions),
                 HealthThresholds        = HealthThresholds.Normalize(raw.HealthThresholds),
+                BackupRpo               = new BackupRpo(BackupRpo.NormalizeFull(raw.BackupFullMaxAgeMinutes),
+                                                        BackupRpo.NormalizeLog(raw.BackupLogMaxAgeMinutes)),
                 AlertSamples            = AlertSettings.NormalizeSamples(raw.AlertSamples),
                 KeepRunningInTray       = raw.KeepRunningInTray,
                 TrayHintShown           = raw.TrayHintShown,
@@ -277,6 +288,8 @@ public class ConnectionSettingsService
             RegressionThresholdPct  = store.RegressionThresholdPct,
             RegressionMinExecutions = store.RegressionMinExecutions,
             HealthThresholds        = store.HealthThresholds,
+            BackupFullMaxAgeMinutes = (int)store.BackupRpo.FullMaxAge.TotalMinutes,
+            BackupLogMaxAgeMinutes  = (int)store.BackupRpo.LogMaxAge.TotalMinutes,
             AlertSamples            = store.AlertSamples,
             NotificationsMuted      = store.NotificationsMuted.Count > 0 ? store.NotificationsMuted.ToList() : null,
             KeepRunningInTray       = store.KeepRunningInTray,
@@ -318,7 +331,9 @@ public class ConnectionSettingsService
         public double  RegressionThresholdPct    { get; set; } = RegressionCriteria.DefaultThresholdPct;
         public long    RegressionMinExecutions   { get; set; } = RegressionCriteria.DefaultMinExecutions;
         public HealthThresholds? HealthThresholds { get; set; }
-        public int     AlertSamples              { get; set; } = AlertSettings.DefaultSamples;
+        public int     BackupFullMaxAgeMinutes   { get; set; } = (int)BackupRpo.DefaultFullMaxAge.TotalMinutes;
+        public int     BackupLogMaxAgeMinutes    { get; set; } = (int)BackupRpo.DefaultLogMaxAge.TotalMinutes;
+        public int     AlertSamples             { get; set; } = AlertSettings.DefaultSamples;
         public List<Guid>? NotificationsMuted    { get; set; }
         public bool    KeepRunningInTray         { get; set; } = true;
         public bool    TrayHintShown             { get; set; }
@@ -359,6 +374,9 @@ public class ConnectionStore
     /// <summary>The thresholds a connection's health dot is graded on: its own, or the saved ones.</summary>
     public HealthThresholds ThresholdsFor(ConnectionSettings connection) =>
         connection.HealthThresholds ?? HealthThresholds;
+
+    /// <summary>How old a full and a log backup may get before the Backups page warns (#40).</summary>
+    public BackupRpo BackupRpo { get; set; } = BackupRpo.Default;
 
     /// <summary>
     /// Samples in a row an indicator must stay past a threshold for an alert to start, and back
