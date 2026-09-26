@@ -47,7 +47,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.40.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.41.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -86,6 +86,9 @@ quick to start as SSMS.
 - **Know your RPO is met.** Each database's last full, differential and log backup from msdb, and how much work would
   be lost right now. A database with no full backup, or in FULL recovery without a recent log backup, is flagged against
   ages you set.
+- **Find the slow disk.** Read and write latency for every database file, measured over the last few seconds
+  rather than since the server started, with the files over your threshold highlighted and the same added up per
+  volume, so one slow LUN stands out from one busy database.
 - **Maintenance scripts, not guesswork.** Missing and unused indexes, fragmentation and stale statistics become
   `CREATE` / `DROP` / `REBUILD` / `UPDATE STATISTICS` scripts. You review them; SqlVitals never runs them.
 - **Easy to approve for production:** read-only, `READ UNCOMMITTED` reads with timeouts, one light query per server
@@ -129,6 +132,7 @@ quick to start as SSMS.
 | Blocking chain map with the head blocker | ✅ | ⚠️ A column in Activity Monitor | ❌ |
 | Failed and long-running SQL Agent jobs, run time against the average | ✅ | ⚠️ Job Activity Monitor: one server, no average | ❌ |
 | Last full, differential and log backup of every database, with RPO warnings | ✅ Ages you set | ⚠️ Backup history one database at a time, or a policy you set up | ⚠️ Azure SQL backs itself up; SQL Server needs Azure Backup |
+| Read and write latency per database file, now rather than since startup | ✅ Highlighted past a threshold you set | ⚠️ Activity Monitor's Data File I/O: one server, while open | ⚠️ Azure SQL Database: IO percentage, not per-file latency |
 | Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
 | Fix scripts for indexes and statistics | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning recommendations, Azure SQL only |
 | Nothing to install on the server, no workspace, no cost | ✅ | ✅ | ⚠️ Log Analytics and some features are billed |
@@ -184,6 +188,7 @@ live diagnostic data across the app's monitoring screens:
 - Deadlock history from the built-in `system_health` Extended Events session: victim, other participants, the locks each held and wanted, objects and statements; recurring deadlocks grouped by pattern; each report can be saved as an `.xdl` for SSMS
 - SQL Agent jobs from msdb: each job's last run and outcome, its duration against the average of its successful runs, and its next run; failed jobs and jobs running longer than their average first; each run's steps with the failing step's error. Disabled on Azure SQL Database, which has no Agent
 - Backups from msdb: each database's last full, differential and log backup, how old each is and the data at risk right now; a warning when a database has no full backup or an old one, or uses the FULL or BULK_LOGGED recovery model without a recent log backup, against ages you set (the RPO); the selected database's backup history. Disabled on Azure SQL Database, which backs itself up
+- File I/O latency from `sys.dm_io_virtual_file_stats`: each database file's average read and write latency in milliseconds over the change between two readings a few seconds apart (not the totals since startup), with reads, writes, MB/s and I/O size; files slower than the threshold for data or log files highlighted, and every file on a volume added up per volume
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
@@ -319,6 +324,7 @@ All paths are relative to the repository root.
     │   │   ├── DeadlockRepository.cs      ← Deadlock reports from system_health (event files, else ring buffer)
     │   │   ├── AgentJobRepository.cs      ← SQL Agent jobs and their runs from msdb
     │   │   ├── BackupRepository.cs        ← Each database's newest backups and one database's history from msdb
+    │   │   ├── FileIoRepository.cs        ← Every file's I/O totals from sys.dm_io_virtual_file_stats, and its volume
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── History/
     │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
@@ -345,6 +351,11 @@ All paths are relative to the repository root.
     │   │   ├── DatabaseBackup.cs          ← A database's last backups, ages, recovery point and RPO warnings; BackupList
     │   │   ├── BackupRpo.cs               ← The full and log backup ages to warn past; reads "7d", "26h", "90 min"
     │   │   └── BackupHistoryEntry.cs      ← One backupset row for the selected database's history
+    │   ├── FileIo/
+    │   │   ├── FileIoReading.cs           ← One reading: every file's cumulative reads, writes and I/O stall
+    │   │   ├── FileIoTracker.cs           ← The first, previous and last readings; starts again after a restart
+    │   │   ├── FileLatency.cs             ← Latency per file and per volume over the change between two readings
+    │   │   └── FileLatencyThresholds.cs   ← The data and log file thresholds to highlight past; reads "20", "2.5 ms"
     │   ├── Regressions/
     │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
     │   │   └── QueryRegressionDetector.cs ← Which queries got slower, and by how much (RegressionCriteria)
@@ -691,6 +702,43 @@ and warns when a database's recovery point objective (RPO) isn't being met. Two 
 - The logic lives in `SqlVitals/Engine/Backups/` (`DatabaseBackup`, `BackupRpo`, `BackupHistoryEntry`), and the SQL in
   `SqlVitals/Engine/Repositories/BackupRepository.cs`.
 
+### File I/O latency
+
+The **File I/O** page shows each database file's average **read** and **write latency in milliseconds**, from
+`sys.dm_io_virtual_file_stats`. That view only holds running totals since each database came online (usually since
+SQL Server started), and a total like that hides today's problem under weeks of normal I/O, or keeps last night's
+CHECKDB in the average for good. So the page reads it every few seconds while it's open and works out latency from
+the **change between two readings**: the change in `io_stall_read_ms` divided by the change in `num_of_reads`, and the
+same for writes.
+
+| Highlight when reads or writes average more than | Applies to | Default | Accepts |
+|---|---|---|---|
+| The data file threshold | Data (`ROWS`), FILESTREAM and full-text files | 20 ms | Milliseconds, `20` or `2.5 ms` (0.5 ms to 10 s) |
+| The log file threshold | Log files: every commit waits for its log write | 10 ms | The same |
+
+- **Amber** is over the threshold, **red** five times it or more (100 ms for data files by default). The row is
+  tinted too, and the slowest come first. Selecting a file says why it's highlighted, how many I/Os that was based
+  on (a slow average from a handful of I/Os is flagged as such) and where the file is.
+- **Latency over:** *the last interval* (the two newest readings: what the storage is doing now) or *since the first
+  reading* (since the page opened or **↺ Start over**: a longer, steadier average, for a workload you run while
+  watching). **Read every** 5, 10 (default), 15, 30 or 60 seconds; **⏸ Pause** stops reading, and the sidebar
+  **Refresh** takes a reading at any time. The first figures appear one interval after the page opens.
+- Alongside: reads and writes in the interval, MB/s, average KB per read and write (8 KB is single pages; 64 KB and
+  more is read-ahead), size, volume, and the latency **since startup**, muted and never highlighted, for comparison.
+- **Volumes:** every file on a volume added up (total stall over total I/Os, so busy files count for more). Several
+  slow files on one volume point at the storage, one slow file on a quiet volume at that database's workload. The
+  volume comes from `sys.dm_os_volume_stats`, asked once per file, or from the file's path where that isn't available.
+- **Not a figure:** a file with no I/O in the interval shows *No I/O*. A file whose totals went down (its database was
+  taken offline, restored or attached again) shows *Counters reset* until the next reading. A SQL Server restart
+  starts the readings again, and the page says so.
+- The thresholds and the interval are saved per user in `settings.dat` and apply to every connection. **✓ Apply** (or
+  **Enter**) re-grades the readings already taken; nothing is read again. Reading stops when you leave the page.
+- Each reading is two light queries (the server's start time, then every file's totals with the server's clock), read
+  only while the page is open. On Azure SQL Database it shows the current database's files only, on storage Azure
+  manages. SQL Server and Azure SQL Managed Instance show every database.
+- The logic lives in `SqlVitals/Engine/FileIo/` (`FileIoTracker`, `FileLatency`, `FileLatencyThresholds`), and the
+  SQL in `SqlVitals/Engine/Repositories/FileIoRepository.cs`.
+
 ---
 
 ## How to Build & Run
@@ -810,7 +858,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.40.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.41.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -865,6 +913,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Deadlocks | `Deadlocks` | `DeadlocksPage` | `GetDeadlockHistoryAsync` | system_health deadlock reports, a Recurring tab, *Save as .xdl* |
 | Agent Jobs | `AgentJobs` | `AgentJobsPage` | `GetAgentJobsAsync`, `GetAgentJobRunsAsync` | Failed and long-running jobs first; runs and steps of the selected job. Disabled on Azure SQL Database |
 | Backups | `Backups` | `BackupsPage` | `GetBackupStatusAsync`, `GetBackupHistoryAsync` | Last full, differential and log backup per database; RPO warnings first; the selected database's history. Disabled on Azure SQL Database |
+| File I/O | `FileIo` | `FileIoPage` | `ReadFileIoAsync` | Reads every few seconds while open; latency per file over the last interval or since the first reading, slow files first; per-volume totals |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
@@ -1224,6 +1273,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | Deadlocks | `sys.dm_xe_sessions`, `sys.dm_xe_session_targets` (system_health), `sys.fn_xe_file_target_read_file` (its `.xel` files, filtered to `xml_deadlock_report`) |
 | Agent Jobs | `msdb.dbo.sysjobs`, `sysjobhistory` (step 0 rows: outcome, duration, average), `sysjobactivity` + `syssessions` (running now), `sysjobschedules` + `sysschedules` (next run), `syscategories`; `sys.dm_server_services` and the `Agent XPs` option (is Agent running) |
 | Backups | `msdb.dbo.backupset` (newest full, differential and log per database, in one pass), `backupmediafamily` (where it was written), `sys.databases`, `sys.database_recovery_status` (`last_log_backup_lsn`: has the log chain started) |
+| File I/O | `sys.dm_io_virtual_file_stats` (reads, writes, bytes and I/O stall per file, diffed between readings), `sys.master_files` (name, type, path; `sys.database_files` on Azure SQL Database), `sys.dm_os_volume_stats` (the volume, once per file), `sys.dm_os_sys_info` (`sqlserver_start_time`: did it restart) |
 | Health dot (blocking, log, TempDB) | `sys.dm_exec_requests`, `sys.dm_os_performance_counters` |
 | SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 
@@ -1279,6 +1329,8 @@ Several server-level DMVs are **not available on Azure SQL Database** (EngineEdi
 | system_health session (Deadlocks page) | ✅ | ❌ | ✅ |
 | SQL Server Agent / msdb jobs (Agent Jobs page) | ✅ (not Express) | ❌ | ✅ |
 | msdb backup history (Backups page) | ✅ | ❌ (automatic backups, not in msdb) | ✅ |
+| `sys.dm_io_virtual_file_stats` for every database (File I/O page) | ✅ | ⚠️ The current database only | ✅ |
+| `sys.dm_os_volume_stats` (File I/O volumes) | ✅ | ❌ (shown as Azure-managed storage) | ✅ |
 
 `GetDatabaseStorageAsync()` detects the edition at runtime and switches queries:
 

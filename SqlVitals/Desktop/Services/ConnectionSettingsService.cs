@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Backups;
+using SqlVitals.Engine.FileIo;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Regressions;
@@ -115,6 +116,19 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>
+    /// Saves when the File I/O page highlights a file (see <see cref="FileLatencyThresholds"/>)
+    /// and how often it reads the files.
+    /// </summary>
+    public void SetFileIoSettings(FileLatencyThresholds thresholds, int intervalSeconds)
+    {
+        var store = Load();
+        store.FileLatencyThresholds = new FileLatencyThresholds(FileLatencyThresholds.NormalizeData(thresholds.DataMs),
+                                                                FileLatencyThresholds.NormalizeLog(thresholds.LogMs));
+        store.FileIoIntervalSeconds = ConnectionStore.NormalizeFileIoInterval(intervalSeconds);
+        Save(store);
+    }
+
     /// <summary>Saves the health-dot thresholds used by every connection without its own.</summary>
     public void SetHealthThresholds(HealthThresholds thresholds)
     {
@@ -211,6 +225,9 @@ public class ConnectionSettingsService
                 HealthThresholds        = HealthThresholds.Normalize(raw.HealthThresholds),
                 BackupRpo               = new BackupRpo(BackupRpo.NormalizeFull(raw.BackupFullMaxAgeMinutes),
                                                         BackupRpo.NormalizeLog(raw.BackupLogMaxAgeMinutes)),
+                FileLatencyThresholds   = new FileLatencyThresholds(FileLatencyThresholds.NormalizeData(raw.FileLatencyDataMs),
+                                                                    FileLatencyThresholds.NormalizeLog(raw.FileLatencyLogMs)),
+                FileIoIntervalSeconds   = ConnectionStore.NormalizeFileIoInterval(raw.FileIoIntervalSeconds),
                 AlertSamples            = AlertSettings.NormalizeSamples(raw.AlertSamples),
                 KeepRunningInTray       = raw.KeepRunningInTray,
                 TrayHintShown           = raw.TrayHintShown,
@@ -290,6 +307,9 @@ public class ConnectionSettingsService
             HealthThresholds        = store.HealthThresholds,
             BackupFullMaxAgeMinutes = (int)store.BackupRpo.FullMaxAge.TotalMinutes,
             BackupLogMaxAgeMinutes  = (int)store.BackupRpo.LogMaxAge.TotalMinutes,
+            FileLatencyDataMs       = store.FileLatencyThresholds.DataMs,
+            FileLatencyLogMs        = store.FileLatencyThresholds.LogMs,
+            FileIoIntervalSeconds   = store.FileIoIntervalSeconds,
             AlertSamples            = store.AlertSamples,
             NotificationsMuted      = store.NotificationsMuted.Count > 0 ? store.NotificationsMuted.ToList() : null,
             KeepRunningInTray       = store.KeepRunningInTray,
@@ -333,6 +353,9 @@ public class ConnectionSettingsService
         public HealthThresholds? HealthThresholds { get; set; }
         public int     BackupFullMaxAgeMinutes   { get; set; } = (int)BackupRpo.DefaultFullMaxAge.TotalMinutes;
         public int     BackupLogMaxAgeMinutes    { get; set; } = (int)BackupRpo.DefaultLogMaxAge.TotalMinutes;
+        public double  FileLatencyDataMs         { get; set; } = FileLatencyThresholds.DefaultDataMs;
+        public double  FileLatencyLogMs          { get; set; } = FileLatencyThresholds.DefaultLogMs;
+        public int     FileIoIntervalSeconds     { get; set; } = ConnectionStore.DefaultFileIoIntervalSeconds;
         public int     AlertSamples             { get; set; } = AlertSettings.DefaultSamples;
         public List<Guid>? NotificationsMuted    { get; set; }
         public bool    KeepRunningInTray         { get; set; } = true;
@@ -377,6 +400,20 @@ public class ConnectionStore
 
     /// <summary>How old a full and a log backup may get before the Backups page warns (#40).</summary>
     public BackupRpo BackupRpo { get; set; } = BackupRpo.Default;
+
+    /// <summary>The average read or write latency above which the File I/O page highlights a file (#41).</summary>
+    public FileLatencyThresholds FileLatencyThresholds { get; set; } = FileLatencyThresholds.Default;
+
+    public const int DefaultFileIoIntervalSeconds = 10;
+
+    /// <summary>The File I/O page's choices of seconds between readings.</summary>
+    public static readonly int[] FileIoIntervalChoices = [5, 10, 15, 30, 60];
+
+    /// <summary>Seconds between the File I/O page's readings; one of <see cref="FileIoIntervalChoices"/>.</summary>
+    public int FileIoIntervalSeconds { get; set; } = DefaultFileIoIntervalSeconds;
+
+    public static int NormalizeFileIoInterval(int seconds) =>
+        FileIoIntervalChoices.Contains(seconds) ? seconds : DefaultFileIoIntervalSeconds;
 
     /// <summary>
     /// Samples in a row an indicator must stay past a threshold for an alert to start, and back
