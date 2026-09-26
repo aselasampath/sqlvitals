@@ -1,14 +1,17 @@
 <#
 .SYNOPSIS
     Builds SqlVitals Setup: artifacts\SqlVitals-Setup-<version>.exe
+    and the portable zip:   artifacts\SqlVitals-<version>-win-x64-portable.zip
 
 .DESCRIPTION
     1. Publishes SqlVitals.Desktop self-contained for win-x64 (the .NET 8 runtime is bundled,
        so users don't install anything else).
-    2. Writes manifest.txt with the size and SHA-256 hash of every published file. Setup checks
+    2. Zips the published app into a SqlVitals-<version> folder for users who don't want to run
+       Setup: unzip anywhere and run SqlVitals.Desktop.exe.
+    3. Writes manifest.txt with the size and SHA-256 hash of every published file. Setup checks
        each file against it after unpacking and before installing.
-    3. Zips manifest + app into SqlVitals.payload.zip and embeds it in SqlVitals.Setup.exe.
-    4. Optionally Authenticode-signs the app and Setup (recommended for any release build, so
+    4. Zips manifest + app into SqlVitals.payload.zip and embeds it in SqlVitals.Setup.exe.
+    5. Optionally Authenticode-signs the app and Setup (recommended for any release build, so
        Windows shows a verified publisher and the package can't be altered undetected).
 
 .PARAMETER CertificateThumbprint
@@ -36,6 +39,7 @@ $payloadDir  = Join-Path $artifacts 'payload'
 $payloadRoot = Join-Path $payloadDir 'root'
 $payloadZip  = Join-Path $payloadDir 'SqlVitals.payload.zip'
 $setupBuild  = Join-Path $artifacts 'setup-build'
+$portableDir = Join-Path $artifacts 'portable'
 $desktopProj = Join-Path $repoRoot 'SqlVitals\Desktop\SqlVitals.Desktop.csproj'
 $setupProj   = Join-Path $PSScriptRoot 'SqlVitals.Installer.csproj'
 
@@ -63,7 +67,7 @@ $version = @($desktopXml.Project.PropertyGroup | ForEach-Object { $_.Version } |
 if (-not $version) { throw "No <Version> found in $desktopProj." }
 Write-Host "SqlVitals version $version" -ForegroundColor Green
 
-foreach ($dir in @($publishDir, $payloadDir, $setupBuild)) {
+foreach ($dir in @($publishDir, $payloadDir, $setupBuild, $portableDir)) {
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
 }
 
@@ -77,7 +81,24 @@ Invoke-Checked 'Publishing SqlVitals.Desktop (self-contained, win-x64)' {
 Invoke-Sign (Get-ChildItem $publishDir -File | Where-Object { $_.Name -like 'SqlVitals.*' -and $_.Extension -in '.exe', '.dll' } |
              ForEach-Object FullName)
 
-# ── 2. Manifest ───────────────────────────────────────────────────────────────
+# ── 2. Portable zip ───────────────────────────────────────────────────────────
+# The zip holds one SqlVitals-<version> folder, so unzipping never scatters files.
+Write-Host '==> Zipping portable app' -ForegroundColor Cyan
+$portableName = "SqlVitals-$version"
+$portableRoot = Join-Path $portableDir $portableName
+New-Item -ItemType Directory -Force $portableDir | Out-Null
+Copy-Item $publishDir $portableRoot -Recurse
+
+$portableZip = Join-Path $artifacts "$portableName-win-x64-portable.zip"
+if (Test-Path $portableZip) { Remove-Item $portableZip -Force }
+[System.IO.Compression.ZipFile]::CreateFromDirectory($portableRoot, $portableZip,
+    [System.IO.Compression.CompressionLevel]::Optimal, $true)
+Remove-Item $portableDir -Recurse -Force
+
+$portableHash = (Get-FileHash $portableZip -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -Path "$portableZip.sha256" -Value "$portableHash  $(Split-Path $portableZip -Leaf)" -Encoding ascii
+
+# ── 3. Manifest ───────────────────────────────────────────────────────────────
 Write-Host '==> Writing manifest' -ForegroundColor Cyan
 $lines = [System.Collections.Generic.List[string]]::new()
 $lines.Add('# SqlVitals payload manifest')
@@ -96,7 +117,7 @@ New-Item -ItemType Directory -Force $payloadRoot | Out-Null
     ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
 Copy-Item $publishDir (Join-Path $payloadRoot 'app') -Recurse
 
-# ── 3. Payload zip ────────────────────────────────────────────────────────────
+# ── 4. Payload zip ────────────────────────────────────────────────────────────
 Write-Host '==> Compressing payload' -ForegroundColor Cyan
 [System.IO.Compression.ZipFile]::CreateFromDirectory($payloadRoot, $payloadZip,
     [System.IO.Compression.CompressionLevel]::Optimal, $false)
@@ -106,7 +127,7 @@ $totalMb = ($files | Measure-Object Length -Sum).Sum / 1MB
 $zipMb   = (Get-Item $payloadZip).Length / 1MB
 Write-Host ("    {0} files, {1:N0} MB -> {2:N0} MB compressed" -f $files.Count, $totalMb, $zipMb)
 
-# ── 4. Setup ──────────────────────────────────────────────────────────────────
+# ── 5. Setup ──────────────────────────────────────────────────────────────────
 Invoke-Checked 'Building SqlVitals Setup' {
     dotnet build $setupProj -c $Configuration --no-incremental "-p:PayloadPath=$payloadZip" "-p:Version=$version" `
         -o $setupBuild --nologo
@@ -122,6 +143,8 @@ Set-Content -Path "$setupExe.sha256" -Value "$setupHash  $(Split-Path $setupExe 
 Write-Host ''
 Write-Host "Done: $setupExe" -ForegroundColor Green
 Write-Host "SHA-256: $setupHash"
+Write-Host "Done: $portableZip" -ForegroundColor Green
+Write-Host "SHA-256: $portableHash"
 if (-not $CertificateThumbprint) {
     Write-Warning 'Setup is unsigned. Sign release builds (-CertificateThumbprint) so users see a verified publisher.'
 }

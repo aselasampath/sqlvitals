@@ -53,6 +53,7 @@ See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map
 
 1. Download `SqlVitals-Setup-<version>.exe` from the [latest release](https://github.com/aselasampath/sqlvitals/releases/latest)
    and run it. Windows 10 or 11; no admin rights needed, and the .NET runtime is included.
+   Rather not run an installer? Download `SqlVitals-<version>-win-x64-portable.zip`, unzip it and run `SqlVitals.Desktop.exe`.
 2. Ask for read access to the server's diagnostic views for the login you'll use:
 
    ```sql
