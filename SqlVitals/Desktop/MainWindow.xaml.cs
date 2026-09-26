@@ -532,7 +532,7 @@ public partial class MainWindow : Window
         _currentTag = tag;
 
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnAgentJobs, BtnBackups, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnAgentJobs, BtnBackups, BtnFileIo, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
@@ -544,6 +544,7 @@ public partial class MainWindow : Window
             "Deadlocks"       => BtnDeadlocks,
             "AgentJobs"       => BtnAgentJobs,
             "Backups"         => BtnBackups,
+            "FileIo"          => BtnFileIo,
             "WaitTrend"       => BtnWaitTrend,
             "TempDb"          => BtnTempDb,
             "Memory"          => BtnMemory,
@@ -584,6 +585,7 @@ public partial class MainWindow : Window
             "Deadlocks"       => new DeadlocksPage(Repo),
             "AgentJobs"       => new AgentJobsPage(Repo),
             "Backups"         => new BackupsPage(Repo, SettingsService),
+            "FileIo"          => new FileIoPage(Repo, SettingsService),
             "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
