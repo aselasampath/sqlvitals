@@ -60,20 +60,26 @@ jobs:
         shell: pwsh
         run: |
           $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
-          if (-not (Test-Path $exe)) { throw "Expected $exe was not produced." }
-          $info = Get-Item $exe
-          $hash = (Get-Content "$exe.sha256").Split(' ')[0]
+          $zip = "artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip"
+          foreach ($file in $exe, $zip) {
+            if (-not (Test-Path $file)) { throw "Expected $file was not produced." }
+          }
+          $info    = Get-Item $exe
+          $hash    = (Get-Content "$exe.sha256").Split(' ')[0]
+          $zipInfo = Get-Item $zip
+          $zipHash = (Get-Content "$zip.sha256").Split(' ')[0]
           @(
-            "### SqlVitals Setup ${{ steps.version.outputs.version }}"
+            "### SqlVitals ${{ steps.version.outputs.version }}"
             ""
-            "| | |"
-            "|---|---|"
-            "| File | ``$($info.Name)`` |"
-            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB |"
-            "| SHA-256 | ``$hash`` |"
-            "| Commit | ``${{ github.event.pull_request.head.sha }}`` |"
+            "| | Setup | Portable zip |"
+            "|---|---|---|"
+            "| File | ``$($info.Name)`` | ``$($zipInfo.Name)`` |"
+            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB | $([math]::Round($zipInfo.Length / 1MB, 1)) MB |"
+            "| SHA-256 | ``$hash`` | ``$zipHash`` |"
             ""
-            "Download it from **Artifacts** below. It is unsigned, so Windows SmartScreen may ask you to confirm (More info → Run anyway)."
+            "Commit ``${{ github.event.pull_request.head.sha }}``"
+            ""
+            "Download them from **Artifacts** below. They are unsigned, so Windows SmartScreen may ask you to confirm (More info → Run anyway)."
           ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: Upload Setup artifact
@@ -86,3 +92,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0   # the exe is already compressed
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable-pr${{ github.event.pull_request.number }}
+          path: |
+            artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip
+            artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0   # the zip is already compressed

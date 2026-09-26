@@ -1,4 +1,5 @@
-# Builds SqlVitals Setup when a version tag is pushed and publishes it on the GitHub Release for that tag.
+# Builds SqlVitals Setup and the portable zip when a version tag is pushed and publishes both on the
+# GitHub Release for that tag.
 # The tag must match <Version> in SqlVitals/Desktop/SqlVitals.Desktop.csproj, e.g. v0.34.0 for 0.34.0.
 # A tag with a suffix (v1.0.0-beta.1) is published as a pre-release.
 name: Release – Build and publish SqlVitals Setup
@@ -68,9 +69,14 @@ jobs:
         shell: pwsh
         run: |
           $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
-          if (-not (Test-Path $exe)) { throw "Expected $exe was not produced." }
+          $zip = "artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip"
+          foreach ($file in $exe, $zip) {
+            if (-not (Test-Path $file)) { throw "Expected $file was not produced." }
+          }
           "exe=$exe" >> $env:GITHUB_OUTPUT
           "sha256=$((Get-Content "$exe.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "zip_sha256=$((Get-Content "$zip.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
 
       - name: Upload Setup artifact
         uses: actions/upload-artifact@v4
@@ -83,6 +89,17 @@ jobs:
           retention-days: 90
           compression-level: 0   # the exe is already compressed
 
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable
+          path: |
+            ${{ steps.output.outputs.zip }}
+            ${{ steps.output.outputs.zip }}.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0   # the zip is already compressed
+
       # Releases in this repository are immutable once published, so the release is created as a
       # draft, its files are uploaded and checked, and only then is it published.
       - name: Publish GitHub Release
@@ -91,11 +108,12 @@ jobs:
         run: |
           $version = '${{ steps.version.outputs.version }}'
           $exe     = '${{ steps.output.outputs.exe }}'
-          $files   = @($exe, "$exe.sha256")
+          $zip     = '${{ steps.output.outputs.zip }}'
+          $files   = @($exe, "$exe.sha256", $zip, "$zip.sha256")
 
           $existing = gh release view $env:TAG --json isDraft,url 2>$null | ConvertFrom-Json
           if ($existing -and -not $existing.isDraft) {
-            "status=A published release for $env:TAG already exists and was left unchanged. Setup is in this run's artifacts." >> $env:GITHUB_OUTPUT
+            "status=A published release for $env:TAG already exists and was left unchanged. Setup and the portable zip are in this run's artifacts." >> $env:GITHUB_OUTPUT
             "url=$($existing.url)" >> $env:GITHUB_OUTPUT
             Write-Warning "Release $env:TAG is already published; not changing it."
             return
@@ -112,6 +130,12 @@ jobs:
               "SHA-256: ``${{ steps.output.outputs.sha256 }}``"
               ""
               "Setup isn't code-signed yet, so Windows SmartScreen may ask you to confirm (**More info → Run anyway**)."
+              ""
+              "### Portable (no installer)"
+              ""
+              "Prefer not to run Setup? Download **SqlVitals-$version-win-x64-portable.zip**, unzip it anywhere and run **SqlVitals.Desktop.exe** from the ``SqlVitals-$version`` folder. It needs no admin rights and no .NET install. It adds no Start menu entry or uninstaller and doesn't upgrade itself: to update, unzip the new version and delete the old folder. Connections and history are kept in your Windows profile, so they carry over."
+              ""
+              "SHA-256: ``${{ steps.output.outputs.zip_sha256 }}``"
               ""
             ) | Out-File release-notes.md -Encoding utf8
             $flags = @('--draft', '--verify-tag', '--generate-notes')   # generated notes go below the install section
@@ -138,16 +162,17 @@ jobs:
         shell: pwsh
         run: |
           $info = Get-Item '${{ steps.output.outputs.exe }}'
+          $zipInfo = Get-Item '${{ steps.output.outputs.zip }}'
           @(
-            "### SqlVitals Setup ${{ steps.version.outputs.version }}"
+            "### SqlVitals ${{ steps.version.outputs.version }}"
             ""
-            "| | |"
-            "|---|---|"
-            "| File | ``$($info.Name)`` |"
-            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB |"
-            "| SHA-256 | ``${{ steps.output.outputs.sha256 }}`` |"
-            "| Commit | ``${{ github.sha }}`` |"
-            "| Release | ${{ steps.release.outputs.url }} |"
+            "| | Setup | Portable zip |"
+            "|---|---|---|"
+            "| File | ``$($info.Name)`` | ``$($zipInfo.Name)`` |"
+            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB | $([math]::Round($zipInfo.Length / 1MB, 1)) MB |"
+            "| SHA-256 | ``${{ steps.output.outputs.sha256 }}`` | ``${{ steps.output.outputs.zip_sha256 }}`` |"
             ""
-            "${{ steps.release.outputs.status }} Setup is also under **Artifacts** below for 90 days."
+            "Commit ``${{ github.sha }}`` · Release ${{ steps.release.outputs.url }}"
+            ""
+            "${{ steps.release.outputs.status }} Setup and the portable zip are also under **Artifacts** below for 90 days."
           ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
