@@ -47,7 +47,7 @@ monitoring platform first.
 [release](https://github.com/aselasampath/sqlvitals/releases/latest) and run it (no admin rights needed, .NET
 runtime included). You can also [build and run it from source](#how-to-build--run).
 
-Built with **WPF on .NET 8**. Current version: **0.38.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
+Built with **WPF on .NET 8**. Current version: **0.39.0** (set in `SqlVitals/Desktop/SqlVitals.Desktop.csproj` → `<Version>`)
 
 ---
 
@@ -80,11 +80,15 @@ quick to start as SSMS.
   sessions wait behind it. Often a sleeping session with an open transaction; its last SQL is shown even so.
 - **Deadlock history with nothing to set up**, read from the built-in system_health session: the victim, the other
   sessions, the objects and statements, which deadlocks keep coming back, and an `.xdl` to open in SSMS.
+- **Broken maintenance and ETL jobs stand out.** Every SQL Agent job with its last run, how long it took against its
+  average and when it runs next. Failed jobs are red, jobs running longer than usual amber, and a failed run shows the
+  failing step's error.
 - **Maintenance scripts, not guesswork.** Missing and unused indexes, fragmentation and stale statistics become
   `CREATE` / `DROP` / `REBUILD` / `UPDATE STATISTICS` scripts. You review them; SqlVitals never runs them.
 - **Easy to approve for production:** read-only, `READ UNCOMMITTED` reads with timeouts, one light query per server
   every 10 s in the background plus a snapshot every 5 minutes, and `VIEW SERVER STATE` (or `VIEW DATABASE STATE` on Azure SQL Database) is enough
-  for every screen except the Extended Events mode of SP Trace.
+  for every screen except the Extended Events mode of SP Trace, and Agent Jobs, which reads msdb's job tables
+  (sysadmin, or `SELECT` on them).
 
 **👩‍💻 Database developer: why is *my* query slow, and did my release make it worse?**
 
@@ -120,6 +124,7 @@ quick to start as SSMS.
 | Sample interval | 5 s to 2 min | Activity Monitor refresh | 1 minute |
 | Alerts with start, end and worst value, plus desktop notifications | ✅ Built in | ⚠️ SQL Agent alerts, set up per server (on-premises) | ✅ Alert rules and action groups, set up per resource |
 | Blocking chain map with the head blocker | ✅ | ⚠️ A column in Activity Monitor | ❌ |
+| Failed and long-running SQL Agent jobs, run time against the average | ✅ | ⚠️ Job Activity Monitor: one server, no average | ❌ |
 | Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
 | Fix scripts for indexes and statistics | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning recommendations, Azure SQL only |
 | Nothing to install on the server, no workspace, no cost | ✅ | ✅ | ⚠️ Log Analytics and some features are billed |
@@ -173,6 +178,7 @@ live diagnostic data across the app's monitoring screens:
 - Wait statistics (cumulative, active, categories, top types)
 - Live blocking chains: each chain drawn as a tree from `blocking_session_id` with the head blocker at the root, the head blockers listed at the top (click one to go to it), a *Blocking chains only* filter, and an auto-refresh whose interval is remembered
 - Deadlock history from the built-in `system_health` Extended Events session: victim, other participants, the locks each held and wanted, objects and statements; recurring deadlocks grouped by pattern; each report can be saved as an `.xdl` for SSMS
+- SQL Agent jobs from msdb: each job's last run and outcome, its duration against the average of its successful runs, and its next run; failed jobs and jobs running longer than their average first; each run's steps with the failing step's error. Disabled on Azure SQL Database, which has no Agent
 - TempDB pressure and file usage
 - Memory grants and memory clerks
 - Query Store top queries
@@ -306,6 +312,7 @@ All paths are relative to the repository root.
     │   │   ├── HistoryRepository.cs       ← Server reads for the 5-minute history snapshot
     │   │   ├── QueryRegressionRepository.cs ← Query Store stats and plans for Query Regressions
     │   │   ├── DeadlockRepository.cs      ← Deadlock reports from system_health (event files, else ring buffer)
+    │   │   ├── AgentJobRepository.cs      ← SQL Agent jobs and their runs from msdb
     │   │   └── SpTraceXmlParser.cs, ProcedureStatsDelta.cs ← Pure helpers for SP Trace
     │   ├── History/
     │   │   ├── HistoryStore.cs            ← The SQLite file: schema, writes, purge, corrupt-file recovery
@@ -324,6 +331,10 @@ All paths are relative to the repository root.
     │   │   ├── DeadlockReport.cs          ← A deadlock (processes, resources, victim); the history read
     │   │   ├── DeadlockReportParser.cs    ← Reads xml_deadlock_report events (file rows or ring buffer)
     │   │   └── DeadlockPatterns.cs        ← Groups deadlocks on the same objects by the same code
+    │   ├── AgentJobs/
+    │   │   ├── AgentJob.cs                ← A job: last run, running long, next run; whether Agent runs
+    │   │   ├── AgentJobHistory.cs         ← Groups sysjobhistory rows into runs and their steps
+    │   │   └── MsdbTime.cs                ← msdb's integer dates, times and hhmmss durations
     │   ├── Regressions/
     │   │   ├── RegressionWindows.cs       ← The recent period and the baseline it is compared with
     │   │   └── QueryRegressionDetector.cs ← Which queries got slower, and by how much (RegressionCriteria)
@@ -744,7 +755,7 @@ End users install SqlVitals with a single guided `SqlVitals-Setup-<version>.exe`
 ```powershell
 .\SqlVitals\Installer\Build-Installer.ps1                                # unsigned dev build
 .\SqlVitals\Installer\Build-Installer.ps1 -CertificateThumbprint <sha1>  # signed release build
-# → artifacts\SqlVitals-Setup-0.38.0.exe (+ .sha256)
+# → artifacts\SqlVitals-Setup-0.39.0.exe (+ .sha256)
 ```
 
 **CI:** [`.github/workflows/pr-setup.yml`](.github/workflows/pr-setup.yml) runs on every pull request to `main`, including each new push to it. It runs the tests, builds Setup with this script, and attaches `SqlVitals-Setup-<version>-pr<N>` to the workflow run (Actions tab → run → *Artifacts*), kept for 14 days. To change the release number, edit `<Version>` in `SqlVitals.Desktop.csproj`; the workflow picks it up.
@@ -797,6 +808,7 @@ to a page. Navigation is handled in `MainWindow.xaml.cs → NavigateTo(string ta
 | Active Waits | `ActiveWaits` | `ActiveWaitsPage` | `GetActiveWaitsAsync` | |
 | Processes | `Processes` | `ProcessesPage` | `GetProcessesAsync` | Blocking chains as trees with the head blockers listed, SPID search, session details and its own remembered auto-refresh |
 | Deadlocks | `Deadlocks` | `DeadlocksPage` | `GetDeadlockHistoryAsync` | system_health deadlock reports, a Recurring tab, *Save as .xdl* |
+| Agent Jobs | `AgentJobs` | `AgentJobsPage` | `GetAgentJobsAsync`, `GetAgentJobRunsAsync` | Failed and long-running jobs first; runs and steps of the selected job. Disabled on Azure SQL Database |
 | Wait Trend | `WaitTrend` | `WaitStatsTrendPage` | Trend query methods | |
 | TempDB | `TempDb` | `TempDbPage` | `GetTempDbPressureAsync` | |
 | Memory Grants | `Memory` | `MemoryGrantsPage` | `GetMemoryGrantsAsync` | |
@@ -1154,6 +1166,7 @@ there into SSMS or Azure Data Studio. Moving the SQL into `.sql` resources is tr
 | Live metrics, Perfmon | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database) |
 | Processes (blocking chains) | `sys.dm_exec_sessions`, `sys.dm_exec_requests` (`blocking_session_id`), `sys.dm_exec_connections` (a sleeping session's last batch), `sys.dm_exec_sql_text` |
 | Deadlocks | `sys.dm_xe_sessions`, `sys.dm_xe_session_targets` (system_health), `sys.fn_xe_file_target_read_file` (its `.xel` files, filtered to `xml_deadlock_report`) |
+| Agent Jobs | `msdb.dbo.sysjobs`, `sysjobhistory` (step 0 rows: outcome, duration, average), `sysjobactivity` + `syssessions` (running now), `sysjobschedules` + `sysschedules` (next run), `syscategories`; `sys.dm_server_services` and the `Agent XPs` option (is Agent running) |
 | Health dot (blocking, log, TempDB) | `sys.dm_exec_requests`, `sys.dm_os_performance_counters` |
 | SP Trace | Extended Events (`sys.dm_xe_*`) or `sys.dm_exec_procedure_stats` |
 
@@ -1207,6 +1220,7 @@ Several server-level DMVs are **not available on Azure SQL Database** (EngineEdi
 | `sys.database_scoped_configurations` | ✅ | ✅ | ✅ |
 | `sys.dm_db_file_space_usage` | ✅ | ✅ | ✅ |
 | system_health session (Deadlocks page) | ✅ | ❌ | ✅ |
+| SQL Server Agent / msdb jobs (Agent Jobs page) | ✅ (not Express) | ❌ | ✅ |
 
 `GetDatabaseStorageAsync()` detects the edition at runtime and switches queries:
 
