@@ -121,6 +121,8 @@
                                 ToolTip="Each database's last full, differential and log backup from msdb, with a warning when one is older than your RPO" />
                         <Button x:Name="BtnFileIo"       Content="💽  File I/O"        Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="FileIo"
                                 ToolTip="Read and write latency per database file, measured over the last few seconds; files slower than your threshold highlighted" />
+                        <Button x:Name="BtnConfigChecks" Content="✅  Config Checks"   Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="ConfigChecks"
+                                ToolTip="MAXDOP, cost threshold, max server memory, TempDB files, auto-shrink, page verify and compatibility level against best practice" />
                         <Button x:Name="BtnWaitTrend"    Content="📈  Wait Trend"      Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="WaitTrend" />
                         <Button x:Name="BtnTempDb"       Content="🗄️  TempDB"          Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="TempDb" />
                         <Button x:Name="BtnMemory"       Content="🧠  Memory Grants"   Style="{DynamicResource NavButton}"       Click="Nav_Click" Tag="Memory" />
