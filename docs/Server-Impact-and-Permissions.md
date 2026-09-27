@@ -1,0 +1,153 @@
+# Server Impact and Permissions
+
+*For DBAs and anyone approving SqlVitals for use against production.* It covers what SqlVitals runs on your server, how often, with which permissions, and what it never does.
+
+## Summary
+
+- **Read-only.** SqlVitals reads DMVs and catalog views. It creates no objects, jobs, tables or agents on the server.
+- **One exception:** [SP Trace](SP-Trace.md) creates a temporary Extended Events session **only when a user presses Start**, and drops it on Stop, on leaving the page, and when the app exits.
+- **Never runs generated scripts.** Index and statistics scripts are shown for review only.
+- **Never blocks.** Every query runs under `READ UNCOMMITTED` with a command timeout (30 s by default).
+- **No agent, no service, no inbound ports.** It's a desktop app making ordinary client connections. From 0.35.0 closing its window hides it to the [notification area](Notifications-and-Tray.md) by default, so its background monitoring carries on until the user chooses **Exit**. The load is the same as with the window open.
+
+## What runs, and when
+
+| Workload | Trigger | Frequency | Scope |
+|---|---|---|---|
+| **Live Metrics query** | Every connection with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests` |
+| **History detail snapshot** | Same connections | Every **5 min** by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU), memory and performance counters |
+| **Screens** (Index Health, Query Store, Plan Cache, …) | A user opens the screen or presses Refresh | On demand | **Active connection only** |
+| **Query Regressions** | On demand | On demand | Query Store runtime stats, up to ~8 days; timeout raised to 2 min |
+| **Processes** (blocking chains) | The Processes page is open with auto-refresh on, or the *Process Map* chart is shown on Live Metrics | The page's interval (5 s to 2 min); Live Metrics' interval for the *Process Map* | `sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`; **active connection only** |
+| **Agent Jobs** | A user opens the page or presses Refresh; every 30 s while *Every 30 s* is ticked and the page is open | On demand | `msdb` job tables (`sysjobs`, `sysjobhistory`, `sysjobactivity`, `sysjobschedules`, …) and `sys.dm_server_services`; one job's history when it's selected; **active connection only** |
+| **Backups** | A user opens the page, presses Refresh or Apply | On demand, no timer | One query: `msdb.dbo.backupset` read once (newest full, differential and log per database), `backupmediafamily`, `sys.databases`, `sys.database_recovery_status`; up to 500 `backupset` rows when a database is selected; **active connection only** |
+| **File I/O** | The File I/O page is open (not paused), or a user presses Refresh | The page's interval: 5 s to 1 min, 10 s by default | Two light queries per reading: `sys.dm_os_sys_info` (start time) and `sys.dm_io_virtual_file_stats` with `sys.master_files`; `sys.dm_os_volume_stats` once per file; **active connection only**, stops when the page is left |
+| **Config Checks** | A user opens the page, presses Check again or Refresh | On demand, no timer | A handful of light catalog queries: `sys.configurations`, `sys.databases`, `tempdb.sys.database_files`, and `sys.dm_os_schedulers`, `sys.dm_os_nodes`, `sys.dm_os_sys_info` for the processors and memory; **active connection only** |
+| **Security Audit** | A user opens the page, presses Audit again or Refresh | On demand, no timer | Light catalog queries: `sys.server_principals`, `sys.server_role_members`, `sys.server_permissions`, `sys.sql_logins`, `sys.databases`, and `sys.database_principals` once per database for orphaned users; **active connection only** |
+| **Deadlocks** | A user opens the page or presses Refresh | On demand, no timer | Reads the existing **system_health** session: its `.xel` files through `sys.fn_xe_file_target_read_file`, filtered to `xml_deadlock_report` on the server, or its ring buffer. Creates nothing; timeout raised to 2 min |
+| **SP Trace** | A user presses Start | Poll interval chosen by the user | Extended Events session, or `sys.dm_exec_procedure_stats` |
+
+Heavy screens **never run in the background**, and never against connections other than the active one.
+
+### Heaviest queries
+
+The most expensive reads, worth knowing on very large servers:
+
+| Screen | Why it can be heavy | Mitigation |
+|---|---|---|
+| Index Health → Fragmentation | `sys.dm_db_index_physical_stats` scans index pages | Uses the *Min Page Count* filter; runs only on demand |
+| Implicit Conversions, Plan Cache Health | Searches cached plan XML | Runs only on demand |
+| Query Regressions (Query Store source) | Reads a week of runtime stats | Runs only on demand; per database |
+| Deadlocks | Reads every system_health `.xel` file (tens of MB or more, depending on version and settings) | Runs only on demand; the server returns only the deadlock events; the XML is parsed on your PC |
+
+### Protective behaviour
+
+- **`READ UNCOMMITTED`** is prepended to every query (`QuerySettings:UseNoLock`), so monitoring never waits on locks it's reporting on.
+- **Command timeout** (default 30 s, configurable) cancels any runaway query.
+- **Backoff:** unreachable servers are retried with exponential backoff, up to every 5 minutes.
+- **One connection per query:** connections are opened per call and returned to the ADO.NET pool; no long-lived sessions are held.
+- **SP Trace limits:** filtered to the connected database and to calls ≥ *Min duration* **on the server side**; ring buffer capped at 4 MB / 1,000 events; dropped-event warnings are surfaced.
+- **MFA and password prompts** are never triggered by background monitoring.
+
+## Permissions
+
+| Feature | SQL Server / Managed Instance | Azure SQL Database |
+|---|---|---|
+| Every screen except SP Trace per-call mode | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
+| SP Trace, DMV fallback mode | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
+| SP Trace, Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
+| Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
+| Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups; none are in msdb |
+| Config Checks | `VIEW SERVER STATE` for the processors and memory; without it those checks are partly *Not checked* | Nothing extra |
+| Security Audit | `VIEW ANY DEFINITION` to list the sysadmin members and orphaned users; without it those two show *Not checked* | ➖ not available (no sysadmin, sa or TRUSTWORTHY; the button is disabled) |
+
+```sql
+-- Minimum: every screen (SP Trace in fallback mode)
+GRANT VIEW SERVER STATE TO [sqlvitals_login];      -- SQL Server / MI
+GRANT VIEW DATABASE STATE TO [sqlvitals_user];     -- Azure SQL Database, in the user DB
+
+-- Optional: per-call SP Trace
+GRANT ALTER ANY EVENT SESSION TO [sqlvitals_login];            -- SQL Server / MI, in master
+GRANT ALTER ANY DATABASE EVENT SESSION TO [sqlvitals_user];    -- Azure SQL Database
+```
+
+> ⚠️ `ALTER ANY EVENT SESSION` lets the login create, alter, start, stop and drop **any** event session on the server, not only SqlVitals'. Withhold it if that's too broad. SP Trace then falls back to per-procedure aggregates automatically.
+
+On SQL Server 2022 and later, `VIEW SERVER STATE` includes the finer-grained `VIEW SERVER PERFORMANCE STATE`, which is what the [Deadlocks](Deadlocks.md) page needs to read system_health; granting that one alone is enough for it.
+
+### SQL Agent jobs
+
+The [Agent Jobs](Agent-Jobs.md) page reads SQL Server Agent's tables in `msdb`. Members of **sysadmin** can already; for another login, give it a user in msdb and read access to those tables:
+
+```sql
+USE msdb;
+CREATE USER [sqlvitals_login] FOR LOGIN [sqlvitals_login];   -- skip if it already has one
+GRANT SELECT ON dbo.sysjobs         TO [sqlvitals_login];
+GRANT SELECT ON dbo.sysjobhistory   TO [sqlvitals_login];
+GRANT SELECT ON dbo.sysjobactivity  TO [sqlvitals_login];
+GRANT SELECT ON dbo.syssessions     TO [sqlvitals_login];
+GRANT SELECT ON dbo.sysjobschedules TO [sqlvitals_login];
+GRANT SELECT ON dbo.sysschedules    TO [sqlvitals_login];
+GRANT SELECT ON dbo.syscategories   TO [sqlvitals_login];
+```
+
+This is read-only: the login can't start, stop or change a job. With `VIEW SERVER STATE` as well, the page can also tell whether the Agent service is running (`sys.dm_server_services`).
+
+### Backups
+
+The [Backups](Backups.md) page reads the backup history in `msdb`. Members of **sysadmin** can already; for another login, give it a user in msdb and read access to the two tables:
+
+```sql
+USE msdb;
+CREATE USER [sqlvitals_login] FOR LOGIN [sqlvitals_login];   -- skip if it already has one
+GRANT SELECT ON dbo.backupset         TO [sqlvitals_login];
+GRANT SELECT ON dbo.backupmediafamily TO [sqlvitals_login];
+```
+
+It also reads `sys.databases` and `sys.database_recovery_status`, which every login can see for the databases it can see. This is read-only: the login can't take, restore or delete a backup.
+
+### Security Audit
+
+The [Security Audit](Security-Audit.md) reads logins, role members and each database's users. A login without `VIEW ANY DEFINITION` sees only itself and a few system principals, so the page lists the sysadmin members and orphaned users only when it has it (sysadmin does):
+
+```sql
+GRANT VIEW ANY DEFINITION TO [sqlvitals_login];   -- SQL Server / MI
+```
+
+It shows the definitions of logins, users, roles and objects, but no data, and changes nothing. The sa login and TRUSTWORTHY are checked without it. Orphaned users are looked for only in databases the login can open.
+
+Some screens read database-scoped views (Index Health, Stale Stats, Query Store, DB Storage → Top Tables) for the **connection's database**. The login needs to be able to connect to that database.
+
+**Check what a login has:**
+
+```sql
+-- SQL Server / MI
+SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE')       AS CanReadDmvs,
+       HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER ANY EVENT SESSION') AS CanTrace;
+
+-- Azure SQL Database
+SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')              AS CanReadDmvs,
+       HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'ALTER ANY DATABASE EVENT SESSION') AS CanTrace;
+```
+
+## Compatibility
+
+| | SQL Server (on-premises / VM) | Azure SQL Managed Instance | Azure SQL Database |
+|---|---|---|---|
+| All monitoring screens | ✅ | ✅ | ✅ (server-level parts skipped) |
+| DB Storage: TempDB files, `sp_configure` | ✅ | ✅ | ➖ not available, skipped |
+| Query Store / Query Regressions (Query Store source) | 2016+ | ✅ | ✅ |
+| SP Trace | Server-scoped XE session | Server-scoped | Database-scoped (`ON DATABASE`) |
+| Deadlocks (system_health) | ✅ | ✅ | ➖ not available (no system_health) |
+| Agent Jobs (SQL Server Agent) | ✅ (not Express, which has no Agent) | ✅ | ➖ not available (no Agent; the button is disabled) |
+| Backups (msdb backup history) | ✅ | ✅ | ➖ not available (Azure backs up by itself; the button is disabled) |
+| File I/O (`sys.dm_io_virtual_file_stats`) | ✅ Every database | ✅ Every database | ⚠️ The current database's files only; no volumes |
+| Config Checks | ✅ | ✅ (compatibility level held to the highest level in use) | ⚠️ This database's MAXDOP, auto-shrink, page verify and compatibility level only |
+| Security Audit | ✅ | ✅ (Microsoft Entra logins and groups too) | ➖ not available (the button is disabled) |
+| Index `ONLINE = ON` in scripts | Enterprise / Developer | ✅ | ✅ |
+
+The edition is detected at runtime with `SERVERPROPERTY('EngineEdition')` (5 = Azure SQL Database, 8 = Managed Instance), and queries switch automatically.
+
+## Identifying SqlVitals on your server
+
+SqlVitals sessions use the login you configured. The SP Trace event session is named `SqlVitals_SpTrace` (configurable with `TraceSettings:SessionName`).

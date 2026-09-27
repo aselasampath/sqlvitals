@@ -19,8 +19,8 @@
 
 <p align="center">
   <a href="https://github.com/aselasampath/sqlvitals/releases/latest"><strong>Download</strong></a> ·
-  <a href="https://github.com/aselasampath/sqlvitals/wiki"><strong>Documentation</strong></a> ·
-  <a href="https://github.com/aselasampath/sqlvitals/wiki/Getting-Started"><strong>Getting Started</strong></a> ·
+  <a href="docs/Home.md"><strong>Documentation</strong></a> ·
+  <a href="docs/Getting-Started.md"><strong>Getting Started</strong></a> ·
   <a href="https://github.com/aselasampath/sqlvitals/issues"><strong>Report an issue</strong></a>
 </p>
 
@@ -48,7 +48,7 @@ monitoring platform first.
   misconfigured settings and security risks. You review and run them; SqlVitals never does.
 - 📤 **Easy to share.** Copy or export any grid to CSV, or export a report ready to paste into an AI assistant.
 
-See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map) in the wiki for every screen.
+See the [feature map](docs/Home.md#feature-map) in the wiki for every screen.
 
 ## Get started
 
@@ -64,8 +64,8 @@ See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map
 
    That covers almost every screen. Agent Jobs and Backups also read msdb, the Security Audit needs
    `VIEW ANY DEFINITION` to list logins and users, and the SP Trace's per-call mode needs one more grant:
-   see [Server Impact and Permissions](https://github.com/aselasampath/sqlvitals/wiki/Server-Impact-and-Permissions).
-3. Add the connection in **Settings** and click **Save & Connect**. [Getting Started](https://github.com/aselasampath/sqlvitals/wiki/Getting-Started)
+   see [Server Impact and Permissions](docs/Server-Impact-and-Permissions.md).
+3. Add the connection in **Settings** and click **Save & Connect**. [Getting Started](docs/Getting-Started.md)
    walks through the first look.
 
 ## Safe on production servers
@@ -74,7 +74,7 @@ See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map
 - **Light.** Reads use `READ UNCOMMITTED` with a timeout. In the background it runs one light query per server
   every 10 seconds and a snapshot every 5 minutes; heavy screens run only when you open them.
 - **Private.** Saved connections are encrypted with Windows DPAPI, and history stays on your PC. See
-  [Security and Privacy](https://github.com/aselasampath/sqlvitals/wiki/Security-and-Privacy).
+  [Security and Privacy](docs/Security-and-Privacy.md).
 
 ## How it compares
 
@@ -102,17 +102,17 @@ table shows.*
 
 ## Documentation
 
-Everything else is in the **[wiki](https://github.com/aselasampath/sqlvitals/wiki)**:
+Everything else is in the **[wiki](docs/Home.md)**:
 
-- **Using it:** [Installation](https://github.com/aselasampath/sqlvitals/wiki/Installation) ·
-  [Getting Started](https://github.com/aselasampath/sqlvitals/wiki/Getting-Started) ·
-  [How-To Recipes](https://github.com/aselasampath/sqlvitals/wiki/How-To-Recipes) ·
-  [Troubleshooting and FAQ](https://github.com/aselasampath/sqlvitals/wiki/Troubleshooting-and-FAQ) ·
-  [Glossary](https://github.com/aselasampath/sqlvitals/wiki/Glossary)
-- **Before a DBA approves it:** [Server Impact and Permissions](https://github.com/aselasampath/sqlvitals/wiki/Server-Impact-and-Permissions) ·
-  [Security and Privacy](https://github.com/aselasampath/sqlvitals/wiki/Security-and-Privacy)
-- **Developers:** [Architecture](https://github.com/aselasampath/sqlvitals/wiki/Architecture) ·
-  [Building and Contributing](https://github.com/aselasampath/sqlvitals/wiki/Building-and-Contributing)
+- **Using it:** [Installation](docs/Installation.md) ·
+  [Getting Started](docs/Getting-Started.md) ·
+  [How-To Recipes](docs/How-To-Recipes.md) ·
+  [Troubleshooting and FAQ](docs/Troubleshooting-and-FAQ.md) ·
+  [Glossary](docs/Glossary.md)
+- **Before a DBA approves it:** [Server Impact and Permissions](docs/Server-Impact-and-Permissions.md) ·
+  [Security and Privacy](docs/Security-and-Privacy.md)
+- **Developers:** [Architecture](docs/Architecture.md) ·
+  [Building and Contributing](docs/Building-and-Contributing.md)
 
 ## Build from source
 
@@ -128,13 +128,13 @@ dotnet run --project SqlVitals\Desktop
 ```
 
 The installer, CI, releases and how to add a screen are in
-[Building and Contributing](https://github.com/aselasampath/sqlvitals/wiki/Building-and-Contributing).
+[Building and Contributing](docs/Building-and-Contributing.md).
 
 ## Contributing
 
 Issues and pull requests are welcome. Work is tracked in [issues](https://github.com/aselasampath/sqlvitals/issues),
 one branch and pull request per issue; see the
-[contribution workflow](https://github.com/aselasampath/sqlvitals/wiki/Building-and-Contributing#contribution-workflow).
+[contribution workflow](docs/Building-and-Contributing.md#contribution-workflow).
 
 ## License
 
