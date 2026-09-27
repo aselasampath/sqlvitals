@@ -40,11 +40,12 @@ monitoring platform first.
   window closed to the notification area.
 - 🕰️ **Remembers.** A local history of metrics, waits and top queries, compared with the same time last week.
 - 🧯 **The DBA checklist.** Deadlock history, failed and long-running SQL Agent jobs, backups against your RPO, file
-  I/O latency, and server settings checked against best practice.
+  I/O latency, server settings checked against best practice, and a security audit of sysadmin, sa, TRUSTWORTHY and
+  orphaned users.
 - 📉 **Query performance.** The busiest queries, Query Store, query regressions with before and after plans,
   graphical execution plans, implicit conversions and a live stored-procedure trace.
-- 🛠️ **Fix, not just find.** Scripts for missing and unused indexes, fragmentation, stale statistics and
-  misconfigured settings. You review and run them; SqlVitals never does.
+- 🛠️ **Fix, not just find.** Scripts for missing and unused indexes, fragmentation, stale statistics,
+  misconfigured settings and security risks. You review and run them; SqlVitals never does.
 - 📤 **Easy to share.** Copy or export any grid to CSV, or export a report ready to paste into an AI assistant.
 
 See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map) in the wiki for every screen.
@@ -61,8 +62,9 @@ See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map
    GRANT VIEW DATABASE STATE TO [your_user];    -- Azure SQL Database, in the user database
    ```
 
-   That covers almost every screen. Agent Jobs and Backups also read msdb, and the SP Trace's per-call mode needs
-   one more grant: see [Server Impact and Permissions](https://github.com/aselasampath/sqlvitals/wiki/Server-Impact-and-Permissions).
+   That covers almost every screen. Agent Jobs and Backups also read msdb, the Security Audit needs
+   `VIEW ANY DEFINITION` to list logins and users, and the SP Trace's per-call mode needs one more grant:
+   see [Server Impact and Permissions](https://github.com/aselasampath/sqlvitals/wiki/Server-Impact-and-Permissions).
 3. Add the connection in **Settings** and click **Save & Connect**. [Getting Started](https://github.com/aselasampath/sqlvitals/wiki/Getting-Started)
    walks through the first look.
 
@@ -82,9 +84,9 @@ See the [feature map](https://github.com/aselasampath/sqlvitals/wiki#feature-map
 | Several servers watched continuously, with a health score each | ✅ | ❌ Activity Monitor: one server, while open | ⚠️ Per-resource metrics and alert rules you configure |
 | History, compared with last week | ✅ Local, retention you choose | ⚠️ Query Store reports, per database | ⚠️ Platform metrics; deeper data needs Log Analytics (billed per GB) |
 | Alerts and desktop notifications | ✅ Built in | ⚠️ SQL Agent alerts, set up per server | ✅ Alert rules and action groups, set up per resource |
-| Blocking chains, deadlocks, Agent jobs, backups, file I/O, configuration | ✅ One place | ⚠️ Separate reports and monitors, one server at a time | ⚠️ Partly, Azure SQL only |
+| Blocking chains, deadlocks, Agent jobs, backups, file I/O, configuration, security | ✅ One place | ⚠️ Separate reports and monitors, one server at a time | ⚠️ Partly, Azure SQL only |
 | Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
-| Fix scripts for indexes, statistics and settings | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning, Azure SQL only |
+| Fix scripts for indexes, statistics, settings and security risks | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning, Azure SQL only |
 | Nothing to install on the server, no workspace, no cost | ✅ | ✅ | ⚠️ Log Analytics and some features are billed |
 
 *A fair summary of the built-in tools as usually used; SSMS and Azure change often, and both do far more than this

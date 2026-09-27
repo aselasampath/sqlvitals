@@ -328,6 +328,8 @@ public partial class MainWindow : Window
         (BtnAgentJobs, "AgentJobs", BtnAgentJobs.ToolTip, "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
         // Azure takes the backups itself and records none in msdb (#40).
         (BtnBackups,   "Backups",   BtnBackups.ToolTip,   "Not available on Azure SQL Database, which backs up every database itself; the Azure portal shows its restore points."),
+        // No sysadmin role, sa login or TRUSTWORTHY setting, and the logins are in the logical server's master (#43).
+        (BtnSecurityAudit, "SecurityAudit", BtnSecurityAudit.ToolTip, "Not available on Azure SQL Database, which has no sysadmin role, sa login or TRUSTWORTHY setting; its logins are in the logical server's master database."),
     ];
 
     // Disable those pages up front instead of letting the user hit a query error after navigating to one.
@@ -532,7 +534,7 @@ public partial class MainWindow : Window
         _currentTag = tag;
 
         // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnAgentJobs, BtnBackups, BtnFileIo, BtnConfigChecks, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
+        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnAgentJobs, BtnBackups, BtnFileIo, BtnConfigChecks, BtnSecurityAudit, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
             btn.Style = (Style)FindResource("NavButton");
 
         Button active = tag switch
@@ -546,6 +548,7 @@ public partial class MainWindow : Window
             "Backups"         => BtnBackups,
             "FileIo"          => BtnFileIo,
             "ConfigChecks"    => BtnConfigChecks,
+            "SecurityAudit"   => BtnSecurityAudit,
             "WaitTrend"       => BtnWaitTrend,
             "TempDb"          => BtnTempDb,
             "Memory"          => BtnMemory,
@@ -588,6 +591,7 @@ public partial class MainWindow : Window
             "Backups"         => new BackupsPage(Repo, SettingsService),
             "FileIo"          => new FileIoPage(Repo, SettingsService),
             "ConfigChecks"    => new ConfigChecksPage(Repo, activeName),
+            "SecurityAudit"   => new SecurityAuditPage(Repo, activeName),
             "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),

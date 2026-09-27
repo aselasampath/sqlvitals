@@ -51,6 +51,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     private readonly ConfigurationRepository _configuration = new(configuration);
 
+    private readonly SecurityAuditRepository _securityAudit = new(configuration);
+
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
     // server-scoped DMVs used by TempDB file-level reporting (see GetTempDbPressureAsync).
@@ -1885,4 +1887,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     // ── Configuration checks (delegated to ConfigurationRepository) ───
     public Task<ConfigChecks.ConfigCheckList> GetConfigurationChecksAsync()
         => _configuration.GetConfigurationChecksAsync();
+
+    // ── Security audit (delegated to SecurityAuditRepository) ─────────
+    public Task<Security.SecurityFindingList> GetSecurityAuditAsync()
+        => _securityAudit.GetSecurityAuditAsync();
 }
