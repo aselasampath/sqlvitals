@@ -1,0 +1,72 @@
+# SqlVitals Wiki
+
+**SqlVitals** is a free Windows desktop app that shows you what is happening inside a **SQL Server** or **Azure SQL** database, live and over time. It reads SQL Server's own diagnostic views directly. You don't install anything on the server, run a service, or set up an agent.
+
+It answers questions like:
+
+- *Is the server healthy right now?* A coloured dot and a 0–100 health score per connection, a live dashboard and live blocking chains with the head blocker named.
+- *Why is it slow?* Wait statistics, the busiest queries, blocked sessions, memory and TempDB pressure.
+- *Why do we keep getting deadlocks?* The recent deadlocks from SQL Server's built-in system_health session: the victim, the other sessions, the objects and statements, and which ones keep coming back.
+- *Could every database be restored, and how much would we lose?* Each database's last full, differential and log backup, how much work is at risk right now, and a warning when a backup is missing or older than your RPO.
+- *Did last night's backup or ETL job fail?* Every SQL Agent job with its last run, how long it took against its average and when it runs next; failed jobs and jobs running longer than usual first, with the failing step's error.
+- *Which disk is slow?* Read and write latency for every database file, measured over the last few seconds rather than since startup, with the files over your threshold highlighted and the same added up per volume.
+- *Is this server set up right?* MAXDOP, cost threshold for parallelism, max server memory, TempDB's files and every database's auto-shrink, page verify and compatibility level checked against best practice, each with the value recommended for this server, why, and the script to fix it.
+- *Who has the keys to this server?* Every sysadmin (and CONTROL SERVER) login, whether sa is enabled, databases marked TRUSTWORTHY and orphaned users, each marked Risk, Review or Pass with the risk explained and the script to remove it.
+- *What went wrong overnight, and when?* Alerts record every threshold breach with its start, end and worst value, and a Windows notification tells you when one starts, even with the window closed.
+- *Where does this query spend its time?* Graphical execution plans like SSMS, with costly operators, warnings and bad estimates highlighted.
+- *What happened while I wasn't looking?* A local history of every monitored server, with charts for the last hour, day or week, and a comparison with the same time last week.
+- *Did a query get slower?* Automatic detection of query regressions, with the before and after execution plans.
+- *What should I fix?* Ready-to-review scripts for missing indexes, unused indexes, fragmentation and stale statistics. SqlVitals never runs them for you.
+
+> This wiki describes SqlVitals **0.44.0** (the current code on `main`). Download the installer, or the [portable zip](Installation.md#portable-zip-no-installer) if you'd rather not install, from the [latest release](https://github.com/aselasampath/sqlvitals/releases/latest), under **Assets**. If the latest release is older than 0.44.0, some features described here aren't in it yet: the [security audit](Security-Audit.md) is new in 0.44.0; the portable zip in 0.43.0; the [configuration checks](Configuration-Checks.md) are new in 0.42.0; the [file I/O latency page](File-IO.md) in 0.41.0; the [backup status and RPO warnings](Backups.md) in 0.40.0; the [SQL Agent job monitor](Agent-Jobs.md) in 0.39.0; the [deadlock history](Deadlocks.md) in 0.38.0; the [blocking chain viewer](Live-Monitoring.md#processes-blocking-chains) in 0.37.0; the [health score](Health-Dot-and-Background-Monitoring.md#health-score) is new in 0.36.0; the graphical [execution plans](Execution-Plans.md) and [notifications and tray](Notifications-and-Tray.md) in 0.35.0. See [Installation](Installation.md#get-the-latest-version).
+
+---
+
+## Where to start
+
+| I am… | Start here |
+|---|---|
+| **New to SqlVitals** | [Installation](Installation.md) → [Getting Started](Getting-Started.md) |
+| **Investigating a problem right now** | [How-To Recipes](How-To-Recipes.md) |
+| **Looking up a screen** | The feature pages in the sidebar, or the [feature map](#feature-map) below |
+| **A DBA checking what it does to my server** | [Server Impact and Permissions](Server-Impact-and-Permissions.md) |
+| **A developer or contributor** | [Architecture](Architecture.md) → [Building and Contributing](Building-and-Contributing.md) |
+
+New to terms like *wait type*, *page life expectancy* or *Query Store*? See the [Glossary](Glossary.md).
+
+---
+
+## Feature map
+
+| Area | Screens | What you get | Page |
+|---|---|---|---|
+| **Live health** | 💓 Live Metrics, 🔗 Processes, ⚡ Active Waits | Live charts, blocking chains as trees with their head blockers, sessions waiting right now | [Live Monitoring](Live-Monitoring.md) |
+| **Deadlocks** | 💥 Deadlocks | Recent deadlocks from system_health: victim, participants, objects, statements; recurring patterns; save as `.xdl` for SSMS | [Deadlocks](Deadlocks.md) |
+| **Agent jobs** | 🕒 Agent Jobs | Every SQL Agent job: last run, duration against its average, next run; failed and long-running jobs first; each run's steps and errors | [Agent Jobs](Agent-Jobs.md) |
+| **Backups** | 💾 Backups | Each database's last full, differential and log backup and the data at risk now; missing and overdue backups first, against the RPO you set; each database's backup history | [Backups](Backups.md) |
+| **Storage latency** | 💽 File I/O | Read and write latency per database file over the last few seconds, files over your threshold highlighted, totals per volume | [File I/O](File-IO.md) |
+| **Configuration** | ✅ Config Checks | MAXDOP, cost threshold, max server memory, TempDB files, auto-shrink, page verify and compatibility level: Pass or Warn, current and recommended value, why, and the fix script | [Configuration Checks](Configuration-Checks.md) |
+| **Security** | 🔒 Security Audit | sysadmin and CONTROL SERVER logins, the sa login, TRUSTWORTHY databases and orphaned users: Risk, Review or Pass, the risk explained, and the script to remove it | [Security Audit](Security-Audit.md) |
+| **Connection health** | Sidebar health dot and score, score on 💓 Live Metrics | 🟢 / 🟠 / 🔴 and a 0–100 score per connection, on thresholds you set; click the score for the checks that lowered it | [Health Dot and Background Monitoring](Health-Dot-and-Background-Monitoring.md) |
+| **Alerts** | 🔔 Alerts | A timeline of threshold breaches: when each started and ended, and its worst value | [Alerts](Alerts.md) |
+| **Background watching** | Notification-area icon, Windows notifications | A notification when an alert starts (click it to open the alert), muting per connection; minimizing or closing keeps monitoring running | [Notifications and Tray](Notifications-and-Tray.md) |
+| **Waits** | 📊 Top Waits, 📈 Wait Trend | What SQL Server spends its time waiting on | [Wait Statistics](Wait-Statistics.md) |
+| **History** | Range picker on trend pages | Last 1h / 24h / 7d / custom, and *Compare to baseline* | [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md) |
+| **Queries** | 📋 Query Store, 🔥 Resource Queries, ⚠️ Implicit Conv., 🔎 Plan Cache Health | The most expensive queries and plan problems | [Query Performance](Query-Performance.md) |
+| **Execution plans** | **View Plan** (Resource Queries, SP Trace), **Now / Before** (Query Regressions) | Graphical plans like SSMS: costs, row-count arrows, warnings, bad estimates, missing indexes | [Execution Plans](Execution-Plans.md) |
+| **Regressions** | 🐢 Query Regressions | Queries that got slower, with before/after plans | [Query Regressions](Query-Regressions.md) |
+| **Stored procedures** | 🛰️ SP Trace | Live stream of stored-procedure calls | [SP Trace](SP-Trace.md) |
+| **Maintenance** | 🔍 Index Health, 📉 Stale Stats | CREATE / DROP / REBUILD / UPDATE STATISTICS scripts | [Index and Statistics Maintenance](Index-and-Statistics-Maintenance.md) |
+| **Resources** | 🗄️ TempDB, 🧠 Memory Grants, 🗄️ DB Storage, 🔌 App Connections, 📈 Perfmon | Memory, TempDB, storage, configuration, counters | [Server Resources](Server-Resources.md) |
+| **Sharing** | Right-click on any grid, 📤 Export / AI | Copy, CSV, and a text report to paste into an AI assistant | [Working with Grids](Working-with-Grids.md), [Export for AI](Export-for-AI.md) |
+| **Setup** | ⚙️ Settings | Connections, thresholds, alerts and notifications, history, notification area, theme, logs | [Connections](Connections.md), [Settings](Settings.md) |
+
+---
+
+## Key facts at a glance
+
+- **Read-only.** SqlVitals only reads diagnostic data. The one exception is *SP Trace*, which creates a temporary Extended Events session and removes it when you stop. Scripts it generates are shown for you to review; it never runs them.
+- **Light on the server.** In the background it runs one small query per connection every 10 seconds, plus a larger snapshot every 5 minutes. Heavy screens run only when you open them. See [Server Impact and Permissions](Server-Impact-and-Permissions.md).
+- **Minimum permission:** `VIEW SERVER STATE` (on-premises, Managed Instance) or `VIEW DATABASE STATE` (Azure SQL Database).
+- **Your data stays on your PC.** Saved connections are encrypted with Windows DPAPI. History is a local SQLite file. See [Security and Privacy](Security-and-Privacy.md).
+- **Free and open source** under the [MIT License](https://github.com/aselasampath/sqlvitals/blob/main/LICENSE).

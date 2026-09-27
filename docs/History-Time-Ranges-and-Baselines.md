@@ -1,0 +1,66 @@
+# History, Time Ranges and Baselines
+
+SqlVitals keeps a **local history** of every server it monitors in the background, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
+
+> **Where:** the range picker in the toolbar of 💓 Live Metrics, 📈 Wait Trend and 📈 Perfmon · **Needs:** a saved connection with **Monitor in background** ticked
+
+## Look back in time
+
+The range picker has five choices:
+
+| Choice | Shows |
+|---|---|
+| **Live** | Data collected as you watch (the default) |
+| **1h** | The last hour |
+| **24h** | The last 24 hours |
+| **7d** | The last 7 days |
+| **Custom…** | A **From** and **To** date and time you choose (on this PC's clock). Press **Show**. |
+
+What each page shows for past ranges:
+
+| Page | Shows | Detail |
+|---|---|---|
+| **Live Metrics** | Every chart | One point per sample (10 s by default) on 1h |
+| **Wait Trend** | Waits per type, any of the four metrics | One point per snapshot (5 min by default) |
+| **Perfmon** | The counters you tick | One point per snapshot (recorded from version 0.30) |
+
+**Refresh** re-reads the range, so *1h* moves up to "now".
+
+### Reading history charts
+
+- **Long ranges are averaged** so a chart has at most 600 points: about 10 s per point on 1h, 5 min on 24h and 30 min on 7d. The status line says how many points there are and how far apart.
+- **Gaps stay gaps.** When the app was closed or monitoring paused, the line breaks instead of drawing a misleading straight line across.
+- **Live Metrics keeps collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Start**, to resume.
+
+## Compare to a baseline
+
+Tick **Compare to baseline** (next to the range picker) to overlay **the same time last week** as **dashed, faded lines**. It answers *"is this normal?"*: a CPU of 70 % is worrying if last Tuesday at the same hour was 20 %, and normal if it was 70 % too.
+
+- Each line gets a dashed twin in the same colour, called *"… · last week"* in the legend.
+- On Live Metrics' stacked waits chart, the baseline is one dashed **Total waits · last week** line, counting only the wait categories that are ticked.
+- **Same wall-clock time:** 09:00 today is compared with 09:00 last week, even across a daylight-saving change.
+- Works with **Live** and with any past range.
+- Where nothing was recorded last week, there's no line, and the status line says so.
+
+Baselines need a week of history. See [Settings → Monitoring History](Settings.md#monitoring-history) to keep enough.
+
+## What is recorded, and how often
+
+| What | How often | Examples |
+|---|---|---|
+| **Live Metrics samples** | Every Live Metrics interval (10 s by default) | CPU, waits per category, batch requests, compilations, transactions, physical I/O, page life expectancy, memory grants pending, buffer cache hit ratio |
+| **Detail snapshots** | Every **5 minutes** by default (1, 5, 15 or 30 in Settings) | Waits per type, file I/O per file, top 20 queries by CPU, memory, Perfmon counters |
+
+History is kept **14 days** by default (7, 14, 30 or 90 in Settings) and deleted automatically after that. The **Query Regressions** screen can also use it. See [Query Regressions](Query-Regressions.md).
+
+---
+
+### Under the hood
+
+- **Storage:** a SQLite file at `%LocalAppData%\SqlVitals\history.db`. Schema, tiers, retention and how to query it yourself are in [Monitoring History Database](Monitoring-History-Database.md).
+- **Reads** happen on a background thread through a separate, short-lived read-only connection to the file (`HistoryReader`), so they never block the UI or the writer.
+- **Bucketing** (`HistoryRange`) picks a bucket size so the range has at most 600 points and averages samples within each bucket. **Gaps** (`HistoryGaps`) are detected from the expected interval, and the chart gets a null point so the line breaks.
+- **Clocks:** Live Metrics plots past ranges on the **server's** clock, like its live samples (`server_time`). Wait Trend and Perfmon use **this PC's** clock (`captured_utc`) for both.
+- **Baseline** (`HistoryBaseline`, `BaselineTracker` in `ConnectionHistory.cs`, drawn by `Helpers/BaselineSeries`): the current window is shifted back 7 days by wall-clock time, read with the chart's own bucket size, then shifted forward onto the current axis. Live, it's read with 30 minutes of margin on each side and re-read only when the live window runs past it.
+- **Wait Trend history** starts on the range's top waits if none of your selected types were recorded in it. The live list's default top 20 is mostly idle waits, which history doesn't store.
+- The ad-hoc connection (no saved connection) isn't recorded, so the history choices are disabled for it.
