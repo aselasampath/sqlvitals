@@ -1,5 +1,5 @@
 using System.Data;
-using Microsoft.Data.SqlClient;
+using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
@@ -118,67 +118,8 @@ public class PlanCacheHealthRepository(IConfiguration configuration)
             ORDER BY qs.total_logical_reads DESC;
             """;
 
-        // ── 4. Cardinality misestimates — live active queries ─────────────────
-        // Uses dm_exec_query_profiles (SQL 2016+ with lightweight profiling).
-        // Columns estimated_row_count / actual_row_count only exist on SQL 2016+
-        // with a compatible build. Error handling is done in C# (see below).
-        const string cardinalitySql = """
-            SELECT TOP 20
-                qp.session_id                          AS SessionId,
-                qp.node_id                             AS NodeId,
-                CAST(qp.estimated_row_count AS BIGINT) AS EstimatedRows,
-                CAST(qp.actual_row_count    AS BIGINT) AS ActualRows,
-                CAST(
-                    CASE
-                        WHEN qp.estimated_row_count = 0 THEN qp.actual_row_count
-                        WHEN qp.actual_row_count    = 0 THEN qp.estimated_row_count
-                        WHEN qp.actual_row_count > qp.estimated_row_count
-                             THEN qp.actual_row_count * 1.0 / qp.estimated_row_count
-                        ELSE qp.estimated_row_count * 1.0 / qp.actual_row_count
-                    END AS DECIMAL(18,1)) AS MisestimateRatio,
-                DB_NAME(r.database_id) AS DatabaseName,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
-            FROM sys.dm_exec_query_profiles qp
-            JOIN sys.dm_exec_requests r ON r.session_id = qp.session_id
-            CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
-            WHERE qp.session_id <> @@SPID
-              AND qp.estimated_row_count > 0
-              AND qp.actual_row_count > 0
-              AND (   qp.actual_row_count * 1.0 / qp.estimated_row_count >= 1000
-                   OR qp.estimated_row_count * 1.0 / qp.actual_row_count >= 1000)
-            ORDER BY
-                CASE
-                    WHEN qp.actual_row_count > qp.estimated_row_count
-                         THEN qp.actual_row_count * 1.0 / qp.estimated_row_count
-                    ELSE qp.estimated_row_count * 1.0 / qp.actual_row_count
-                END DESC;
-            """;
-
-        // ── 5. Skewed parallelism — live active queries ───────────────────────
-        // Groups by session + node, finds max/min actual_row_count across threads.
-        // Error handling in C# (see below).
-        const string skewSql = """
-            SELECT TOP 20
-                qp.session_id                             AS SessionId,
-                qp.node_id                                AS NodeId,
-                MAX(qp.actual_row_count)                  AS MaxActualRows,
-                MIN(qp.actual_row_count)                  AS MinActualRows,
-                CAST(MAX(qp.actual_row_count) AS FLOAT)
-                    / NULLIF(MIN(qp.actual_row_count), 0) AS SkewRatio,
-                DB_NAME(r.database_id)                    AS DatabaseName,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
-            FROM sys.dm_exec_query_profiles qp
-            JOIN sys.dm_exec_requests r ON r.session_id = qp.session_id
-            CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
-            WHERE qp.session_id <> @@SPID
-              AND qp.thread_id > 0
-            GROUP BY qp.session_id, qp.node_id, r.database_id, st.text
-            HAVING COUNT(*) > 1
-               AND MAX(qp.actual_row_count) > 0
-               AND CAST(MAX(qp.actual_row_count) AS FLOAT)
-                   / NULLIF(MIN(qp.actual_row_count), 0) >= 5
-            ORDER BY SkewRatio DESC;
-            """;
+        // ── 4. Cardinality misestimates: CardinalitySql (below) ───────────────
+        // ── 5. Skewed parallelism: SkewSql (below) ────────────────────────────
 
         // ── 6. Plan guides ────────────────────────────────────────────────────
         const string planGuidesSql = """
@@ -194,29 +135,15 @@ public class PlanCacheHealthRepository(IConfiguration configuration)
             """;
 
         // ── Execute all queries ───────────────────────────────────────────────
-        // Cardinality and skew queries use columns that only exist on SQL Server 2016+
-        // with specific build levels. Catch any SqlException at the C# level so a
-        // version-incompatible server still loads the rest of the page cleanly.
+        // The summary and multi-plan queries are the page: if they fail, it fails.
+        // The rest are optional sections (see Optional).
         var summaryRows   = await Q(conn, summarySql,   commandTimeout: 60);
         var multiPlanRows = await Q(conn, multiPlanSql, commandTimeout: 120);
 
-        // Key lookup scan reads plan XML (dm_exec_text_query_plan) — can fail on
-        // permission-restricted accounts or very large plan caches. Isolate the failure.
-        IEnumerable<dynamic> keyLookupRows;
-        try   { keyLookupRows = await Q(conn, keyLookupSql, commandTimeout: 120); }
-        catch (SqlException ex) when (ex.Number is 207 or 208) { keyLookupRows = Enumerable.Empty<dynamic>(); }
-
-        IEnumerable<dynamic> cardinalityRows;
-        try   { cardinalityRows = await Q(conn, cardinalitySql, commandTimeout: 30); }
-        catch (SqlException ex) when (ex.Number is 207 or 208) { cardinalityRows = Enumerable.Empty<dynamic>(); }
-
-        IEnumerable<dynamic> skewRows;
-        try   { skewRows = await Q(conn, skewSql, commandTimeout: 30); }
-        catch (SqlException ex) when (ex.Number is 207 or 208) { skewRows = Enumerable.Empty<dynamic>(); }
-
-        IEnumerable<dynamic> planGuideRows;
-        try   { planGuideRows = await Q(conn, planGuidesSql, commandTimeout: 15); }
-        catch (SqlException ex) when (ex.Number is 207 or 208) { planGuideRows = Enumerable.Empty<dynamic>(); }
+        var keyLookupRows   = await Optional(Q(conn, keyLookupSql,   commandTimeout: 120));
+        var cardinalityRows = await Optional(Q(conn, CardinalitySql, commandTimeout: 30));
+        var skewRows        = await Optional(Q(conn, SkewSql,        commandTimeout: 30));
+        var planGuideRows   = await Optional(Q(conn, planGuidesSql,  commandTimeout: 15));
 
         // ── Map summary ───────────────────────────────────────────────────────
         var sr = summaryRows.FirstOrDefault();
@@ -292,5 +219,86 @@ public class PlanCacheHealthRepository(IConfiguration configuration)
             (bool)r.IsDisabled));
 
         return (summary, multiPlan, keyLookups, cardinality, skewed, guides2);
+    }
+
+    // sys.dm_exec_query_profiles has one row per node per thread, for queries running with
+    // lightweight profiling (on by default from SQL Server 2019) or a statistics-profile trace.
+    // Its row columns are estimate_row_count and row_count on every version.
+
+    /// <summary>
+    /// Cardinality misestimates in running queries: nodes whose actual and estimated rows are
+    /// 1000× apart. A parallel node's threads are summed first, as the DMV's documented
+    /// example does, so each node is one row.
+    /// </summary>
+    internal const string CardinalitySql = """
+        SELECT TOP 20
+            p.SessionId,
+            p.NodeId,
+            p.EstimatedRows,
+            p.ActualRows,
+            CAST(
+                CASE
+                    WHEN p.ActualRows > p.EstimatedRows
+                         THEN p.ActualRows * 1.0 / p.EstimatedRows
+                    ELSE p.EstimatedRows * 1.0 / p.ActualRows
+                END AS FLOAT)  AS MisestimateRatio,
+            DB_NAME(r.database_id) AS DatabaseName,
+            SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
+        FROM (
+            SELECT
+                qp.session_id               AS SessionId,
+                qp.request_id               AS RequestId,
+                qp.node_id                  AS NodeId,
+                SUM(qp.estimate_row_count)  AS EstimatedRows,
+                SUM(qp.row_count)           AS ActualRows
+            FROM sys.dm_exec_query_profiles qp
+            WHERE qp.session_id <> @@SPID
+            GROUP BY qp.session_id, qp.request_id, qp.node_id
+        ) p
+        JOIN sys.dm_exec_requests r ON r.session_id = p.SessionId AND r.request_id = p.RequestId
+        CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
+        WHERE p.EstimatedRows > 0
+          AND p.ActualRows > 0
+          AND (   p.ActualRows * 1.0 / p.EstimatedRows >= 1000
+               OR p.EstimatedRows * 1.0 / p.ActualRows >= 1000)
+        ORDER BY MisestimateRatio DESC;
+        """;
+
+    /// <summary>
+    /// Skewed parallelism in running queries: parallel nodes where one worker thread has
+    /// produced 5× the rows of another. Thread 0 is the coordinator, so it's left out.
+    /// </summary>
+    internal const string SkewSql = """
+        SELECT TOP 20
+            qp.session_id                      AS SessionId,
+            qp.node_id                         AS NodeId,
+            MAX(qp.row_count)                  AS MaxActualRows,
+            MIN(qp.row_count)                  AS MinActualRows,
+            CAST(MAX(qp.row_count) AS FLOAT)
+                / NULLIF(MIN(qp.row_count), 0) AS SkewRatio,
+            DB_NAME(r.database_id)             AS DatabaseName,
+            SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
+        FROM sys.dm_exec_query_profiles qp
+        JOIN sys.dm_exec_requests r ON r.session_id = qp.session_id AND r.request_id = qp.request_id
+        CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
+        WHERE qp.session_id <> @@SPID
+          AND qp.thread_id > 0
+        GROUP BY qp.session_id, qp.request_id, qp.node_id, r.database_id, st.text
+        HAVING COUNT(*) > 1
+           AND MAX(qp.row_count) > 0
+           AND CAST(MAX(qp.row_count) AS FLOAT)
+               / NULLIF(MIN(qp.row_count), 0) >= 5
+        ORDER BY SkewRatio DESC;
+        """;
+
+    /// <summary>
+    /// Runs an optional section's query: a missing column or object (207, 208) leaves just
+    /// that section empty instead of failing the page. <see cref="BaseRepository.Q"/> wraps
+    /// every error in a <see cref="WaitStatsException"/>, so that's what's caught here.
+    /// </summary>
+    internal static async Task<IEnumerable<dynamic>> Optional(Task<IEnumerable<dynamic>> query)
+    {
+        try { return await query; }
+        catch (WaitStatsException ex) when (ex.SqlErrorNumber is 207 or 208) { return []; }
     }
 }

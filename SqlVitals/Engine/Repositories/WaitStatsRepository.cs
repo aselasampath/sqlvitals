@@ -1,6 +1,6 @@
 using System.Data;
 using Dapper;
-using Microsoft.Data.SqlClient;
+using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Scripting;
@@ -602,7 +602,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                     (DateTime)hr.CaptureTime, enabled, sev);
             }
         }
-        catch (SqlException ex) when (ex.Number == 208) { /* Query Store catalog views don't exist on this SQL version */ }
+        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
 
         IEnumerable<QueryStoreTopQuery> queries = [];
         try
@@ -624,7 +624,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                     (DateTime)r.LastExecutionTimeUtc, (DateTime)r.CaptureTime, sev);
             }).ToList();
         }
-        catch (SqlException ex) when (ex.Number == 208) { /* Query Store catalog views don't exist on this SQL version */ }
+        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
 
         return (health, queries);
     }
