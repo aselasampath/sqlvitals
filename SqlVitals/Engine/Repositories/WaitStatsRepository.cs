@@ -1682,54 +1682,42 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 23. Memory KPI snapshot ──────────────────────────────────────
-    public async Task<MemorySnapshot> GetMemorySnapshotAsync()
-    {
-        // Column sources (all SQL versions):
-        //   sys.dm_os_sys_info  (osi): physical_memory_kb; memory_model_desc added in SQL 2016
-        //   sys.dm_os_sys_memory (osm): available_physical_memory_kb, total_page_file_kb,
-        //                               available_page_file_kb, system_memory_state_desc
-        //   sys.dm_os_performance_counters (pc): memory KB counters
-        //
-        // SQL 2016+ (v13+):  osi also exposes memory_model_desc — use it directly.
-        // SQL 2012/2014 (v11-12): memory_model_desc NOT on osi → fall back to N'N/A'.
-        // Azure SQL DB (EngineEdition 5): sys.dm_os_sys_memory not exposed → counters only.
-        const string sqlOnPrem = """
-            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-            SELECT
-                osi.physical_memory_kb                                                                    AS PhysicalMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Total Server Memory (KB)'      THEN pc.cntr_value ELSE 0 END) AS TotalServerMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Target Server Memory (KB)'     THEN pc.cntr_value ELSE 0 END) AS TargetServerMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Database Cache Memory (KB)'    THEN pc.cntr_value ELSE 0 END) AS DatabaseCacheMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'SQL Cache Memory (KB)'         THEN pc.cntr_value ELSE 0 END) AS SqlCacheMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Granted Workspace Memory (KB)' THEN pc.cntr_value ELSE 0 END) AS GrantedWorkspaceMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Free Memory (KB)'              THEN pc.cntr_value ELSE 0 END) AS FreeMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Memory Grants Pending'         THEN pc.cntr_value ELSE 0 END) AS MemoryGrantsPending,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Memory Grants Outstanding'     THEN pc.cntr_value ELSE 0 END) AS MemoryGrantsOutstanding,
-                osm.available_physical_memory_kb                                                          AS AvailablePhysicalKB,
-                ISNULL(osm.total_page_file_kb, 0)                                                         AS TotalPageFileKB,
-                ISNULL(osm.available_page_file_kb, 0)                                                     AS AvailablePageFileKB,
-                ISNULL(osm.system_memory_state_desc, N'Unknown')                                          AS SystemMemoryState,
-                ISNULL(osi.memory_model_desc, N'N/A')                                                     AS MemoryModel,
-                GETDATE()                                                                                 AS CaptureTime
-            FROM sys.dm_os_sys_info osi
-            CROSS JOIN sys.dm_os_sys_memory osm
-            CROSS JOIN sys.dm_os_performance_counters pc
-            WHERE RTRIM(pc.object_name) LIKE N'%Memory Manager%'
-              AND RTRIM(pc.counter_name) IN (
-                N'Total Server Memory (KB)', N'Target Server Memory (KB)',
-                N'Database Cache Memory (KB)', N'SQL Cache Memory (KB)',
-                N'Granted Workspace Memory (KB)',
-                N'Free Memory (KB)', N'Memory Grants Pending', N'Memory Grants Outstanding'
-              )
-            GROUP BY
-                osi.physical_memory_kb, osi.memory_model_desc,
-                osm.available_physical_memory_kb, osm.total_page_file_kb,
-                osm.available_page_file_kb, osm.system_memory_state_desc;
-            """;
+    // Column sources:
+    //   sys.dm_os_sys_info  (osi): physical_memory_kb; sql_memory_model_desc
+    //   sys.dm_os_sys_memory (osm): available_physical_memory_kb, total_page_file_kb,
+    //                               available_page_file_kb, system_memory_state_desc
+    //   sys.dm_os_performance_counters (pc): memory KB counters
+    //
+    // sql_memory_model_desc came in a service pack (2012 SP4 and 2016 SP1, per the docs), so the
+    // major version can't tell whether it's there: the probe asks sys.all_columns instead.
+    // Naming a missing column fails the whole query with error 207.
+    // Azure SQL DB (EngineEdition 5): sys.dm_os_sys_memory not exposed → counters only.
 
-        // SQL Server 2012/2014 (ProductMajorVersion 11-12): memory_model_desc not yet on
-        // sys.dm_os_sys_info — use N'N/A' placeholder.  Everything else is identical.
-        const string sqlOnPremLegacy = """
+    /// <summary>The edition, and whether sys.dm_os_sys_info has sql_memory_model_desc.</summary>
+    internal const string MemorySnapshotProbeSql = """
+        SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition,
+               CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns
+                                 WHERE object_id = OBJECT_ID(N'sys.dm_os_sys_info')
+                                   AND name = N'sql_memory_model_desc')
+                    THEN 1 ELSE 0 END                   AS HasMemoryModel
+        """;
+
+    private const string MemoryModelColumnSql = "osi.sql_memory_model_desc";
+    private const string MemoryModelUnknownSql = "N'N/A'";
+
+    /// <summary>
+    /// The memory snapshot query for this server: counters only on Azure SQL Database, and
+    /// the memory model read only where sys.dm_os_sys_info has it (N/A otherwise).
+    /// </summary>
+    internal static string MemorySnapshotSql(bool isAzureSqlDb, bool hasMemoryModel) =>
+        isAzureSqlDb
+            ? MemorySnapshotAzureSql
+            : MemorySnapshotOnPremSqlTemplate.Replace("/*MEMORY_MODEL*/",
+                hasMemoryModel ? MemoryModelColumnSql : MemoryModelUnknownSql);
+
+    // The memory model is aggregated, not grouped by, so the GROUP BY stays the same
+    // whichever expression replaces the placeholder. osi has one row.
+    private const string MemorySnapshotOnPremSqlTemplate = """
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
             SELECT
                 osi.physical_memory_kb                                                                    AS PhysicalMemoryKB,
@@ -1745,7 +1733,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 ISNULL(osm.total_page_file_kb, 0)                                                         AS TotalPageFileKB,
                 ISNULL(osm.available_page_file_kb, 0)                                                     AS AvailablePageFileKB,
                 ISNULL(osm.system_memory_state_desc, N'Unknown')                                          AS SystemMemoryState,
-                N'N/A'                                                                                    AS MemoryModel,
+                ISNULL(MAX(/*MEMORY_MODEL*/), N'N/A')                                                     AS MemoryModel,
                 GETDATE()                                                                                 AS CaptureTime
             FROM sys.dm_os_sys_info osi
             CROSS JOIN sys.dm_os_sys_memory osm
@@ -1763,9 +1751,9 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 osm.available_page_file_kb, osm.system_memory_state_desc;
             """;
 
-        // Azure SQL DB: sys.dm_os_sys_memory, sys.dm_os_process_memory and host memory
-        // columns on sys.dm_os_sys_info are not exposed. Use counters only.
-        const string sqlAzure = """
+    // Azure SQL DB: sys.dm_os_sys_memory, sys.dm_os_process_memory and host memory
+    // columns on sys.dm_os_sys_info are not exposed. Use counters only.
+    private const string MemorySnapshotAzureSql = """
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
             SELECT
                 CAST(0 AS BIGINT)                                                                         AS PhysicalMemoryKB,
@@ -1793,19 +1781,17 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
               );
             """;
 
+    public async Task<MemorySnapshot> GetMemorySnapshotAsync()
+    {
         using var conn = CreateConnection();
 
-        // Detect edition AND version in one round-trip.
         // EngineEdition 5 = Azure SQL DB; 8 = Managed Instance (MI has the DMVs).
-        // ProductMajorVersion < 13 = SQL Server 2014 or older (missing the 2016+ columns).
-        var meta = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition, CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) AS MajorVersion");
-        int eng2    = meta != null ? (int)meta.Edition      : 0;
-        int major2  = meta != null ? (int)meta.MajorVersion : 13;
-        bool isAzureSqlDb  = eng2 == 5;
-        bool isLegacyOnPrem = !isAzureSqlDb && major2 < 13; // 2014 and below
+        // No probe row: leave the memory model out rather than risk error 207.
+        var meta = await QFirst(conn, MemorySnapshotProbeSql);
+        bool isAzureSqlDb   = meta is not null && (int)meta.Edition == 5;
+        bool hasMemoryModel = meta is not null && (int)meta.HasMemoryModel == 1;
 
-        string chosenSql = isAzureSqlDb ? sqlAzure : (isLegacyOnPrem ? sqlOnPremLegacy : sqlOnPrem);
-        var r = await QFirst(conn, chosenSql);
+        var r = await QFirst(conn, MemorySnapshotSql(isAzureSqlDb, hasMemoryModel));
         if (r is null) return new MemorySnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Unknown", "N/A", DateTime.Now);
         return new MemorySnapshot(
             (long)r.PhysicalMemoryKB,
