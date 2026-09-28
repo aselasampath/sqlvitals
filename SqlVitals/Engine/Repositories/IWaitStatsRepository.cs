@@ -23,7 +23,6 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
 
     Task<(QueryStoreHealth? Health, IEnumerable<QueryStoreTopQuery> TopQueries)>                                     GetQueryStoreAsync();
     Task<(IEnumerable<MissingIndex> Missing, IEnumerable<UnusedIndex> Unused)>                                       GetIndexHealthAsync();
-    Task<(IEnumerable<PlanCacheTypeSummary> Summary, IEnumerable<PlanCacheCounter> Counters, IEnumerable<PlanCacheTopQuery> TopQueries)> GetPlanCacheAsync();
 
     // ── Resource-intensive queries ───────────────────────────────────
     Task<(IEnumerable<ResourceIntensiveQuery> ByReads,

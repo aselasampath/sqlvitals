@@ -98,22 +98,19 @@ public partial class ConfigChecksPage : Page, IRefreshable
         ChecksGrid.SelectedItem = shown.FirstOrDefault(c => selected is not null && c.Kind == selected.Kind && c.Scope == selected.Scope)
                                   ?? shown.FirstOrDefault();
 
-        TxtCount.Text = !list.Available ? "Checks"
-            : shown.Count == list.Checks.Count ? $"{list.Checks.Count:N0} result{(list.Checks.Count == 1 ? "" : "s")}"
+        TxtCount.Text = shown.Count == list.Checks.Count
+            ? $"{list.Checks.Count:N0} result{(list.Checks.Count == 1 ? "" : "s")}"
             : $"{shown.Count:N0} of {list.Checks.Count:N0} results";
 
         ShowSummary(list);
 
-        var problem = list.Available ? list.Problem : null;
-        TxtProblem.Text       = problem ?? string.Empty;
-        TxtProblem.Visibility = problem is null ? Visibility.Collapsed : Visibility.Visible;
-        TxtStatus.Text        = list.Available
-            ? $"Checked at {DateTime.Now:HH:mm:ss}. Settings are read as the server is using them now; nothing is changed."
-            : string.Empty;
+        TxtProblem.Text       = list.Problem ?? string.Empty;
+        TxtProblem.Visibility = list.Problem is null ? Visibility.Collapsed : Visibility.Visible;
+        TxtStatus.Text        = $"Checked at {DateTime.Now:HH:mm:ss}. Settings are read as the server is using them now; nothing is changed.";
 
         BtnScript.IsEnabled = list.Checks.Any(c => c.IsWarning && c.FixScript is not null);
 
-        TxtNoData.Text       = !list.Available ? list.Problem : filter.Empty;
+        TxtNoData.Text       = filter.Empty;
         TxtNoData.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -121,11 +118,6 @@ public partial class ConfigChecksPage : Page, IRefreshable
     private void ShowSummary(ConfigCheckList list)
     {
         TxtSummary.Inlines.Clear();
-        if (!list.Available)
-        {
-            TxtSummary.Visibility = Visibility.Collapsed;
-            return;
-        }
         TxtSummary.Visibility = Visibility.Visible;
 
         void Add(string text, Brush? brush = null, bool bold = false)

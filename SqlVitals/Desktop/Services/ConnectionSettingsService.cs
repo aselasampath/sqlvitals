@@ -203,16 +203,35 @@ public class ConnectionSettingsService
             "$1$2*****");
 
     // ── File I/O ──────────────────────────────────────────────────────────────
+    // Every setter loads, changes one thing and saves the whole store. So a read that fails must
+    // never hand back an empty store that the next save writes over the file: that would delete
+    // every saved connection. A file that can't be read for now (another program has it open) is
+    // left alone until it can; one that can't be read at all (damaged, or encrypted for another
+    // Windows user) is copied aside first, then replaced.
+
+    // One copy of an unreadable file per run: every Load until the next save reads the same file.
+    private static bool _unreadableCopied;
 
     private static ConnectionStore ReadFile()
     {
         if (!File.Exists(SettingsFile))
             return new ConnectionStore();
 
+        string text;
         try
         {
-            var raw = JsonSerializer.Deserialize<RawSettings>(File.ReadAllText(SettingsFile));
-            if (raw is null) return new ConnectionStore();
+            text = ReadAllTextWithRetry(SettingsFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Error("The settings file couldn't be read, so it won't be saved over until it can", ex);
+            return new ConnectionStore { ReadFailed = true };
+        }
+
+        try
+        {
+            var raw = JsonSerializer.Deserialize<RawSettings>(text);
+            if (raw is null) return Unreadable(new JsonException("The settings file is empty."));
 
             var store = new ConnectionStore
             {
@@ -237,8 +256,19 @@ public class ConnectionSettingsService
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
             {
-                store.Connections = JsonSerializer.Deserialize<List<ConnectionSettings>>(Decrypt(raw.EncryptedConnections))
-                                    ?? new List<ConnectionSettings>();
+                // Encrypted for another Windows user or PC (a copied or restored profile): the
+                // other settings are still good, so only the connections are lost, and the file
+                // is copied aside first.
+                try
+                {
+                    store.Connections = JsonSerializer.Deserialize<List<ConnectionSettings>>(Decrypt(raw.EncryptedConnections))
+                                        ?? new List<ConnectionSettings>();
+                }
+                catch (Exception ex) when (ex is CryptographicException or FormatException or JsonException)
+                {
+                    if (!CopyUnreadable(ex))
+                        return new ConnectionStore { ReadFailed = true };
+                }
             }
             else
             {
@@ -276,14 +306,63 @@ public class ConnectionSettingsService
 
             return store;
         }
-        catch
+        catch (Exception ex)
         {
-            return new ConnectionStore();
+            return Unreadable(ex);
+        }
+    }
+
+    // Damaged beyond reading: start afresh, once a copy is kept.
+    private static ConnectionStore Unreadable(Exception ex) =>
+        CopyUnreadable(ex) ? new ConnectionStore() : new ConnectionStore { ReadFailed = true };
+
+    /// <summary>
+    /// Copies the settings file to settings.unreadable-&lt;time&gt;.dat, so the next save can't lose
+    /// what was in it. False when the copy couldn't be made: then nothing may be saved over it.
+    /// </summary>
+    private static bool CopyUnreadable(Exception ex)
+    {
+        // Every Load reads the file again until the next save replaces it: say so once.
+        if (_unreadableCopied)
+            return true;
+        AppLog.Error("The settings file couldn't be read", ex);
+
+        try
+        {
+            var copy = Path.Combine(SettingsDir, $"settings.unreadable-{DateTime.Now:yyyyMMdd-HHmmss}.dat");
+            File.Copy(SettingsFile, copy, overwrite: false);
+            _unreadableCopied = true;
+            return true;
+        }
+        catch (Exception copyEx) when (copyEx is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Error("Could not keep a copy of the unreadable settings file", copyEx);
+            return false;
+        }
+    }
+
+    // A sync or antivirus tool can hold the file for a moment.
+    private static string ReadAllTextWithRetry(string path)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return File.ReadAllText(path);
+            }
+            catch (IOException) when (attempt < 5)
+            {
+                Thread.Sleep(100);
+            }
         }
     }
 
     private static void Save(ConnectionStore store)
     {
+        if (store.ReadFailed)
+            throw new IOException("SqlVitals couldn't read its settings file just now, so it didn't save over it. " +
+                                  "Another program (a sync or antivirus tool) may have it open. Try again in a moment.");
+
         Directory.CreateDirectory(SettingsDir);
 
         // A password only reaches disk when the user asked for it to be remembered.
@@ -318,7 +397,11 @@ public class ConnectionSettingsService
             ProcessesAutoRefresh    = store.ProcessesAutoRefresh,
         };
 
-        File.WriteAllText(SettingsFile, JsonSerializer.Serialize(raw, FileJsonOptions));
+        // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
+        var temp = SettingsFile + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(raw, FileJsonOptions));
+        File.Move(temp, SettingsFile, overwrite: true);
+        _unreadableCopied = false;
     }
 
     // ── DPAPI helpers ─────────────────────────────────────────────────────────
@@ -372,6 +455,9 @@ public class ConnectionSettingsService
 /// <summary>Decrypted, in-memory view of everything in the settings file.</summary>
 public class ConnectionStore
 {
+    /// <summary>The file was there but couldn't be read, so this store is empty and must not be saved over it.</summary>
+    internal bool ReadFailed { get; init; }
+
     public List<ConnectionSettings> Connections           { get; set; } = new();
     public Guid?                    ActiveConnectionId    { get; set; }
     public int                      CommandTimeoutSeconds { get; set; } = 30;
@@ -546,6 +632,11 @@ public class ConnectionSettings
             ConnectTimeout         = ConnectTimeoutSeconds > 0 ? ConnectTimeoutSeconds : 30,
         };
 
+        // Name SqlVitals' sessions on the server (program_name in sys.dm_exec_sessions, traces,
+        // audits, Resource Governor), unless the extra parameters already name them.
+        if (csb.ApplicationName == DefaultApplicationName)
+            csb.ApplicationName = ApplicationName;
+
         var database = databaseOverride ?? Database;
         if (!string.IsNullOrWhiteSpace(database))
             csb.InitialCatalog = database.Trim();
@@ -610,4 +701,9 @@ public class ConnectionSettings
     }
 
     public ConnectionSettings Clone() => (ConnectionSettings)MemberwiseClone();
+
+    /// <summary>The program name SqlVitals' connections show on the server.</summary>
+    public const string ApplicationName = "SqlVitals";
+
+    private static readonly string DefaultApplicationName = new SqlConnectionStringBuilder().ApplicationName;
 }

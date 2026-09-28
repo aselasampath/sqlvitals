@@ -122,7 +122,7 @@ public static class IndexMaintenanceScript
                 var table = $"{UnusedIndexDropScript.QuoteName(ix.SchemaName)}.{UnusedIndexDropScript.QuoteName(ix.TableName)}";
 
                 sb.AppendLine();
-                sb.AppendLine($"-- {table}.{(string.IsNullOrEmpty(ix.IndexName) ? "(heap)" : UnusedIndexDropScript.QuoteName(ix.IndexName))}  ({ix.IndexType})");
+                sb.AppendLine(ScriptText.Comment($"{table}.{(string.IsNullOrEmpty(ix.IndexName) ? "(heap)" : UnusedIndexDropScript.QuoteName(ix.IndexName))}  ({ix.IndexType})"));
                 sb.AppendLine($"-- Fragmentation: {ix.FragmentationPercent:N1}%  Pages: {ix.PageCount:N0}  " +
                               $"Page density: {ix.AvgPageSpaceUsed:N1}%  Rows: {ix.RecordCount:N0}");
 
@@ -131,7 +131,7 @@ public static class IndexMaintenanceScript
                     case Action.SkipHeap:
                         sb.AppendLine("-- SKIPPED: a heap has no index to alter. ALTER TABLE ... REBUILD defragments one,");
                         sb.AppendLine("--          but it also rebuilds every nonclustered index on the table.");
-                        sb.AppendLine($"-- ALTER TABLE {table} REBUILD;");
+                        sb.AppendLine(ScriptText.Comment($"ALTER TABLE {table} REBUILD;"));
                         break;
 
                     case Action.SkipSmall:
@@ -152,7 +152,7 @@ public static class IndexMaintenanceScript
                     case Action.Rebuild:
                         bool online = options.OnlineRebuild && TypeSupportsOnline(ix.IndexType);
                         if (options.OnlineRebuild && !online)
-                            sb.AppendLine($"-- NOTE: ONLINE = ON is not available for a {ix.IndexType} — this one rebuilds offline.");
+                            sb.AppendLine(ScriptText.Comment($"NOTE: ONLINE = ON is not available for a {ix.IndexType} — this one rebuilds offline."));
                         sb.AppendLine(Guard(table, ix.IndexName!));
                         sb.AppendLine($"    ALTER INDEX {UnusedIndexDropScript.QuoteName(ix.IndexName!)} ON {table} REBUILD" +
                                       (online ? " WITH (ONLINE = ON)" : "") + ";");

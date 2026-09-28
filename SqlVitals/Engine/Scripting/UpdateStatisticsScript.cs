@@ -28,7 +28,7 @@ public static class UpdateStatisticsScript
         return new UpdateStatisticsSummary(
             list.Count,
             list.Select(TableKey).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
-            list.Sum(s => s.RowsInTable));
+            list.Sum(s => s.RowsInTable ?? 0));
     }
 
     public static string Build(IEnumerable<StaleStatistic> statistics, StatisticsSampling sampling, DateTime generatedAt)
@@ -87,8 +87,8 @@ public static class UpdateStatisticsScript
                 var name  = UnusedIndexDropScript.QuoteName(st.StatisticsName);
 
                 sb.AppendLine();
-                sb.AppendLine($"-- {table}.{name}");
-                sb.AppendLine($"-- Modifications: {st.ModificationsSinceLastUpdate:N0}  Rows: {st.RowsInTable:N0}  " +
+                sb.AppendLine(ScriptText.Comment($"{table}.{name}"));
+                sb.AppendLine($"-- Modifications: {st.ModificationsSinceLastUpdate:N0}  Rows: {(st.RowsInTable is { } rows ? rows.ToString("N0") : "unknown")}  " +
                               $"Last updated: {(st.LastUpdated is { } d ? $"{d:yyyy-MM-dd} ({st.DaysOld:N0} days)" : "never")}  " +
                               $"Last sample: {st.SamplePct:0.#}%");
 

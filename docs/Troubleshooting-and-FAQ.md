@@ -24,6 +24,12 @@ The last collection failed: the server can't be reached, the login failed or a p
 **The score is 80 but shows red.**
 The colour is the health dot's: one check is past its critical threshold. A single critical check costs 12 to 20 points, so the number can stay high. Click the score to see which. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score).
 
+**My saved connections are gone, and there's a `settings.unreadable-….dat` file.**
+SqlVitals couldn't read `%AppData%\SqlVitals\settings.dat`: it was damaged, or it came from another Windows user or PC (it's encrypted for the user who saved it). It kept a copy before starting afresh. If your Windows profile was restored, rename the copy back to `settings.dat` while SqlVitals is closed; otherwise add the connections again. Settings that aren't encrypted, like thresholds, are kept when only the connections couldn't be read.
+
+**Saving a setting says SqlVitals "couldn't read its settings file just now".**
+Another program, usually a sync or antivirus tool, had `settings.dat` open. SqlVitals won't save over a file it couldn't read, so nothing was lost. Try again in a moment.
+
 **CPU showed 0 % on Azure SQL Database.**
 Before 0.36.0 CPU was read from records Azure SQL Database doesn't have. From 0.36.0 it's the portal's *CPU percentage* (`sys.dm_db_resource_stats`), per 15 seconds, so it can jump between 0 and a high figure where the portal's one-minute average looks smoother.
 
@@ -62,6 +68,9 @@ Large servers can take longer than 30 seconds on heavy screens (Index Health, Im
 
 **Query Store shows "Not Enabled".**
 Query Store is off for the connected database. Ask your DBA: `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`. [Query Regressions](Query-Regressions.md) falls back to monitoring history in the meantime.
+
+**DB Storage shows no Used or Free space for some databases.**
+Used space is read inside each database, so it's shown only for databases your login can open. Sizes and settings are shown for every database.
 
 **Unused Indexes lists indexes I know are used.**
 Usage counters reset when SQL Server restarts (and on Azure SQL failovers). "Unused" means *since the last restart*. Don't drop an index without checking how long the server has been up.

@@ -147,6 +147,73 @@ public class InstallStepsTests : IDisposable
         Assert.Equal(before, Snapshot());
     }
 
+    // Unpacks and verifies an upgrade to V2, then runs the commit step once with sub/lib.dll held
+    // open (as an antivirus scan might), so it stops part-way through.
+    private (InstallContext Context, CommitFilesStep Commit) UpgradeThatStopsPartWay(PayloadManifest previous)
+    {
+        var context = new InstallContext(InstallMode.Upgrade, InstallDir, InstallScope.User)
+        {
+            Payload          = TestPayload.Open("2.0.0", V2, Preserve),
+            PreviousManifest = previous,
+            SetupExePath     = _setupExe,
+        };
+        var progress = new SyncProgress(_ => { });
+        new ExtractPayloadStep().Execute(context, progress, CancellationToken.None);
+        new VerifyFilesStep().Execute(context, progress, CancellationToken.None);
+
+        var commit = new CommitFilesStep();
+        using (File.Open(Path.Combine(InstallDir, "sub", "lib.dll"), FileMode.Open, FileAccess.Read, FileShare.None))
+            Assert.ThrowsAny<IOException>(() => commit.Execute(context, progress, CancellationToken.None));
+
+        Assert.Equal("app v2", Read("SqlVitals.Desktop.exe"));   // placed before the lock stopped it
+        return (context, commit);
+    }
+
+    [Fact]
+    public void Retry_after_a_failure_part_way_through_finishes_the_upgrade()
+    {
+        var (context, commit) = UpgradeThatStopsPartWay(InstallV1());
+
+        // Before #109 the retry moved the new exe over the old one's backup, then failed on its
+        // staged copy, which the first attempt had already moved.
+        commit.Execute(context, new SyncProgress(_ => { }), CancellationToken.None);
+
+        Assert.Equal("app v2", Read("SqlVitals.Desktop.exe"));
+        Assert.Equal("lib v2", Read("sub/lib.dll"));
+        Assert.Equal("new", Read("new-in-v2.dll"));
+        Assert.False(File.Exists(Path.Combine(InstallDir, "old-only.dll")));
+    }
+
+    [Fact]
+    public void Cancelling_after_a_retry_restores_the_previous_installation_exactly()
+    {
+        var previous = InstallV1();
+        File.WriteAllText(Path.Combine(InstallDir, "appsettings.json"), "{ \"mine\": true }");
+        var before = Snapshot();
+
+        var (context, commit) = UpgradeThatStopsPartWay(previous);
+        commit.Execute(context, new SyncProgress(_ => { }), CancellationToken.None);
+        commit.Rollback(context);
+        new ExtractPayloadStep().Rollback(context);
+        new CleanupStep().Execute(context, new SyncProgress(_ => { }), CancellationToken.None);
+
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public void Cancelling_after_a_failure_part_way_through_restores_the_previous_installation_exactly()
+    {
+        var previous = InstallV1();
+        var before = Snapshot();
+
+        var (context, commit) = UpgradeThatStopsPartWay(previous);
+        commit.Rollback(context);
+        new ExtractPayloadStep().Rollback(context);
+        new CleanupStep().Execute(context, new SyncProgress(_ => { }), CancellationToken.None);
+
+        Assert.Equal(before, Snapshot());
+    }
+
     [Fact]
     public void Rolling_back_a_fresh_install_removes_the_folder_it_created()
     {

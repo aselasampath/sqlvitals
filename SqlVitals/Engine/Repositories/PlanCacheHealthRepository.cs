@@ -71,7 +71,7 @@ public class PlanCacheHealthRepository(IConfiguration configuration)
             SELECT TOP 30
                 pc                         AS PlanCount,
                 total_exec                 AS TotalExecutions,
-                CAST(query_hash AS VARCHAR(18)) AS QueryHash,
+                CONVERT(VARCHAR(18), query_hash, 1) AS QueryHash,
                 query_text                 AS QueryText,
                 db_name                    AS DatabaseName
             FROM (

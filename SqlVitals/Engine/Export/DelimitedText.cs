@@ -12,26 +12,41 @@ public static class DelimitedText
     /// <summary>UTF-8 with a byte-order mark, so Excel detects the encoding when it opens the file.</summary>
     public static readonly Encoding CsvEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
 
+    /// <summary>A CSV file's text. Text cells a spreadsheet would run as a formula are kept as text (see <see cref="NeutralizeFormula"/>).</summary>
     public static string ToCsv(IReadOnlyList<string>? headers, IEnumerable<IReadOnlyList<object?>> rows) =>
-        Build(headers, rows, ',');
+        Build(headers, rows, ',', neutralizeFormulas: true);
 
+    /// <summary>Clipboard text, exactly as shown: query text copied here is often pasted into SSMS to run.</summary>
     public static string ToTsv(IReadOnlyList<string>? headers, IEnumerable<IReadOnlyList<object?>> rows) =>
-        Build(headers, rows, '\t');
+        Build(headers, rows, '\t', neutralizeFormulas: false);
 
-    private static string Build(IReadOnlyList<string>? headers, IEnumerable<IReadOnlyList<object?>> rows, char separator)
+    /// <summary>
+    /// A text cell that a spreadsheet would read as a formula (it starts with = + - @, a tab or a
+    /// carriage return), with an apostrophe in front so it opens as text. Server data such as
+    /// application names and query text can start like that, and Excel runs formulas when it
+    /// opens a CSV file.
+    /// </summary>
+    public static string NeutralizeFormula(string text) =>
+        text.Length > 0 && text[0] is '=' or '+' or '-' or '@' or '\t' or '\r' ? "'" + text : text;
+
+    private static string Build(IReadOnlyList<string>? headers, IEnumerable<IReadOnlyList<object?>> rows, char separator, bool neutralizeFormulas)
     {
         var sb = new StringBuilder();
-        if (headers is not null) AppendLine(sb, headers, separator);
-        foreach (var row in rows) AppendLine(sb, row, separator);
+        if (headers is not null) AppendLine(sb, headers, separator, neutralizeFormulas);
+        foreach (var row in rows) AppendLine(sb, row, separator, neutralizeFormulas);
         return sb.ToString();
     }
 
-    private static void AppendLine<T>(StringBuilder sb, IReadOnlyList<T> fields, char separator)
+    private static void AppendLine<T>(StringBuilder sb, IReadOnlyList<T> fields, char separator, bool neutralizeFormulas)
     {
         for (int i = 0; i < fields.Count; i++)
         {
             if (i > 0) sb.Append(separator);
-            sb.Append(Quote(Format(fields[i]), separator));
+            var text = Format(fields[i]);
+            // Numbers and dates are left alone: a negative number is not a formula.
+            if (neutralizeFormulas && fields[i] is string)
+                text = NeutralizeFormula(text);
+            sb.Append(Quote(text, separator));
         }
         sb.Append("\r\n");
     }

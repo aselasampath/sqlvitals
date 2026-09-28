@@ -137,7 +137,7 @@ MonitoringManager ─ one MonitoringSession per connection with "Monitor in back
 
 ### 14. Security audit
 
-`SecurityAuditPage` → `SecurityAuditRepository.GetSecurityAuditAsync` (the edition, whether only Windows logins are accepted and whether the login has `VIEW ANY DEFINITION`; the sa login by SID; `sys.databases` for TRUSTWORTHY and each owner; with `VIEW ANY DEFINITION`, the sysadmin members and CONTROL SERVER grants, and one query per online database for SQL users whose SID has no login) → `SecurityAudit.Run` (Engine, pure: Risk, Review, Pass or Not checked per finding, explanations and fix scripts; Windows' well-known accounts recognised by SID) → sorted with the risks first. Nothing is saved and nothing runs in the background. Azure SQL Database is left out. See [Security Audit](Security-Audit.md#under-the-hood).
+`SecurityAuditPage` → `SecurityAuditRepository.GetSecurityAuditAsync` (the edition, whether only Windows logins are accepted and whether the login has `VIEW ANY DEFINITION`; the sa login by SID; `sys.databases` for TRUSTWORTHY and each owner; the connection's own `sys.login_token`; with `VIEW ANY DEFINITION`, the sysadmin members and CONTROL SERVER grants, and one query per online database for SQL users whose SID has no login) → `SecurityAudit.Run` (Engine, pure: Risk, Review, Pass or Not checked per finding, explanations and fix scripts, a fix that would remove the access SqlVitals is connected with left commented out; Windows' well-known accounts recognised by SID) → sorted with the risks first. Nothing is saved and nothing runs in the background. Azure SQL Database is left out. See [Security Audit](Security-Audit.md#under-the-hood).
 
 ## Data access conventions
 
@@ -183,13 +183,13 @@ There are **no `.sql` files**. Each query is a C# raw string literal (`"""…"""
 | Config Checks | `sys.configurations`, `sys.dm_os_schedulers`, `sys.dm_os_nodes`, `sys.dm_os_sys_info`, `tempdb.sys.database_files`, `sys.databases`; `sys.database_scoped_configurations` on Azure SQL Database; checked by `Engine/ConfigChecks` |
 | Security Audit | `sys.server_principals` (sa by `sid = 0x01`), `sys.server_role_members`, `sys.server_permissions` (CONTROL SERVER), `sys.sql_logins`, `sys.databases` (`is_trustworthy_on`, owner), `<db>.sys.database_principals` and `sys.schemas` per database; audited by `Engine/Security` |
 | Agent Jobs | `msdb.dbo.sysjobs`, `sysjobhistory`, `sysjobactivity`, `syssessions`, `sysjobschedules`, `sysschedules`, `syscategories`; `sys.dm_server_services`, `sys.configurations` (`Agent XPs`); worked out by `Engine/AgentJobs` |
-| TempDB | `sys.dm_db_session_space_usage`, `sys.master_files` |
+| TempDB | `sys.dm_db_session_space_usage`, `tempdb.sys.database_files` (through `tempdb.sys.sp_executesql`, for `FILEPROPERTY`), `sys.dm_os_performance_counters` |
 | Memory | `sys.dm_exec_query_memory_grants`, `sys.dm_os_memory_clerks`, `sys.dm_os_sys_memory`, `sys.dm_os_process_memory` |
 | Query Store / regressions | `sys.query_store_*` |
 | Indexes | `sys.dm_db_missing_index_*`, `sys.dm_db_index_usage_stats`, `sys.dm_db_index_physical_stats` |
 | Plans | `sys.dm_exec_query_stats`, `sys.dm_exec_cached_plans`, `sys.dm_exec_query_plan`, `sys.dm_exec_query_profiles`, `sys.plan_guides` |
 | Statistics | `sys.stats`, `sys.dm_db_stats_properties` |
-| Storage / config | `sys.database_files`, `sys.master_files`, `sys.configurations`, `sys.database_scoped_configurations` |
+| Storage / config | `sys.master_files`, each database's `sys.database_files` (through `<db>.sys.sp_executesql`, for `FILEPROPERTY`), `sys.configurations`, `sys.database_scoped_configurations` |
 | Live metrics / Perfmon / health | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests` |
 | SP Trace | `sys.dm_xe_*` (Extended Events) or `sys.dm_exec_procedure_stats` |
 
@@ -206,7 +206,7 @@ bool isAzureSqlDb = Convert.ToInt32(edition.Edition) == 5;
 
 ## UI conventions
 
-- **Themes:** `Styles/LightTheme.xaml` (default) and `DarkTheme.xaml`; `App.ToggleTheme()` swaps the merged dictionary. `Theme.xaml` is an old copy that nothing loads.
+- **Themes:** `Styles/LightTheme.xaml` (default) and `DarkTheme.xaml`; `App.ToggleTheme()` swaps the merged dictionary.
 - Use **brush keys**, never hex: `BgDeep`, `BgCard`, `BgSidebar`, `Accent`, `AccentLight`, `TextPrimary`, `TextMuted`, `Border`, `Success`, `Warning`, `Danger`.
 - Style keys: `NavButton`, `NavButtonActive`, `SectionHeader`, `KpiCard`, `KpiValue`, `KpiLabel`, `RefreshButton`, `SecondaryButton`. `DataGrid` has an implicit style.
 - Chart colours come from `Helpers/ChartTheme` (e.g. `ChartTheme.MutedAxisColor`, `ChartTheme.GridColor`) so charts follow the theme.

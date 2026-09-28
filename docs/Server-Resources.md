@@ -16,7 +16,8 @@ Five screens show how the server's memory, TempDB, storage, configuration and co
 
 > **Where:** sidebar → 🗄️ TempDB · **Use it when:** the health dot flags TempDB space, or you see `PAGELATCH` waits
 
-- **TempDB File Space: Used vs Free (MB)**: a chart per TempDB file.
+- **Cards:** the version store's size (red once it holds anything), free space in TempDB, transactions open in TempDB, active temp tables, and temp tables waiting to be dropped. How fast versions are generated and cleaned up is charted on [Perfmon](#perfmon), which shows per-second counters as rates.
+- **TempDB File Space: Used vs Free (MB)**: a chart per TempDB file, at its size now.
 - **Top Sessions by TempDB Allocation**: who is using TempDB now. **Net KB** is the total. **User Obj KB** covers temp tables and table variables. **Internal KB** covers sorts, hashes and spools, usually from big queries. Also shown: wait type, wait ms and status.
 
 | Severity | Net allocation |
@@ -63,7 +64,7 @@ Three views:
 
 | Tab | Shows | Look for |
 |---|---|---|
-| **📂 Database Files** | Every data and log file of every online database: state, recovery model, compatibility level, size, used, free, max size, auto-growth, auto-shrink, Query Store on, encrypted, path | Files close to **Max MB**; **percent** auto-growth on big files; **Auto-Shrink on** (almost always bad) |
+| **📂 Database Files** | Every data and log file of every online database: state, recovery model, compatibility level, size, used, free, max size, auto-growth, auto-shrink, Query Store on, encrypted, path. **Used** and **Free** are blank for a database your login can't open | Files close to **Max MB**; **percent** auto-growth on big files; **Auto-Shrink on** (almost always bad) |
 | **🌡️ TempDB Files** | TempDB data and log files | Data files of unequal size |
 | **⚙️ Server Config** | Key `sp_configure` settings, with min, max, whether dynamic, and a description | *max server memory* left at the default; *cost threshold for parallelism* at 5 |
 | **📋 Top Tables** | The 20 largest tables in the current database: rows, data, index and unused MB | Tables with more index than data |
@@ -100,12 +101,17 @@ Counters include batch requests, compilations, lock waits and timeouts, log flus
 
 | Screen | Source |
 |---|---|
-| TempDB | `sys.dm_db_session_space_usage` joined to `sys.dm_exec_sessions` / `_requests`; file sizes from `sys.master_files` and TempDB performance counters (`TempDbRepository`) |
+| TempDB | `sys.dm_db_session_space_usage` joined to `sys.dm_exec_sessions` / `_requests`; file sizes and space from `tempdb.sys.database_files`, and point-in-time TempDB performance counters (`TempDbRepository`) |
 | Memory Grants | `sys.dm_os_sys_info`, `sys.dm_os_sys_memory`, `sys.dm_os_process_memory`, `sys.dm_os_memory_clerks`, `sys.dm_exec_query_memory_grants`, memory manager counters |
-| DB Storage | `sys.master_files`, `sys.databases`, `sys.configurations`, `sys.database_files`, `sys.partitions` + `sys.allocation_units` (top tables) |
+| DB Storage | `sys.master_files`, `sys.databases`, each database's `sys.database_files`, `sys.configurations`, `sys.partitions` + `sys.allocation_units` (top tables) |
 | App Connections | `sys.dm_exec_sessions` / `sys.dm_exec_requests` grouped by `program_name` |
 | Perfmon | `sys.dm_os_performance_counters` |
 
 - **Azure SQL Database** (`SERVERPROPERTY('EngineEdition') = 5`) blocks `sys.master_files`, cross-database `tempdb.sys.database_files` and `sys.configurations`. `GetDatabaseStorageAsync` detects the edition and switches to database-scoped queries (`sys.database_files`, `sys.database_scoped_configurations`), skipping TempDB files.
 - **Memory model** is `sys.dm_os_sys_info.sql_memory_model_desc`, which arrived in a service pack (2012 SP4 and 2016 SP1, per Microsoft's docs), so the major version can't tell whether it exists. `GetMemorySnapshotAsync` first asks `sys.all_columns` whether the column is there and names it only if it is; naming a missing column fails the whole query with error 207. Before 0.43.1 it asked for `memory_model_desc`, a column no version has, and the page failed on every SQL Server 2016 or later.
 - **Perfmon history** comes from the `counter_values` table, recorded from version 0.30. Per-second counters are stored as rates over the snapshot interval; zeros aren't stored.
+- **Used space** comes from `FILEPROPERTY(name, 'SpaceUsed')`, which only sees the **current** database's files. So TempDB's files are read through `tempdb.sys.sp_executesql`, and DB Storage reads each database it can open (`HAS_DBACCESS`) through that database's `sys.sp_executesql`, collected in a temporary table in the same batch. `sys.master_files` holds TempDB's **startup** size, so TempDB's size is read from `tempdb.sys.database_files` too. Before 0.44.1 every file outside the connection's database showed 0 MB used, and TempDB showed its startup size (#109).
+- **TempDB counters** are the point-in-time ones (`cntr_type` 65792). The version store counters have no instance, and *Active Transactions* is under the *Databases* object for instance `tempdb`; before 0.44.1 the query asked for the version store counters with instance `tempdb`, so their cards never appeared. The rate counters are totals since the server started, which only mean something as the difference between two readings, so they're left to Perfmon.
+- **Top Tables** is one row per table: sizes add up every partition of every index, and **Rows** is the heap's or clustered index's, summed over its partitions. Before 0.44.1 a partitioned table, or one with a filtered index, was split over several rows.
+- **App Connections** sums CPU time and memory as `bigint`: `SUM` of an `int` column stays `int`, and on a busy server it overflowed (error 8115).
+- **Older versions:** `sys.databases.is_query_store_on` (SQL Server 2016+) is only named where `sys.all_columns` says it exists; before that Query Store is shown as off.
