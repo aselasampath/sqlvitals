@@ -58,9 +58,6 @@ public sealed class MonitoringManager : IDisposable
     /// </summary>
     public HistoryReader HistoryReader => _reader ??= new HistoryReader(_history.Path);
 
-    /// <summary>True when the history file is from a newer SqlVitals, so nothing is being saved.</summary>
-    public bool IsHistoryDisabled => _history.IsDisabled;
-
     public MonitoringSession? Get(Guid? connectionId) =>
         connectionId is { } id && _sessions.TryGetValue(id, out var session) ? session : null;
 

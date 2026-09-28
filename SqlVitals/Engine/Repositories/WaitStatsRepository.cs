@@ -22,14 +22,9 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
         _             => "#26E7A6"
     };
 
-    internal static int CategorySortOrder(string cat) => cat switch
-    {
-        "CPU"     => 1, "I/O"  => 2, "Memory" => 3,
-        "Locks"   => 4, "Network" => 5, "Other" => 6,
-        _ => 7
-    };
-
     private readonly PlanCacheHealthRepository _planHealth = new(configuration);
+
+    private readonly TempDbRepository _tempDb = new(configuration);
 
     // Stateful across polls (dedup window + previous DMV snapshot), so it must be a single
     // long-lived instance rather than created per call.
@@ -52,6 +47,30 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     private readonly ConfigurationRepository _configuration = new(configuration);
 
     private readonly SecurityAuditRepository _securityAudit = new(configuration);
+
+    // ── Version-dependent columns ─────────────────────────────────────
+    // Newer versions add columns to catalog views and DMVs, and naming a missing one fails the
+    // whole query with error 207. A column's presence is asked of sys.all_columns once per
+    // connection: the major version can't always tell (some arrived in a service pack).
+
+    /// <summary>1 when the view has the column, else 0. Both names are constants, never user input.</summary>
+    internal static string HasColumnSql(string view, string column) => $"""
+        SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns
+                                 WHERE object_id = OBJECT_ID(N'{view}') AND name = N'{column}')
+                    THEN 1 ELSE 0 END AS HasColumn
+        """;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _columns = new();
+
+    private async Task<bool> HasColumnAsync(IDbConnection conn, string view, string column)
+    {
+        var key = view + "." + column;
+        if (_columns.TryGetValue(key, out var known))
+            return known;
+
+        var row = await QFirst(conn, HasColumnSql(view, column));
+        return _columns[key] = row is not null && Convert.ToInt32(row.HasColumn) == 1;
+    }
 
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other
@@ -122,9 +141,35 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 2. Active waits ───────────────────────────────────────────────
+    // sys.dm_exec_requests.dop is SQL Server 2016+; before that the degree of parallelism reads 0.
+    internal static string ActiveWaitsSql(bool hasDop) => ActiveWaitsSqlTemplate.Replace("/*DOP*/", hasDop ? "r.dop" : "0");
+
     public async Task<IEnumerable<ActiveWait>> GetActiveWaitsAsync()
     {
-        const string sql = """
+        using var conn = CreateConnection();
+        var sql  = ActiveWaitsSql(await HasColumnAsync(conn, "sys.dm_exec_requests", "dop"));
+        var rows = await Q(conn, sql);
+        return rows.Select(r =>
+        {
+            double sec = (double)r.WaitTimeSec;
+            string severity = sec > 60 ? "Critical" : sec > 10 ? "High" : sec > 1 ? "Medium" : "Low";
+            return new ActiveWait(
+                (int)r.SessionId, (int)r.BlockingSessionId,
+                (string?)r.WaitType, (long)r.WaitTimeMs, sec,
+                (string?)r.LastWaitType, (string?)r.WaitResource,
+                (string?)r.RequestStatus, (string?)r.Command,
+                (long)r.CpuTimeMs, (long)r.TotalElapsedMs,
+                (long)r.LogicalReads, (long)r.Writes, (long)r.PhysicalReads,
+                (long?)r.GrantedMemoryKB ?? 0, Convert.ToInt32(r.DegreeOfParallelism),
+                (string?)r.LoginName, (string?)r.HostName,
+                (string?)r.ProgramName, (string?)r.DatabaseName,
+                (string)r.WaitCategory, (int)r.IsBlocked,
+                (string?)r.QueryText, (DateTime)r.CaptureTime, severity
+            );
+        });
+    }
+
+    private const string ActiveWaitsSqlTemplate = """
             SELECT r.session_id AS SessionId, r.blocking_session_id AS BlockingSessionId,
                 r.wait_type AS WaitType, r.wait_time AS WaitTimeMs,
                 CAST(r.wait_time AS FLOAT)/1000.0 AS WaitTimeSec,
@@ -134,7 +179,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 r.logical_reads AS LogicalReads, r.writes AS Writes,
                 r.reads AS PhysicalReads,
                 r.granted_query_memory*8 AS GrantedMemoryKB,
-                r.dop AS DegreeOfParallelism,
+                /*DOP*/ AS DegreeOfParallelism,
                 s.login_name AS LoginName, s.host_name AS HostName,
                 s.program_name AS ProgramName, DB_NAME(r.database_id) AS DatabaseName,
                 CASE
@@ -153,28 +198,6 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) qt
             WHERE r.session_id <> @@SPID AND s.is_user_process = 1
             """;
-
-        using var conn = CreateConnection();
-        var rows = await Q(conn, sql);
-        return rows.Select(r =>
-        {
-            double sec = (double)r.WaitTimeSec;
-            string severity = sec > 60 ? "Critical" : sec > 10 ? "High" : sec > 1 ? "Medium" : "Low";
-            return new ActiveWait(
-                (int)r.SessionId, (int)r.BlockingSessionId,
-                (string?)r.WaitType, (long)r.WaitTimeMs, sec,
-                (string?)r.LastWaitType, (string?)r.WaitResource,
-                (string?)r.RequestStatus, (string?)r.Command,
-                (long)r.CpuTimeMs, (long)r.TotalElapsedMs,
-                (long)r.LogicalReads, (long)r.Writes, (long)r.PhysicalReads,
-                (long?)r.GrantedMemoryKB ?? 0, (int)r.DegreeOfParallelism,
-                (string?)r.LoginName, (string?)r.HostName,
-                (string?)r.ProgramName, (string?)r.DatabaseName,
-                (string)r.WaitCategory, (int)r.IsBlocked,
-                (string?)r.QueryText, (DateTime)r.CaptureTime, severity
-            );
-        });
-    }
 
     // ── 4. Signal vs resource ─────────────────────────────────────────
     public async Task<SignalVsResourceWait?> GetSignalVsResourceAsync()
@@ -278,81 +301,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 8. TempDB Pressure ───────────────────────────────────────────
-    public async Task<(IEnumerable<TempDbFile> Files, IEnumerable<TempDbSession> Sessions, IEnumerable<TempDbCounter> Counters)> GetTempDbPressureAsync()
-    {
-        const string filesSql = """
-            SELECT mf.name AS FileName, mf.type_desc AS FileType,
-                mf.physical_name AS PhysicalPath,
-                mf.size * 8 / 1024 AS FileSizeMB,
-                ISNULL(FILEPROPERTY(mf.name,'SpaceUsed'),0) * 8 / 1024 AS SpaceUsedMB,
-                (mf.size - ISNULL(FILEPROPERTY(mf.name,'SpaceUsed'),0)) * 8 / 1024 AS FreeSpaceMB,
-                CAST(ISNULL(FILEPROPERTY(mf.name,'SpaceUsed'),0)*100.0/NULLIF(mf.size,0) AS DECIMAL(10,2)) AS UsedPct,
-                CASE mf.is_percent_growth WHEN 1 THEN CAST(mf.growth AS VARCHAR)+'%'
-                    ELSE CAST(mf.growth*8/1024 AS VARCHAR)+' MB' END AS AutoGrowth,
-                GETDATE() AS CaptureTime
-            FROM sys.master_files mf WHERE mf.database_id = 2
-            ORDER BY mf.type_desc, mf.file_id
-            """;
-
-        const string sessionsSql = """
-            SELECT TOP 20 su.session_id AS SessionId,
-                su.user_objects_alloc_page_count*8 AS UserObjAllocKB,
-                su.user_objects_dealloc_page_count*8 AS UserObjDeallocKB,
-                su.internal_objects_alloc_page_count*8 AS InternalObjAllocKB,
-                su.internal_objects_dealloc_page_count*8 AS InternalObjDeallocKB,
-                (su.user_objects_alloc_page_count+su.internal_objects_alloc_page_count
-                 -su.user_objects_dealloc_page_count-su.internal_objects_dealloc_page_count)*8 AS NetTempDBUsageKB,
-                s.login_name AS LoginName, s.host_name AS HostName,
-                s.program_name AS ProgramName,
-                r.wait_type AS WaitType, r.status AS RequestStatus,
-                ISNULL(r.cpu_time,0) AS CpuTimeMs,
-                DB_NAME(r.database_id) AS DatabaseName,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(qt.text,''),CHAR(13),' '),CHAR(10),' '),1,500) AS QueryText,
-                GETDATE() AS CaptureTime
-            FROM sys.dm_db_session_space_usage su
-            JOIN sys.dm_exec_sessions s ON su.session_id = s.session_id
-            LEFT JOIN sys.dm_exec_requests r ON su.session_id = r.session_id
-            OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) qt
-            WHERE su.session_id > 50
-              AND (su.user_objects_alloc_page_count+su.internal_objects_alloc_page_count) > 0
-            ORDER BY NetTempDBUsageKB DESC
-            """;
-
-        const string countersSql = """
-            SELECT counter_name AS CounterName, cntr_value AS CounterValue, GETDATE() AS CaptureTime
-            FROM sys.dm_os_performance_counters
-            WHERE object_name LIKE '%Transactions%' AND instance_name='tempdb'
-              AND counter_name IN ('Active Transactions','Version Store Size (KB)','Version Generation rate (KB/s)','Version Cleanup rate (KB/s)')
-            UNION ALL
-            SELECT counter_name, cntr_value, GETDATE()
-            FROM sys.dm_os_performance_counters
-            WHERE object_name LIKE '%General Statistics%'
-              AND counter_name IN ('Active Temp Tables','Temp Tables Creation Rate','Temp Tables For Destruction')
-            """;
-
-        using var conn = CreateConnection();
-        var files = (await Q(conn, filesSql)).Select(r => new TempDbFile(
-            (string)r.FileName, (string)r.FileType, (string)r.PhysicalPath,
-            (long)r.FileSizeMB, (long)r.SpaceUsedMB, (long)r.FreeSpaceMB,
-            (double)(r.UsedPct ?? 0), (string)r.AutoGrowth, (DateTime)r.CaptureTime));
-
-        var sessions = (await Q(conn, sessionsSql)).Select(r =>
-        {
-            long net = (long)r.NetTempDBUsageKB;
-            string sev = net > 1_000_000 ? "Critical" : net > 100_000 ? "Warning" : "Info";
-            return new TempDbSession(
-                (int)r.SessionId, (long)r.UserObjAllocKB, (long)r.UserObjDeallocKB,
-                (long)r.InternalObjAllocKB, (long)r.InternalObjDeallocKB, net,
-                (string?)r.LoginName, (string?)r.HostName, (string?)r.ProgramName,
-                (string?)r.WaitType, (string?)r.RequestStatus, (long)r.CpuTimeMs,
-                (string?)r.DatabaseName, (string?)r.QueryText, (DateTime)r.CaptureTime, sev);
-        });
-
-        var counters = (await Q(conn, countersSql)).Select(r =>
-            new TempDbCounter((string)r.CounterName, (long)r.CounterValue, (DateTime)r.CaptureTime));
-
-        return (files, sessions, counters);
-    }
+    public Task<(IEnumerable<TempDbFile> Files, IEnumerable<TempDbSession> Sessions, IEnumerable<TempDbCounter> Counters)> GetTempDbPressureAsync() =>
+        _tempDb.GetTempDbPressureAsync();
 
 
     // ── 9. Memory grants ──────────────────────────────────────────────
@@ -517,6 +467,37 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 10. Query Store ───────────────────────────────────────────────
+    /// <summary>
+    /// sys.database_query_store_options.readonly_reason, a bit map of why Query Store went read-only,
+    /// in words; null when it isn't read-only for any reason (0).
+    /// </summary>
+    internal static string? DescribeReadOnlyReason(int reason)
+    {
+        if (reason == 0) return null;
+
+        (int Bit, string Text)[] reasons =
+        [
+            (1,      "the database is read-only"),
+            (2,      "the database is in single-user mode"),
+            (4,      "the database is in emergency mode"),
+            (8,      "the database is a secondary replica"),
+            (65536,  "Query Store reached MAX_STORAGE_SIZE_MB"),
+            (131072, "the number of different statements reached Query Store's internal memory limit"),
+            (262144, "the in-memory items waiting to be written to disk reached Query Store's internal memory limit"),
+            (524288, "the database reached its disk size limit"),
+        ];
+        var known = reasons.Where(r => (reason & r.Bit) != 0).Select(r => r.Text).ToList();
+        var other = reason & ~reasons.Aggregate(0, (all, r) => all | r.Bit);
+        if (other != 0)
+            known.Add($"reason code {other}");
+        return string.Join("; ", known);
+    }
+
+    // plan_type_desc is SQL Server 2022+. Before that every plan is a compiled plan: the
+    // dispatcher and query variant plans of parameter-sensitive plan optimization came with it.
+    internal static string QueryStoreTopQueriesSql(bool hasPlanType) =>
+        QueryStoreTopQueriesSqlTemplate.Replace("/*PLAN_TYPE*/", hasPlanType ? "p.plan_type_desc" : "N'Compiled Plan'");
+
     public async Task<(QueryStoreHealth?, IEnumerable<QueryStoreTopQuery>)> GetQueryStoreAsync()
     {
         const string healthSql = """
@@ -538,7 +519,65 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             FROM sys.database_query_store_options
             """;
 
-        const string queriesSql = """
+        using var conn = CreateConnection();
+
+        QueryStoreHealth? health = null;
+        try
+        {
+            var hr = await QFirst(conn, healthSql);
+            if (hr is not null)
+            {
+                bool enabled = ((string)hr.ActualState).StartsWith("READ", StringComparison.OrdinalIgnoreCase);
+                double used = (double)(hr.StorageUsedPct ?? 0);
+                string sev = !enabled ? "WARNING" : used > 90 ? "WARNING" : "OK";
+                health = new QueryStoreHealth(
+                    (string)hr.ActualState, (string)hr.DesiredState,
+                    DescribeReadOnlyReason(hr.ReadOnlyReason is null ? 0 : Convert.ToInt32((object)hr.ReadOnlyReason)),
+                    (long)hr.CurrentStorageSizeMB, (long)hr.MaxStorageSizeMB,
+                    used, (int)hr.FlushIntervalSec, (int)hr.IntervalLengthMin,
+                    (int)hr.StaleQueryThresholdDays, (string)hr.SizeCleanupMode,
+                    (string)hr.CaptureMode, (int)hr.MaxPlansPerQuery,
+                    (int)hr.TotalQueries, (int)hr.TotalPlans, (int)hr.ForcedPlans,
+                    (DateTime)hr.CaptureTime, enabled, sev);
+            }
+        }
+        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
+
+        IEnumerable<QueryStoreTopQuery> queries = [];
+        try
+        {
+            var sql  = QueryStoreTopQueriesSql(await HasColumnAsync(conn, "sys.query_store_plan", "plan_type_desc"));
+            var rows = await Q(conn, sql);
+            queries = rows.Select(r =>
+            {
+                double cpu = (double)r.TotalCpuMs;
+                string sev = cpu > 60_000 ? "Critical" : cpu > 10_000 ? "Warning" : "Info";
+                return new QueryStoreTopQuery(
+                    (long)r.QueryId, (long)r.PlanId,
+                    (string)r.QueryText, (long)r.TotalExecutions,
+                    cpu, (double)r.AvgCpuMs,
+                    (double)r.TotalDurationMs, (double)r.AvgDurationMs,
+                    (long)r.TotalLogicalReads, (double)r.AvgLogicalReads,
+                    (long)r.TotalLogicalWrites, (long)r.TotalPhysicalReads,
+                    (double)r.TotalMemoryMB, (double)r.AvgMemoryKB,
+                    (bool)r.IsForcedPlan, (string)r.PlanType,
+                    ToUtc((object)r.LastExecutionTimeUtc), (DateTime)r.CaptureTime, sev);
+            }).ToList();
+        }
+        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
+
+        return (health, queries);
+    }
+
+    // Query Store keeps its times as datetimeoffset, in UTC.
+    private static DateTime ToUtc(object value) => value switch
+    {
+        DateTimeOffset offset => offset.UtcDateTime,
+        DateTime time         => DateTime.SpecifyKind(time, DateTimeKind.Utc),
+        _                     => DateTime.MinValue,
+    };
+
+    private const string QueryStoreTopQueriesSqlTemplate = """
             ;WITH PlanAgg AS (
                 SELECT rs.plan_id,
                     SUM(rs.avg_cpu_time*rs.count_executions) AS TotalCpuUs,
@@ -557,7 +596,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 SELECT p.query_id, pa.plan_id, pa.TotalCpuUs, pa.TotalDurationUs,
                     pa.TotalLogicalReads, pa.TotalLogicalWrites, pa.TotalPhysicalReads,
                     pa.TotalMemoryPages, pa.TotalExecutions, pa.LastExecutionTime,
-                    p.is_forced_plan, p.plan_type_desc,
+                    p.is_forced_plan, /*PLAN_TYPE*/ AS plan_type_desc,
                     CASE WHEN pa.TotalExecutions>0 THEN pa.TotalCpuUs/pa.TotalExecutions ELSE 0 END AS AvgCpuUs,
                     CASE WHEN pa.TotalExecutions>0 THEN pa.TotalDurationUs/pa.TotalExecutions ELSE 0 END AS AvgDurationUs,
                     CASE WHEN pa.TotalExecutions>0 THEN pa.TotalLogicalReads/pa.TotalExecutions ELSE 0 END AS AvgLogicalReads,
@@ -581,55 +620,6 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             JOIN sys.query_store_query_text qt ON q.query_text_id=qt.query_text_id
             WHERE r.rn=1 ORDER BY r.TotalCpuUs DESC OPTION (LOOP JOIN)
             """;
-
-        using var conn = CreateConnection();
-
-        QueryStoreHealth? health = null;
-        try
-        {
-            var hr = await QFirst(conn, healthSql);
-            if (hr is not null)
-            {
-                bool enabled = ((string)hr.ActualState).StartsWith("READ", StringComparison.OrdinalIgnoreCase);
-                double used = (double)(hr.StorageUsedPct ?? 0);
-                string sev = !enabled ? "WARNING" : used > 90 ? "WARNING" : "OK";
-                health = new QueryStoreHealth(
-                    (string)hr.ActualState, (string)hr.DesiredState,
-                    (string?)hr.ReadOnlyReason,
-                    (long)hr.CurrentStorageSizeMB, (long)hr.MaxStorageSizeMB,
-                    used, (int)hr.FlushIntervalSec, (int)hr.IntervalLengthMin,
-                    (int)hr.StaleQueryThresholdDays, (string)hr.SizeCleanupMode,
-                    (string)hr.CaptureMode, (int)hr.MaxPlansPerQuery,
-                    (int)hr.TotalQueries, (int)hr.TotalPlans, (int)hr.ForcedPlans,
-                    (DateTime)hr.CaptureTime, enabled, sev);
-            }
-        }
-        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
-
-        IEnumerable<QueryStoreTopQuery> queries = [];
-        try
-        {
-            var rows = await Q(conn, queriesSql);
-            queries = rows.Select(r =>
-            {
-                double cpu = (double)r.TotalCpuMs;
-                string sev = cpu > 60_000 ? "Critical" : cpu > 10_000 ? "Warning" : "Info";
-                return new QueryStoreTopQuery(
-                    (long)r.QueryId, (long)r.PlanId,
-                    (string)r.QueryText, (long)r.TotalExecutions,
-                    cpu, (double)r.AvgCpuMs,
-                    (double)r.TotalDurationMs, (double)r.AvgDurationMs,
-                    (long)r.TotalLogicalReads, (double)r.AvgLogicalReads,
-                    (long)r.TotalLogicalWrites, (long)r.TotalPhysicalReads,
-                    (double)r.TotalMemoryMB, (double)r.AvgMemoryKB,
-                    (bool)r.IsForcedPlan, (string)r.PlanType,
-                    (DateTime)r.LastExecutionTimeUtc, (DateTime)r.CaptureTime, sev);
-            }).ToList();
-        }
-        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
-
-        return (health, queries);
-    }
 
     // ── 11. Index health ──────────────────────────────────────────────
     public async Task<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)> GetIndexHealthAsync()
@@ -713,79 +703,6 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             (long)r.TotalReads, (long)r.TableRows, (DateTime)r.CaptureTime));
 
         return (missing, unused);
-    }
-
-    // ── 12. Plan cache ────────────────────────────────────────────────
-    public async Task<(IEnumerable<PlanCacheTypeSummary>, IEnumerable<PlanCacheCounter>, IEnumerable<PlanCacheTopQuery>)> GetPlanCacheAsync()
-    {
-        const string summarySql = """
-            SELECT cp.objtype AS CacheType, COUNT(*) AS PlanCount,
-                SUM(cp.size_in_bytes)/1024/1024 AS TotalSizeMB,
-                AVG(CAST(cp.usecounts AS FLOAT)) AS AvgUseCounts,
-                SUM(CASE WHEN cp.usecounts=1 THEN 1 ELSE 0 END) AS SingleUsePlans,
-                CAST(SUM(CASE WHEN cp.usecounts=1 THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0) AS DECIMAL(10,1)) AS SingleUsePct,
-                GETDATE() AS CaptureTime
-            FROM sys.dm_exec_cached_plans cp
-            GROUP BY cp.objtype ORDER BY TotalSizeMB DESC
-            """;
-
-        const string countersSql = """
-            SELECT counter_name AS CounterName, cntr_value AS CounterValue, GETDATE() AS CaptureTime
-            FROM sys.dm_os_performance_counters
-            WHERE object_name LIKE '%SQL Statistics%'
-              AND counter_name IN ('SQL Compilations/sec','SQL Re-Compilations/sec',
-                  'Batch Requests/sec','Auto-Param Attempts/sec','Failed Auto-Params/sec',
-                  'Safe Auto-Params/sec','Unsafe Auto-Params/sec')
-            ORDER BY counter_name
-            """;
-
-        const string topSql = """
-            SELECT TOP 20
-                qs.execution_count AS ExecutionCount,
-                qs.total_worker_time/1000 AS TotalCpuMs,
-                qs.total_elapsed_time/1000 AS TotalElapsedMs,
-                CAST(qs.total_worker_time*1.0/NULLIF(qs.execution_count,0)/1000 AS DECIMAL(18,2)) AS AvgCpuMs,
-                CAST(qs.total_elapsed_time*1.0/NULLIF(qs.execution_count,0)/1000 AS DECIMAL(18,2)) AS AvgElapsedMs,
-                qs.total_logical_reads AS TotalLogicalReads,
-                qs.total_physical_reads AS TotalPhysicalReads,
-                qs.total_logical_writes AS TotalLogicalWrites,
-                qs.plan_generation_num AS PlanGenerations,
-                cp.objtype AS PlanType, cp.size_in_bytes/1024 AS PlanSizeKB,
-                cp.usecounts AS UseCounts,
-                qs.creation_time AS PlanCreationTime,
-                DB_NAME(st.dbid) AS DatabaseName,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,500) AS QueryText,
-                GETDATE() AS CaptureTime
-            FROM sys.dm_exec_query_stats qs
-            JOIN sys.dm_exec_cached_plans cp ON qs.plan_handle=cp.plan_handle
-            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
-            WHERE st.dbid = DB_ID()
-            ORDER BY qs.execution_count DESC
-            """;
-
-        using var conn = CreateConnection();
-        var summary = (await Q(conn, summarySql)).Select(r =>
-        {
-            double singlePct = (double)(r.SingleUsePct ?? 0);
-            return new PlanCacheTypeSummary(
-                (string)r.CacheType, (int)r.PlanCount, (long)r.TotalSizeMB,
-                (double)r.AvgUseCounts, (int)r.SingleUsePlans, singlePct,
-                (DateTime)r.CaptureTime,
-                singlePct > 40 ? "WARNING" : "OK");
-        });
-
-        var counters = (await Q(conn, countersSql)).Select(r =>
-            new PlanCacheCounter((string)r.CounterName, (long)r.CounterValue, (DateTime)r.CaptureTime));
-
-        var top = (await Q(conn, topSql)).Select(r => new PlanCacheTopQuery(
-            (long)r.ExecutionCount, (long)r.TotalCpuMs, (long)r.TotalElapsedMs,
-            (double)r.AvgCpuMs, (double)r.AvgElapsedMs,
-            (long)r.TotalLogicalReads, (long)r.TotalPhysicalReads, (long)r.TotalLogicalWrites,
-            (int)r.PlanGenerations, (string)r.PlanType, (long)r.PlanSizeKB,
-            (long)r.UseCounts, (DateTime)r.PlanCreationTime,
-            (string?)r.DatabaseName, (string?)r.QueryText, (DateTime)r.CaptureTime));
-
-        return (summary, counters, top);
     }
 
     // ── 13 + 14. Resource-intensive queries (logical reads + CPU) ─────
@@ -978,7 +895,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     public async Task<IEnumerable<IndexUsagePattern>> GetIndexUsagePatternsAsync()
     {
         const string sql = """
-            SELECT OBJECT_NAME(s.object_id) AS TableName,
+            SELECT OBJECT_NAME(i.object_id) AS TableName,
                 i.name AS IndexName, i.type_desc AS IndexType,
                 ISNULL(s.user_seeks,0)   AS UserSeeks,
                 ISNULL(s.user_scans,0)   AS UserScans,
@@ -1079,9 +996,25 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
     }
 
     // ── 18. Stale statistics ──────────────────────────────────────────
+    // A statistic built on an empty table and never updated has no date and no row counts, so
+    // those read as null. sys.stats.is_incremental is SQL Server 2014+; before that it is 0.
+    internal static string StaleStatisticsSql(bool hasIncremental) =>
+        StaleStatisticsSqlTemplate.Replace("/*INCREMENTAL*/", hasIncremental ? "s.is_incremental" : "CAST(0 AS BIT)");
+
     public async Task<IEnumerable<StaleStatistic>> GetStaleStatisticsAsync()
     {
-        const string sql = """
+        using var conn = CreateConnection();
+        var sql = StaleStatisticsSql(await HasColumnAsync(conn, "sys.stats", "is_incremental"));
+        return (await Q(conn, sql)).Select(r => new StaleStatistic(
+            (string)r.SchemaName, (string)r.TableName, (string)r.StatisticsName,
+            (DateTime?)r.LastUpdated, (int?)r.DaysOld,
+            (long?)r.RowsInTable, (long?)r.RowsSampled, (double?)r.SamplePct ?? 0,
+            (long)r.ModificationsSinceLastUpdate,
+            (bool)r.IsIncremental, (bool)r.AutoCreated, (bool)r.UserCreated,
+            (string)r.DatabaseName, (DateTime)r.CaptureTime));
+    }
+
+    private const string StaleStatisticsSqlTemplate = """
             SELECT OBJECT_SCHEMA_NAME(s.object_id) AS SchemaName,
                 OBJECT_NAME(s.object_id) AS TableName, s.name AS StatisticsName,
                 STATS_DATE(s.object_id,s.stats_id) AS LastUpdated,
@@ -1089,7 +1022,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 sp.rows AS RowsInTable, sp.rows_sampled AS RowsSampled,
                 CAST(sp.rows_sampled*100.0/NULLIF(sp.rows,0) AS DECIMAL(10,1)) AS SamplePct,
                 sp.modification_counter AS ModificationsSinceLastUpdate,
-                s.is_incremental AS IsIncremental, s.auto_created AS AutoCreated,
+                /*INCREMENTAL*/ AS IsIncremental, s.auto_created AS AutoCreated,
                 s.user_created AS UserCreated, DB_NAME() AS DatabaseName,
                 GETDATE() AS CaptureTime
             FROM sys.stats s
@@ -1097,16 +1030,6 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             WHERE OBJECTPROPERTY(s.object_id,'IsUserTable')=1 AND sp.modification_counter>0
             ORDER BY sp.modification_counter DESC
             """;
-
-        using var conn = CreateConnection();
-        return (await Q(conn, sql)).Select(r => new StaleStatistic(
-            (string)r.SchemaName, (string)r.TableName, (string)r.StatisticsName,
-            (DateTime?)r.LastUpdated, (int)r.DaysOld,
-            (long)r.RowsInTable, (long)r.RowsSampled, (double?)r.SamplePct ?? 0,
-            (long)r.ModificationsSinceLastUpdate,
-            (bool)r.IsIncremental, (bool)r.AutoCreated, (bool)r.UserCreated,
-            (string)r.DatabaseName, (DateTime)r.CaptureTime));
-    }
 
     // ── 19. Database storage & configuration ─────────────────────────
     // Detects Azure SQL (EngineEdition 5/8) and switches to compatible queries.
@@ -1164,109 +1087,6 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             ORDER BY name
             """;
 
-        // ── B) Database files ─────────────────────────────────────────
-        // On-prem: join sys.databases + sys.master_files (all databases)
-        // Azure: sys.database_files for current DB only
-        const string sqlFilesOnPrem = """
-            SELECT
-                d.name                              AS DatabaseName,
-                d.state_desc                        AS State,
-                d.recovery_model_desc               AS RecoveryModel,
-                d.compatibility_level               AS CompatibilityLevel,
-                d.collation_name                    AS Collation,
-                CAST(d.is_auto_shrink_on       AS BIT) AS AutoShrink,
-                CAST(d.is_auto_create_stats_on AS BIT) AS AutoCreateStats,
-                CAST(d.is_auto_update_stats_on AS BIT) AS AutoUpdateStats,
-                CAST(d.is_query_store_on       AS BIT) AS QueryStoreOn,
-                CAST(d.is_cdc_enabled          AS BIT) AS CDCEnabled,
-                CAST(d.is_encrypted            AS BIT) AS Encrypted,
-                f.type_desc                         AS FileType,
-                f.name                              AS LogicalFileName,
-                f.physical_name                     AS PhysicalPath,
-                CAST(f.size * 8.0 / 1024 AS DECIMAL(18,2))                                                       AS FileSizeMB,
-                CAST(ISNULL(FILEPROPERTY(f.name,'SpaceUsed'),0) * 8.0/1024 AS DECIMAL(18,2))                     AS SpaceUsedMB,
-                CAST((f.size - ISNULL(FILEPROPERTY(f.name,'SpaceUsed'),0)) * 8.0/1024 AS DECIMAL(18,2))          AS FreeSpaceMB,
-                CASE WHEN f.max_size = -1 THEN CAST(-1 AS DECIMAL(18,2))
-                     ELSE CAST(f.max_size * 8.0/1024 AS DECIMAL(18,2)) END                                        AS MaxSizeMB,
-                CASE WHEN f.is_percent_growth = 1
-                     THEN CAST(f.growth AS VARCHAR(10)) + '%'
-                     ELSE CAST(f.growth * 8 / 1024 AS VARCHAR(10)) + ' MB'
-                END AS AutoGrowth
-            FROM sys.databases d
-            JOIN sys.master_files f ON d.database_id = f.database_id
-            WHERE d.state_desc = 'ONLINE'
-            ORDER BY d.name, f.type_desc, f.name
-            """;
-
-        const string sqlFilesAzure = """
-            SELECT
-                DB_NAME()                              AS DatabaseName,
-                'ONLINE'                               AS State,
-                CAST(DATABASEPROPERTYEX(DB_NAME(),'Recovery')  AS NVARCHAR(60))  AS RecoveryModel,
-                CAST(d.compatibility_level             AS INT)  AS CompatibilityLevel,
-                CAST(DATABASEPROPERTYEX(DB_NAME(),'Collation') AS NVARCHAR(128)) AS Collation,
-                CAST(0 AS BIT)                         AS AutoShrink,
-                CAST(1 AS BIT)                         AS AutoCreateStats,
-                CAST(1 AS BIT)                         AS AutoUpdateStats,
-                CAST(d.is_query_store_on          AS BIT) AS QueryStoreOn,
-                CAST(0 AS BIT)                         AS CDCEnabled,
-                CAST(0 AS BIT)                         AS Encrypted,
-                f.type_desc                            AS FileType,
-                f.name                                 AS LogicalFileName,
-                ISNULL(f.physical_name,'')             AS PhysicalPath,
-                CAST(f.size * 8.0 / 1024 AS DECIMAL(18,2))                                                       AS FileSizeMB,
-                CAST(ISNULL(FILEPROPERTY(f.name,'SpaceUsed'),0) * 8.0/1024 AS DECIMAL(18,2))                     AS SpaceUsedMB,
-                CAST((f.size - ISNULL(FILEPROPERTY(f.name,'SpaceUsed'),0)) * 8.0/1024 AS DECIMAL(18,2))          AS FreeSpaceMB,
-                CASE WHEN f.max_size = -1 THEN CAST(-1 AS DECIMAL(18,2))
-                     ELSE CAST(f.max_size * 8.0/1024 AS DECIMAL(18,2)) END                                        AS MaxSizeMB,
-                CASE WHEN f.is_percent_growth = 1
-                     THEN CAST(f.growth AS VARCHAR(10)) + '%'
-                     ELSE CAST(f.growth * 8 / 1024 AS VARCHAR(10)) + ' MB'
-                END AS AutoGrowth
-            FROM sys.database_files f
-            CROSS JOIN (SELECT compatibility_level, is_query_store_on
-                        FROM sys.databases WHERE name = DB_NAME()) d
-            ORDER BY f.type_desc, f.name
-            """;
-
-        // ── C) TempDB files ───────────────────────────────────────────
-        // Azure SQL DB: tempdb cross-DB query not allowed — skip
-        const string sqlTempDb = """
-            SELECT
-                name          AS FileName,
-                type_desc     AS FileType,
-                physical_name AS PhysicalPath,
-                CAST(size * 8.0/1024 AS DECIMAL(18,2))                                                    AS SizeMB,
-                CAST(ISNULL(FILEPROPERTY(name,'SpaceUsed'),0) * 8.0/1024 AS DECIMAL(18,2))                AS UsedMB,
-                CAST((size - ISNULL(FILEPROPERTY(name,'SpaceUsed'),0)) * 8.0/1024 AS DECIMAL(18,2))       AS FreeMB
-            FROM tempdb.sys.database_files
-            ORDER BY type_desc, name
-            """;
-
-        // ── D) Top 20 tables by storage (same on both) ────────────────
-        const string sqlTables = """
-            SELECT TOP 20
-                SCHEMA_NAME(t.schema_id)                                                   AS SchemaName,
-                t.name                                                                     AS TableName,
-                p.rows                                                                     AS RowsCount,
-                CAST(SUM(CASE WHEN i.type <= 1 THEN a.total_pages ELSE 0 END) * 8.0/1024 AS DECIMAL(18,3)) AS DataSizeMB,
-                CAST(SUM(CASE WHEN i.type  > 1 THEN a.total_pages ELSE 0 END) * 8.0/1024 AS DECIMAL(18,3)) AS IndexSizeMB,
-                CAST(SUM(a.total_pages)  * 8.0/1024 AS DECIMAL(18,3))                     AS TotalSizeMB,
-                CAST(SUM(a.used_pages)   * 8.0/1024 AS DECIMAL(18,3))                     AS UsedSizeMB,
-                CAST((SUM(a.total_pages)-SUM(a.used_pages)) * 8.0/1024 AS DECIMAL(18,3))  AS UnusedSizeMB,
-                COUNT(DISTINCT i.index_id) - 1                                             AS IndexCount,
-                MAX(CASE WHEN h.object_id IS NOT NULL THEN 'Heap' ELSE 'Clustered' END)   AS TableType
-            FROM sys.tables t
-            JOIN sys.indexes i           ON t.object_id = i.object_id
-            JOIN sys.partitions p        ON i.object_id = p.object_id AND i.index_id = p.index_id
-            JOIN sys.allocation_units a  ON p.partition_id = a.container_id
-            LEFT JOIN (SELECT DISTINCT object_id FROM sys.indexes WHERE type = 0) h
-                                         ON h.object_id = t.object_id
-            WHERE t.is_ms_shipped = 0
-            GROUP BY SCHEMA_NAME(t.schema_id), t.name, p.rows
-            ORDER BY SUM(a.total_pages) DESC
-            """;
-
         using var conn = CreateConnection();
 
         // Detect Azure SQL (EngineEdition 5 = Azure SQL DB, 8 = Azure SQL MI)
@@ -1286,7 +1106,9 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             Convert.ToBoolean(r.IsAdvanced)));
 
         // Files
-        var filesSql = isAzureSqlDb ? sqlFilesAzure : sqlFilesOnPrem;
+        var filesSql = isAzureSqlDb
+            ? DatabaseFilesAzureSql
+            : DatabaseFilesSql(await HasColumnAsync(conn, "sys.databases", "is_query_store_on"));
         var files = (await Q(conn, filesSql)).Select(r => new DatabaseFile(
             (string)r.DatabaseName,
             (string)r.State,
@@ -1303,8 +1125,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             (string)r.LogicalFileName,
             r.PhysicalPath == null || r.PhysicalPath is DBNull ? "" : (string)r.PhysicalPath,
             Convert.ToDecimal(r.FileSizeMB),
-            Convert.ToDecimal(r.SpaceUsedMB),
-            Convert.ToDecimal(r.FreeSpaceMB),
+            r.SpaceUsedMB is null or DBNull ? (decimal?)null : Convert.ToDecimal(r.SpaceUsedMB),
+            r.FreeSpaceMB is null or DBNull ? (decimal?)null : Convert.ToDecimal(r.FreeSpaceMB),
             Convert.ToDecimal(r.MaxSizeMB),
             (string)r.AutoGrowth));
 
@@ -1312,7 +1134,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
         IEnumerable<TempDbFileSummary> tempFiles = [];
         if (!isAzureSqlDb)
         {
-            tempFiles = (await Q(conn, sqlTempDb)).Select(r => new TempDbFileSummary(
+            tempFiles = (await Q(conn, TempDbFilesSummarySql)).Select(r => new TempDbFileSummary(
                 (string)r.FileName,
                 (string)r.FileType,
                 r.PhysicalPath == null || r.PhysicalPath is DBNull ? "" : (string)r.PhysicalPath,
@@ -1322,7 +1144,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
         }
 
         // ── D) Top 20 tables by storage (same on both) ────────────────
-        var tables = (await Q(conn, sqlTables)).Select(r => new TableStorage(
+        var tables = (await Q(conn, TopTablesSql)).Select(r => new TableStorage(
             (string)r.SchemaName,
             (string)r.TableName,
             Convert.ToInt64(r.RowsCount),
@@ -1336,6 +1158,148 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
         return (config, files, tempFiles, tables);
     }
+
+    // ── B) Database files ─────────────────────────────────────────────
+    // On-prem: sys.databases + sys.master_files (all databases). FILEPROPERTY only sees the
+    // current database's files, so each database's used space, and its size now (tempdb's
+    // sys.master_files row holds its startup size), is read in that database's own context
+    // through its sys.sp_executesql. A database this login can't open shows no used or free
+    // space rather than a wrong one. sys.databases.is_query_store_on is SQL Server 2016+.
+    internal static string DatabaseFilesSql(bool hasQueryStore) =>
+        DatabaseFilesSqlTemplate.Replace("/*QUERY_STORE_ON*/", hasQueryStore ? "d.is_query_store_on" : "0");
+
+    private const string DatabaseFilesSqlTemplate = """
+        SET NOCOUNT ON;
+        CREATE TABLE #used (database_id INT NOT NULL, file_id INT NOT NULL, size_pages BIGINT NULL, used_pages BIGINT NULL);
+
+        DECLARE @db SYSNAME, @proc NVARCHAR(300);
+        DECLARE dbs CURSOR LOCAL FAST_FORWARD FOR
+            SELECT name FROM sys.databases WHERE state_desc = N'ONLINE' AND HAS_DBACCESS(name) = 1;
+        OPEN dbs;
+        FETCH NEXT FROM dbs INTO @db;
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            SET @proc = QUOTENAME(@db) + N'.sys.sp_executesql';
+            BEGIN TRY
+                INSERT #used (database_id, file_id, size_pages, used_pages)
+                EXEC @proc N'SELECT DB_ID(), file_id, CAST(size AS BIGINT), CAST(FILEPROPERTY(name, N''SpaceUsed'') AS BIGINT) FROM sys.database_files';
+            END TRY
+            BEGIN CATCH
+            END CATCH;
+            FETCH NEXT FROM dbs INTO @db;
+        END;
+        CLOSE dbs;
+        DEALLOCATE dbs;
+
+        SELECT
+            d.name                              AS DatabaseName,
+            d.state_desc                        AS State,
+            d.recovery_model_desc               AS RecoveryModel,
+            d.compatibility_level               AS CompatibilityLevel,
+            d.collation_name                    AS Collation,
+            CAST(d.is_auto_shrink_on       AS BIT) AS AutoShrink,
+            CAST(d.is_auto_create_stats_on AS BIT) AS AutoCreateStats,
+            CAST(d.is_auto_update_stats_on AS BIT) AS AutoUpdateStats,
+            CAST(/*QUERY_STORE_ON*/        AS BIT) AS QueryStoreOn,
+            CAST(d.is_cdc_enabled          AS BIT) AS CDCEnabled,
+            CAST(d.is_encrypted            AS BIT) AS Encrypted,
+            f.type_desc                         AS FileType,
+            f.name                              AS LogicalFileName,
+            f.physical_name                     AS PhysicalPath,
+            CAST(ISNULL(u.size_pages, f.size) * 8.0 / 1024 AS DECIMAL(18,2))                                 AS FileSizeMB,
+            CAST(u.used_pages * 8.0 / 1024 AS DECIMAL(18,2))                                                 AS SpaceUsedMB,
+            CAST((u.size_pages - u.used_pages) * 8.0 / 1024 AS DECIMAL(18,2))                                AS FreeSpaceMB,
+            CASE WHEN f.max_size = -1 THEN CAST(-1 AS DECIMAL(18,2))
+                 ELSE CAST(f.max_size * 8.0/1024 AS DECIMAL(18,2)) END                                        AS MaxSizeMB,
+            CASE WHEN f.is_percent_growth = 1
+                 THEN CAST(f.growth AS VARCHAR(10)) + '%'
+                 ELSE CAST(CAST(f.growth AS BIGINT) * 8 / 1024 AS VARCHAR(20)) + ' MB'
+            END AS AutoGrowth
+        FROM sys.databases d
+        JOIN sys.master_files f ON d.database_id = f.database_id
+        LEFT JOIN #used u       ON u.database_id = f.database_id AND u.file_id = f.file_id
+        WHERE d.state_desc = 'ONLINE'
+        ORDER BY d.name, f.type_desc, f.name;
+
+        DROP TABLE #used;
+        """;
+
+    // Azure SQL Database: sys.database_files for the current database only, which is the one
+    // FILEPROPERTY reads.
+    private const string DatabaseFilesAzureSql = """
+        SELECT
+            DB_NAME()                              AS DatabaseName,
+            'ONLINE'                               AS State,
+            CAST(DATABASEPROPERTYEX(DB_NAME(),'Recovery')  AS NVARCHAR(60))  AS RecoveryModel,
+            CAST(d.compatibility_level             AS INT)  AS CompatibilityLevel,
+            CAST(DATABASEPROPERTYEX(DB_NAME(),'Collation') AS NVARCHAR(128)) AS Collation,
+            CAST(0 AS BIT)                         AS AutoShrink,
+            CAST(1 AS BIT)                         AS AutoCreateStats,
+            CAST(1 AS BIT)                         AS AutoUpdateStats,
+            CAST(d.is_query_store_on          AS BIT) AS QueryStoreOn,
+            CAST(0 AS BIT)                         AS CDCEnabled,
+            CAST(0 AS BIT)                         AS Encrypted,
+            f.type_desc                            AS FileType,
+            f.name                                 AS LogicalFileName,
+            ISNULL(f.physical_name,'')             AS PhysicalPath,
+            CAST(f.size * 8.0 / 1024 AS DECIMAL(18,2))                                                       AS FileSizeMB,
+            CAST(ISNULL(FILEPROPERTY(f.name,'SpaceUsed'),0) * 8.0/1024 AS DECIMAL(18,2))                     AS SpaceUsedMB,
+            CAST((f.size - ISNULL(FILEPROPERTY(f.name,'SpaceUsed'),0)) * 8.0/1024 AS DECIMAL(18,2))          AS FreeSpaceMB,
+            CASE WHEN f.max_size = -1 THEN CAST(-1 AS DECIMAL(18,2))
+                 ELSE CAST(f.max_size * 8.0/1024 AS DECIMAL(18,2)) END                                        AS MaxSizeMB,
+            CASE WHEN f.is_percent_growth = 1
+                 THEN CAST(f.growth AS VARCHAR(10)) + '%'
+                 ELSE CAST(CAST(f.growth AS BIGINT) * 8 / 1024 AS VARCHAR(20)) + ' MB'
+            END AS AutoGrowth
+        FROM sys.database_files f
+        CROSS JOIN (SELECT compatibility_level, is_query_store_on
+                    FROM sys.databases WHERE name = DB_NAME()) d
+        ORDER BY f.type_desc, f.name
+        """;
+
+    // ── C) TempDB files ───────────────────────────────────────────────
+    // In tempdb's own context, for FILEPROPERTY. Azure SQL DB doesn't allow it, so it's skipped there.
+    internal const string TempDbFilesSummarySql = """
+        EXEC tempdb.sys.sp_executesql N'
+            SELECT
+                name          AS FileName,
+                type_desc     AS FileType,
+                physical_name AS PhysicalPath,
+                CAST(size * 8.0/1024 AS DECIMAL(18,2))                                                      AS SizeMB,
+                CAST(ISNULL(FILEPROPERTY(name, ''SpaceUsed''), 0) * 8.0/1024 AS DECIMAL(18,2))              AS UsedMB,
+                CAST((size - ISNULL(FILEPROPERTY(name, ''SpaceUsed''), 0)) * 8.0/1024 AS DECIMAL(18,2))     AS FreeMB
+            FROM sys.database_files
+            ORDER BY type_desc, name;';
+        """;
+
+    // ── D) Top 20 tables by storage (same on both) ────────────────────
+    // One row per table: sizes add up every partition of every index, and the row count is the
+    // heap's or clustered index's, summed over its partitions.
+    internal const string TopTablesSql = """
+        SELECT TOP 20
+            SCHEMA_NAME(t.schema_id)                                                   AS SchemaName,
+            t.name                                                                     AS TableName,
+            ISNULL(rc.RowsCount, 0)                                                    AS RowsCount,
+            CAST(SUM(CASE WHEN i.type <= 1 THEN a.total_pages ELSE 0 END) * 8.0/1024 AS DECIMAL(18,3)) AS DataSizeMB,
+            CAST(SUM(CASE WHEN i.type  > 1 THEN a.total_pages ELSE 0 END) * 8.0/1024 AS DECIMAL(18,3)) AS IndexSizeMB,
+            CAST(SUM(a.total_pages)  * 8.0/1024 AS DECIMAL(18,3))                     AS TotalSizeMB,
+            CAST(SUM(a.used_pages)   * 8.0/1024 AS DECIMAL(18,3))                     AS UsedSizeMB,
+            CAST((SUM(a.total_pages)-SUM(a.used_pages)) * 8.0/1024 AS DECIMAL(18,3))  AS UnusedSizeMB,
+            COUNT(DISTINCT i.index_id) - 1                                             AS IndexCount,
+            MAX(CASE WHEN h.object_id IS NOT NULL THEN 'Heap' ELSE 'Clustered' END)   AS TableType
+        FROM sys.tables t
+        JOIN sys.indexes i           ON t.object_id = i.object_id
+        JOIN sys.partitions p        ON i.object_id = p.object_id AND i.index_id = p.index_id
+        JOIN sys.allocation_units a  ON p.partition_id = a.container_id
+        LEFT JOIN (SELECT DISTINCT object_id FROM sys.indexes WHERE type = 0) h
+                                     ON h.object_id = t.object_id
+        OUTER APPLY (SELECT SUM(p2.rows) AS RowsCount
+                     FROM sys.partitions p2
+                     WHERE p2.object_id = t.object_id AND p2.index_id IN (0, 1)) rc
+        WHERE t.is_ms_shipped = 0
+        GROUP BY t.object_id, t.schema_id, t.name, rc.RowsCount
+        ORDER BY SUM(a.total_pages) DESC
+        """;
 
     // ── 20. Process map (Active sessions + blocking) ─────────────────
     // A head blocker is often a sleeping session with an open transaction: it has no request, so
@@ -1652,8 +1616,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 ISNULL(s.program_name, '') AS ApplicationName,
                 COUNT(*)                   AS CurrentConnections,
                 SUM(CASE WHEN r.session_id IS NOT NULL THEN 1 ELSE 0 END) AS ActiveRequests,
-                SUM(s.cpu_time)            AS TotalCpuTimeMs,
-                SUM(s.memory_usage) * 8    AS TotalMemoryKB,
+                SUM(CAST(s.cpu_time AS BIGINT))         AS TotalCpuTimeMs,
+                SUM(CAST(s.memory_usage AS BIGINT)) * 8 AS TotalMemoryKB,
                 SUM(s.logical_reads)       AS TotalLogicalReads,
                 SUM(s.reads)               AS TotalReads,
                 SUM(s.writes)              AS TotalWrites,

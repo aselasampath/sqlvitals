@@ -58,14 +58,14 @@ public static class UnusedIndexDropScript
                 ];
 
                 sb.AppendLine();
-                sb.AppendLine($"-- {table}.{QuoteName(ix.IndexName)}  ({ix.IndexType}{(ix.IsUnique ? ", UNIQUE" : "")})");
+                sb.AppendLine(ScriptText.Comment($"{table}.{QuoteName(ix.IndexName)}  ({ix.IndexType}{(ix.IsUnique ? ", UNIQUE" : "")})"));
                 sb.AppendLine($"-- Reads: {ix.TotalReads:N0}  Writes: {ix.UserUpdates:N0}  Rows: {ix.TableRows:N0}");
 
                 if (ix.IsUnique)
                 {
                     sb.AppendLine("-- SKIPPED: unique index — may enforce a business rule or back a foreign key.");
                     foreach (var line in guardAndDrop)
-                        sb.AppendLine("-- " + line);
+                        sb.AppendLine(ScriptText.Comment(line));
                 }
                 else
                 {

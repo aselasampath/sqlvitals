@@ -127,18 +127,25 @@ internal sealed class VerifyFilesStep : IInstallStep
 /// folder first, so a failure or cancel puts the previous installation back exactly.
 /// Config files the user edited are kept; the new default is written beside them as *.new.
 /// </summary>
+/// <remarks>
+/// Retry runs Execute again after a failure part-way through. The journal is kept across
+/// attempts and a file already placed is skipped: placing it again would move the new file over
+/// the backup of the old one, the only copy, and then find its staged copy gone.
+/// </remarks>
 internal sealed class CommitFilesStep : IInstallStep
 {
     private enum Change { Added, Replaced, Removed }
 
     private readonly List<(Change Kind, string Target, string? Backup)> _journal = new();
 
+    // Targets that already hold their new file, from this attempt or an earlier one.
+    private readonly HashSet<string> _placed = new(StringComparer.OrdinalIgnoreCase);
+
     public string Title  => "Installing application files";
     public double Weight => 25;
 
     public void Execute(InstallContext context, IProgress<double> progress, CancellationToken ct)
     {
-        _journal.Clear();
         var manifest = context.Payload!.Manifest;
         var previous = context.PreviousManifest;
         var total    = manifest.Files.Count + 3.0;
@@ -153,9 +160,11 @@ internal sealed class CommitFilesStep : IInstallStep
             if (file.PreserveIfModified && IsUserModified(target, file, previous))
             {
                 // Keep the user's copy; offer the new default next to it.
-                Place(context, staged, target + ".new");
-                context.PreservedConfigFiles.Add(file.Path);
-                SetupLog.Info($"Kept modified config: {file.Path}");
+                if (Place(context, staged, target + ".new"))
+                {
+                    context.PreservedConfigFiles.Add(file.Path);
+                    SetupLog.Info($"Kept modified config: {file.Path}");
+                }
             }
             else
             {
@@ -181,7 +190,8 @@ internal sealed class CommitFilesStep : IInstallStep
 
         // A copy of Setup for Modify/Uninstall from Windows Settings.
         var setupTarget = Path.Combine(context.InstallDir, ProductInfo.SetupExeName);
-        if (!string.Equals(Path.GetFullPath(context.SetupExePath), setupTarget, StringComparison.OrdinalIgnoreCase))
+        if (!_placed.Contains(setupTarget) &&
+            !string.Equals(Path.GetFullPath(context.SetupExePath), setupTarget, StringComparison.OrdinalIgnoreCase))
         {
             var tmp = Path.Combine(context.StagingDir, ProductInfo.SetupExeName);
             File.Copy(context.SetupExePath, tmp, overwrite: true);
@@ -216,14 +226,21 @@ internal sealed class CommitFilesStep : IInstallStep
             }
         }
         _journal.Clear();
+        _placed.Clear();
         context.PreservedConfigFiles.Clear();
 
         if (errors is not null)
             throw new AggregateException("Some files could not be restored.", errors);
     }
 
-    private void Place(InstallContext context, string source, string target)
+    /// <summary>Moves the new file into place, backing up what was there. False when an earlier attempt already did.</summary>
+    private bool Place(InstallContext context, string source, string target)
     {
+        if (_placed.Contains(target))
+            return false;
+
+        // A target backed up by an earlier attempt that then failed to move the new file in is
+        // missing now, so it's journalled as added: rollback deletes it, then restores the backup.
         if (File.Exists(target))
         {
             var backup = BackupPathFor(context, target);
@@ -235,6 +252,8 @@ internal sealed class CommitFilesStep : IInstallStep
             _journal.Add((Change.Added, target, null));
         }
         FileSystemHelpers.MoveReplacing(source, target);
+        _placed.Add(target);
+        return true;
     }
 
     private static string BackupPathFor(InstallContext context, string target)
@@ -268,9 +287,9 @@ internal sealed class ShortcutsStep : IInstallStep
     public string Title  => "Creating shortcuts";
     public double Weight => 2;
 
+    // Kept across a Retry: backing up a shortcut this step already made would lose the user's own.
     public void Execute(InstallContext context, IProgress<double> progress, CancellationToken ct)
     {
-        _changed.Clear();
         var paths = ShortcutPaths.For(context.Scope);
 
         Replace(context, paths.StartMenu, create: true);
@@ -291,6 +310,16 @@ internal sealed class ShortcutsStep : IInstallStep
     private void Replace(InstallContext context, string path, bool create)
     {
         if (!create && !File.Exists(path)) return;
+
+        var earlier = _changed.FindIndex(c => string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (earlier >= 0)
+        {
+            // An earlier attempt already backed this one up; only the new shortcut may be missing.
+            if (create && !File.Exists(path))
+                ShellLink.Create(path, context.AppExePath, context.InstallDir,
+                                 "Monitor SQL Server and Azure SQL performance");
+            return;
+        }
 
         string? backup = null;
         if (File.Exists(path))
@@ -317,8 +346,13 @@ internal sealed class RegisterStep : IInstallStep
 
     public void Execute(InstallContext context, IProgress<double> progress, CancellationToken ct)
     {
-        _snapshot = Registration.Snapshot(context.Scope);
-        _written  = true;
+        // On a Retry the snapshot from the first attempt is the one to restore: taking it again
+        // could capture what that attempt had half-written.
+        if (!_written)
+        {
+            _snapshot = Registration.Snapshot(context.Scope);
+            _written  = true;
+        }
         Registration.Write(context.Scope, context.InstallDir, context.Payload!.Manifest.Version,
                            context.Payload.Manifest.TotalSize, context.CreateDesktopShortcut);
     }

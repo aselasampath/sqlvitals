@@ -91,6 +91,14 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
         WHERE type = 'S'
         """;
 
+    // Who SqlVitals is connected as: its login, and the Windows groups and server roles it gets
+    // permissions through. Any login can read its own token.
+    internal const string LoginTokenSql = """
+        SELECT sid AS Sid
+        FROM sys.login_token
+        WHERE usage = N'GRANT OR DENY' AND sid IS NOT NULL
+        """;
+
     /// <summary>The orphaned-user query for one database.</summary>
     internal static string OrphanedUsersIn(string database) =>
         OrphanedUsersSql.Replace("{db}", UnusedIndexDropScript.QuoteName(database));
@@ -118,6 +126,10 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
             (string?)r.Owner,
             r.OwnerIsSysadmin is null ? (bool?)null : Convert.ToInt32(r.OwnerIsSysadmin) == 1)).ToList();
 
+        var connectedSids = (await Q(conn, LoginTokenSql))
+            .Select(r => Convert.ToHexString((byte[])r.Sid))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         IReadOnlyList<SysadminMember>? members = null;
         OrphanScan? orphans = null;
         if (canView)
@@ -138,7 +150,7 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
         return SecurityAudit.Run(new SecuritySnapshot(
             edition, windowsOnly, canView, sa, members,
             databases.Select(d => new DatabaseTrust(d.Name, d.IsTrustworthy, d.Owner, d.OwnerIsSysadmin)).ToList(),
-            orphans));
+            orphans, connectedSids));
     }
 
     private sealed record DatabaseRow(string Name, string State, bool HasAccess, bool IsTrustworthy, string? Owner, bool? OwnerIsSysadmin);

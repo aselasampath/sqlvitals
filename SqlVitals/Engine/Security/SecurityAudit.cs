@@ -58,20 +58,41 @@ public static class SecurityAudit
         var fix = "-- First check that nothing signs in as sa (an application, a linked server, a job step's connection),\n" +
                   "-- and that another sysadmin login works.\n" +
                   $"ALTER LOGIN {Quote(sa.Name)} DISABLE;";
+        var own = snapshot.IsConnectedThrough(SaSid);
+        if (own)
+            fix = KeepOwnAccess(fix);
 
         if (snapshot.WindowsAuthenticationOnly)
             return new SecurityFinding(SecurityCheckKind.SaLogin, SecurityFinding.ServerScope, sa.Name, SecurityFindingStatus.Review,
                 "Enabled" + renamed + ", Windows logins only",
                 what + " The server accepts Windows logins only, so sa can't sign in now, but it can as soon as mixed mode " +
-                "(SQL Server and Windows authentication) is turned on.", fix);
+                "(SQL Server and Windows authentication) is turned on." + (own ? OwnAccessNote : ""), fix);
 
         return new SecurityFinding(SecurityCheckKind.SaLogin, SecurityFinding.ServerScope, sa.Name, SecurityFindingStatus.Risk,
             "Enabled" + renamed,
             what + (sa.IsRenamed
                 ? $" It has been renamed to {sa.Name}, which hides it from guessing by name, but it is enabled and signs in with a password."
-                : " It is enabled, and the server accepts SQL Server logins, so anyone who can reach the server can try its password."),
+                : " It is enabled, and the server accepts SQL Server logins, so anyone who can reach the server can try its password.") +
+            (own ? OwnAccessNote : ""),
             fix);
     }
+
+    private static readonly byte[] SaSid = [0x01];
+
+    // ── Your own access ───────────────────────────────────────────────────────
+    // "Script the risks" puts every fix in one script. A fix that takes sysadmin from the login
+    // SqlVitals is connected through (or disables it) would lock the DBA out part-way through,
+    // before the rest has run, so it stays in the script commented out.
+
+    internal const string OwnAccessNote =
+        " SqlVitals is connected through it, so its fix is left commented out: it would remove your own access " +
+        "part-way through the script. Run it signed in as another sysadmin.";
+
+    internal static string KeepOwnAccess(string fix) =>
+        "-- Left commented out: SqlVitals is connected through this login, so this would remove your own access.\n" +
+        "-- Sign in as another sysadmin, check that login works, then run the statement below without its --.\n" +
+        string.Join("\n", fix.Split('\n').Select(line =>
+            line.StartsWith("--", StringComparison.Ordinal) ? ScriptText.OneLine(line) : ScriptText.Comment(line)));
 
     // ── sysadmin ──────────────────────────────────────────────────────────────
 
@@ -151,10 +172,11 @@ public static class SecurityAudit
             .ThenBy(m => m.Name, StringComparer.CurrentCultureIgnoreCase);
 
         foreach (var member in listed)
-            yield return Member(member, snapshot.WindowsAuthenticationOnly);
+            yield return Member(member, snapshot.WindowsAuthenticationOnly, snapshot.IsConnectedThrough(member.Sid));
     }
 
-    internal static SecurityFinding Member(SysadminMember member, bool windowsAuthenticationOnly)
+    /// <param name="connectedThrough">SqlVitals is connected as this login, or through this group or role.</param>
+    internal static SecurityFinding Member(SysadminMember member, bool windowsAuthenticationOnly, bool connectedThrough = false)
     {
         var what    = member.ViaControlServer ? ControlServerWhat : SysadminWhat;
         var holds   = member.ViaControlServer ? "CONTROL SERVER" : "sysadmin";
@@ -162,8 +184,12 @@ public static class SecurityAudit
         var finding = member.TypeText + (member.ViaControlServer ? " with CONTROL SERVER" : "") +
                       (member.IsDisabled ? " · disabled" : " · enabled");
 
-        SecurityFinding Row(SecurityFindingStatus status, string why, string? fix = null) =>
-            new(SecurityCheckKind.SysadminMember, SecurityFinding.ServerScope, member.Name, status, finding, why.Replace("{is}", @is) + " " + what, fix);
+        SecurityFinding Row(SecurityFindingStatus status, string why, string? fix = null)
+        {
+            var own = fix is not null && connectedThrough;
+            return new(SecurityCheckKind.SysadminMember, SecurityFinding.ServerScope, member.Name, status, finding,
+                why.Replace("{is}", @is) + " " + what + (own ? OwnAccessNote : ""), own ? KeepOwnAccess(fix!) : fix);
+        }
 
         var disabled = member.IsDisabled
             ? " It is disabled, so it can't sign in now, but anyone who can alter logins can enable it again."
@@ -324,10 +350,10 @@ public static class SecurityAudit
         return use +
                "-- Choose one, and remove the -- from it.\n" +
                "-- Either create its login with the user's SID, so the two match (sp_help_revlogin on the old server copies the password too):\n" +
-               $"-- CREATE LOGIN {Quote(user.Name)} WITH PASSWORD = N'<a strong password>', SID = {user.SidHex}, CHECK_POLICY = ON;\n" +
+               ScriptText.Comment($"CREATE LOGIN {Quote(user.Name)} WITH PASSWORD = N'<a strong password>', SID = {user.SidHex}, CHECK_POLICY = ON;") + "\n" +
                "-- or, if nobody needs it any more, drop the user.\n" +
                schemas +
-               $"-- DROP USER {Quote(user.Name)};";
+               ScriptText.Comment($"DROP USER {Quote(user.Name)};");
     }
 
     // ── Text ──────────────────────────────────────────────────────────────────

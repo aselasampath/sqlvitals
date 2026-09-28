@@ -25,7 +25,7 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a risk
    | **Risk** | Why it matters, starting with what is specific to this row |
 
 5. **Select a finding** to read the whole explanation below and, for a risk, the **script to remove it**. **⧉ Copy** copies it.
-6. **📝 Script the risks** puts the fix for every risk into one script, to review, save and run yourself.
+6. **📝 Script the risks** puts the fix for every risk into one script, to review, save and run yourself. A fix that would take sysadmin from the login **you are connected with**, or a Windows group or role you get it through, or would disable sa while you're signed in as sa, stays in the script **commented out**, with a note: run on its own, it would lock you out part-way through. Run it signed in as another sysadmin.
 
 The grid has the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).
 
@@ -137,5 +137,7 @@ Azure SQL Database has no sysadmin role, no sa login and no TRUSTWORTHY setting,
   - the sa login from `sys.server_principals` by `sid = 0x01`;
   - `sys.databases` (snapshots left out): `is_trustworthy_on`, the owner with `SUSER_SNAME(owner_sid)`, and `IS_SRVROLEMEMBER('sysadmin', owner)` (only when the owner has a name: given NULL it answers for the caller);
   - with `VIEW ANY DEFINITION`: the members of sysadmin from `sys.server_role_members`, and the grants of CONTROL SERVER from `sys.server_permissions` (granted, not denied), with `sys.sql_logins.is_policy_checked`; and, in each online database the login can open, one query of `<db>.sys.database_principals` for SQL users (`authentication_type = 1`) whose SID isn't in `sys.server_principals`, with the schemas each owns. A database whose query fails is reported on its own; the rest are still checked.
+  - `sys.login_token` (usage *GRANT OR DENY*): the SIDs SqlVitals is connected with, its login's and those of the Windows groups and server roles it gets permissions through. Any login can read its own token. A sysadmin member or sa whose SID is in it keeps its fix commented out (0.44.1, #109).
 - `Engine/Security/SecurityAudit.Run` (pure, unit tested) turns what was read into the rows: the statuses, the explanations and the fix scripts. Windows' well-known accounts are recognised by SID (`S-1-5-32-544` and so on), not by name.
+- Login and user names can hold line breaks. Where a name goes into a `--` comment, such as the commented-out `CREATE LOGIN` and `DROP USER` for an orphaned user, it is kept to one line, so no part of it can run.
 - It runs when the page is opened or refreshed: light catalog queries, one per database for orphaned users, never in the background. See [Server Impact and Permissions](Server-Impact-and-Permissions.md).

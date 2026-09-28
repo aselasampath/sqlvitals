@@ -80,8 +80,6 @@ public sealed class MonitoringSession : IDisposable
     /// </summary>
     public HealthScore? Score { get; private set; }
 
-    public DateTime? LastSampleTime => _samples.Count > 0 ? _samples[^1].Time : null;
-
     public int IntervalSeconds
     {
         get => _intervalSeconds;

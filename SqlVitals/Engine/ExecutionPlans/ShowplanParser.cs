@@ -434,7 +434,7 @@ public static class ShowplanParser
     private static string CreateIndexStatement(string table, string tableName, List<string> keys, List<string> include)
     {
         if (keys.Count == 0)
-            return $"-- The optimizer suggested an index on {table} without key columns.";
+            return Scripting.ScriptText.Comment($"The optimizer suggested an index on {table} without key columns.");
 
         var name = string.Join("_", new[] { "IX", UnquoteName(tableName) }
             .Concat(keys.Select(UnquoteName))

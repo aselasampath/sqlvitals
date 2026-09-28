@@ -61,14 +61,14 @@ public static class MissingIndexCreateScript
                 if (string.IsNullOrWhiteSpace(ix.SchemaName) || string.IsNullOrWhiteSpace(ix.TableName)
                     || keyColumns is null)
                 {
-                    sb.AppendLine($"-- SKIPPED: suggestion on {ix.SchemaName ?? "?"}.{ix.TableName ?? "?"} has no table name or key columns.");
+                    sb.AppendLine(ScriptText.Comment($"SKIPPED: suggestion on {ix.SchemaName ?? "?"}.{ix.TableName ?? "?"} has no table name or key columns."));
                     continue;
                 }
 
                 var table = $"{UnusedIndexDropScript.QuoteName(ix.SchemaName)}.{UnusedIndexDropScript.QuoteName(ix.TableName)}";
                 var name  = UniqueName(IndexName(ix), $"{ix.SchemaName}.{ix.TableName}", usedNames);
 
-                sb.AppendLine($"-- {table}  ({ix.Severity})");
+                sb.AppendLine(ScriptText.Comment($"{table}  ({ix.Severity})"));
                 sb.AppendLine($"-- Impact score: {ix.ImpactScore:N1}  Avg impact: {ix.AvgUserImpact:N1}%  Seeks: {ix.UserSeeks:N0}  Scans: {ix.UserScans:N0}");
                 sb.AppendLine($"IF OBJECT_ID({Literal(table)}) IS NOT NULL");
                 sb.AppendLine($"   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID({Literal(table)}) AND name = {Literal(name)})");

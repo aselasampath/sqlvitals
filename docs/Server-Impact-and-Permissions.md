@@ -4,7 +4,7 @@
 
 ## Summary
 
-- **Read-only.** SqlVitals reads DMVs and catalog views. It creates no objects, jobs, tables or agents on the server.
+- **Read-only.** SqlVitals reads DMVs and catalog views. It creates no objects, jobs, tables or agents on the server. (DB Storage collects each database's used space in a `#temporary` table that lives only for the one batch.)
 - **One exception:** [SP Trace](SP-Trace.md) creates a temporary Extended Events session **only when a user presses Start**, and drops it on Stop, on leaving the page, and when the app exits.
 - **Never runs generated scripts.** Index and statistics scripts are shown for review only.
 - **Never blocks.** Every query runs under `READ UNCOMMITTED` with a command timeout (30 s by default).
@@ -23,7 +23,8 @@
 | **Backups** | A user opens the page, presses Refresh or Apply | On demand, no timer | One query: `msdb.dbo.backupset` read once (newest full, differential and log per database), `backupmediafamily`, `sys.databases`, `sys.database_recovery_status`; up to 500 `backupset` rows when a database is selected; **active connection only** |
 | **File I/O** | The File I/O page is open (not paused), or a user presses Refresh | The page's interval: 5 s to 1 min, 10 s by default | Two light queries per reading: `sys.dm_os_sys_info` (start time) and `sys.dm_io_virtual_file_stats` with `sys.master_files`; `sys.dm_os_volume_stats` once per file; **active connection only**, stops when the page is left |
 | **Config Checks** | A user opens the page, presses Check again or Refresh | On demand, no timer | A handful of light catalog queries: `sys.configurations`, `sys.databases`, `tempdb.sys.database_files`, and `sys.dm_os_schedulers`, `sys.dm_os_nodes`, `sys.dm_os_sys_info` for the processors and memory; **active connection only** |
-| **Security Audit** | A user opens the page, presses Audit again or Refresh | On demand, no timer | Light catalog queries: `sys.server_principals`, `sys.server_role_members`, `sys.server_permissions`, `sys.sql_logins`, `sys.databases`, and `sys.database_principals` once per database for orphaned users; **active connection only** |
+| **Security Audit** | A user opens the page, presses Audit again or Refresh | On demand, no timer | Light catalog queries: `sys.server_principals`, `sys.server_role_members`, `sys.server_permissions`, `sys.sql_logins`, `sys.databases`, the connection's own `sys.login_token`, and `sys.database_principals` once per database for orphaned users; **active connection only** |
+| **DB Storage** | A user opens the page or presses Refresh | On demand, no timer | `sys.master_files`, `sys.databases`, `sys.configurations`; the used space of each database the login can open, read with one light `sys.database_files` query in that database (through its `sys.sp_executesql`) into a temporary table that is dropped at the end of the batch; **active connection only** |
 | **Deadlocks** | A user opens the page or presses Refresh | On demand, no timer | Reads the existing **system_health** session: its `.xel` files through `sys.fn_xe_file_target_read_file`, filtered to `xml_deadlock_report` on the server, or its ring buffer. Creates nothing; timeout raised to 2 min |
 | **SP Trace** | A user presses Start | Poll interval chosen by the user | Extended Events session, or `sys.dm_exec_procedure_stats` |
 
@@ -118,6 +119,8 @@ It shows the definitions of logins, users, roles and objects, but no data, and c
 
 Some screens read database-scoped views (Index Health, Stale Stats, Query Store, DB Storage → Top Tables) for the **connection's database**. The login needs to be able to connect to that database.
 
+**DB Storage → Database Files** shows each file's used and free space only for databases the login can open (`HAS_DBACCESS`); for the rest they're blank. Sizes, growth and settings are shown for every database either way.
+
 **Check what a login has:**
 
 ```sql
@@ -150,4 +153,4 @@ The edition is detected at runtime with `SERVERPROPERTY('EngineEdition')` (5 = A
 
 ## Identifying SqlVitals on your server
 
-SqlVitals sessions use the login you configured. The SP Trace event session is named `SqlVitals_SpTrace` (configurable with `TraceSettings:SessionName`).
+SqlVitals sessions use the login you configured, and from 0.44.1 name themselves **SqlVitals** (`program_name` in `sys.dm_exec_sessions`, *ApplicationName* in traces and audits), unless *Additional parameters* sets another `Application Name`. You can filter on it, or cap it with a Resource Governor classifier. The SP Trace event session is named `SqlVitals_SpTrace` (configurable with `TraceSettings:SessionName`).

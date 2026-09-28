@@ -38,13 +38,12 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable
                             : "#7C3AED";
             string tip = c.CounterName switch
             {
-                var n when n.Contains("Version Store Size")       => "Size (KB) of the version store in TempDB used by snapshot/RCSI isolation. Rapid growth indicates long-running read-committed snapshot transactions that keep row versions alive.",
-                var n when n.Contains("Version Generation rate")  => "KB of version store data generated per second. A spike indicates a heavy RCSI/snapshot workload or a long-running UPDATE/DELETE that generates many row versions.",
-                var n when n.Contains("Version Cleanup rate")     => "KB of version store data cleaned up per second. If cleanup rate < generation rate, the version store will grow until TempDB runs out of space.",
-                var n when n.Contains("Free Space in tempdb")     => "Free space remaining in TempDB (KB). Low free space can cause query failures and blocking. Monitor alongside auto-grow events.",
-                var n when n.Contains("Active Temp Tables")       => "Number of temporary tables and table variables currently open across all sessions. Very high counts may indicate connection-per-request designs or missing cleanup logic.",
-                var n when n.Contains("Temp Tables Creation Rate")=> "Temporary tables created per second. A sustained high rate combined with query spills can exhaust TempDB I/O bandwidth.",
-                _                                                  => $"TempDB performance counter from sys.dm_os_performance_counters: {c.CounterName}."
+                var n when n.Contains("Version Store Size")          => "Size (KB) of the version store in TempDB used by snapshot/RCSI isolation. Rapid growth indicates long-running read-committed snapshot transactions that keep row versions alive. The Performance Counters page charts how fast versions are generated and cleaned up.",
+                var n when n.Contains("Free Space in tempdb")        => "Free space remaining in TempDB (KB). Low free space can cause query failures and blocking. Monitor alongside auto-grow events.",
+                var n when n.Contains("Active Transactions")         => "Transactions open in TempDB right now. A long-running one keeps its row versions, and everything since, in the version store.",
+                var n when n.Contains("Active Temp Tables")          => "Number of temporary tables and table variables currently open across all sessions. Very high counts may indicate connection-per-request designs or missing cleanup logic.",
+                var n when n.Contains("Temp Tables For Destruction") => "Temporary tables waiting for the cleanup thread to drop them. A number that keeps climbing means cleanup can't keep up.",
+                _                                                     => $"TempDB performance counter from sys.dm_os_performance_counters: {c.CounterName}."
             };
             AddKpiCard(c.CounterName, $"{val:N0}", hexColor, tip);
         }

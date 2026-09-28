@@ -435,7 +435,7 @@ public static class ConfigurationChecks
                     ? " model's level is the one new databases get."
                     : "")),
             d => $"-- Turn Query Store on and let it capture a baseline first, then force the old plan for any query that regresses.\n" +
-                 $"-- ALTER DATABASE {UnusedIndexDropScript.QuoteName(d.Name)} SET QUERY_STORE = ON;\n" +
+                 ScriptText.Comment($"ALTER DATABASE {UnusedIndexDropScript.QuoteName(d.Name)} SET QUERY_STORE = ON;") + "\n" +
                  $"ALTER DATABASE {UnusedIndexDropScript.QuoteName(d.Name)} SET COMPATIBILITY_LEVEL = {newest};",
             () => new(LevelText(newest), LevelText(newest), what + basis));
     }

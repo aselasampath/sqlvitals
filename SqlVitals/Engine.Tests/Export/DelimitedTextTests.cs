@@ -83,4 +83,49 @@ public class DelimitedTextTests
         Assert.Equal("utf-8", DelimitedText.CsvEncoding.WebName);
         Assert.Equal([0xEF, 0xBB, 0xBF], DelimitedText.CsvEncoding.GetPreamble());
     }
+
+    // ── Formula injection (#109) ─────────────────────────────────────────
+
+    [Theory]
+    [InlineData("=HYPERLINK(\"http://evil\",\"x\")")]
+    [InlineData("+1+1")]
+    [InlineData("-2+3")]
+    [InlineData("@SUM(A1)")]
+    [InlineData("\tcmd")]
+    [InlineData("\r=1")]
+    public void NeutralizeFormula_PutsAnApostropheBeforeWhatExcelWouldRun(string text)
+    {
+        Assert.Equal("'" + text, DelimitedText.NeutralizeFormula(text));
+    }
+
+    [Theory]
+    [InlineData("plain")]
+    [InlineData("a=b")]
+    [InlineData("")]
+    public void NeutralizeFormula_LeavesOrdinaryTextAlone(string text)
+    {
+        Assert.Equal(text, DelimitedText.NeutralizeFormula(text));
+    }
+
+    [Fact]
+    public void ToCsv_KeepsServerTextThatLooksLikeAFormulaAsText()
+    {
+        // An application name or query text from the server, opened in Excel.
+        var csv = DelimitedText.ToCsv(null, Rows(["=cmd|' /C calc'!A0", "-- comment\nSELECT 1"]));
+
+        Assert.Equal("'=cmd|' /C calc'!A0,\"'-- comment\nSELECT 1\"\r\n", csv);
+    }
+
+    [Fact]
+    public void ToCsv_LeavesNegativeNumbersAsNumbers()
+    {
+        Assert.Equal("-5,-1.5\r\n", DelimitedText.ToCsv(null, Rows([-5, -1.5])));
+    }
+
+    [Fact]
+    public void ToTsv_CopiesTextExactly()
+    {
+        // Copied query text is pasted into SSMS to run, so the clipboard gets it unchanged.
+        Assert.Equal("-- comment\t=1\r\n", DelimitedText.ToTsv(null, Rows(["-- comment", "=1"])));
+    }
 }

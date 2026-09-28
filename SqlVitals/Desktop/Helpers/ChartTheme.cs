@@ -18,8 +18,6 @@ public static class ChartTheme
     // Gridline / separator colour.
     public static SKColor GridColor => ToSk(ResourceColor("BorderColor"));
 
-    public static Brush PanelBackground => (Brush)Application.Current.Resources["BgCard"];
-
     public static Brush PanelTitleColor => (Brush)Application.Current.Resources["TextPrimary"];
 
     private static Color ResourceColor(string key) => (Color)Application.Current.Resources[key];

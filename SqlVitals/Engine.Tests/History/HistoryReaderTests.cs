@@ -300,7 +300,7 @@ public sealed class HistoryReaderTests : IDisposable
         // Recent, so the writer's retention purge leaves it alone.
         var at     = DateTime.UtcNow.AddMinutes(-1);
         var errors = new List<Exception>();
-        using (var writer = new HistoryWriter(DbPath, (_, ex) => errors.Add(ex)))
+        using (var writer = new HistoryWriter(DbPath, (_, ex) => errors.Add(ex)) { DisposeWait = HistoryWriterTests.DisposeWait })
             writer.Enqueue(new MetricSampleRecord(Conn, at, HistoryStoreTests.Sample(42)));
 
         Assert.Empty(errors);

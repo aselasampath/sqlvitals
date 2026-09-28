@@ -26,8 +26,6 @@ public sealed record SysadminMember(
 {
     public bool IsSqlLogin => Type == "S";
 
-    public bool IsGroup => Type is "G" or "X";
-
     /// <summary>"S-1-5-32-544" for a Windows login or group; null for the rest.</summary>
     public string? WindowsSid => Type is "U" or "G" && Sid is not null ? SidText.Format(Sid) : null;
 
@@ -90,6 +88,11 @@ public sealed record OrphanScan(
 /// <param name="SysadminMembers">Null without <paramref name="CanViewDefinitions"/>.</param>
 /// <param name="Databases">Every database except snapshots.</param>
 /// <param name="Orphans">Null without <paramref name="CanViewDefinitions"/>.</param>
+/// <param name="ConnectedSids">
+/// The SIDs SqlVitals is connected with, from sys.login_token: its login's and those of the
+/// Windows groups and server roles it gets permissions through, in hex. A fix that would take
+/// sysadmin from one of them is left commented out.
+/// </param>
 public sealed record SecuritySnapshot(
     int                             Edition,
     bool                            WindowsAuthenticationOnly,
@@ -97,11 +100,16 @@ public sealed record SecuritySnapshot(
     SaLogin?                        Sa,
     IReadOnlyList<SysadminMember>?  SysadminMembers,
     IReadOnlyList<DatabaseTrust>    Databases,
-    OrphanScan?                     Orphans)
+    OrphanScan?                     Orphans,
+    IReadOnlySet<string>?           ConnectedSids = null)
 {
     public const int AzureSqlDatabaseEdition = 5;
 
     public bool IsAzureSqlDatabase => Edition == AzureSqlDatabaseEdition;
+
+    /// <summary>Whether SqlVitals is connected as, or through, the principal with this SID.</summary>
+    public bool IsConnectedThrough(byte[]? sid) =>
+        sid is not null && ConnectedSids is not null && ConnectedSids.Contains(Convert.ToHexString(sid));
 }
 
 /// <summary>Windows SIDs in their "S-1-5-32-544" form.</summary>

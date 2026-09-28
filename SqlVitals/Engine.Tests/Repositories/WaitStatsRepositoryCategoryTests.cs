@@ -16,17 +16,4 @@ public class WaitStatsRepositoryCategoryTests
     {
         Assert.Equal(expectedColor, WaitStatsRepository.CategoryColor(category));
     }
-
-    [Theory]
-    [InlineData("CPU", 1)]
-    [InlineData("I/O", 2)]
-    [InlineData("Memory", 3)]
-    [InlineData("Locks", 4)]
-    [InlineData("Network", 5)]
-    [InlineData("Other", 6)]
-    [InlineData("SomeUnknownCategory", 7)]
-    public void CategorySortOrder_MapsKnownCategoriesToTheirRank(string category, int expectedOrder)
-    {
-        Assert.Equal(expectedOrder, WaitStatsRepository.CategorySortOrder(category));
-    }
 }

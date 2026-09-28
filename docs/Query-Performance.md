@@ -56,7 +56,7 @@ The **top 20 queries by CPU in the last 24 hours**, from the connected database'
 | **Status** | Severity by total CPU in 24 h: **Critical** > 60 s · **Warning** > 10 s · **Info** below |
 | **Query Text** | The first line of the statement, so you can find a query with the filter box |
 
-If Query Store is off, the status card at the top reads **Not Enabled**. Turn it on with `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`, or talk to your DBA.
+If Query Store is off, the status card at the top reads **Not Enabled**. Turn it on with `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`, or talk to your DBA. If it has gone **read-only**, the page says why, for example *Query Store reached MAX_STORAGE_SIZE_MB*.
 
 ---
 
@@ -118,4 +118,6 @@ See [Execution Plans](Execution-Plans.md) for how to read the diagram.
 - The live tabs depend on lightweight query profiling, which is on by default from SQL Server 2019 and in Azure SQL. On older versions they may be empty.
 - The live tabs read `estimate_row_count` and `row_count` from `sys.dm_exec_query_profiles`. A parallel node has one row per thread: Cardinality Misestimates sums them into one row per node, and Skewed Parallelism compares the worker threads (thread 0, the coordinator, is left out). Before 0.43.2 both asked for `estimated_row_count` and `actual_row_count`, columns no version has, so the whole page failed with error 207.
 - Only the summary and Multi-Plan Queries are required. If Key / RID Lookups, a live tab or Plan Guides hits a missing column or object (error 207 or 208), that tab is left empty and the rest of the page still loads. Query Store does the same when its catalog views don't exist (SQL Server 2014 and earlier).
+- **Query Store** (fixed in 0.44.1, #109): `readonly_reason` is a bit map (an `int`), turned into words; reading it as text failed the page. The plan type (`sys.query_store_plan.plan_type_desc`) is SQL Server 2022+, so it's named only where `sys.all_columns` says it exists; before that every plan is a compiled plan. `last_execution_time` is a `datetimeoffset` in UTC. Before 0.44.1 the top queries never loaded, on any version.
+- **Multi-Plan Queries** shows the query hash as hex (`CONVERT(varchar(18), query_hash, 1)`, e.g. `0x1A2B…`), so it can be matched with the hash elsewhere. Before 0.44.1 it cast the 8 bytes to characters.
 - SQL lives in `WaitStatsRepository.cs` and `PlanCacheHealthRepository.cs` as raw string literals. See [Architecture](Architecture.md#where-the-sql-lives).

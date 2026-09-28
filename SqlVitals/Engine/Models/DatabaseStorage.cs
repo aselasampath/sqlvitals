@@ -12,6 +12,7 @@ public record ServerConfigParam(
 );
 
 /// <summary>One database file (data / log / filestream) with size info.</summary>
+/// <param name="SpaceUsedMB">Null when the database couldn't be opened to read it, and for file types that don't report it.</param>
 public record DatabaseFile(
     string   DatabaseName,
     string   State,
@@ -28,8 +29,8 @@ public record DatabaseFile(
     string   LogicalFileName,
     string   PhysicalPath,
     decimal  FileSizeMB,
-    decimal  SpaceUsedMB,
-    decimal  FreeSpaceMB,
+    decimal? SpaceUsedMB,
+    decimal? FreeSpaceMB,
     decimal  MaxSizeMB,         // -1 = unlimited
     string   AutoGrowth
 );

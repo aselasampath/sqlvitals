@@ -713,49 +713,6 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     }
 
     // Direct builders (no chip-check guard) used by Chip_Changed ??????
-    private Border BuildWaitsPanelDirect()
-    {
-        var chart = MakeCartesian();
-        var sCpu   = StackedArea(_waitCpu,   "CPU",     ColCpu);
-        var sIo    = StackedArea(_waitIo,    "I/O",     ColIo);
-        var sLock  = StackedArea(_waitLock,  "Locks",   ColLock);
-        var sMem   = StackedArea(_waitMem,   "Memory",  ColMem);
-        var sNet   = StackedArea(_waitNet,   "Network", ColNet);
-        var sOther = StackedArea(_waitOther, "Other",   ColOther);
-        
-        chart.Series = new ISeries[] { sCpu, sIo, sLock, sMem, sNet, sOther };
-        SetDateTimeAxes(chart, "Wait (ms/s)");
-
-        var filters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,10,0) };
-        CheckBox AddFilter(string label, ISeries series, bool isChecked = true)
-        {
-            var cb = new CheckBox
-            {
-                Content = label,
-                IsChecked = isChecked,
-                Margin = new Thickness(4,0,0,0),
-                Foreground = Brushes.WhiteSmoke,
-                FontSize = 10,
-                VerticalContentAlignment = VerticalAlignment.Center
-            };
-            // Use Unchecked/Checked events to toggle visibility
-            void Toggle(object s, RoutedEventArgs e) => series.IsVisible = cb.IsChecked == true;
-            cb.Checked += Toggle;
-            cb.Unchecked += Toggle;
-            filters.Children.Add(cb);
-            return cb;
-        }
-
-        AddFilter("CPU", sCpu);
-        AddFilter("I/O", sIo);
-        AddFilter("Locks", sLock);
-        AddFilter("Mem", sMem);
-        AddFilter("Net", sNet);
-        AddFilter("Other", sOther); // default checked, user can uncheck
-
-        return WrapPanel("Waits - Stack Area", chart, "Waits", filters);
-    }
-
     private Border BuildCpuPanelDirect()
     {
         var chart = MakeCartesian();
@@ -871,7 +828,6 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
 
     private int GetInsertIndex(string tag)
     {
-        int targetRank = Array.IndexOf(PanelOrder, tag);
         int idx = 0;
         foreach (var key in PanelOrder)
         {
@@ -880,15 +836,6 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
                 idx++;
         }
         return idx;
-    }
-
-    // ?? PLE formatting helper ?????????????????????????????????????????
-    private static string FormatPle(double seconds)
-    {
-        if (seconds < 0)     return "0s";
-        if (seconds < 3600)  return $"{seconds:N0}s";
-        if (seconds < 86400) return $"{seconds / 3600:N1}h";
-        return $"{seconds / 86400:N1}d";
     }
 
     // ?? LiveCharts helpers ????????????????????????????????????????????

@@ -82,8 +82,8 @@ Change them and press **↻ Refresh** (or **Enter**). Only this tab reloads, and
 
 | Column | Meaning |
 |---|---|
-| **Last Updated**, **Days Old** | When the statistic was last rebuilt |
-| **Rows**, **Modifications** | Table size, and rows changed since then |
+| **Last Updated**, **Days Old** | When the statistic was last rebuilt. Blank when it never has been: it was built on an empty table |
+| **Rows**, **Modifications** | Table size when it was last rebuilt (blank if never), and rows changed since then |
 | **Sample %** | How much of the table was read last time |
 | **Auto Created / User Created** | Who created it |
 
@@ -117,3 +117,6 @@ Change them and press **↻ Refresh** (or **Enter**). Only this tab reloads, and
 - `dm_db_index_physical_stats` returns one row per partition. The maintenance script **collapses** them into one statement per index.
 - Script generators are pure functions (rows + options → text) with unit tests in `SqlVitals.Engine.Tests`. The preview is `Desktop/Windows/SqlScriptWindow`.
 - Usage DMVs reset on restart, and on Azure SQL also on failover or scaling. That's why *unused* always means "since the last restart".
+- Names from the server (tables, indexes, statistics, users) can hold line breaks. In a script's `--` comments a line break would end the comment and run the rest of the name, so every name in a comment is kept to one line (`Engine/Scripting/ScriptText`). In live statements a name stays inside `[...]` or `N'...'`, where a line break is part of it. Added in 0.44.1 (#109).
+- A statistic that has never been updated has no `STATS_DATE` and no row counts in `sys.dm_db_stats_properties`; they read as blank. Before 0.44.1 such a statistic made the whole page fail. `sys.stats.is_incremental` is SQL Server 2014+, so it's only named where `sys.all_columns` says it exists.
+- The **usage** tab takes the table's name from `sys.indexes`: before 0.44.1 it came from the usage row, which an index that was never used doesn't have, so exactly the *Unused* rows had no table name.

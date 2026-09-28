@@ -19,8 +19,8 @@ public sealed class DatabaseFileVm
     public string  LogicalFileName    => _m.LogicalFileName;
     public string  PhysicalPath       => _m.PhysicalPath;
     public decimal FileSizeMB         => _m.FileSizeMB;
-    public decimal SpaceUsedMB        => _m.SpaceUsedMB;
-    public decimal FreeSpaceMB        => _m.FreeSpaceMB;
+    public decimal? SpaceUsedMB       => _m.SpaceUsedMB;
+    public decimal? FreeSpaceMB       => _m.FreeSpaceMB;
     public string  MaxSizeMBDisplay   => _m.MaxSizeMB == -1 ? "Unlimited" : _m.MaxSizeMB.ToString("N2");
     public string  AutoGrowth         => _m.AutoGrowth;
     public string  AutoShrinkDisplay  => _m.AutoShrink   ? "YES" : "";
@@ -91,13 +91,6 @@ public partial class DatabaseStoragePage : Page, IRefreshable
     }
 
     // ── Sub-tab switching ─────────────────────────────────────────────────────
-    private bool _tabsWired;
-    private void EnsureTabsWired()
-    {
-        if (_tabsWired) return;
-        _tabsWired = true;
-    }
-
     private void SubTab_Click(object sender, RoutedEventArgs e)
     {
         var tag = (string)((Button)sender).Tag;

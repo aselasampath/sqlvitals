@@ -31,7 +31,7 @@ Click a column header to sort, and click again to reverse. **Refresh keeps your 
 |---|---|
 | **Copy** | The selected rows, or **every row** if none are selected, tab-separated and ready to paste into Excel or an email |
 | **Copy with headers** | The same, with the column names first |
-| **Export to CSV…** | Every row shown, whatever is selected, saved as a UTF-8 CSV file |
+| **Export to CSV…** | Every row shown, whatever is selected, saved as a UTF-8 CSV file. Text that Excel would run as a formula (starting with `=`, `+`, `-` or `@`) gets an apostrophe in front, so it opens as text |
 
 On **Resource Queries**, **⎘ Copy All** copies every row shown, with headers.
 
@@ -46,3 +46,4 @@ Copy, Export to CSV, Copy All and the **script buttons** on Index Health and Sta
 - **Filtering:** `SqlVitals/Engine/Filtering/RowFilter.cs` parses terms (words and quoted phrases) and matches each against the displayed text **and** the raw value of every visible column. The control is `Desktop/Controls/GridFilterBox`.
 - **Keeping sort and filter on reload:** pages set rows through `Desktop/Helpers/DataGridRefresh.SetItemsSource`, which reapplies the `SortDescriptions` and the filter predicate.
 - **Copy / CSV:** `Desktop/Helpers/DataGridExport` adds the context menu to every grid. Text is built by `Engine/Export/DelimitedText.cs`: tab-separated for the clipboard and CSV for files. Only visible columns are exported, in display order.
+- **Formulas in CSV:** application names, host names and query text come from the server, and anyone who can connect chooses their own application name. Excel runs a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return as a formula when it opens a CSV file, so such a **text** cell is written with a leading `'` (`DelimitedText.NeutralizeFormula`). Numbers and dates are written as they are: a negative number is not a formula. The clipboard copy is left exactly as shown, because query text copied from a grid is usually pasted into SSMS to run. Added in 0.44.1 (#109).
