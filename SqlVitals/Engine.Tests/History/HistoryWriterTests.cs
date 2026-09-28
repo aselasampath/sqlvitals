@@ -9,13 +9,22 @@ namespace SqlVitals.Engine.Tests.History;
 
 public sealed class HistoryWriterTests : IDisposable
 {
+    /// <summary>
+    /// Most tests check what Dispose saved, so they wait for it well past the app's few seconds,
+    /// which a slow build machine can run out of. Still bounded, so a hung writer fails the test.
+    /// </summary>
+    internal static readonly TimeSpan DisposeWait = TimeSpan.FromSeconds(30);
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
     private readonly ConcurrentQueue<string> _errors = new();
 
     private string DbPath => Path.Combine(_dir, "history.db");
 
     private HistoryWriter Create(string? path = null, TimeProvider? time = null) =>
-        new(path ?? DbPath, (message, _) => _errors.Enqueue(message), TimeSpan.FromDays(14), time);
+        new(path ?? DbPath, (message, _) => _errors.Enqueue(message), TimeSpan.FromDays(14), time)
+        {
+            DisposeWait = DisposeWait,
+        };
 
     private long Count(string table)
     {
@@ -179,7 +188,7 @@ public sealed class HistoryWriterTests : IDisposable
         }
 
         using (var writer = new HistoryWriter(DbPath, (m, _) => _errors.Enqueue(m), TimeSpan.FromDays(30),
-                                              new ManualTime(new DateTimeOffset(T0))))
+                                              new ManualTime(new DateTimeOffset(T0))) { DisposeWait = DisposeWait })
         {
             writer.Retention = TimeSpan.FromDays(90);      // longer: nothing to delete
             writer.Retention = TimeSpan.FromDays(7);

@@ -20,7 +20,6 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
     private static readonly TimeSpan PurgeEvery = TimeSpan.FromHours(1);
     private static readonly TimeSpan ReopenWait = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan DisposeWait = TimeSpan.FromSeconds(3);
 
     // Holds HistoryRecords and Commands, in the order they were queued.
     private readonly Channel<object>     _queue;
@@ -83,6 +82,12 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
             _queue.Writer.TryWrite(PurgeCommand.Instance);
         }
     }
+
+    /// <summary>
+    /// How long <see cref="Dispose"/> waits for queued records to be saved. Tests wait longer: on a
+    /// busy build machine the first open of the file alone can take more than the default.
+    /// </summary>
+    internal TimeSpan DisposeWait { get; init; } = TimeSpan.FromSeconds(3);
 
     /// <summary>How many times history has been cleared; lets recorders forget what they saved.</summary>
     public int ClearCount => Volatile.Read(ref _clearCount);
