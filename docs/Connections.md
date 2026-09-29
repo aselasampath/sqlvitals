@@ -19,7 +19,7 @@ A **connection** is a saved server and database that SqlVitals monitors. You can
 | **Database name** | Blank for the login's default database. Open the list to browse the databases on the server. |
 | **Encrypt** | *Mandatory* (default and recommended), *Optional*, or *Strict* (SQL Server 2022 and Azure SQL only). |
 | **Trust server certificate** | Tick for servers with a self-signed certificate, which is common on-premises. Leave it unticked for Azure SQL. |
-| **Monitor in background** | Keep collecting while another connection is active. On by default. See [Background Monitoring](Health-Dot-and-Background-Monitoring.md). |
+| **Monitor in background** | With **Start monitoring automatically** on, keep monitoring this connection while another one is active. **Off** for a new connection from 0.46.0; saved connections keep their value. Any connection can also be started by hand with ▶ in the sidebar selector. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). |
 | **Use its own health thresholds** | Grade this connection's health dot on its own limits. See [Health Dot](Health-Dot-and-Background-Monitoring.md#per-connection-thresholds). |
 | **Advanced → Connection timeout (s)** | How long to wait when opening a connection. |
 | **Advanced → Additional parameters** | Extra connection-string keywords, e.g. `MultipleActiveResultSets=True;HostNameInCertificate=*.contoso.com`. Passwords and user IDs are not allowed here. |

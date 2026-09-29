@@ -8,18 +8,19 @@
 - **One exception:** [SP Trace](SP-Trace.md) creates a temporary Extended Events session **only when a user presses Start**, and drops it on Stop, on leaving the page, and when the app exits.
 - **Never runs generated scripts.** Index and statistics scripts are shown for review only.
 - **Never blocks.** Every query runs under `READ UNCOMMITTED` with a command timeout (30 s by default).
-- **No agent, no service, no inbound ports.** It's a desktop app making ordinary client connections. From 0.35.0 closing its window hides it to the [notification area](Notifications-and-Tray.md) by default, so its background monitoring carries on until the user chooses **Exit**. The load is the same as with the window open.
+- **Nothing runs by default.** From 0.46.0 a new installation monitors no server until the user presses **Start** or turns on **Start monitoring automatically**. Until then the only queries are the ones of the pages the user opens, plus the Azure SQL Database edition check on connecting. See [below](#what-runs-by-default).
+- **No agent, no service, no inbound ports.** It's a desktop app making ordinary client connections. From 0.35.0 closing its window hides it to the [notification area](Notifications-and-Tray.md) by default, so any monitoring carries on until the user stops it or chooses **Exit**. The load is the same as with the window open.
 
 ## What runs, and when
 
 | Workload | Trigger | Frequency | Scope |
 |---|---|---|---|
-| **Live Metrics query** | Every connection with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests` |
+| **Live Metrics query** | Every **monitored** connection: those started with ▶ / Start, plus, with *Start monitoring automatically* on, the active one and those with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests` |
 | **History detail snapshot** | Same connections | Every **5 min** by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU), memory and performance counters |
 | **Screens** (Index Health, Query Store, Plan Cache, …) | A user opens the screen or presses Refresh | On demand | **Active connection only** |
 | **Query Regressions** | On demand | On demand | Query Store runtime stats, up to ~8 days; timeout raised to 2 min |
 | **Query Store** tabs | A user opens the page or a tab, presses Refresh or picks a period | On demand; each tab only when opened | `sys.query_store_*` and `sys.database_query_store_options` in the connection's database: the period's runtime stats (up to 30 days, or what Query Store keeps), grouped and ranked on the server so only the top rows come back; timeout raised to 2 min; **active connection only** |
-| **Processes** (blocking chains) | The Processes page is open with auto-refresh on, or the *Process Map* chart is shown on Live Metrics | The page's interval (5 s to 2 min); Live Metrics' interval for the *Process Map* | `sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`; **active connection only** |
+| **Processes** (blocking chains) | The Processes page is open with auto-refresh on, or the *Process Map* chart is shown on Live Metrics **while the connection is monitored** | The page's interval (5 s to 2 min); with each Live Metrics sample for the *Process Map* | `sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`; **active connection only** |
 | **Agent Jobs** | A user opens the page or presses Refresh; every 30 s while *Every 30 s* is ticked and the page is open | On demand | `msdb` job tables (`sysjobs`, `sysjobhistory`, `sysjobactivity`, `sysjobschedules`, …) and `sys.dm_server_services`; one job's history when it's selected; **active connection only** |
 | **Backups** | A user opens the page, presses Refresh or Apply | On demand, no timer | One query: `msdb.dbo.backupset` read once (newest full, differential and log per database), `backupmediafamily`, `sys.databases`, `sys.database_recovery_status`; up to 500 `backupset` rows when a database is selected; **active connection only** |
 | **File I/O** | The File I/O page is open (not paused), or a user presses Refresh | The page's interval: 5 s to 1 min, 10 s by default | Two light queries per reading: `sys.dm_os_sys_info` (start time) and `sys.dm_io_virtual_file_stats` with `sys.master_files`; `sys.dm_os_volume_stats` once per file; **active connection only**, stops when the page is left |
@@ -30,6 +31,17 @@
 | **SP Trace** | A user presses Start | Poll interval chosen by the user | Extended Events session, or `sys.dm_exec_procedure_stats` |
 
 Heavy screens **never run in the background**, and never against connections other than the active one.
+
+### What runs by default
+
+| | Start monitoring automatically **off** (new installations from 0.46.0) | **On** (upgraded installations, or turned on) |
+|---|---|---|
+| **When SqlVitals starts or connects** | Nothing, apart from the Azure SQL Database edition check (`SERVERPROPERTY('EngineEdition')`) on connecting | Live Metrics query and history snapshots for the active connection and each with *Monitor in background* |
+| **Switching connection** | Nothing new | The new active connection is monitored too |
+| **Live Metrics page open** | Nothing: it shows *Monitoring is off* until **▶ Start monitoring**; no Process Map polling | The Live Metrics query, and the Process Map while that chart is shown |
+| **Other pages** | Their own queries, while open, as in the table above | The same |
+
+A user can start and stop monitoring for any connection at any time; every start and stop, with who did it, is written to the [activity log](Settings.md#activity-log). With the setting off SqlVitals puts less load on a server than before 0.46.0: no new queries were added, and none run until asked for.
 
 ### Heaviest queries
 
@@ -50,7 +62,7 @@ The most expensive reads, worth knowing on very large servers:
 - **Backoff:** unreachable servers are retried with exponential backoff, up to every 5 minutes.
 - **One connection per query:** connections are opened per call and returned to the ADO.NET pool; no long-lived sessions are held.
 - **SP Trace limits:** filtered to the connected database and to calls ≥ *Min duration* **on the server side**; ring buffer capped at 4 MB / 1,000 events; dropped-event warnings are surfaced.
-- **MFA and password prompts** are never triggered by background monitoring.
+- **MFA and password prompts** are never triggered by monitoring: a connection without a saved password, or an Entra MFA connection not signed in to this session, can't be started until the user connects to it.
 
 ## Permissions
 

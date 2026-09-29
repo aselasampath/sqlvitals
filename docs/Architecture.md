@@ -13,7 +13,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │      │                              │                                                              │
 │      │ RepositoryFactory            │ RefreshAsync()                                               │
 │      ▼                              ▼                                                              │
-│  MonitoringManager ──► MonitoringSession (one per connection) ──► health dot and score, alerts     │
+│  MonitoringManager ──► MonitoringSession (each monitored one) ──► health dot and score, alerts     │
 │                                │                                  └─► TrayIcon: Windows notification │
 │  ExportService                 │ samples                                                           │
 └────────────────────────────────┼───────────────────────────────────────────────────────────────────┘
@@ -24,6 +24,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │                 QueryStore-                                                                        │
 │                 ── base: BaseRepository                                                            │
 │  Monitoring/    LiveMetricSample, HealthRules, HealthThresholds, HealthScore, BlockingChains       │
+│                 MonitoringPlan (which connections are monitored, and why)                          │
 │  Deadlocks/     DeadlockReportParser → DeadlockReport, DeadlockPatterns                            │
 │  AgentJobs/     AgentJob, AgentJobHistory (runs and steps), MsdbTime                               │
 │  Backups/       DatabaseBackup (RPO warnings, recovery point), BackupRpo, BackupHistoryEntry       │
@@ -31,6 +32,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │  ConfigChecks/  ConfigurationChecks: Pass / Warn, recommended values, fix scripts                  │
 │  Security/      SecurityAudit: Risk / Review / Pass, the risk explained, fix scripts               │
 │  History/       HistoryRecorder → HistoryWriter → HistoryStore (SQLite)   HistoryReader            │
+│  Activity/      ActivityEntry (activity log rows), SettingsDiff (a save → rows, no secrets)        │
 │  Alerts/        AlertTracker, Alert, AlertSettings, AlertNotification                               │
 │  ExecutionPlans/ ShowplanParser → ExecutionPlan, PlanTreeLayout                                     │
 │  Regressions/   RegressionWindows, QueryRegressionDetector                                          │
@@ -52,6 +54,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 | `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
 | `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
 | `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
+| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -76,10 +79,12 @@ public interface IRefreshable
 
 `ConnectionSettingsService` loads saved connections (DPAPI) → `RepositoryFactory.Create(connection, commandTimeout)` layers the connection string and timeout over `appsettings.json` → `MainWindow` swaps `Repo` and reopens the current page. In-flight loads for the previous connection are discarded, so stale data never appears under the new name. A **fingerprint** of connection plus timeout decides whether a repository must be rebuilt.
 
-### 3. Background monitoring, the health dot and the health score
+### 3. Monitoring, the health dot and the health score
 
 ```text
-MonitoringManager ─ one MonitoringSession per connection with "Monitor in background"
+MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor in background,
+                      Start / Stop pressed this run, password saved, Entra signed in)
+   └─► MonitoringManager ─ one MonitoringSession per monitored connection; logs each start and stop
    └─ every interval: repo → LiveMetricSample.From(previous, current)  (counters + ring buffer + requests)
          ├─► HealthRules.Grade(sample, thresholds) → one reading per indicator
          │     ├─► HealthRules.Summarize → (level, reasons) → 🟢 🟠 🔴 dot + tooltip
@@ -95,15 +100,21 @@ MonitoringManager ─ one MonitoringSession per connection with "Monitor in back
 
 `HealthRules.Evaluate` returns the worst level any indicator reached and one reason per indicator past its threshold. Page life expectancy and TempDB are skipped when the counter reads 0 (not reported, e.g. Azure SQL Database). Blocking is checked only when a session is blocked. `HealthScore` weights each indicator (CPU, blocking and log space 20, page life expectancy 16, memory grants and TempDB 12); a warning costs half the weight, critical all of it, and a failed collection is `HealthScore.Unavailable` (0). See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). Unreachable servers back off exponentially: `HealthRules.NextDelay` doubles the delay per consecutive failure, capped at 5 minutes. MFA connections, and SQL logins without a saved password, start only after the user has switched to them once.
 
+Which connections are monitored is decided by `MonitoringPlan` (Engine, pure, unit tested): nothing, until the user presses **Start** (on Live Metrics, ▶ in the selector, or the tray menu), unless **Start monitoring automatically** is on, in which case the active connection and those with *Monitor in background*. Start and Stop last until the app exits (`MonitoringOverrides`). `MonitoringManager.Sync(store, source)` starts and stops sessions to match, and raises `SessionStateChanged` and `MonitoringChanged` so the selector, Live Metrics, the Alerts banner and the tray tooltip all show the same state. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
+
 ### 4. Alerts
 
-`AlertTracker` (one per monitored connection, owned by its `MonitoringSession`) keeps, per indicator, how many samples in a row were past a threshold, critical, or back to normal. An alert starts, escalates to critical or ends when a run reaches the count set in Settings (3 by default). Needing a run to end is the hysteresis that stops a value hovering around a threshold from raising repeated alerts. Pausing or disposing the session ends active alerts as *Monitoring stopped*. Changes go to the history as `AlertRecord`s, stored by alert id, and `HistoryWriter.EndAlertsLeftOpen()` runs at startup for alerts a killed run never ended. See [Alerts](Alerts.md#under-the-hood).
+`AlertTracker` (one per monitored connection, owned by its `MonitoringSession`) keeps, per indicator, how many samples in a row were past a threshold, critical, or back to normal. An alert starts, escalates to critical or ends when a run reaches the count set in Settings (3 by default). Needing a run to end is the hysteresis that stops a value hovering around a threshold from raising repeated alerts. Stopping the session (a Stop disposes it) ends active alerts as *Monitoring stopped*. Changes go to the history as `AlertRecord`s, stored by alert id, and `HistoryWriter.EndAlertsLeftOpen()` runs at startup for alerts a killed run never ended. See [Alerts](Alerts.md#under-the-hood).
 
 `MainWindow` also turns each alert that starts or escalates into a Windows notification (`AlertNotification` → `TrayIcon`), unless its connection is muted. See [Notifications and Tray](Notifications-and-Tray.md#under-the-hood).
 
 ### 5. App lifetime: the notification area and a single instance
 
-`App.OnStartup` makes SqlVitals **single-instance** per Windows session (named mutex; a second copy signals the first to show its window and exits), then opens `MainWindow`. `ShutdownMode` is `OnMainWindowClose`. By default, minimizing or closing `MainWindow` only **hides** it to the notification area (`TrayIcon`). Monitoring carries on, because `MonitoringManager` lives as long as the window object, not its visibility. A real exit (tray **Exit**, or Windows `SessionEnding`) sets `App.IsExiting`, and `OnClosing` then runs the usual shutdown: dispose the tray icon, stop monitoring (ending active alerts), drop an SP Trace session.
+`App.OnStartup` makes SqlVitals **single-instance** per Windows session (named mutex; a second copy signals the first to show its window and exits), then opens `MainWindow`. `ShutdownMode` is `OnMainWindowClose`. By default, minimizing or closing `MainWindow` only **hides** it to the notification area (`TrayIcon`). Monitoring carries on, because `MonitoringManager` lives as long as the window object, not its visibility. A real exit (tray **Exit**, or Windows `SessionEnding`) sets `App.IsExiting`, and `OnClosing` then runs the usual shutdown: dispose the tray icon, stop monitoring (ending active alerts, and logging *Monitoring stopped* and *App exited* to the activity log), drop an SP Trace session.
+
+### 5a. The activity log
+
+Every start and stop of monitoring, app start and exit, settings change and history clear becomes an `ActivityEntry`, queued to the history writer as an `ActivityRecord` like samples and alerts, and stored in `activity_log`. Settings changes come from one place: every `ConnectionSettingsService` setter goes through `Update`, which snapshots the store before and after (`SettingsActivity`) and asks `SettingsDiff.Between` for the rows. Secrets are named in `SettingsDiff.SecretNames` and only logged as *changed*. `MonitoringManager.Log` adds the Windows user and PC name. See [Monitoring History Database](Monitoring-History-Database.md#activity_log).
 
 ### 6. Execution plans
 

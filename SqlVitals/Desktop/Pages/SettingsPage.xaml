@@ -188,9 +188,9 @@
 
                         <!-- Monitor in background -->
                         <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,12,0,0">
-                            <CheckBox x:Name="ChkMonitorInBackground" Content="Monitor in background" IsChecked="True" />
+                            <CheckBox x:Name="ChkMonitorInBackground" Content="Monitor in background" />
                             <TextBlock Style="{StaticResource FieldHint}"
-                                       Text="Keep collecting live metrics (every 10 s by default) while another connection is active, so switching back shows continuous history and the sidebar can flag problems." />
+                                       Text="With Start monitoring automatically on (Monitoring, below), keep collecting live metrics, history and alerts for this connection while another one is active, so switching back shows continuous history and the sidebar can flag problems. Off for a new connection. You can also start it any time with ▶ in the sidebar selector." />
                         </StackPanel>
 
                         <!-- Connection name -->
@@ -322,6 +322,26 @@
                     <TextBlock Text="Default: 30 seconds. Increase for long-running diagnostic queries."
                                Foreground="{StaticResource TextMuted}" FontSize="10"
                                Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- Monitoring card (#115) -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="Monitoring"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Margin="0,0,0,12" />
+                    <CheckBox x:Name="ChkStartMonitoringAutomatically"
+                              Content="Start monitoring automatically"
+                              Click="ChkStartMonitoringAutomatically_Click" />
+                    <TextBlock Style="{StaticResource FieldHint}"
+                               Text="Collect live metrics, history and alerts as soon as SqlVitals starts or connects. Off: nothing is collected until you press Start." />
+                    <TextBlock Style="{StaticResource FieldHint}" Margin="0,6,0,0"
+                               Text="On, the active connection and those with Monitor in background are monitored from the start. Either way you can start and stop any connection with ▶ / ■ in the sidebar selector, on Live Metrics, or from the SqlVitals icon's menu in the notification area; that lasts until SqlVitals exits. Alerts are only raised for connections being monitored." />
+                    <TextBlock x:Name="TxtMonitoringStatus"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Visibility="Collapsed" />
                 </StackPanel>
             </Border>
 
@@ -504,6 +524,20 @@
                                 Padding="16,7"
                                 Click="BtnThemeToggle_Click" />
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Activity log card (#115) -->
+            <Border Style="{StaticResource KpiCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="Activity Log"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="When monitoring was started and stopped, and by whom or what; when SqlVitals started and exited; every settings and connection change, with the value before and after; and when history was cleared. It explains a gap in the history or an alert that never came. Saved in the history file with the Windows user and PC name. Passwords, connection strings and other secrets are never logged: a secret setting only says it changed."
+                               Foreground="{StaticResource TextMuted}" FontSize="10"
+                               TextWrapping="Wrap" Margin="0,0,0,12" />
+                    <controls:ActivityLogView x:Name="ActivityLogView" />
                 </StackPanel>
             </Border>
 

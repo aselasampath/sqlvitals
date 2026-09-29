@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -235,6 +236,55 @@ public sealed class HistoryReader(string path)
                     (string)r.detail,
                     r.end_reason is string reason && Enum.TryParse<AlertEndReason>(reason, out var why) ? why : null),
                 (string?)r.connection_name ?? string.Empty))
+            .ToList();
+    }
+
+    /// <summary>The most activity log rows <see cref="ReadActivity"/> returns.</summary>
+    public const int MaxActivityRows = 10_000;
+
+    /// <summary>
+    /// Activity log rows (#115) in [<paramref name="fromUtc"/>, <paramref name="toUtc"/>), newest
+    /// first, at most <see cref="MaxActivityRows"/>. With a connection, only its rows; with an
+    /// event, only that event. Empty for a file from before the activity log (schema 4).
+    /// </summary>
+    public IReadOnlyList<StoredActivity> ReadActivity(DateTime fromUtc, DateTime toUtc, Guid? connectionId = null, string? evt = null)
+    {
+        using var conn = OpenOrNull(out var version);
+        if (conn is null || version < 4)
+            return [];
+
+        return conn.Query("""
+            SELECT * FROM activity_log
+            WHERE time_utc >= @from AND time_utc < @to
+              AND (@connectionId IS NULL OR connection_id = @connectionId)
+              AND (@evt IS NULL OR event = @evt)
+            ORDER BY time_utc DESC, event_id DESC
+            LIMIT @MaxActivityRows
+            """,
+            new
+            {
+                from         = HistoryStore.ToEpochMs(fromUtc),
+                to           = HistoryStore.ToEpochMs(toUtc),
+                connectionId = connectionId?.ToString("D"),
+                evt,
+                MaxActivityRows,
+            })
+            .Select(r => new StoredActivity(
+                (long)r.event_id,
+                new ActivityEntry(
+                    HistoryStore.FromEpochMs((long)r.time_utc),
+                    (string)r.@event,
+                    r.connection_id is string id ? Guid.Parse(id) : null,
+                    (string?)r.connection_name,
+                    (string)r.source,
+                    (string?)r.setting,
+                    (string?)r.old_value,
+                    (string?)r.new_value,
+                    (string?)r.detail)
+                {
+                    WindowsUser = (string)r.windows_user,
+                    Machine     = (string)r.machine,
+                }))
             .ToList();
     }
 

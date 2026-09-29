@@ -57,7 +57,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal("wal", raw.ExecuteScalar<string>("PRAGMA journal_mode;"));
         Assert.Equal(2, raw.ExecuteScalar<long>("PRAGMA auto_vacuum;"));   // 2 = incremental
         Assert.Equal(
-            new[] { "alerts", "connections", "counter_values", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
+            new[] { "activity_log", "alerts", "connections", "counter_values", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
             raw.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;"));
     }
 
@@ -170,7 +170,7 @@ public sealed class HistoryStoreTests : IDisposable
         }
 
         using var check = Raw();
-        Assert.Equal(3L, check.ExecuteScalar<long>("PRAGMA user_version;"));
+        Assert.Equal(HistoryStore.SchemaVersion, check.ExecuteScalar<long>("PRAGMA user_version;"));
         Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM detail_snapshots;"));
         Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM alerts;"));
     }

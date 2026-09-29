@@ -1,8 +1,8 @@
 # History, Time Ranges and Baselines
 
-SqlVitals keeps a **local history** of every server it monitors in the background, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
+SqlVitals keeps a **local history** of every server it monitors, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
 
-> **Where:** the range picker in the toolbar of 💓 Live Metrics, 📈 Wait Trend and 📈 Perfmon · **Needs:** a saved connection with **Monitor in background** ticked
+> **Where:** the range picker in the toolbar of 💓 Live Metrics, 📈 Wait Trend and 📈 Perfmon · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
 
 ## Look back in time
 
@@ -29,7 +29,7 @@ What each page shows for past ranges:
 ### Reading history charts
 
 - **Long ranges are averaged** so a chart has at most 600 points: about 10 s per point on 1h, 5 min on 24h and 30 min on 7d. The status line says how many points there are and how far apart.
-- **Gaps stay gaps.** When the app was closed or monitoring paused, the line breaks instead of drawing a misleading straight line across.
+- **Gaps stay gaps.** When the app was closed or monitoring stopped, the line breaks instead of drawing a misleading straight line across.
 - **Live Metrics keeps collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Start**, to resume.
 
 ## Compare to a baseline

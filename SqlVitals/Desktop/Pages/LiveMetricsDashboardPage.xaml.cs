@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -16,6 +17,7 @@ using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 
@@ -29,10 +31,13 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     // ?? Repo & timer ??????????????????????????????????????????????????
     // Collection lives in the connection's MonitoringSession, which keeps running (and keeps
     // its history) while the user is on another page or another connection. The page only
-    // plots it; its own timer just drives the countdown.
+    // plots it; its own timer just drives the countdown. While the connection isn't monitored
+    // there is no session and nothing is sent to the server (#115).
     private readonly IWaitStatsRepository _repo;
-    private readonly MonitoringSession    _session;
-    private readonly bool                 _ownsSession;   // ad-hoc session when there is no saved connection
+    private readonly MonitoringManager?   _monitoring;
+    private readonly Guid?                _connectionId;
+    private readonly MonitoringSession?   _adHoc;          // when there is no saved connection
+    private MonitoringSession?            _session;        // null while not monitored
     private readonly DispatcherTimer      _timer    = new();
     private bool                          _itemsReady = false;
     private DateTime?                     _lastPlotted;
@@ -122,13 +127,18 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     // Named in the health score's breakdown.
     private readonly string               _connectionName;
 
-    public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringSession? session = null,
+    /// <param name="monitoring">Owns the saved connections' sessions, and starts and stops them.</param>
+    /// <param name="connectionId">The active saved connection; null for one from appsettings.json only.</param>
+    public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringManager? monitoring = null, Guid? connectionId = null,
                                     ConnectionHistory? history = null, string? connectionName = null)
     {
         _repo        = repo;
         _connectionName = connectionName ?? "This connection";
-        _ownsSession = session is null;
-        _session     = session ?? new MonitoringSession(null, repo, string.Empty);
+        _monitoring  = monitoring;
+        _connectionId = connectionId;
+        if (connectionId is null)
+            _adHoc = new MonitoringSession(null, repo, string.Empty);
+        _session     = _adHoc ?? monitoring?.Get(connectionId);
         _history     = history;
         _plotted =
         [
@@ -155,9 +165,10 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
 
-        // Populate interval ComboBox with the session's current interval (default 10 s)
+        // Populate interval ComboBox with the connection's interval (default 10 s), kept while
+        // it isn't monitored too.
         CmbInterval.ItemsSource   = Intervals.Select(IntervalLabel).ToList();
-        var index = Array.IndexOf(Intervals, _session.IntervalSeconds);
+        var index = Array.IndexOf(Intervals, _adHoc?.IntervalSeconds ?? _monitoring?.IntervalFor(connectionId) ?? MonitoringSession.DefaultIntervalSeconds);
         CmbInterval.SelectedIndex = index >= 0 ? index : 1;
         _itemsReady = true;
 
@@ -168,10 +179,45 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         _timer.Tick    += Timer_Tick;
 
         // Subscribed here rather than in Loaded: MainWindow calls RefreshAsync straight after
-        // navigating, and that sample can arrive before the page has loaded.
-        _session.SampleAdded  += Session_SampleAdded;
-        _session.StateChanged += Session_StateChanged;
+        // navigating, and that sample can arrive before the page has loaded. The manager's own
+        // event is subscribed in Loaded, since the manager outlives the page.
+        Subscribe(_session);
     }
+
+    private void Subscribe(MonitoringSession? session)
+    {
+        if (session is null) return;
+        session.SampleAdded  += Session_SampleAdded;
+        session.StateChanged += Session_StateChanged;
+    }
+
+    private void Unsubscribe(MonitoringSession? session)
+    {
+        if (session is null) return;
+        session.SampleAdded  -= Session_SampleAdded;
+        session.StateChanged -= Session_StateChanged;
+    }
+
+    // Start or Stop here, in the selector or in the tray: the manager made or ended the session.
+    private void Monitoring_SessionStateChanged(Guid connectionId)
+    {
+        if (connectionId != _connectionId || _monitoring is null)
+            return;
+
+        var session = _monitoring.Get(connectionId);
+        if (!ReferenceEquals(session, _session))
+        {
+            Unsubscribe(_session);
+            _session = session;
+            Subscribe(_session);
+            _lastPlotted = null;
+            if (_range.IsLive && _session is not null)
+                ShowLive();
+        }
+        Session_StateChanged(_session);
+    }
+
+    private bool IsMonitoring => _session is { IsRunning: true };
 
     // ?? Page lifetime ?????????????????????????????????????????????????
     private void Page_Loaded(object sender, RoutedEventArgs e)
@@ -191,9 +237,17 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         // they load, so no forced update here.
         PlotNewSamples();
 
-        // Shared sessions are started by MonitoringManager (and may have been paused by the user).
-        if (_ownsSession)
-            _session.Start();
+        // Shared sessions are started by MonitoringManager. The ad-hoc one follows Start
+        // monitoring automatically like them, and otherwise waits for Start.
+        if (_adHoc is not null && (_monitoring?.StartsAutomatically ?? true))
+            _adHoc.Start();
+
+        // Started or stopped elsewhere (selector, tray) from now on, or since the page was made.
+        if (_monitoring is not null && _connectionId is { } id)
+        {
+            _monitoring.SessionStateChanged += Monitoring_SessionStateChanged;
+            Monitoring_SessionStateChanged(id);
+        }
 
         SyncRunButton();
         _timer.Start();
@@ -206,19 +260,22 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         _timer.Stop();
 
         // The session outlives the page; don't let it keep this page alive.
-        _session.SampleAdded  -= Session_SampleAdded;
-        _session.StateChanged -= Session_StateChanged;
+        Unsubscribe(_session);
+        if (_monitoring is not null)
+            _monitoring.SessionStateChanged -= Monitoring_SessionStateChanged;
 
-        if (_ownsSession)
-            _session.Dispose();
+        _adHoc?.Dispose();
     }
 
     // ?? IRefreshable ??????????????????????????????????????????????????
-    // Live: takes a sample now (joining one already in flight), which Session_SampleAdded plots.
-    // A past range: reads it again, so "last hour" moves up to now. A failure propagates so
-    // MainWindow can report it.
+    // Live: takes a sample now (joining one already in flight), which Session_SampleAdded plots;
+    // nothing while monitoring is off, so Refresh sends nothing to the server. A past range:
+    // reads it again, so "last hour" moves up to now. A failure propagates so MainWindow can
+    // report it.
     public System.Threading.Tasks.Task RefreshAsync() =>
-        _range.IsLive ? _session.CollectNowAsync() : LoadHistoryAsync();
+        !_range.IsLive ? LoadHistoryAsync()
+        : IsMonitoring ? _session!.CollectNowAsync()
+        : System.Threading.Tasks.Task.CompletedTask;
 
     private void Session_SampleAdded(MonitoringSession session, LiveMetricSample sample)
     {
@@ -447,33 +504,43 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
             }
     }
 
-    private void Session_StateChanged(MonitoringSession session)
+    private void Session_StateChanged(MonitoringSession? session)
     {
         SyncRunButton();
         UpdateCountdown();
         UpdateHealthScore();
     }
 
+    // Why nothing is collected, for the banner and the health score while not monitored.
+    private string NotMonitoredText =>
+        _connectionId is { } id && _monitoring is not null ? _monitoring.NotMonitoredReason(id) : MonitoringPlan.AutomaticOffText;
+
     // ── Health score (#36) ──────────────────────────────────────────────────
-    // Always the latest sample's, also while a past range is on the charts.
+    // Always the latest sample's, also while a past range is on the charts. None while not
+    // monitored: an old score would read as the server's health now.
     private void UpdateHealthScore()
     {
-        var score = _session.Score;
+        var score = IsMonitoring ? _session!.Score : null;
         var brush = score is null ? HealthBrushes.Grey : HealthBrushes.For(score.Level);
         RunHealthScore.Text        = score?.Value.ToString() ?? "—";
         RunHealthScore.Foreground  = brush;
         BtnHealthScore.BorderBrush = brush;
-        BtnHealthScore.Opacity     = _session.IsRunning ? 1 : 0.6;
-        BtnHealthScore.ToolTip     = score is null
-            ? _session.HealthText
-            : $"{score.Summary()}\nClick to see which checks lowered it.";
+        BtnHealthScore.Opacity     = IsMonitoring ? 1 : 0.6;
+        BtnHealthScore.ToolTip     = !IsMonitoring ? NotMonitoredText
+                                   : score is null ? _session!.HealthText
+                                   : $"{score.Summary()}\nClick to see which checks lowered it.";
 
         if (HealthScorePopup.IsOpen)
             ShowHealthScoreDetails();
     }
 
-    private void ShowHealthScoreDetails() =>
-        HealthScoreDetails.Show(_connectionName, _session.Score, _session.HealthText, paused: !_session.IsRunning);
+    private void ShowHealthScoreDetails()
+    {
+        if (IsMonitoring)
+            HealthScoreDetails.Show(_connectionName, _session!.Score, _session.HealthText, paused: false);
+        else
+            HealthScoreDetails.Show(_connectionName, null, NotMonitoredText, paused: true);
+    }
 
     private void BtnHealthScore_Click(object sender, RoutedEventArgs e)
     {
@@ -486,7 +553,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     // samples arrived while it was closed or one at a time while it is open.
     private void PlotNewSamples()
     {
-        foreach (var sample in _session.Samples)
+        foreach (var sample in _session?.Samples ?? [])
         {
             if (_lastPlotted is { } last && sample.Time <= last)
                 continue;
@@ -538,24 +605,76 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
 
     private void UpdateCountdown()
     {
-        if (!_session.IsRunning)
+        if (!IsMonitoring)
         {
             TxtCountdown.Text = "--";
             return;
         }
 
-        var remaining = (int)Math.Ceiling(_session.TimeUntilNextSample.TotalSeconds);
+        var remaining = (int)Math.Ceiling(_session!.TimeUntilNextSample.TotalSeconds);
         TxtCountdown.Text = remaining >= 60
             ? $"{remaining / 60}:{remaining % 60:00}"
             : $"{remaining}s";
     }
 
-    // Reflects the session's running state on the Start/Stop button. Its handlers call
-    // Start/Pause, which do nothing when the session is already in that state.
+    // Shows the connection's monitoring state: the Start/Stop button, and the banner saying
+    // nothing is collected while it's off (#115).
     private void SyncRunButton()
     {
-        if (BtnAutoRefresh.IsChecked != _session.IsRunning)
-            BtnAutoRefresh.IsChecked = _session.IsRunning;
+        var monitoring = IsMonitoring;
+        var canStart   = monitoring || _connectionId is not { } id || _monitoring is null || _monitoring.CanStart(id);
+
+        BtnMonitor.Content   = monitoring ? "■  Stop monitoring" : "▶  Start monitoring";
+        BtnMonitor.IsEnabled = canStart;
+        BtnMonitor.ToolTip   = monitoring
+            ? "Stop collecting live metrics, history and alerts for this connection until SqlVitals exits. Its active alerts end."
+            : canStart
+                ? "Collect live metrics, history and alerts for this connection until SqlVitals exits. The first sample is taken straight away."
+                : NotMonitoredText;
+        AutomationProperties.SetName(BtnMonitor, monitoring ? "Stop monitoring" : "Start monitoring");
+
+        MonitoringOffBanner.Visibility = monitoring ? Visibility.Collapsed : Visibility.Visible;
+        TxtMonitoringOffReason.Text    =
+            _connectionId is { } active && _monitoring?.Decision(active) is { Reason: not MonitoringReason.AutomaticOff }
+                ? NotMonitoredText
+                : "Nothing is sent to the server for Live Metrics, history or alerts until you press Start.";
+        BtnBannerStart.IsEnabled       = canStart;
+        BtnBannerStart.ToolTip         = canStart ? BtnMonitor.ToolTip : NotMonitoredText;
+    }
+
+    private void BtnMonitor_Click(object sender, RoutedEventArgs e)
+    {
+        if (IsMonitoring)
+            StopMonitoring();
+        else
+            StartMonitoring();
+    }
+
+    private void BtnBannerStart_Click(object sender, RoutedEventArgs e) => StartMonitoring();
+
+    // The saved connection's session is the manager's, so the dot, alerts and history follow it.
+    private void StartMonitoring()
+    {
+        if (_connectionId is { } id && _monitoring is not null)
+            _monitoring.Start(id, ActivitySources.LiveMetrics);
+        else
+            _adHoc?.Start();
+        Session_StateChanged(_session);
+    }
+
+    private void StopMonitoring()
+    {
+        if (_connectionId is { } id && _monitoring is not null)
+            _monitoring.Stop(id, ActivitySources.LiveMetrics);
+        else
+            _adHoc?.Pause();
+        Session_StateChanged(_session);
+    }
+
+    private async void LnkMonitoringSetting_Click(object sender, RoutedEventArgs e)
+    {
+        if (Window.GetWindow(this) is MainWindow main)
+            await main.OpenPageAsync("Settings");
     }
 
     // ?? Snapshot ? ring buffers ????????????????????????????????????????
@@ -963,32 +1082,15 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
 
     // ?? Toolbar handlers ??????????????????????????????????????????????
     // Sets this connection's collection interval — it applies in the background too.
+    // Kept for the connection while it isn't monitored too.
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_itemsReady || CmbInterval.SelectedIndex < 0) return;
-        _session.IntervalSeconds = Intervals[CmbInterval.SelectedIndex];
-        UpdateCountdown();
-    }
-
-    private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
-    {
-        BtnAutoRefresh.Content    = "Stop";
-        BtnAutoRefresh.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40));
-        BtnAutoRefresh.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40));
-        BtnAutoRefresh.Background  = new SolidColorBrush(Color.FromArgb(0x22, 0xC0, 0x60, 0x00));
-        _session.Start();
-        UpdateCountdown();
-    }
-
-    private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
-    {
-        BtnAutoRefresh.Content    = "Start";
-        BtnAutoRefresh.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0xDD, 0x66));
-        BtnAutoRefresh.BorderBrush = new SolidColorBrush(Color.FromRgb(0x44, 0xAA, 0x44));
-        BtnAutoRefresh.Background  = new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x3A, 0x1E));
-
-        // Pausing stops collection for this connection entirely, including in the background.
-        _session.Pause();
+        var seconds = Intervals[CmbInterval.SelectedIndex];
+        if (_connectionId is { } id && _monitoring is not null)
+            _monitoring.SetInterval(id, seconds);
+        else if (_adHoc is not null)
+            _adHoc.IntervalSeconds = seconds;
         UpdateCountdown();
     }
 

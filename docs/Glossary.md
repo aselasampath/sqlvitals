@@ -4,6 +4,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 
 | Term | Meaning |
 |---|---|
+| **Activity log** | SqlVitals' record, in the history file, of when monitoring was started and stopped and by whom or what, when the app started and exited, every settings and connection change with its old and new value (never a secret), and when history was cleared. Kept 365 days. See [Settings → Activity Log](Settings.md#activity-log). |
 | **Alert** | A record of one health indicator staying past its threshold for a few samples in a row: when it started and ended, and its worst value. See [Alerts](Alerts.md). |
 | **Auto-shrink** | A database option that shrinks its files by itself whenever a quarter of them is free. It fragments indexes and the space is usually needed again, so it should be OFF. |
 | **Azure SQL Database** | Microsoft's managed, single-database SQL service. Some server-level views aren't available on it, and SqlVitals adapts automatically. |
@@ -13,7 +14,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Buffer cache hit ratio** | % of page reads served from memory instead of disk. Should be close to 100 %. |
 | **Cardinality estimate** | The optimizer's guess of how many rows an operation returns. Bad guesses lead to bad plans. |
 | **Clustered index / heap** | A clustered index stores the table in key order. A heap is a table without one. |
-| **Collector** | SqlVitals' background task that reads Live Metrics for one connection at an interval. |
+| **Collector** | SqlVitals' background task that reads Live Metrics for one monitored connection at an interval. |
 | **Compatibility level** | A database setting that decides which SQL Server version's query optimizer and T-SQL behaviour it gets: 160 for SQL Server 2022, 150 for 2019. An upgraded database keeps its old level until it's changed. |
 | **Connection** | A saved server and database in SqlVitals. |
 | **CONTROL SERVER** | A server permission that gives almost everything **sysadmin** does. The [Security Audit](Security-Audit.md) lists who holds it alongside the sysadmin members. |

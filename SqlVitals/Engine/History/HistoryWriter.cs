@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Activity;
 
 namespace SqlVitals.Engine.History;
 
@@ -26,6 +27,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     private readonly RateLimitedReporter _reporter;
     private readonly TimeProvider        _time;
     private readonly Task                _loop;
+    private readonly Action<ActivityEntry>? _onActivityNotSaved;
 
     private HistoryStore?  _store;
     private DateTimeOffset _nextOpenAttempt = DateTimeOffset.MinValue;
@@ -36,10 +38,17 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     private volatile bool  _purgeRequested;
     private volatile bool  _disabled;
 
+    /// <param name="onActivityNotSaved">
+    /// Gets each activity log row that couldn't be saved (the file can't be opened or written, the
+    /// queue overflowed, or the writer has stopped), so it can go to the app log instead. Called on
+    /// any thread; it must not throw.
+    /// </param>
     public HistoryWriter(string path, Action<string, Exception> onError,
-                         TimeSpan? retention = null, TimeProvider? time = null)
+                         TimeSpan? retention = null, TimeProvider? time = null,
+                         Action<ActivityEntry>? onActivityNotSaved = null)
     {
         Path            = path;
+        _onActivityNotSaved = onActivityNotSaved;
         _time           = time ?? TimeProvider.System;
         _retentionTicks = CheckRetention(retention ?? TimeSpan.FromDays(HistorySettings.DefaultRetentionDays)).Ticks;
         _reporter       = new RateLimitedReporter(onError, _time);
@@ -94,18 +103,22 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
     public void Enqueue(HistoryRecord record)
     {
-        if (_disabled) return;
         // Never blocks: a full queue drops its oldest record instead. False only after Dispose.
-        _queue.Writer.TryWrite(record);
+        if (_disabled || !_queue.Writer.TryWrite(record))
+            NotSaved(record);
     }
 
+    /// <inheritdoc cref="ClearAsync(ActivityRecord?)"/>
+    public Task ClearAsync() => ClearAsync(null);
+
     /// <summary>
-    /// Deletes all history, including records queued before the call. Completes once the file
-    /// has been emptied; fails with the reason when it couldn't be.
+    /// Deletes all history, including records queued before the call. The activity log is kept,
+    /// and <paramref name="logged"/>, when given, is added to it once the rest is gone. Completes
+    /// once the file has been emptied; fails with the reason when it couldn't be.
     /// </summary>
-    public Task ClearAsync()
+    public Task ClearAsync(ActivityRecord? logged)
     {
-        var command = new ClearCommand();
+        var command = new ClearCommand(logged);
         if (!_queue.Writer.TryWrite(command))
             return Task.FromException(new InvalidOperationException("Monitoring history has stopped."));
         return command.Done.Task;
@@ -121,14 +134,36 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     {
         switch (item)
         {
-            case HistoryRecord:
+            case HistoryRecord record:
                 Interlocked.Increment(ref _dropped);
+                NotSaved(record);
                 break;
             case ClearCommand clear:
                 clear.Done.TrySetException(new InvalidOperationException(
                     "Monitoring history is too busy to clear right now. Try again in a minute."));
                 break;
         }
+    }
+
+    // An activity row that won't reach the file goes to the fallback; a sample is just lost.
+    private void NotSaved(HistoryRecord record)
+    {
+        if (record is not ActivityRecord { Entry: var entry } || _onActivityNotSaved is null)
+            return;
+        try
+        {
+            _onActivityNotSaved(entry);
+        }
+        catch (Exception ex)
+        {
+            _reporter.Report("Could not log an activity that wasn't saved to the history.", ex);
+        }
+    }
+
+    private void NotSaved(IEnumerable<HistoryRecord> records)
+    {
+        foreach (var record in records)
+            NotSaved(record);
     }
 
     private async Task RunAsync()
@@ -162,9 +197,14 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
             // Nothing above should throw, but if it does history stops, not the app.
             _reporter.Report("Monitoring history stopped unexpectedly.", ex);
             _queue.Writer.TryComplete();
+            NotSaved(batch);
             while (_queue.Reader.TryRead(out var item))
+            {
                 if (item is ClearCommand clear)
                     clear.Done.TrySetException(new InvalidOperationException("Monitoring history has stopped.", ex));
+                else if (item is HistoryRecord record)
+                    NotSaved(record);
+            }
         }
         finally
         {
@@ -191,7 +231,10 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     private void WriteBatch(List<HistoryRecord> batch)
     {
         if (_disabled || !TryOpen())
+        {
+            NotSaved(batch);
             return;
+        }
 
         try
         {
@@ -201,12 +244,14 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
         {
             _reporter.Report($"The monitoring history file {Path} is damaged; starting a new one.", ex);
             Reset(quarantine: true);
+            NotSaved(batch);
         }
         catch (Exception ex)
         {
             // Disk full, file locked by antivirus… this batch is lost; the next one tries again.
             _reporter.Report($"Could not save monitoring history to {Path}.", ex);
             Reset(quarantine: false);
+            NotSaved(batch);
         }
     }
 
@@ -254,9 +299,10 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
             if (_store is null)
             {
-                if (!File.Exists(Path))
+                // Nothing recorded yet, and nothing to log: don't create a file just to empty it.
+                if (!File.Exists(Path) && command.Logged is null)
                 {
-                    command.Done.TrySetResult();   // nothing recorded yet
+                    command.Done.TrySetResult();
                     return;
                 }
                 OpenStore();
@@ -264,6 +310,8 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
             _store!.Clear();
             Interlocked.Increment(ref _clearCount);
+            if (command.Logged is { } logged)
+                WriteBatch([logged]);
             command.Done.TrySetResult();
         }
         catch (Exception ex)
@@ -274,6 +322,8 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
                 Reset(quarantine: false);   // reopened on the next batch
 
             _reporter.Report($"Could not clear the monitoring history in {Path}.", ex);
+            if (command.Logged is { } logged)
+                NotSaved(logged);
             command.Done.TrySetException(ex);
         }
     }
@@ -344,7 +394,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
         try
         {
-            _store.Purge((now - Retention).UtcDateTime);
+            _store.Purge((now - Retention).UtcDateTime, (now - ActivityLog.Retention).UtcDateTime);
         }
         catch (Exception ex)
         {
@@ -385,8 +435,10 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
         public static readonly EndAlertsCommand Instance = new();
     }
 
-    private sealed class ClearCommand : Command
+    private sealed class ClearCommand(ActivityRecord? logged) : Command
     {
+        public ActivityRecord? Logged { get; } = logged;
+
         public TaskCompletionSource Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

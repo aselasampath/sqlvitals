@@ -15,7 +15,7 @@ Alerts that start on the same sample share one notification, critical ones liste
 
 **Click the notification** to bring SqlVitals to the front on the **🔔 Alerts** page, filtered to that connection. This works from the window being hidden, minimized or behind other windows.
 
-Notifications follow the same rules as alerts: only for saved connections that are monitored (the active one and those with **Monitor in background**), after the usual run of samples ([Settings → Alerts](Settings.md#alerts)).
+Notifications follow the same rules as alerts: only for saved connections that are **monitored**, after the usual run of samples ([Settings → Alerts](Settings.md#alerts)). While monitoring is off there are no alerts, so there are no notifications; the icon's tooltip says *monitoring is off*.
 
 ### Mute a connection
 
@@ -34,13 +34,14 @@ SqlVitals uses the standard Windows notification system, so:
 
 ## Running in the notification area
 
-By default, **minimizing** or **closing** the window hides it to the notification area. Monitoring, history, alerts and notifications carry on as if the window were open. The first time, a notification tells you SqlVitals is still running.
+By default, **minimizing** or **closing** the window hides it to the notification area. Monitoring, history, alerts and notifications carry on as if the window were open. The first time, a notification tells you SqlVitals is still running (or, if nothing is monitored, that you can start monitoring from the icon's menu).
 
 | To… | Do this |
 |---|---|
 | Bring the window back | **Click** the SqlVitals icon, or start SqlVitals again from the Start menu or desktop |
 | Open the Alerts page | Right-click the icon → **Alerts**. It shows how many are active, e.g. *Alerts (2 active)*. |
-| See how many alerts are active | Hover the icon: *SqlVitals · 2 active alerts (1 critical)* |
+| See how many alerts are active | Hover the icon: *SqlVitals · 2 active alerts (1 critical)*, or *SqlVitals · monitoring is off, no alerts are raised* when no connection is monitored |
+| Start or stop monitoring | Right-click the icon → **Start monitoring all** (the active connection and those with *Monitor in background*) or **Stop monitoring all** (every connection being monitored). Both last until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). |
 | Mute or unmute a connection | Right-click the icon → **Notifications** |
 | Quit SqlVitals | Right-click the icon → **Exit** |
 
@@ -67,6 +68,7 @@ Starting SqlVitals while it's already running brings the running copy to the fro
 ### Under the hood
 
 - **Icon and notifications:** `Desktop/Services/TrayIcon.cs` wraps WinForms' `NotifyIcon` (`UseWindowsForms` in `SqlVitals.Desktop.csproj`). Windows 10 and 11 show its balloon as an ordinary notification, attributed to the exe's description (`AssemblyTitle`: *SqlVitals*). It needs no AUMID, Start-menu registration or extra package. `BalloonTipClicked` raises `AlertsRequested(connectionId)`.
+- **Menu:** *Start monitoring all* and *Stop monitoring all* raise `StartAllRequested` / `StopAllRequested`, which call `MonitoringManager.StartAll` / `StopAll` with the source `user: tray menu`. The tooltip comes from `AlertNotification.TrayToolTip(active, monitoredConnections)`.
 - **Wording:** `Engine/Alerts/AlertNotification.cs` turns one sample's `AlertChange`s for a connection into a title and text (Windows allows 63 and 255 characters), or nothing when no alert started or escalated. Unit tested in `Engine.Tests/Alerts/AlertNotificationTests.cs`.
 - **Wiring:** `MainWindow.OnAlertsChanged` handles `MonitoringManager.AlertsChanged`: it updates the sidebar count and the icon's tooltip, then notifies unless the connection is muted. Hiding is in `MainWindow.OnStateChanged` / `OnClosing`; `App.IsExiting` marks a real exit (tray **Exit**, `SessionEnding`). `App.xaml` uses `ShutdownMode="OnMainWindowClose"`.
 - **Single instance:** `App.OnStartup` holds the named mutex `Local\SqlVitals.Desktop.SingleInstance`. A second copy signals the event `Local\SqlVitals.Desktop.Show` and exits; the first copy's listener thread calls `MainWindow.ShowFromTray()`.

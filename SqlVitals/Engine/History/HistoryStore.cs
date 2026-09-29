@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Monitoring;
 
@@ -16,8 +17,11 @@ namespace SqlVitals.Engine.History;
 /// </summary>
 public sealed class HistoryStore(string path) : IDisposable
 {
-    /// <summary>1: the tables from #28. 2: adds counter_values (#30). 3: adds alerts (#34).</summary>
-    public const int SchemaVersion = 3;
+    /// <summary>
+    /// 1: the tables from #28. 2: adds counter_values (#30). 3: adds alerts (#34). 4: adds
+    /// activity_log (#115).
+    /// </summary>
+    public const int SchemaVersion = 4;
 
     private const long DayMs          = 24L * 60 * 60 * 1000;
     private const int  PurgeBatchSize = 500;
@@ -138,6 +142,23 @@ public sealed class HistoryStore(string path) : IDisposable
         );
         CREATE INDEX IF NOT EXISTS ix_alerts_connection_start
             ON alerts (connection_id, started_utc);
+
+        CREATE TABLE IF NOT EXISTS activity_log (
+            event_id        INTEGER NOT NULL PRIMARY KEY,
+            time_utc        INTEGER NOT NULL,
+            event           TEXT    NOT NULL,
+            connection_id   TEXT,
+            connection_name TEXT,
+            source          TEXT    NOT NULL,
+            setting         TEXT,
+            old_value       TEXT,
+            new_value       TEXT,
+            windows_user    TEXT    NOT NULL,
+            machine         TEXT    NOT NULL,
+            detail          TEXT
+        );
+        CREATE INDEX IF NOT EXISTS ix_activity_log_time
+            ON activity_log (time_utc);
         """;
 
     private SqliteConnection? _conn;
@@ -221,6 +242,13 @@ public sealed class HistoryStore(string path) : IDisposable
 
         foreach (var record in records)
         {
+            // Carries its own connection name; a connections row is for data read from a server.
+            if (record is ActivityRecord activity)
+            {
+                WriteActivity(conn, tx, activity.Entry);
+                continue;
+            }
+
             var connectionId = record.Connection.Id.ToString("D");
             var capturedMs   = ToEpochMs(record.CapturedUtc);
 
@@ -391,6 +419,41 @@ public sealed class HistoryStore(string path) : IDisposable
             },
             tx);
 
+    private static void WriteActivity(SqliteConnection conn, SqliteTransaction tx, ActivityEntry e)
+    {
+        var detail = e.Detail;
+
+        // Every run logs App started and, when it exits normally, App exited. A start after
+        // another start means the run in between was killed, crashed or lost power.
+        if (e.Event == ActivityEvents.AppStarted)
+        {
+            var previous = conn.ExecuteScalar<string?>("""
+                SELECT event FROM activity_log
+                WHERE event IN (@AppStarted, @AppExited)
+                ORDER BY event_id DESC LIMIT 1
+                """,
+                new { ActivityEvents.AppStarted, ActivityEvents.AppExited }, tx);
+            if (previous == ActivityEvents.AppStarted)
+                detail = string.IsNullOrEmpty(detail) ? ActivityEvents.PreviousRunDidNotExit : $"{ActivityEvents.PreviousRunDidNotExit} {detail}";
+        }
+
+        conn.Execute("""
+            INSERT INTO activity_log (time_utc, event, connection_id, connection_name, source,
+                                      setting, old_value, new_value, windows_user, machine, detail)
+            VALUES (@timeMs, @Event, @connectionId, @ConnectionName, @Source,
+                    @Setting, @OldValue, @NewValue, @WindowsUser, @Machine, @detail)
+            """,
+            new
+            {
+                timeMs       = ToEpochMs(e.TimeUtc),
+                e.Event,
+                connectionId = e.ConnectionId?.ToString("D"),
+                e.ConnectionName, e.Source, e.Setting, e.OldValue, e.NewValue, e.WindowsUser, e.Machine,
+                detail,
+            },
+            tx);
+    }
+
     /// <summary>
     /// Ends every alert still active in the file: ones a previous run never ended because it was
     /// killed or the PC turned off. Each ends at the last sample stored for its connection since
@@ -412,9 +475,10 @@ public sealed class HistoryStore(string path) : IDisposable
     /// <summary>
     /// Deletes everything captured before <paramref name="cutoffUtc"/>, a day or a few hundred
     /// snapshots per transaction so other writers are never held up for long, then gives the
-    /// freed space back to the file system.
+    /// freed space back to the file system. The activity log has its own, longer retention: rows
+    /// before <paramref name="activityCutoffUtc"/> go, and none when it is null.
     /// </summary>
-    public void Purge(DateTime cutoffUtc)
+    public void Purge(DateTime cutoffUtc, DateTime? activityCutoffUtc = null)
     {
         var conn   = Connection;
         var cutoff = ToEpochMs(cutoffUtc);
@@ -457,10 +521,16 @@ public sealed class HistoryStore(string path) : IDisposable
         // An active alert is kept however long ago it started.
         conn.Execute("DELETE FROM alerts WHERE ended_utc < @cutoff;", new { cutoff });
 
+        if (activityCutoffUtc is { } activityCutoff)
+            conn.Execute("DELETE FROM activity_log WHERE time_utc < @cutoff;", new { cutoff = ToEpochMs(activityCutoff) });
+
         Compact(conn);
     }
 
-    /// <summary>Deletes all history, for every connection, and shrinks the file.</summary>
+    /// <summary>
+    /// Deletes all history, for every connection, and shrinks the file. The activity log is kept:
+    /// it is a record of what was done, clearing the history included.
+    /// </summary>
     public void Clear()
     {
         var conn = Connection;

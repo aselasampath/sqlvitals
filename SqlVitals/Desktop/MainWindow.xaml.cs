@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Extensions.Configuration;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Repositories;
@@ -73,10 +74,20 @@ public partial class MainWindow : Window
             await NavigateTo("Alerts", alertsConnectionId: connectionId);
         };
         _tray.ExitRequested   += ExitApp;
+        _tray.StartAllRequested += () => Monitoring.StartAll(ActivitySources.TrayMenu);
+        _tray.StopAllRequested  += () => Monitoring.StopAll(ActivitySources.TrayMenu);
+
+        // Every settings change goes to the activity log (#115); never a secret (see SettingsDiff).
+        SettingsService.Changed += rows =>
+        {
+            foreach (var row in rows)
+                Monitoring.Log(row);
+        };
 
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
+        Monitoring.MonitoringChanged   += OnMonitoringChanged;
         Monitoring.AlertsChanged       += OnAlertsChanged;
-        SyncConnections(store);
+        SyncConnections(store, ActivitySources.AutomaticAtStartup);
 
         Loaded += async (_, _) =>
         {
@@ -127,7 +138,7 @@ public partial class MainWindow : Window
     internal async System.Threading.Tasks.Task ApplySavedConnectionsAsync(bool navigateToDashboard)
     {
         var store = SettingsService.Load();
-        SyncConnections(store);
+        SyncConnections(store, ActivitySources.Settings);
 
         if (Fingerprint(store.Active, store.CommandTimeoutSeconds) != _activeFingerprint)
             await SwapRepositoryAsync(store);
@@ -161,10 +172,11 @@ public partial class MainWindow : Window
 
     // ── Connection selector ───────────────────────────────────────────────────
 
-    // Brings background monitoring and the selector in line with the saved connections.
-    private void SyncConnections(ConnectionStore store)
+    // Brings monitoring and the selector in line with the saved connections. The source says
+    // why, for the activity log rows of any connection that starts or stops.
+    private void SyncConnections(ConnectionStore store, string source)
     {
-        Monitoring.Sync(store);
+        Monitoring.Sync(store, source);
         RefreshConnectionSelector(store);
     }
 
@@ -226,6 +238,27 @@ public partial class MainWindow : Window
             1     => "1 active alert",
             var n => $"{n} active alerts",
         };
+    }
+
+    // Monitoring started or stopped somewhere: the tray says whether anything is monitored.
+    private void OnMonitoringChanged()
+    {
+        _tray.ShowMonitoring(Monitoring.MonitoredCount);
+        UpdateAlertsButton();
+    }
+
+    // ▶ / ■ in a selector row (#115): starts or stops that connection without switching to it.
+    // The button takes the click, so the row isn't selected.
+    private void MonitorToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ConnectionSelectorItem item })
+            return;
+
+        e.Handled = true;
+        if (Monitoring.IsMonitoring(item.Settings.Id))
+            Monitoring.Stop(item.Settings.Id, ActivitySources.ConnectionSelector);
+        else
+            Monitoring.Start(item.Settings.Id, ActivitySources.ConnectionSelector);
     }
 
     private void OnMonitoringStateChanged(Guid connectionId)
@@ -305,7 +338,7 @@ public partial class MainWindow : Window
         }
 
         store = SettingsService.Load();
-        SyncConnections(store);
+        SyncConnections(store, ActivitySources.ConnectionSelector);
         await SwapRepositoryAsync(store);
 
         // Reopen the current page as a fresh instance so nothing from the previous database
@@ -381,8 +414,10 @@ public partial class MainWindow : Window
             return;
 
         _tray.Inform("SqlVitals is still running",
-            "Monitoring carries on and alerts still notify you. Click the SqlVitals icon here to open it, " +
-            "or right-click it and choose Exit to quit.");
+            (Monitoring.MonitoredCount > 0
+                ? "Monitoring carries on and alerts still notify you. "
+                : "Nothing is being monitored; start it from the icon's menu. ") +
+            "Click the SqlVitals icon here to open it, or right-click it and choose Exit to quit.");
         try { SettingsService.SetTrayHintShown(); }
         catch (Exception ex) { AppLog.Error("Tray: could not save that the hint was shown", ex); }
     }
@@ -584,7 +619,7 @@ public partial class MainWindow : Window
         var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
         IRefreshable page = tag switch
         {
-            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId), activeName),
+            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
             "Alerts"          => new AlertsPage(Monitoring, SettingsService, alertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
@@ -610,7 +645,7 @@ public partial class MainWindow : Window
             "Perfmon"        => new PerfmonPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "SpTrace"         => new SpTracePage(Repo),
             "Export"          => new ExportPage(Repo),
-            _                 => new LiveMetricsDashboardPage(Repo, Monitoring.Get(_activeConnectionId), Monitoring.HistoryFor(_activeConnectionId), activeName),
+            _                 => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
         };
 
         MainFrame.Navigate(page);

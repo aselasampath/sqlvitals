@@ -16,7 +16,7 @@ Your login lacks `VIEW SERVER STATE` (or `VIEW DATABASE STATE` on Azure SQL Data
 **Remember password** is unticked for that connection. That's deliberate: passwords then never reach disk. Tick it if you prefer.
 
 **My Entra MFA connection's health dot stays ◯.**
-MFA connections start background monitoring only after you've switched to them once in the session, so you never get unexpected sign-in windows. Select it once after starting the app.
+MFA connections can be monitored only after you've switched to them once in the session, so you never get unexpected sign-in windows: until then their **▶** is greyed out. Select it once after starting the app.
 
 **A server's health score is 0.**
 The last collection failed: the server can't be reached, the login failed or a permission is missing. Click the score to see the error. SqlVitals keeps retrying, less and less often (up to every 5 minutes).
@@ -36,7 +36,7 @@ Before 0.36.0 CPU was read from records Azure SQL Database doesn't have. From 0.
 ## Alerts
 
 **The Alerts page has no alerts, but the health dot went 🟠.**
-An alert needs the indicator past its threshold for **3 samples in a row** (30 seconds at the default interval), so a brief spike changes the dot without raising one. Lower **Settings → Alerts → Raise an alert after** to alert sooner. Alerts are also raised only for monitored, saved connections: the active one and those with **Monitor in background**. See [Alerts](Alerts.md).
+An alert needs the indicator past its threshold for **3 samples in a row** (30 seconds at the default interval), so a brief spike changes the dot without raising one. Lower **Settings → Alerts → Raise an alert after** to alert sooner. Alerts are also raised only for monitored, saved connections: from 0.46.0 nothing is monitored until you press **Start** (Live Metrics, or ▶ in the sidebar selector) or turn on **Settings → Start monitoring automatically**. The Alerts page says when monitoring is off. See [Alerts](Alerts.md).
 
 **An alert ended with "Monitoring stopped".**
 Nothing was watching any more: collection was stopped on Live Metrics, the connection was edited or removed, or SqlVitals exited (or was killed). If the problem is still there, a new alert starts once monitoring resumes. See [Alerts → When monitoring stops](Alerts.md#when-monitoring-stops).
@@ -93,7 +93,7 @@ The connection is to an Azure SQL Database, which has no TempDB files, SQL Serve
 You're on the ad-hoc connection, which isn't recorded. Save the connection in Settings.
 
 **A history chart is empty or has gaps.**
-History is only recorded while SqlVitals is running and the connection has **Monitor in background** on. Gaps are periods when it wasn't. Perfmon history exists only from version 0.30.
+History is only recorded while SqlVitals is running and the connection is **monitored** (from 0.46.0 nothing is, until you press Start or turn on **Settings → Start monitoring automatically**). Gaps are periods when it wasn't: **Settings → Activity Log** says when monitoring stopped, and why (see [How-To: find out why there's a gap](How-To-Recipes.md#find-out-why-theres-a-gap-in-the-history)). Perfmon history exists only from version 0.30.
 
 **Compare to baseline shows no dashed line.**
 Nothing was recorded at the same time last week. Keep history for at least 14 days (**Settings → Monitoring History**).

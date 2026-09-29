@@ -8,11 +8,13 @@
 |---|---|---|
 | [Connection Settings](#connection-settings) | Saved servers and how to reach them | [Connections](Connections.md) |
 | [Command Timeout](#command-timeout) | How long a query may run | below |
+| [Monitoring](#monitoring) | Whether monitoring starts by itself | [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) |
 | [Monitoring History](#monitoring-history) | Snapshot interval, retention, clearing | below |
 | [Health Thresholds](#health-thresholds) | When the health dot turns 🟠 or 🔴, and so what lowers the health score | [Health Dot](Health-Dot-and-Background-Monitoring.md) |
 | [Alerts](#alerts) | How long a breach lasts before it's recorded as an alert; which connections raise Windows notifications | [Alerts](Alerts.md), [Notifications and Tray](Notifications-and-Tray.md) |
 | [Notification Area](#notification-area) | Whether minimizing or closing the window keeps SqlVitals running | [Notifications and Tray](Notifications-and-Tray.md) |
 | [Appearance](#appearance) | Light or dark theme | below |
+| [Activity Log](#activity-log) | When monitoring started and stopped, and every settings change | below |
 | [Diagnostics](#diagnostics) | The app's log files | below |
 
 ## Connection Settings
@@ -23,7 +25,15 @@ Add, edit, test and remove saved connections. Every field is explained in [Conne
 
 **Command Timeout (seconds)**, default **30**. The longest any single diagnostic query may run before it's cancelled. Increase it if screens such as Index Health or Implicit Conversions time out on a very large server.
 
-It applies to **every** connection, including background monitoring, and is saved when you click **💾 Save** or **⚡ Save & Connect**. It overrides `QuerySettings:CommandTimeoutSeconds` in `appsettings.json`.
+It applies to **every** connection, including monitoring, and is saved when you click **💾 Save** or **⚡ Save & Connect**. It overrides `QuerySettings:CommandTimeoutSeconds` in `appsettings.json`.
+
+## Monitoring
+
+| Setting | Default | Effect |
+|---|---|---|
+| **Start monitoring automatically** | **Off** for a new installation; **on** for one upgraded from before 0.46.0 | *"Collect live metrics, history and alerts as soon as SqlVitals starts or connects. Off: nothing is collected until you press Start."* On, the active connection and those with **Monitor in background** are monitored from the start. Saved as soon as you click, and applied straight away: on starts them, off stops every connection (their active alerts end). |
+
+Either way you can start and stop any connection with **▶ / ■** in the sidebar selector, on **💓 Live Metrics**, or from the notification-area icon's menu, until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). **Alerts are only raised for connections being monitored.**
 
 ## Monitoring History
 
@@ -34,7 +44,7 @@ It applies to **every** connection, including background monitoring, and is save
 
 The section also shows the **history file's size** on disk, updated while the page is open.
 
-**🗑 Clear history** deletes all history, alerts included, for **every** connection, after a confirmation. Monitoring carries on, and new history is saved from the next sample. This can't be undone.
+**🗑 Clear history** deletes all history, alerts included, for **every** connection, after a confirmation. Monitoring carries on, and new history is saved from the next sample. This can't be undone. The [activity log](#activity-log) is **kept**, and records that history was cleared, when and by whom.
 
 See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md) and the technical [Monitoring History Database](Monitoring-History-Database.md).
 
@@ -63,6 +73,28 @@ See [Notifications and Tray](Notifications-and-Tray.md).
 
 **Theme**: switch between **Light** (default) and **Dark**. The choice isn't remembered yet, so the app starts in the light theme every time.
 
+## Activity Log
+
+A record of what was done, kept in the history file (`history.db`, table `activity_log`) from 0.46.0. It explains a gap in the history, or an alert that never came, and who changed what, when. Newest first, with filters for **connection**, **event** and **period** (24 hours to 365 days), **↻ Refresh**, and **📤 Export CSV** (the rows shown, in their order; right-click the grid for Copy too).
+
+| Event | Logged when |
+|---|---|
+| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, in the connection selector, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
+| **App started** / **App exited** | Each run. A run that was killed, crashed or lost power has no *App exited*; the next start says *The previous run didn't exit cleanly* |
+| **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. |
+| **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |
+| **History cleared** | **🗑 Clear history** |
+
+Each row also has the **Windows user** and **PC name**, so a shared or copied history file still says who did it.
+
+- **Never logged:** passwords, connection strings (the connection's *Additional parameters* too), access tokens, webhook URLs or any other secret. For those the row only says *changed*.
+- A value that didn't change isn't logged: saving without changing anything writes nothing.
+- Logging never holds up the app or monitoring: rows are saved in the background with the rest of the history. If the file can't be written, the row goes to the [app log](#diagnostics) instead.
+- **Kept for 365 days**, whatever **Keep history for** says; older rows are deleted with the rest of the old history. A damaged history file is renamed and a new one started, and the log starts again with it.
+- It's a record, not a tamper-proof audit trail: it's a local file your Windows account can edit.
+
+The table and example queries are in [Monitoring History Database](Monitoring-History-Database.md#activity_log).
+
 ## Diagnostics
 
 SqlVitals writes errors and warnings to a daily log file. **Open log folder** opens it in Explorer. Attach the latest file when you [report a bug](https://github.com/aselasampath/sqlvitals/issues).
@@ -77,8 +109,8 @@ SqlVitals writes errors and warnings to a daily log file. **Open log folder** op
 
 | What | Where | Notes |
 |---|---|---|
-| Connections, command timeout, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
-| Monitoring history | `%LocalAppData%\SqlVitals\history.db` | Local, not roaming. See [Monitoring History Database](Monitoring-History-Database.md). |
+| Connections, command timeout, Start monitoring automatically, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
+| Monitoring history and the activity log | `%LocalAppData%\SqlVitals\history.db` | Local, not roaming. See [Monitoring History Database](Monitoring-History-Database.md). |
 | Logs | `%AppData%\SqlVitals\logs\` | 14-day retention (`Services/AppLog.cs`) |
 | Defaults | `appsettings.json` in the install folder | `QuerySettings:CommandTimeoutSeconds` (30), `QuerySettings:UseNoLock` (true), fallback `ConnectionStrings:SqlServer`, `TraceSettings:SessionName` |
 

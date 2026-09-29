@@ -11,9 +11,9 @@ Every saved connection has a **health dot** and a **health score** in the sideba
 | 🟢 | Healthy. Every indicator is inside its limits. |
 | 🟠 | Warning. At least one indicator passed its **warning** threshold. |
 | 🔴 | Critical. An indicator passed its **critical** threshold, or the server can't be reached. |
-| ◯ | Not monitored, or monitoring is paused. |
+| ◯ | Not monitored. Hover it to see why: monitoring is off, you stopped it, or its password or sign-in is missing. |
 
-**Hover the dot** to see which indicator caused the colour and its current value.
+**Hover the dot** to see which indicator caused the colour and its current value, or why the connection isn't monitored.
 
 The dot shows the state **now**. When an indicator stays past a threshold for a few samples in a row, SqlVitals also records an **alert**, so you can see later when it started and ended. See [Alerts](Alerts.md).
 
@@ -71,7 +71,7 @@ The score's **colour is the dot's colour**, not a banding of the number. A singl
 - The score is for the **latest sample**, like the dot, so it moves with every refresh. For how long a problem lasted, see [Alerts](Alerts.md).
 - On Live Metrics it always shows the score **now**, also while the charts show a past range.
 - Change a threshold and the score updates straight away, without waiting for the next sample.
-- While a connection is **paused** its score is dimmed: it's the last score taken, not a current one. A connection that isn't monitored has no score.
+- A connection that isn't monitored has no score, in the selector or on Live Metrics: an old score would read as the server's health now.
 - The weights are fixed. To change what counts as a problem, change the [thresholds](#change-the-thresholds), for all connections or [just one](#per-connection-thresholds).
 
 ## Change the thresholds
@@ -92,21 +92,53 @@ Some servers always run hot, such as a reporting server that sits at 85 % CPU al
 
 Other connections keep using the shared thresholds.
 
-## Background monitoring
+## Starting and stopping monitoring
 
-With **Monitor in background** ticked (the default), a connection keeps collecting Live Metrics while you're looking at another one. That means:
+**Monitoring** means collecting Live Metrics every few seconds, saving [history](History-Time-Ranges-and-Baselines.md) and raising [alerts](Alerts.md). A connection that isn't monitored gets none of it: no queries go to its server except the ones of the pages you open. From 0.46.0 nothing is monitored until you ask for it.
+
+> **Configure:** ⚙️ Settings → *Monitoring* → **Start monitoring automatically** (off for a new installation) · **Since:** 0.46.0
+
+### Start monitoring automatically
+
+| Setting | When SqlVitals starts or connects |
+|---|---|
+| **Off** (new installations) | Nothing is monitored. Live Metrics says *Monitoring is off* and has a **▶ Start monitoring** button. |
+| **On** | The active connection, and every connection with **Monitor in background** ticked, are monitored from the start, as SqlVitals did before 0.46.0. |
+
+An installation upgraded from an earlier version keeps monitoring **on**, so nobody silently loses alerts they rely on. Changing the setting applies straight away: turning it on starts the active connection and the background ones; turning it off stops every connection (their active alerts end, as they do on **Stop**).
+
+**Monitor in background** (per connection, in Settings) only matters with the setting on: it keeps a connection monitored while another one is active. It's off for a new connection; saved connections keep their value.
+
+### Start and stop any time
+
+Whatever the setting, you can start and stop monitoring whenever you like:
+
+| Where | What it does |
+|---|---|
+| **💓 Live Metrics** → **▶ Start monitoring** / **■ Stop monitoring** | The active connection. |
+| The sidebar's **connection selector**: **▶** / **■** on each row | That connection, without switching to it. |
+| The SqlVitals icon's menu in the notification area: **Start monitoring all** / **Stop monitoring all** | Start: the active connection and those with Monitor in background. Stop: every connection being monitored. |
+
+- **Start** takes the first sample straight away. **Stop** ends that connection's active [alerts](Alerts.md#when-monitoring-stops).
+- Every place shows the same state: press ■ in the selector and the Live Metrics button, the dot and the tray tooltip change at once.
+- Start and Stop last **until SqlVitals exits**. The next start follows **Start monitoring automatically** again.
+- A connection you started keeps running when you switch to another one, like a background connection.
+- Hover a row in the selector for its state in words: *Monitoring*, *Stopped by you at 10:42*, *Not monitored: the password isn't saved…*
+- **▶ is greyed out** for a connection that can't be monitored yet: a SQL login without a saved password, or an Entra MFA connection you haven't signed in to this session. Its tooltip says why. This avoids surprise password or sign-in prompts.
+
+Every start and stop, with who or what caused it, is written to the [activity log](Settings.md#activity-log), so a gap in the history can be explained later.
+
+### While a connection is monitored
 
 - its **health dot and score stay current**;
 - when you switch back, **its charts already show** what happened while you were away: the last 60 samples, about 10 minutes at the default 10-second interval;
-- its **history** keeps filling, so you can look back later. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+- its **history** keeps filling, so you can look back later. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md);
+- its **alerts** are raised. A connection that isn't monitored raises none, and the [Alerts](Alerts.md) page says so.
 
 Good to know:
 
-- The **interval** and **Start / Stop** on the Live Metrics page control that connection's collector, including while it runs in the background.
+- The **Sample every** interval on the Live Metrics page sets that connection's collection interval, including while it runs in the background. It's kept while the connection is stopped.
 - A server that **can't be reached** is retried less and less often, up to every 5 minutes, so it isn't hammered.
-- **Entra MFA** connections, and SQL logins without a saved password, start background collection only after you've switched to them once in the session. This avoids surprise sign-in or password prompts.
-- Untick **Monitor in background** for servers you rarely care about. Their dot shows ◯ and they have no score.
-
 ---
 
 ### Under the hood
@@ -115,6 +147,7 @@ Good to know:
 - **No extra query:** blocking, log and TempDB are read by the same Live Metrics query that feeds the charts. Their figures aren't saved to history, but [alerts](Alerts.md) on them are.
 - **Missing counters:** an indicator the server doesn't report (some counters are missing on certain Azure SQL tiers) is left out of the grade, not flagged.
 - **Validation:** values out of range in a hand-edited `settings.dat` fall back to the defaults.
-- **Code:** thresholds and grading are in `SqlVitals/Engine/Monitoring/` (`HealthThresholds`, `HealthRules`, `LiveMetricSample`). `HealthRules.Grade` grades each indicator separately; `Evaluate` (the dot) and the [alert tracker](Alerts.md#under-the-hood) both use it. Collectors are run by `Desktop/Services/MonitoringManager.cs`, one `MonitoringSession` per connection. The editor is `Desktop/Controls/HealthThresholdsEditor`.
+- **Code:** thresholds and grading are in `SqlVitals/Engine/Monitoring/` (`HealthThresholds`, `HealthRules`, `LiveMetricSample`). `HealthRules.Grade` grades each indicator separately; `Evaluate` (the dot) and the [alert tracker](Alerts.md#under-the-hood) both use it. Collectors are run by `Desktop/Services/MonitoringManager.cs`, one `MonitoringSession` per monitored connection. The editor is `Desktop/Controls/HealthThresholdsEditor`.
+- **Which connections are monitored:** `MonitoringPlan.Decide` in `Engine/Monitoring/MonitoringPlan.cs` decides, from Start monitoring automatically, the active connection, Monitor in background, the Start and Stop pressed this run (`MonitoringOverrides`), a missing password and the Entra sign-in. It's a pure function, unit tested in `Engine.Tests/Monitoring/MonitoringPlanTests.cs`. `MonitoringManager.Sync` only starts and stops sessions to match it. The upgrade rule is `MonitoringPlan.StartAutomatically`: `StartMonitoringAutomatically` is nullable in `settings.dat`, so a file without it but with connections reads as on. `Desktop.Tests/MonitoringManagerTests.cs` proves, with a repository that counts calls, that with the setting off neither a start nor a connection switch sends a query.
 - **Score:** `SqlVitals/Engine/Monitoring/HealthScore.cs`. `HealthScore.From(readings, time)` turns the readings of `HealthRules.Grade` into the score and its checks; `HealthScore.Unavailable` is the 0 for a failed collection. `MonitoringSession.Score` holds the latest one. The panel is `Desktop/Controls/HealthScoreBreakdown`, shown in a popup by the sidebar (`MainWindow`) and by Live Metrics. Unit tested in `Engine.Tests/Monitoring/HealthScoreTests.cs`. Scores aren't saved to the history.
 - **Backoff:** unreachable servers retry with exponential backoff, capped at 5 minutes.

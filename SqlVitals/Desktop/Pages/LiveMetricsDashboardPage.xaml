@@ -78,11 +78,11 @@
       <RowDefinition Height="Auto"/>
       <!-- toolbar -->
       <RowDefinition Height="Auto"/>
+      <!-- monitoring is off -->
+      <RowDefinition Height="Auto"/>
       <!-- chart chips -->
       <RowDefinition Height="2*"/>
       <!-- chart grid -->
-      <RowDefinition Height="Auto"/>
-      <!-- process map section -->
     </Grid.RowDefinitions>
 
     <!-- ?? Toolbar ???????????????????????????????????????????????? -->
@@ -125,26 +125,26 @@
         <!-- Range: live, or a past range from the monitoring history; and the baseline -->
         <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0" RangeChanged="RangePicker_RangeChanged"
                                   BaselineChanged="RangePicker_BaselineChanged"/>
-        <!-- Auto-refresh: collection (and recording) continues while a past range is shown -->
-        <TextBlock Text="Auto-refresh:" Foreground="{StaticResource TextMuted}"
+        <!-- Sample every: collection (and recording) continues while a past range is shown -->
+        <TextBlock Text="Sample every:" Foreground="{StaticResource TextMuted}"
                            VerticalAlignment="Center" Margin="0,0,6,0"
                            FontFamily="Segoe UI" FontSize="12"/>
         <ComboBox x:Name="CmbInterval" Width="90" Height="26"
                           Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                           BorderBrush="{StaticResource Border}"
                           FontFamily="Segoe UI" FontSize="12"
+                          AutomationProperties.Name="Sample every"
                           SelectionChanged="CmbInterval_SelectionChanged">
           <ComboBox.ItemContainerStyle>
             <Style TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource DarkComboItem}"/>
           </ComboBox.ItemContainerStyle>
         </ComboBox>
-        <ToggleButton x:Name="BtnAutoRefresh" Content="Start" Width="60" Height="26"
-                              Margin="6,0,0,0" Padding="6,0"
-                              Background="#1E3A1E" BorderBrush="#44AA44" BorderThickness="1"
-                              Foreground="#66DD66" FontFamily="Segoe UI" FontSize="11"
-                              Cursor="Hand"
-                              Checked="BtnAutoRefresh_Checked"
-                              Unchecked="BtnAutoRefresh_Unchecked"/>
+        <!-- Starts or stops monitoring this connection (#115); the same as ▶ / ■ in the selector -->
+        <Button x:Name="BtnMonitor" Content="▶  Start monitoring" Height="26" MinWidth="130"
+                Margin="6,0,0,0" Padding="10,0"
+                Style="{StaticResource SecondaryButton}" FontSize="11"
+                ToolTipService.ShowOnDisabled="True"
+                Click="BtnMonitor_Click"/>
         <!-- Countdown -->
         <Border Margin="8,0,0,0" Background="{StaticResource BgCard}"
                         BorderBrush="{StaticResource Border}" BorderThickness="1"
@@ -158,8 +158,31 @@
       </StackPanel>
     </DockPanel>
 
+    <!-- Monitoring is off (#115): nothing is collected; past ranges still show the saved history -->
+    <Border x:Name="MonitoringOffBanner" Grid.Row="1" Background="{DynamicResource BgCard}"
+            BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4"
+            Padding="14,10" Margin="0,0,0,10" Visibility="Collapsed">
+      <DockPanel>
+        <Button x:Name="BtnBannerStart" DockPanel.Dock="Right" VerticalAlignment="Center"
+                Style="{StaticResource RefreshButton}" Padding="14,6" Margin="12,0,0,0"
+                Content="▶  Start monitoring" ToolTipService.ShowOnDisabled="True"
+                Click="BtnBannerStart_Click"/>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Monitoring is off. SqlVitals isn't collecting anything from this server."
+                     Foreground="{DynamicResource TextPrimary}" FontFamily="Segoe UI" FontSize="13"
+                     FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock FontFamily="Segoe UI" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextMuted}">
+            <Run x:Name="TxtMonitoringOffReason"/>
+            <Run Text=" Past ranges (1h, 24h, 7d, Custom…) still show the history saved earlier. "/>
+            <Hyperlink Click="LnkMonitoringSetting_Click" Foreground="{DynamicResource AccentLight}">Start monitoring automatically…</Hyperlink>
+          </TextBlock>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
     <!-- ?? Chart selection chips ?????????????????????????????????? -->
-    <Border Grid.Row="1" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}"
+    <Border Grid.Row="2" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}"
                 BorderThickness="1" CornerRadius="4" Padding="10,7" Margin="0,0,0,10">
       <WrapPanel Orientation="Horizontal">
         <TextBlock Text="Charts:" Foreground="{StaticResource TextMuted}"
@@ -215,6 +238,6 @@
 
         <!-- ?? Chart grid  ???????????????????????????????????????????? -->
         <!-- UniformGrid auto-adjusts columns when panels close -->
-        <UniformGrid Grid.Row="2" x:Name="ChartGrid" Columns="2" />
+        <UniformGrid Grid.Row="3" x:Name="ChartGrid" Columns="2" />
     </Grid>
 </Page>
