@@ -155,6 +155,8 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')          
 
 The edition is detected at runtime with `SERVERPROPERTY('EngineEdition')` (5 = Azure SQL Database, 8 = Managed Instance), and queries switch automatically.
 
+On Azure SQL Database the **TempDB**, **Agent Jobs**, **Backups** and **Security Audit** buttons are disabled: from 0.45.1 they're dimmed and marked **N/A**, and hovering one says why. They come back when you switch to a server that has them.
+
 ## Identifying SqlVitals on your server
 
 SqlVitals sessions use the login you configured, and from 0.44.1 name themselves **SqlVitals** (`program_name` in `sys.dm_exec_sessions`, *ApplicationName* in traces and audits), unless *Additional parameters* sets another `Application Name`. You can filter on it, or cap it with a Resource Governor classifier. The SP Trace event session is named `SqlVitals_SpTrace` (configurable with `TraceSettings:SessionName`).
