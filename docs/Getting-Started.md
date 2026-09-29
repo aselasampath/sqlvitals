@@ -39,7 +39,7 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 | **Active connection** | Which server every screen is looking at. Switch here at any time; no restart needed. |
 | **Health dot** | 🟢 healthy, 🟠 warning, 🔴 critical or unreachable, ◯ not monitored. Hover it to see why. See [Health Dot](Health-Dot-and-Background-Monitoring.md). |
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
-| **Sidebar buttons** | One per screen. The screens are grouped by topic in the [feature map](Home.md#feature-map). |
+| **Sidebar buttons** | One per screen. The screens are grouped by topic in the [feature map](Home.md#feature-map). A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. |
 | **↻ Refresh** | Reloads the current screen. Most screens load once when you open them and again when you press Refresh. |
 | **Status bar** | Shows what's loading, and errors. If a screen's automatic refresh fails, the error appears here instead of a pop-up. |
 

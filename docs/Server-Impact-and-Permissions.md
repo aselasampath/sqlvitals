@@ -62,7 +62,7 @@ The most expensive reads, worth knowing on very large servers:
 | Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
 | Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups; none are in msdb |
 | Config Checks | `VIEW SERVER STATE` for the processors and memory; without it those checks are partly *Not checked* | Nothing extra |
-| Security Audit | `VIEW ANY DEFINITION` to list the sysadmin members and orphaned users; without it those two show *Not checked* | ➖ not available (no sysadmin, sa or TRUSTWORTHY; the button is disabled) |
+| Security Audit | `VIEW ANY DEFINITION` to list the sysadmin members and orphaned users; without it those two show *Not checked* | ➖ not available (no sysadmin, sa or TRUSTWORTHY; the button is marked N/A) |
 
 ```sql
 -- Minimum: every screen (SP Trace in fallback mode)
@@ -141,16 +141,17 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')          
 |---|---|---|---|
 | All monitoring screens | ✅ | ✅ | ✅ (server-level parts skipped) |
 | DB Storage: TempDB files, `sp_configure` | ✅ | ✅ | ➖ not available, skipped |
+| TempDB page (`sys.master_files`) | ✅ | ✅ | ➖ not available (the button is marked N/A) |
 | Query Store / Query Regressions (Query Store source) | 2016+ | ✅ | ✅ |
 | Query Store: Waits tab, Log used / TempDB used, *Forced by* | 2017+ | ✅ | ✅ |
 | Query Store: Query Store hints | 2022+ | ✅ | ✅ |
 | SP Trace | Server-scoped XE session | Server-scoped | Database-scoped (`ON DATABASE`) |
 | Deadlocks (system_health) | ✅ | ✅ | ➖ not available (no system_health) |
-| Agent Jobs (SQL Server Agent) | ✅ (not Express, which has no Agent) | ✅ | ➖ not available (no Agent; the button is disabled) |
-| Backups (msdb backup history) | ✅ | ✅ | ➖ not available (Azure backs up by itself; the button is disabled) |
+| Agent Jobs (SQL Server Agent) | ✅ (not Express, which has no Agent) | ✅ | ➖ not available (no Agent; the button is marked N/A) |
+| Backups (msdb backup history) | ✅ | ✅ | ➖ not available (Azure backs up by itself; the button is marked N/A) |
 | File I/O (`sys.dm_io_virtual_file_stats`) | ✅ Every database | ✅ Every database | ⚠️ The current database's files only; no volumes |
 | Config Checks | ✅ | ✅ (compatibility level held to the highest level in use) | ⚠️ This database's MAXDOP, auto-shrink, page verify and compatibility level only |
-| Security Audit | ✅ | ✅ (Microsoft Entra logins and groups too) | ➖ not available (the button is disabled) |
+| Security Audit | ✅ | ✅ (Microsoft Entra logins and groups too) | ➖ not available (the button is marked N/A) |
 | Index `ONLINE = ON` in scripts | Enterprise / Developer | ✅ | ✅ |
 
 The edition is detected at runtime with `SERVERPROPERTY('EngineEdition')` (5 = Azure SQL Database, 8 = Managed Instance), and queries switch automatically.

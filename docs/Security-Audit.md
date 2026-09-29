@@ -117,7 +117,7 @@ Databases that aren't online, that the login can't open (an availability group s
 | TRUSTWORTHY | ✅ | ✅ | ➖ |
 | Orphaned users | ✅ Every database | ✅ Every database | ➖ |
 
-Azure SQL Database has no sysadmin role, no sa login and no TRUSTWORTHY setting, and its logins are in the logical server's `master`, which a user database can't see. The **🔒 Security Audit** button is disabled on it.
+Azure SQL Database has no sysadmin role, no sa login and no TRUSTWORTHY setting, and its logins are in the logical server's `master`, which a user database can't see. The **🔒 Security Audit** button is disabled on it (dimmed and marked **N/A**).
 
 ---
 

@@ -14,7 +14,7 @@ Five screens show how the server's memory, TempDB, storage, configuration and co
 
 ## TempDB
 
-> **Where:** sidebar → 🗄️ TempDB · **Use it when:** the health dot flags TempDB space, or you see `PAGELATCH` waits
+> **Where:** sidebar → 🗄️ TempDB · **Use it when:** the health dot flags TempDB space, or you see `PAGELATCH` waits · **Not on:** Azure SQL Database, which doesn't expose `sys.master_files` (the button is marked **N/A**)
 
 - **Cards:** the version store's size (red once it holds anything), free space in TempDB, transactions open in TempDB, active temp tables, and temp tables waiting to be dropped. How fast versions are generated and cleaned up is charted on [Perfmon](#perfmon), which shows per-second counters as rates.
 - **TempDB File Space: Used vs Free (MB)**: a chart per TempDB file, at its size now.
