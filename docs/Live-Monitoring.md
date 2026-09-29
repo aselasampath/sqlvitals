@@ -18,10 +18,20 @@ A dashboard of live charts, updated every 10 seconds by default.
 
 ### How to use it
 
-1. Open **💓 Live Metrics**. If the connection is monitored in the background, the charts already show the last ~10 minutes.
-2. **Auto-refresh**: pick an interval and press **Start** (or **Stop**). This controls the connection's collector, including in the background.
-3. **Charts**: tick or untick the charts you want to see.
-4. **Range picker**: switch from **Live** to **1h**, **24h**, **7d** or **Custom…** to look back in time. **Compare to baseline** adds last week's line. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+1. Open **💓 Live Metrics**. If the connection is already monitored, the charts show the last ~10 minutes.
+2. If it says **Monitoring is off**, press **▶ Start monitoring** (in the banner or the toolbar). The first sample is taken straight away. **■ Stop monitoring** stops it again. Both last until SqlVitals exits; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
+3. **Sample every**: how often the connection is sampled, 5 s to 2 min. It applies in the background too, and is kept while monitoring is stopped.
+4. **Charts**: tick or untick the charts you want to see.
+5. **Range picker**: switch from **Live** to **1h**, **24h**, **7d** or **Custom…** to look back in time. **Compare to baseline** adds last week's line. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+
+### When monitoring is off
+
+From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Settings → Start monitoring automatically** is on. Live Metrics still opens first, with a banner: *"Monitoring is off. SqlVitals isn't collecting anything from this server."*, a **▶ Start monitoring** button, and a link to the setting.
+
+- **Nothing is sent to the server** for this page: no Live Metrics query, no history snapshot, and no **Process Map** polling. The sidebar **Refresh** does nothing here either.
+- The health score shows **—**: an old score would read as the server's health now.
+- **Past ranges** (1h, 24h, 7d, Custom…) still show the history saved earlier.
+- If you stopped it, the banner says when (*Stopped by you at 10:42*). If the connection can't be monitored yet (no saved password, Entra sign-in not done), **Start** is greyed out and says why.
 
 ### The charts
 
@@ -32,7 +42,7 @@ A dashboard of live charts, updated every 10 seconds by default.
 | **SQL Throughput** | Batch requests, compilations and transactions per second | Sudden drops (a stall) or spikes. Compilations close to batch requests suggests queries aren't being reused. |
 | **Physical R/W** | Physical reads and writes per second | Read spikes mean data isn't in memory. |
 | **Memory** | Page life expectancy, memory grants pending, buffer cache hit ratio | PLE falling steeply; memory grants pending above 0. |
-| **Process Map** | A small version of the blocking chains | Orange head blockers, listed above the map. Open [Processes](#processes-blocking-chains) for the full view. |
+| **Process Map** | A small version of the blocking chains, refreshed with each sample while monitoring runs | Orange head blockers, listed above the map. Open [Processes](#processes-blocking-chains) for the full view. |
 
 ---
 

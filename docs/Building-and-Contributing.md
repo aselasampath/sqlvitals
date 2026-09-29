@@ -15,8 +15,8 @@
 git clone https://github.com/aselasampath/sqlvitals.git
 cd sqlvitals
 
-dotnet build SqlVitalsDashboard.slnx     # all five projects
-dotnet test                              # Engine.Tests + Installer.Tests
+dotnet build SqlVitalsDashboard.slnx     # all six projects
+dotnet test                              # Engine.Tests + Desktop.Tests + Installer.Tests
 dotnet run --project SqlVitals\Desktop   # start the app
 ```
 
@@ -26,6 +26,7 @@ One test project at a time:
 
 ```powershell
 dotnet test SqlVitals\Engine.Tests
+dotnet test SqlVitals\Desktop.Tests      # the app's services; Windows only (WPF, DPAPI)
 dotnet test SqlVitals\Installer.Tests
 ```
 
@@ -53,6 +54,7 @@ SqlVitals/
   Engine/           Models/, Repositories/, History/, Regressions/, Scripting/, Export/,
                     Filtering/, Monitoring/, Errors/, Controllers/ (+ appsettings.json)
   Engine.Tests/     xUnit
+  Desktop.Tests/    xUnit for the app's services (settings file, monitoring)
   Installer/        Setup wizard: Core/ (logic, no WPF), Views/, Build-Installer.ps1
   Installer.Tests/  xUnit for Installer/Core
   Branding/         Icon sources + Build-Icon.ps1
@@ -78,7 +80,7 @@ The script publishes `SqlVitals.Desktop` **self-contained** for win-x64 and zips
 `.github/workflows/pr-setup.yml` runs on every pull request to `main` (opened, pushed to, reopened, ready for review) on `windows-latest`:
 
 1. Reads the version from the Desktop `.csproj`.
-2. Runs `Installer.Tests`, then `Engine.Tests` (Release).
+2. Runs `Installer.Tests`, `Engine.Tests`, then `Desktop.Tests` (Release).
 3. Builds an **unsigned** Setup and portable zip with `Build-Installer.ps1`.
 4. Posts the file names, sizes, SHA-256 hashes and commit to the run summary.
 5. Uploads `SqlVitals-Setup-<version>-pr<N>` and `SqlVitals-<version>-win-x64-portable-pr<N>` as artifacts, kept for **14 days** (Actions tab → run → *Artifacts*).

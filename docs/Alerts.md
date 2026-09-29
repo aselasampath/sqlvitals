@@ -56,7 +56,8 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 
 An alert needs someone watching. When nothing is, active alerts end with **Ended because: Monitoring stopped**, dated at the **last sample taken**:
 
-- you pressed **Stop** on Live Metrics for that connection;
+- you stopped monitoring that connection: **■** on Live Metrics or in the sidebar selector, or **Stop monitoring all** in the tray menu;
+- you turned off **Settings → Start monitoring automatically** (every connection stops);
 - you edited or removed the connection;
 - you exited SqlVitals (**Exit** in its notification-area menu, or closing the window when [running in the notification area](Notifications-and-Tray.md#running-in-the-notification-area) is off). Just closing or minimizing the window, by default, keeps monitoring running;
 - SqlVitals was killed or the PC turned off. Those alerts are ended the next time SqlVitals starts, at the last sample it had saved for that connection.
@@ -67,7 +68,7 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 
 ## Good to know
 
-- **Which connections:** only saved connections that are monitored, meaning the active one and those with **Monitor in background** ticked. If you pick a connection that isn't monitored, the page says why.
+- **Which connections:** only saved connections that are **monitored**. From 0.46.0 nothing is monitored until you press Start or turn on **Start monitoring automatically**; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). While nothing is monitored the page says **No alerts are being raised: monitoring is off**, and while some connections aren't, it names them (*…monitoring is off for Sales-Prod, HR-DB*). Windows notifications say nothing then either, because there are no alerts. If you pick a connection that isn't monitored, the page says why.
 - **No extra load on the server:** alerts are worked out from the samples SqlVitals already collects.
 - **How long they're kept:** as long as the rest of the [history](Settings.md#monitoring-history), counted from when the alert ended. An active alert is never deleted. **Clear history** deletes alerts too.
 - **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opens this page filtered to that connection. Mute a connection in **Settings → Alerts → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
@@ -78,6 +79,6 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 ### Under the hood
 
 - **Pure logic:** `SqlVitals/Engine/Alerts/AlertTracker.cs`, one per monitored connection. `HealthRules.Grade(sample, thresholds)` gives one `HealthReading` per indicator; the tracker turns them into `AlertChange`s (*Started*, *Escalated*, *Worsened*, *Ended*). An indicator with no figure (nothing blocked, a counter not reported) counts as normal. Unit tested in `Engine.Tests/Alerts/`.
-- **Wiring:** `MonitoringSession` runs the tracker after every successful collection while it's running, and stops it on Pause and Dispose. `MonitoringManager` raises `AlertsChanged` for the page, the sidebar count and the [Windows notification](Notifications-and-Tray.md#under-the-hood), and applies the Settings value (`AlertSamples` in `settings.dat`).
+- **Wiring:** `MonitoringSession` runs the tracker after every successful collection while it's running, and stops it on Pause and Dispose (a Stop ends the session). `MonitoringManager` raises `AlertsChanged` for the page, the sidebar count and the [Windows notification](Notifications-and-Tray.md#under-the-hood), and applies the Settings value (`AlertSamples` in `settings.dat`).
 - **Storage:** each change is queued to the history writer as an `AlertRecord` and saved to the `alerts` table by its id (insert or update), so a lost record is corrected by the next one. At startup, `HistoryWriter.EndAlertsLeftOpen()` ends alerts a previous run left active. See [Monitoring History Database](Monitoring-History-Database.md#alerts).
 - **Reading:** `HistoryReader.ReadAlerts(connectionId, from, to)`. The page merges in the running sessions' active alerts, so a new alert shows before it has been written.

@@ -52,7 +52,7 @@ Figures that crossed the threshold are shown **in red**.
 |---|---|---|
 | **Covers** | Every query in the **connected database** | The **whole server**, but only the **top 20 queries by CPU** at each snapshot |
 | **Plans** | Now and Before | Now only, and only if still in the plan cache |
-| **Needs** | Query Store on (read-write or read-only), SQL Server 2016+ or Azure SQL | A saved connection monitored in the background for long enough to cover both periods |
+| **Needs** | Query Store on (read-write or read-only), SQL Server 2016+ or Azure SQL | A saved connection monitored for long enough to cover both periods |
 | **Clock** | The server's | This PC's |
 
 **Auto** uses Query Store when it's on, otherwise the monitoring history, and says which in the status line.

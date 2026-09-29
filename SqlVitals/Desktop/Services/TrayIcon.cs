@@ -1,4 +1,5 @@
 using System.Windows;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Monitoring;
 using Drawing = System.Drawing;
@@ -33,6 +34,17 @@ internal sealed class TrayIcon : IDisposable
     /// <summary>Exit was chosen: quit SqlVitals for real.</summary>
     public event Action? ExitRequested;
 
+    /// <summary>Start monitoring all was chosen: the active connection and those with Monitor in background (#115).</summary>
+    public event Action? StartAllRequested;
+
+    /// <summary>Stop monitoring all was chosen: every connection being monitored.</summary>
+    public event Action? StopAllRequested;
+
+    private readonly Forms.ToolStripMenuItem _startAllItem;
+    private readonly Forms.ToolStripMenuItem _stopAllItem;
+    private int _monitored;
+    private IReadOnlyCollection<Alert> _active = [];
+
     public TrayIcon(ConnectionSettingsService settings)
     {
         _settings = settings;
@@ -49,21 +61,38 @@ internal sealed class TrayIcon : IDisposable
             ToolTipText = "Ticked connections raise a Windows notification when an alert starts",
         };
 
+        _startAllItem = new Forms.ToolStripMenuItem("Start monitoring all")
+        {
+            ToolTipText = "Monitor the active connection and every connection with Monitor in background, until SqlVitals exits",
+        };
+        _startAllItem.Click += (_, _) => StartAllRequested?.Invoke();
+
+        _stopAllItem = new Forms.ToolStripMenuItem("Stop monitoring all")
+        {
+            ToolTipText = "Stop every connection being monitored, until SqlVitals exits. Their active alerts end.",
+        };
+        _stopAllItem.Click += (_, _) => StopAllRequested?.Invoke();
+
         var exit = new Forms.ToolStripMenuItem("Exit");
         exit.Click += (_, _) => ExitRequested?.Invoke();
 
         _menu = new Forms.ContextMenuStrip { ShowItemToolTips = true };
         _menu.Items.AddRange(new Forms.ToolStripItem[]
         {
-            open, _alertsItem, new Forms.ToolStripSeparator(), _notificationsItem, new Forms.ToolStripSeparator(), exit,
+            open, _alertsItem, new Forms.ToolStripSeparator(), _startAllItem, _stopAllItem, new Forms.ToolStripSeparator(),
+            _notificationsItem, new Forms.ToolStripSeparator(), exit,
         });
         // Rebuilt each time, so it lists the connections and choices saved right now.
-        _menu.Opening += (_, _) => FillNotificationsMenu();
+        _menu.Opening += (_, _) =>
+        {
+            FillNotificationsMenu();
+            _stopAllItem.Enabled = _monitored > 0;
+        };
 
         _icon = new Forms.NotifyIcon
         {
             Icon             = LoadIcon(),
-            Text             = AlertNotification.TrayToolTip([]),
+            Text             = AlertNotification.TrayToolTip([], 0),
             ContextMenuStrip = _menu,
         };
         _icon.MouseClick += (_, e) =>
@@ -100,8 +129,16 @@ internal sealed class TrayIcon : IDisposable
     /// <summary>Puts the number of active alerts in the icon's tooltip and menu.</summary>
     public void ShowActiveAlerts(IReadOnlyCollection<Alert> active)
     {
-        _icon.Text       = AlertNotification.TrayToolTip(active);
+        _active          = active;
+        _icon.Text       = AlertNotification.TrayToolTip(active, _monitored);
         _alertsItem.Text = active.Count == 0 ? "Alerts" : $"Alerts ({active.Count} active)";
+    }
+
+    /// <summary>Says in the tooltip when no connection is monitored (#115).</summary>
+    public void ShowMonitoring(int monitoredConnections)
+    {
+        _monitored = monitoredConnections;
+        _icon.Text = AlertNotification.TrayToolTip(_active, _monitored);
     }
 
     private void FillNotificationsMenu()
@@ -128,7 +165,7 @@ internal sealed class TrayIcon : IDisposable
             {
                 try
                 {
-                    _settings.SetNotificationsMuted(id, muted: notifies);
+                    _settings.SetNotificationsMuted(id, muted: notifies, ActivitySources.TrayMenu);
                 }
                 catch (Exception ex)
                 {

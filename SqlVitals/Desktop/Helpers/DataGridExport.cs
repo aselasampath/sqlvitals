@@ -70,8 +70,8 @@ public static class DataGridExport
             includeHeaders ? Headers(columns) : null, Rows(items, columns)));
     }
 
-    // Exports every row in the grid's current sort order, whatever is selected.
-    private static void ExportCsv(DataGrid grid)
+    /// <summary>Exports every row in the grid's current sort order, whatever is selected, asking where.</summary>
+    internal static void ExportCsv(DataGrid grid)
     {
         var dialog = new SaveFileDialog
         {

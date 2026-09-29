@@ -69,6 +69,15 @@ public sealed record AlertNotification(Guid ConnectionId, HealthLevel Severity, 
     }
 
     /// <summary>The notification-area icon's tooltip: "SqlVitals · 2 active alerts (1 critical)".</summary>
+    /// <summary>
+    /// The tray icon's tooltip: that monitoring is off when no connection is monitored (#115), so
+    /// "no active alerts" can't be read as "all is well"; otherwise the active alerts.
+    /// </summary>
+    public static string TrayToolTip(IReadOnlyCollection<Alert> active, int monitoredConnections) =>
+        monitoredConnections == 0 && active.Count == 0
+            ? "SqlVitals · monitoring is off, no alerts are raised"
+            : TrayToolTip(active);
+
     public static string TrayToolTip(IReadOnlyCollection<Alert> active)
     {
         var critical = active.Count(a => a.Severity == HealthLevel.Critical);

@@ -116,4 +116,15 @@ public class AlertNotificationTests
         Assert.Equal("SqlVitals · 2 active alerts", AlertNotification.TrayToolTip([warning, warning]));
         Assert.Equal("SqlVitals · 2 active alerts (1 critical)", AlertNotification.TrayToolTip([warning, critical]));
     }
+
+    [Fact]
+    public void TrayToolTip_SaysWhenNothingIsMonitored()
+    {
+        var warning = AlertOf(HealthIndicator.Cpu, HealthLevel.Warning);
+
+        Assert.Equal("SqlVitals · monitoring is off, no alerts are raised", AlertNotification.TrayToolTip([], 0));
+        Assert.Equal("SqlVitals · no active alerts", AlertNotification.TrayToolTip([], 1));
+        Assert.Equal("SqlVitals · 1 active alert (warning)", AlertNotification.TrayToolTip([warning], 1));
+        Assert.True(AlertNotification.TrayToolTip([], 0).Length <= 63);   // NotifyIcon's limit on older Windows
+    }
 }

@@ -1,3 +1,4 @@
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -8,7 +9,11 @@ namespace SqlVitals.Engine.History;
 /// Which saved connection a history row belongs to. Names only, never credentials, so history
 /// stays readable after the connection is deleted.
 /// </summary>
-public sealed record HistoryConnection(Guid Id, string Name, string Server, string Database);
+public sealed record HistoryConnection(Guid Id, string Name, string Server, string Database)
+{
+    /// <summary>For a record that belongs to no connection, such as an app-wide activity log row.</summary>
+    public static HistoryConnection None { get; } = new(Guid.Empty, string.Empty, string.Empty, string.Empty);
+}
 
 /// <summary>Something queued for <see cref="HistoryWriter"/> to store.</summary>
 public abstract record HistoryRecord(HistoryConnection Connection, DateTime CapturedUtc);
@@ -28,6 +33,13 @@ public sealed record DetailRecord(
 /// </summary>
 public sealed record AlertRecord(HistoryConnection Connection, DateTime CapturedUtc, Alert Alert)
     : HistoryRecord(Connection, CapturedUtc);
+
+/// <summary>
+/// An activity log row (#115). It carries its own connection id and name, so it isn't tied to a
+/// row in the connections table and outlives the connection.
+/// </summary>
+public sealed record ActivityRecord(ActivityEntry Entry)
+    : HistoryRecord(HistoryConnection.None, Entry.TimeUtc);
 
 /// <summary>
 /// What changed on the server between two <see cref="HistoryDetailSnapshot"/>s. Waits and Files

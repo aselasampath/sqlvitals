@@ -26,6 +26,32 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- Start / stop monitoring a connection from its row in the selector (#115). -->
+        <Style x:Key="MonitorToggleButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="3" Padding="4,1"
+                                BorderBrush="{DynamicResource Border}" BorderThickness="1">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#33808080" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
@@ -69,6 +95,15 @@
                                     <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,4,6,0"
                                              VerticalAlignment="Top" StrokeThickness="1.5"
                                              Fill="{Binding HealthFill}" Stroke="{Binding HealthStroke}" />
+                                    <!-- ▶ starts monitoring this connection, ■ stops it, without switching to it -->
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource MonitorToggleButton}"
+                                            VerticalAlignment="Top" Margin="4,1,0,0" MinWidth="20"
+                                            IsEnabled="{Binding CanToggle}"
+                                            ToolTip="{Binding ToggleToolTip}" ToolTipService.ShowOnDisabled="True"
+                                            Click="MonitorToggle_Click"
+                                            AutomationProperties.Name="{Binding ToggleName}">
+                                        <TextBlock Text="{Binding ToggleGlyph}" FontSize="9" />
+                                    </Button>
                                     <!-- Health score 0–100; clicking it shows which checks lowered it -->
                                     <Button DockPanel.Dock="Right" Style="{StaticResource ScoreButton}"
                                             VerticalAlignment="Top" Margin="4,0,0,0"

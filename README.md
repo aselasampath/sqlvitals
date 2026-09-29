@@ -71,8 +71,8 @@ See the [feature map](docs/Home.md#feature-map) in the wiki for every screen.
 ## Safe on production servers
 
 - **Read-only.** SqlVitals never changes a server. The scripts it writes are for you to review and run.
-- **Light.** Reads use `READ UNCOMMITTED` with a timeout. In the background it runs one light query per server
-  every 10 seconds and a snapshot every 5 minutes; heavy screens run only when you open them.
+- **Light.** Reads use `READ UNCOMMITTED` with a timeout. Nothing is monitored until you start it; then it runs one
+  light query per server every 10 seconds and a snapshot every 5 minutes. Heavy screens run only when you open them.
 - **Private.** Saved connections are encrypted with Windows DPAPI, and history stays on your PC. See
   [Security and Privacy](docs/Security-and-Privacy.md).
 

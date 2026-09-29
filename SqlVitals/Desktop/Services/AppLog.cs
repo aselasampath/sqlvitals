@@ -34,6 +34,8 @@ public static class AppLog
     public static void Error(string message, Exception ex) =>
         Write("ERROR", $"{message}{Environment.NewLine}{ex}");
 
+    public static void Info(string message) => Write("INFO", message);
+
     /// <summary>Deletes log files older than <see cref="RetentionDays"/>. Called once at startup.</summary>
     public static void DeleteExpiredFiles()
     {

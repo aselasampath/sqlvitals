@@ -67,12 +67,14 @@ public partial class AlertsPage : Page, IRefreshable
 
         Loaded += (_, _) =>
         {
-            _monitoring.AlertsChanged += OnAlertsChanged;
+            _monitoring.AlertsChanged     += OnAlertsChanged;
+            _monitoring.MonitoringChanged += OnMonitoringChanged;
             _tick.Start();
         };
         Unloaded += (_, _) =>
         {
-            _monitoring.AlertsChanged -= OnAlertsChanged;
+            _monitoring.AlertsChanged     -= OnAlertsChanged;
+            _monitoring.MonitoringChanged -= OnMonitoringChanged;
             _tick.Stop();
             _reloadSoon.Stop();
         };
@@ -162,6 +164,25 @@ public partial class AlertsPage : Page, IRefreshable
 
         TxtNoData.Text       = EmptyText(status, period, connectionId is null);
         TxtNoData.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        ShowMonitoringOff();
+    }
+
+    // "No alerts are being raised: monitoring is off", for every connection or the ones named.
+    private void ShowMonitoringOff()
+    {
+        var off = _monitoring.NotMonitoredNames();
+        TxtMonitoringOff.Text = _monitoring.MonitoredCount == 0
+            ? "No alerts are being raised: monitoring is off. Start it on Live Metrics, with ▶ in the sidebar selector, or turn on Start monitoring automatically in Settings."
+            : $"No alerts are being raised for some connections: monitoring is off for {string.Join(", ", off)}.";
+        MonitoringOffBanner.Visibility = _monitoring.MonitoredCount == 0 || off.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnMonitoringChanged()
+    {
+        ShowMonitoringOff();
+        _reloadSoon.Stop();
+        _reloadSoon.Start();
     }
 
     private static string Summary(IReadOnlyList<Alert> active, int total, Period period)
@@ -181,10 +202,8 @@ public partial class AlertsPage : Page, IRefreshable
 
     // Why a connection picked in the filter raises no new alerts, when it doesn't.
     private string? NotMonitoredNote(Guid? connectionId) =>
-        connectionId is { } id && _monitoring.Get(id) is not { IsRunning: true }
-            ? (_monitoring.Get(id) is null
-                  ? $"No new alerts are raised for this connection. {_monitoring.NotMonitoredReason(id)}"
-                  : "No new alerts are raised for this connection while its monitoring is stopped (Live Metrics → Start).")
+        connectionId is { } id && !_monitoring.IsMonitoring(id)
+            ? $"No new alerts are raised for this connection. {_monitoring.NotMonitoredReason(id)}"
             : null;
 
     private static string EmptyText(StatusFilter status, Period period, bool allConnections)

@@ -92,6 +92,12 @@
                               ToolTip="Alerts active at any time in the period. Active alerts are always listed. History older than the retention in Settings is deleted, alerts with it."/>
                 </WrapPanel>
 
+                <!-- No alerts can be raised for a connection that isn't monitored (#115) -->
+                <Border x:Name="MonitoringOffBanner" BorderBrush="{StaticResource Warning}" BorderThickness="1"
+                        CornerRadius="4" Padding="10,6" Margin="0,10,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="TxtMonitoringOff" Foreground="{StaticResource Warning}" FontSize="12"
+                               FontWeight="SemiBold" TextWrapping="Wrap"/>
+                </Border>
                 <TextBlock x:Name="TxtSummary" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"
                            Margin="0,10,0,0" TextWrapping="Wrap"/>
                 <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,4,0,0"

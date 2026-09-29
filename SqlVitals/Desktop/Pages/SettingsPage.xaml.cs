@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Desktop;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
@@ -64,6 +65,8 @@ public partial class SettingsPage : Page
         LoadHistorySettings(store);
         LoadAlertSettings(store);
         ChkKeepRunningInTray.IsChecked = store.KeepRunningInTray;
+        ChkStartMonitoringAutomatically.IsChecked = store.StartMonitoringAutomatically;
+        ActivityLogView.Initialize(_monitoring.HistoryReader, store.Connections.Select(c => (c.Id, c.DisplayName)));
         _globalThresholds = store.HealthThresholds;
         GlobalThresholds.Show(_globalThresholds);
         _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
@@ -307,6 +310,10 @@ public partial class SettingsPage : Page
     {
         var app = (App)Application.Current;
         app.ToggleTheme();
+
+        // Not in the settings file, so logged here rather than by the settings diff.
+        _monitoring.Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.SettingChanged, null, null, ActivitySources.Settings,
+                                          "Theme", app.IsDarkTheme ? "Light" : "Dark", app.IsDarkTheme ? "Dark" : "Light"));
         NavigationService?.Navigate(new SettingsPage(_service, _monitoring, _applyConnections, selectConnectionId: _editingId));
     }
 
@@ -423,7 +430,8 @@ public partial class SettingsPage : Page
     {
         var confirm = MessageBox.Show(
             "Delete all monitoring history, for every connection?\n\n" +
-            "Monitoring carries on, and new history is saved from the next sample. This cannot be undone.",
+            "Monitoring carries on, and new history is saved from the next sample. The activity log is kept, " +
+            "and records that history was cleared. This cannot be undone.",
             "Clear History", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (confirm != MessageBoxResult.Yes)
             return;
@@ -432,8 +440,9 @@ public partial class SettingsPage : Page
         ShowStatus(TxtHistoryStatus, "Clearing history…", success: null);
         try
         {
-            await _monitoring.ClearHistoryAsync();
-            ShowStatus(TxtHistoryStatus, "History cleared.", success: true);
+            await _monitoring.ClearHistoryAsync(ActivitySources.Settings);
+            ShowStatus(TxtHistoryStatus, "History cleared. The activity log is kept.", success: true);
+            _ = ActivityLogView.RefreshQuietlyAsync();   // shows the History cleared row
         }
         catch (Exception ex)
         {
@@ -584,6 +593,45 @@ public partial class SettingsPage : Page
             box.IsChecked = !notify;
         }
     }
+
+    // Applies straight away: on starts the active connection and the background ones, off stops
+    // every session (their active alerts end).
+    private async void ChkStartMonitoringAutomatically_Click(object sender, RoutedEventArgs e)
+    {
+        var start = ChkStartMonitoringAutomatically.IsChecked == true;
+        try
+        {
+            _service.SetStartMonitoringAutomatically(start);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtMonitoringStatus, $"Could not save the setting: {Redact(ex.Message)}", success: false);
+            ChkStartMonitoringAutomatically.IsChecked = !start;
+            return;
+        }
+
+        try
+        {
+            await _applyConnections(false);
+            ShowStatus(TxtMonitoringStatus,
+                start
+                    ? $"Saved: {MonitoredText()} now, and from every start of SqlVitals."
+                    : "Saved: monitoring stopped for every connection. Nothing is collected until you press Start.",
+                success: true);
+        }
+        catch (Exception ex)
+        {
+            // Saved, so the box stays as it is; it applies at the latest when SqlVitals next starts.
+            ShowStatus(TxtMonitoringStatus, $"Saved, but it couldn't be applied straight away: {Redact(ex.Message)}", success: false);
+        }
+    }
+
+    private string MonitoredText() => _monitoring.MonitoredCount switch
+    {
+        0     => "no connection can be monitored yet (the active one needs its password, or there is none)",
+        1     => "1 connection is monitored",
+        var n => $"{n} connections are monitored",
+    };
 
     private void ChkKeepRunningInTray_Click(object sender, RoutedEventArgs e)
     {

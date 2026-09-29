@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.FileIo;
@@ -20,10 +21,11 @@ namespace SqlVitals.Desktop.Services;
 /// </summary>
 public class ConnectionSettingsService
 {
-    private static readonly string SettingsDir =
+    private static readonly string DefaultSettingsDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SqlVitals");
 
-    private static readonly string SettingsFile = Path.Combine(SettingsDir, "settings.dat");
+    private readonly string SettingsDir;
+    private readonly string SettingsFile;
 
     private static readonly JsonSerializerOptions FileJsonOptions = new()
     {
@@ -34,6 +36,19 @@ public class ConnectionSettingsService
     // Passwords for connections without "Remember password", held for this process only so
     // switching back to such a connection doesn't ask for the password again.
     private readonly Dictionary<Guid, string> _sessionPasswords = new();
+
+    /// <param name="settingsDir">The folder settings.dat is in; %AppData%\SqlVitals when null. Tests use a temp folder.</param>
+    public ConnectionSettingsService(string? settingsDir = null)
+    {
+        SettingsDir  = settingsDir ?? DefaultSettingsDir;
+        SettingsFile = Path.Combine(SettingsDir, "settings.dat");
+    }
+
+    /// <summary>
+    /// Raised after a save that changed anything the activity log records (#115), with a row per
+    /// change. Never carries a secret (see <see cref="SettingsDiff"/>).
+    /// </summary>
+    public event Action<IReadOnlyList<ActivityEntry>>? Changed;
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -59,9 +74,8 @@ public class ConnectionSettingsService
     }
 
     /// <summary>Adds the connection, or replaces the saved one with the same <see cref="ConnectionSettings.Id"/>.</summary>
-    public void Upsert(ConnectionSettings settings)
+    public void Upsert(ConnectionSettings settings) => Update(ActivitySources.Settings, store =>
     {
-        var store = Load();
         var index = store.Connections.FindIndex(c => c.Id == settings.Id);
         if (index >= 0)
             store.Connections[index] = settings.Clone();
@@ -74,131 +88,112 @@ public class ConnectionSettingsService
             _sessionPasswords.Remove(settings.Id);
         else
             _sessionPasswords[settings.Id] = settings.Password;
-
-        Save(store);
-    }
+    });
 
     /// <summary>Removes a saved connection. Clears the active connection when it was the one removed.</summary>
-    public void Remove(Guid id)
+    public void Remove(Guid id) => Update(ActivitySources.Settings, store =>
     {
-        var store = Load();
         store.Connections.RemoveAll(c => c.Id == id);
         store.NotificationsMuted.Remove(id);
         if (store.ActiveConnectionId == id)
             store.ActiveConnectionId = null;
 
         _sessionPasswords.Remove(id);
-        Save(store);
-    }
+    });
+
+    /// <summary>
+    /// Saves whether monitoring starts by itself when SqlVitals starts or connects (#115). Off,
+    /// nothing is collected until the user presses Start.
+    /// </summary>
+    public void SetStartMonitoringAutomatically(bool start) =>
+        Update(ActivitySources.Settings, store => store.StartMonitoringAutomatically = start);
 
     /// <summary>Saves how often history detail snapshots are taken and how long history is kept.</summary>
-    public void SetHistorySettings(int intervalMinutes, int retentionDays)
+    public void SetHistorySettings(int intervalMinutes, int retentionDays) => Update(ActivitySources.Settings, store =>
     {
-        var store = Load();
         store.HistoryIntervalMinutes = HistorySettings.NormalizeInterval(intervalMinutes);
         store.HistoryRetentionDays   = HistorySettings.NormalizeRetention(retentionDays);
-        Save(store);
-    }
+    });
 
     /// <summary>Saves when the Query Regressions page flags a query (see <see cref="RegressionCriteria"/>).</summary>
-    public void SetRegressionSettings(RegressionCriteria criteria)
+    public void SetRegressionSettings(RegressionCriteria criteria) => Update(ActivitySources.Page("Query Regressions"), store =>
     {
-        var store = Load();
         store.RegressionThresholdPct  = RegressionCriteria.NormalizeThreshold(criteria.ThresholdPct);
         store.RegressionMinExecutions = RegressionCriteria.NormalizeMinExecutions(criteria.MinExecutions);
-        Save(store);
-    }
+    });
 
     /// <summary>Saves the RPO the Backups page checks every database against (see <see cref="BackupRpo"/>).</summary>
-    public void SetBackupRpo(BackupRpo rpo)
-    {
-        var store = Load();
-        store.BackupRpo = rpo;
-        Save(store);
-    }
+    public void SetBackupRpo(BackupRpo rpo) =>
+        Update(ActivitySources.Page("Backups"), store => store.BackupRpo = rpo);
 
     /// <summary>
     /// Saves when the File I/O page highlights a file (see <see cref="FileLatencyThresholds"/>)
     /// and how often it reads the files.
     /// </summary>
-    public void SetFileIoSettings(FileLatencyThresholds thresholds, int intervalSeconds)
+    public void SetFileIoSettings(FileLatencyThresholds thresholds, int intervalSeconds) => Update(ActivitySources.Page("File I/O"), store =>
     {
-        var store = Load();
         store.FileLatencyThresholds = new FileLatencyThresholds(FileLatencyThresholds.NormalizeData(thresholds.DataMs),
                                                                 FileLatencyThresholds.NormalizeLog(thresholds.LogMs));
         store.FileIoIntervalSeconds = ConnectionStore.NormalizeFileIoInterval(intervalSeconds);
-        Save(store);
-    }
+    });
 
     /// <summary>Saves the health-dot thresholds used by every connection without its own.</summary>
-    public void SetHealthThresholds(HealthThresholds thresholds)
-    {
-        var store = Load();
-        store.HealthThresholds = HealthThresholds.Normalize(thresholds);
-        Save(store);
-    }
+    public void SetHealthThresholds(HealthThresholds thresholds) =>
+        Update(ActivitySources.Settings, store => store.HealthThresholds = HealthThresholds.Normalize(thresholds));
 
     /// <summary>Saves how many samples in a row start and end an alert (see <see cref="AlertSettings"/>).</summary>
-    public void SetAlertSettings(int samples)
-    {
-        var store = Load();
-        store.AlertSamples = AlertSettings.NormalizeSamples(samples);
-        Save(store);
-    }
+    public void SetAlertSettings(int samples) =>
+        Update(ActivitySources.Settings, store => store.AlertSamples = AlertSettings.NormalizeSamples(samples));
 
     /// <summary>
     /// Turns Windows notifications for a connection's alerts off or on. Saved on its own, without
     /// the connection form, so a server that is down can still be muted.
     /// </summary>
-    public void SetNotificationsMuted(Guid id, bool muted)
+    /// <param name="source">Where it was changed, for the activity log: Settings or the tray menu.</param>
+    public void SetNotificationsMuted(Guid id, bool muted, string source = ActivitySources.Settings) => Update(source, store =>
     {
-        var store = Load();
         if (muted && store.Connections.Any(c => c.Id == id))
             store.NotificationsMuted.Add(id);
         else
             store.NotificationsMuted.Remove(id);
-        Save(store);
-    }
+    });
 
     /// <summary>Saves whether minimizing or closing the window leaves SqlVitals running in the tray.</summary>
-    public void SetKeepRunningInTray(bool keepRunning)
-    {
-        var store = Load();
-        store.KeepRunningInTray = keepRunning;
-        Save(store);
-    }
+    public void SetKeepRunningInTray(bool keepRunning) =>
+        Update(ActivitySources.Settings, store => store.KeepRunningInTray = keepRunning);
 
     /// <summary>Remembers that the "still running in the tray" notification has been shown once.</summary>
-    public void SetTrayHintShown()
-    {
-        var store = Load();
-        store.TrayHintShown = true;
-        Save(store);
-    }
+    public void SetTrayHintShown() =>
+        Update(ActivitySources.Settings, store => store.TrayHintShown = true);
 
     /// <summary>Saves the Processes page's auto-refresh: its interval, and whether it starts on its own.</summary>
-    public void SetProcessesRefresh(int seconds, bool autoRefresh)
+    public void SetProcessesRefresh(int seconds, bool autoRefresh) => Update(ActivitySources.Page("Processes"), store =>
     {
-        var store = Load();
         store.ProcessesRefreshSeconds = ConnectionStore.NormalizeProcessesRefresh(seconds);
         store.ProcessesAutoRefresh    = autoRefresh;
-        Save(store);
-    }
+    });
 
     /// <summary>Saves which metrics the Query Store page charts over time.</summary>
-    public void SetQueryStoreChartMetrics(IReadOnlyList<QueryStoreMetric> metrics)
-    {
-        var store = Load();
-        store.QueryStoreChartMetrics = QueryStoreMetrics.ParseChartMetrics(metrics.Select(m => m.ToString()));
-        Save(store);
-    }
+    public void SetQueryStoreChartMetrics(IReadOnlyList<QueryStoreMetric> metrics) => Update(ActivitySources.Page("Query Store"), store =>
+        store.QueryStoreChartMetrics = QueryStoreMetrics.ParseChartMetrics(metrics.Select(m => m.ToString())));
 
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
-    public void SetActive(Guid? id)
+    public void SetActive(Guid? id) => Update(ActivitySources.ConnectionSelector, store =>
+        store.ActiveConnectionId = id is { } value && store.Connections.Any(c => c.Id == value) ? value : null);
+
+    // Every setter goes through here: load, change, save, and tell the activity log what changed,
+    // compared on the whole store so no setting can be left out.
+    private void Update(string source, Action<ConnectionStore> change)
     {
-        var store = Load();
-        store.ActiveConnectionId = id is { } value && store.Connections.Any(c => c.Id == value) ? value : null;
+        var store  = Load();
+        var before = SettingsActivity.Snapshot(store);
+        change(store);
         Save(store);
+
+        var changes = SettingsDiff.Between(before, SettingsActivity.Snapshot(store), source, DateTime.UtcNow,
+                                           SettingsActivity.Describe(store));
+        if (changes.Count > 0)
+            Changed?.Invoke(changes);
     }
 
     /// <summary>
@@ -219,9 +214,9 @@ public class ConnectionSettingsService
     // Windows user) is copied aside first, then replaced.
 
     // One copy of an unreadable file per run: every Load until the next save reads the same file.
-    private static bool _unreadableCopied;
+    private bool _unreadableCopied;
 
-    private static ConnectionStore ReadFile()
+    private ConnectionStore ReadFile()
     {
         if (!File.Exists(SettingsFile))
             return new ConnectionStore();
@@ -264,6 +259,7 @@ public class ConnectionSettingsService
                 QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
             };
 
+            var migrated = false;
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
             {
                 // Encrypted for another Windows user or PC (a copied or restored profile): the
@@ -294,14 +290,24 @@ public class ConnectionSettingsService
                 if (legacy is { IsConfigured: true })
                 {
                     legacy.Id = Guid.NewGuid();
+                    // These formats predate the box, when every connection was monitored in the background.
+                    legacy.MonitorInBackground = true;
                     store.Connections.Add(legacy);
                     store.ActiveConnectionId = legacy.Id;
                 }
 
-                // Write the new format straight away: the Id is generated here, so leaving the
-                // old file in place would hand out a different Id on every load.
-                try { Save(store); } catch { /* retried on the next load */ }
+                migrated = true;
             }
+
+            // Missing from files written before #115: those installations were monitoring their
+            // connections, and keep doing so. Saved explicitly from then on.
+            store.StartMonitoringAutomatically =
+                MonitoringPlan.StartAutomatically(raw.StartMonitoringAutomatically, store.Connections.Count > 0);
+
+            // Write the new format straight away: the Id is generated here, so leaving the old
+            // file in place would hand out a different Id on every load.
+            if (migrated)
+                try { Save(store); } catch { /* retried on the next load */ }
 
             // Only saved connections can be muted; anything else is dropped on the next save.
             var known = store.Connections.Select(c => c.Id).ToHashSet();
@@ -323,14 +329,14 @@ public class ConnectionSettingsService
     }
 
     // Damaged beyond reading: start afresh, once a copy is kept.
-    private static ConnectionStore Unreadable(Exception ex) =>
+    private ConnectionStore Unreadable(Exception ex) =>
         CopyUnreadable(ex) ? new ConnectionStore() : new ConnectionStore { ReadFailed = true };
 
     /// <summary>
     /// Copies the settings file to settings.unreadable-&lt;time&gt;.dat, so the next save can't lose
     /// what was in it. False when the copy couldn't be made: then nothing may be saved over it.
     /// </summary>
-    private static bool CopyUnreadable(Exception ex)
+    private bool CopyUnreadable(Exception ex)
     {
         // Every Load reads the file again until the next save replaces it: say so once.
         if (_unreadableCopied)
@@ -367,7 +373,7 @@ public class ConnectionSettingsService
         }
     }
 
-    private static void Save(ConnectionStore store)
+    private void Save(ConnectionStore store)
     {
         if (store.ReadFailed)
             throw new IOException("SqlVitals couldn't read its settings file just now, so it didn't save over it. " +
@@ -388,6 +394,7 @@ public class ConnectionSettingsService
         {
             EncryptedConnections   = Encrypt(JsonSerializer.Serialize(toStore)),
             ActiveConnectionId     = store.ActiveConnectionId,
+            StartMonitoringAutomatically = store.StartMonitoringAutomatically,
             CommandTimeoutSeconds  = store.CommandTimeoutSeconds,
             HistoryIntervalMinutes = store.HistoryIntervalMinutes,
             HistoryRetentionDays   = store.HistoryRetentionDays,
@@ -439,6 +446,9 @@ public class ConnectionSettingsService
         public Guid?   ActiveConnectionId        { get; set; }
         public int     CommandTimeoutSeconds     { get; set; } = 30;
 
+        // Null in files written before #115, so missing can be told apart from off (see ReadFile).
+        public bool?   StartMonitoringAutomatically { get; set; }
+
         // Missing from files written before these settings existed: the defaults apply.
         public int     HistoryIntervalMinutes    { get; set; } = HistorySettings.DefaultIntervalMinutes;
         public int     HistoryRetentionDays      { get; set; } = HistorySettings.DefaultRetentionDays;
@@ -473,6 +483,13 @@ public class ConnectionStore
     public List<ConnectionSettings> Connections           { get; set; } = new();
     public Guid?                    ActiveConnectionId    { get; set; }
     public int                      CommandTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Monitor the active connection, and those with Monitor in background, as soon as SqlVitals
+    /// starts or connects (#115). Off for a new installation: nothing is collected until the user
+    /// presses Start.
+    /// </summary>
+    public bool StartMonitoringAutomatically { get; set; }
 
     /// <summary>Minutes between monitoring-history detail snapshots; one of <see cref="HistorySettings.IntervalChoicesMinutes"/>.</summary>
     public int HistoryIntervalMinutes { get; set; } = HistorySettings.DefaultIntervalMinutes;
@@ -585,8 +602,11 @@ public class ConnectionSettings
     public int         ConnectTimeoutSeconds  { get; set; } = 30;
     public string      AdditionalParameters   { get; set; } = string.Empty;
 
-    /// <summary>Keep collecting live metrics for this connection while another one is active.</summary>
-    public bool        MonitorInBackground    { get; set; } = true;
+    /// <summary>
+    /// Monitor this connection automatically while another one is active. Off for a new
+    /// connection (#115); a saved one keeps its value.
+    /// </summary>
+    public bool        MonitorInBackground    { get; set; }
 
     /// <summary>This connection's own health-dot thresholds; null uses the ones in Settings.</summary>
     public HealthThresholds? HealthThresholds { get; set; }

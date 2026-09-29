@@ -21,6 +21,9 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Find out what an application is calling](#find-out-what-an-application-is-calling)
 - [Get a second opinion from an AI assistant](#get-a-second-opinion-from-an-ai-assistant)
 - [Keep an eye on several servers](#keep-an-eye-on-several-servers)
+- [Run SP Trace without monitoring the server](#run-sp-trace-without-monitoring-the-server)
+- [Monitor my servers all the time](#monitor-my-servers-all-the-time)
+- [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
 
 ---
 
@@ -117,7 +120,7 @@ This is usually **blocking**.
 
 ## Something happened overnight
 
-1. Make sure the connection has **Monitor in background** on. History only exists for monitored connections.
+1. History only exists for times the connection was **monitored**. To have it next time, see [Monitor my servers all the time](#monitor-my-servers-all-the-time).
 2. **💓 Live Metrics → Custom…**: set From/To around the incident, and press **Show**. Look for the CPU or wait spike.
 3. **📈 Wait Trend → same range → Top Waits**: which wait types rose.
 4. **📈 Perfmon → same range**: tick counters such as batch requests, lock waits or page life expectancy.
@@ -191,8 +194,38 @@ This is usually **blocking**.
 
 ## Keep an eye on several servers
 
-1. Add each server in **⚙️ Settings** with **Monitor in background** ticked.
+1. Add each server in **⚙️ Settings** with **Monitor in background** ticked, and tick **Settings → Monitoring → Start monitoring automatically** (see [Monitor my servers all the time](#monitor-my-servers-all-the-time)).
 2. Open the sidebar selector and look at the **health scores**: the lowest one needs attention first. Click a score to see which checks lowered it, without switching connection.
 3. Open **🔔 Alerts** to see what went wrong while you weren't looking, and when. Filter by connection. See [Alerts](Alerts.md).
 4. Servers that always run hot: tick **Use its own health thresholds** so they don't cry wolf.
 5. Use **Settings → Monitoring History** to keep 14+ days, so you can compare against last week, and keep the alerts that long.
+
+## Run SP Trace without monitoring the server
+
+With **Start monitoring automatically** off (the default for a new installation from 0.46.0), SqlVitals sends nothing to the server except what you ask for.
+
+1. Check **⚙️ Settings → Monitoring**: **Start monitoring automatically** is unticked.
+2. Open SqlVitals and connect. **💓 Live Metrics** says *Monitoring is off*; leave it.
+3. Open **🛰️ SP Trace** and trace as usual. See [Find out what an application is calling](#find-out-what-an-application-is-calling).
+4. If the connection's dot in the sidebar is coloured, it's being monitored: press **■** on its row in the selector to stop it until SqlVitals exits.
+
+Nothing else runs beside the trace: no Live Metrics query, history snapshot or Process Map polling. See [SP Trace → Impact on the server](SP-Trace.md#impact-on-the-server).
+
+## Monitor my servers all the time
+
+1. **⚙️ Settings → Monitoring**: tick **Start monitoring automatically**. The active connection starts straight away.
+2. For each other server to watch while another is active: open it in **Settings**, tick **Monitor in background** and **Save**.
+3. Tick **Settings → Notification Area → Keep SqlVitals running in the notification area…**, so closing the window doesn't stop monitoring.
+4. Keep **Settings → Monitoring History** at 14 days or more, for week-over-week baselines.
+
+From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.md) and Windows notifications. A **■** press in the selector or on Live Metrics still stops one until SqlVitals exits.
+
+## Find out why there's a gap in the history
+
+1. **⚙️ Settings → Activity Log**. Set **Period** to cover the gap.
+2. Set **Event** to *Monitoring stopped*, or leave *All events* to see everything around it.
+3. The row before the gap says why: **Source** *user: connection selector* (someone pressed ■), *setting changed* (Start monitoring automatically was turned off), *connection edited*, or *app exit*. **Windows user** and **PC** say who.
+4. No *App exited* before the gap, and the next *App started* says *The previous run didn't exit cleanly*: SqlVitals was killed, crashed or the PC turned off.
+5. A *History cleared* row means the history before it was deleted on purpose.
+
+The same, as a query on the history file: [Monitoring History Database → Example queries](Monitoring-History-Database.md#example-queries).

@@ -97,7 +97,7 @@ A commit waits for its log write, so **log write latency** is felt by every tran
 
 ### History
 
-The page only measures while it's open. SqlVitals also saves each file's reads, writes and stall with every [detail snapshot](Monitoring-History-Database.md) (every 5 minutes by default, for connections with *Monitor in background* on), so latency for last night can be read from the history database. See [Monitoring History Database](Monitoring-History-Database.md) for a query.
+The page only measures while it's open. SqlVitals also saves each file's reads, writes and stall with every [detail snapshot](Monitoring-History-Database.md) (every 5 minutes by default, for monitored connections), so latency for last night can be read from the history database. See [Monitoring History Database](Monitoring-History-Database.md) for a query.
 
 ---
 

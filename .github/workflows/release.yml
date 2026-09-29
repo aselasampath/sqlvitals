@@ -59,6 +59,9 @@ jobs:
       - name: Test engine
         run: dotnet test SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj -c Release
 
+      - name: Test app services
+        run: dotnet test SqlVitals/Desktop.Tests/SqlVitals.Desktop.Tests.csproj -c Release
+
       # Unsigned until a signing certificate is set up (#49).
       - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}
         shell: pwsh

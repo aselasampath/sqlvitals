@@ -9,6 +9,7 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 - **Passwords are optional on disk.** Untick *Remember password* and they stay in memory for the session only.
 - **Logs are scrubbed** of passwords and connection strings.
 - **History is local and unencrypted.** It can include query text. See below.
+- **The activity log never holds a secret.** It records who changed what, but for a password or connection string only that it changed.
 
 ## What is stored, and where
 
@@ -16,6 +17,7 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 |---|---|---|---|
 | Saved connections and settings | `%AppData%\SqlVitals\settings.dat` | **DPAPI** (current user) | Server, database, auth type, login, password (only if *Remember password*), thresholds, preferences |
 | Monitoring history | `%LocalAppData%\SqlVitals\history.db` | Windows file permissions (your profile) | Metrics, waits, file I/O, and **query text** (up to 4,000 characters per query hash) |
+| Activity log | The same `history.db`, table `activity_log` | Windows file permissions | When monitoring started and stopped, app starts and exits, settings and connection changes with their old and new values, **your Windows user name and PC name**; 365-day retention |
 | Diagnostic logs | `%AppData%\SqlVitals\logs\SqlVitals-yyyyMMdd.log` | Windows file permissions | Errors and warnings; **passwords and connection strings removed**; 14-day retention |
 | Exported reports / CSVs / scripts | Wherever you save them | Your responsibility | Whatever you exported |
 | Setup log | `%TEMP%\SqlVitals-Setup-*.log` | — | Install steps and paths only |
@@ -37,12 +39,20 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 - SqlVitals' connections name themselves **SqlVitals** (`Application Name`, the `program_name` in `sys.dm_exec_sessions`), so they can be told apart in traces, audits and logon triggers, or limited with Resource Governor. An `Application Name` in *Additional parameters* takes precedence.
 - **Generated scripts** keep names from the server (tables, users, logins) to one line inside `--` comments, so a name holding a line break can't turn part of itself into T-SQL that runs. The security audit never scripts away the access you are connected with. **CSV exports** write text that Excel would run as a formula with a leading `'`.
 
+## Activity log
+
+From 0.46.0 SqlVitals keeps an [activity log](Settings.md#activity-log): when monitoring was started and stopped and by what, when SqlVitals started and exited, every settings and connection change, and when history was cleared.
+
+- **What it records about you:** each row has the **Windows account** (`DOMAIN\user`) SqlVitals ran as and the **PC name**, so a shared or copied history file still says who did it. It also records connection names, server names and setting values.
+- **What it never records:** passwords, connection strings (including a connection's *Additional parameters*), access tokens, webhook URLs or any other secret. For those the row only says *changed*. Changes are worked out by comparing the settings file before and after each save against a fixed list of secret names, in one place (`SettingsDiff`), and tests check that no secret reaches the table.
+- **Not a security audit trail.** It's a local file your Windows account can edit or delete. It is kept for 365 days, survives **Clear history**, and starts again if the history file is damaged and replaced.
+
 ## Query text and sensitive data
 
 Query text captured from the server (in history, exports and copied grids) may contain **literal values**: customer names, IDs, amounts. Before sharing:
 
 - **Export for AI reports**: read them before pasting into an external service.
-- **`history.db`**: don't send it to others without checking. **Settings → Clear history** deletes it all.
+- **`history.db`**: don't send it to others without checking. **Settings → Clear history** deletes the history, but keeps the activity log (with your Windows user and PC names); delete the file itself to remove that too, with SqlVitals closed.
 - **Logs** are safe to attach to bug reports as far as credentials go, but may include server and database names.
 
 ## Installer

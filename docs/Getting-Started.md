@@ -47,14 +47,16 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 
 A good first tour, in order:
 
-1. **💓 Live Metrics**: the live dashboard. Press **Start** if it isn't already collecting. Watch CPU, waits and throughput for a minute.
+1. **💓 Live Metrics**: the live dashboard. It says *Monitoring is off* at first: nothing is collected from a server until you ask. Press **▶ Start monitoring**, then watch CPU, waits and throughput for a minute.
 2. **📊 Top Waits**: what SQL Server has spent most of its time waiting on since it last started. This is the single best clue to *why* a server is slow. See [Wait Statistics](Wait-Statistics.md).
 3. **🔥 Resource Queries**: the queries using the most CPU and I/O.
 4. **🔍 Index Health**: missing and unused indexes.
 
 ## 4. Add your other servers
 
-Repeat step 1 for each server you look after. Each connection with **Monitor in background** ticked (the default) keeps collecting while you look at another one. That keeps its health dot and score current and fills its history. See [Health Dot and Background Monitoring](Health-Dot-and-Background-Monitoring.md).
+Repeat step 1 for each server you look after. A connection you started keeps collecting while you look at another one, until SqlVitals exits; press **▶** on its row in the sidebar selector to start one without switching to it. That keeps its health dot and score current, fills its history and raises its alerts.
+
+To have SqlVitals monitor your servers every time it starts, tick **⚙️ Settings → Monitoring → Start monitoring automatically**, and **Monitor in background** on each connection to watch while another is active. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
 
 ## Tips
 
