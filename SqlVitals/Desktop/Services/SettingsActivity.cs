@@ -32,6 +32,8 @@ internal static class SettingsActivity
             new("File I/O refresh", $"{store.FileIoIntervalSeconds} s"),
             new("Processes refresh", $"{store.ProcessesRefreshSeconds} s"),
             new("Processes auto-refresh", OnOff(store.ProcessesAutoRefresh)),
+            new("Processes view", store.ProcessesView.ToString()),
+            new("Processes group by login", OnOff(store.ProcessesGroupByLogin)),
             new("Query Store charts", string.Join(", ", store.QueryStoreChartMetrics)),
         };
         settings.AddRange(Thresholds("Health threshold", store.HealthThresholds));

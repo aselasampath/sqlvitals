@@ -5,7 +5,7 @@ Three screens show what the server is doing **right now**:
 | Screen | Answers |
 |---|---|
 | [💓 Live Metrics](#live-metrics) | How busy is the server, and on what? |
-| [🔗 Processes](#processes-blocking-chains) | Who is blocking whom, and who is at the head? |
+| [🔗 Processes](#processes-blocking-chains) | Who is blocking whom, and who is at the head? Which login has the most sessions ([Grid view](#grid-view))? |
 | [⚡ Active Waits](#active-waits) | Which sessions are waiting right now, and on what? |
 
 ---
@@ -52,6 +52,8 @@ From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Se
 
 Live **blocking chains drawn as trees**. The head blocker is at the root and every session hangs under the one blocking it (`blocking_session_id`). Sessions not in a chain are shown below the chains.
 
+The **Map | Grid** switch next to the title shows the same sessions as a [grid grouped by login](#grid-view) instead: better for scanning, sorting and comparing hundreds of sessions. **Map** is the default; the choice is remembered.
+
 ### How to use it
 
 1. Open **🔗 Processes**. Pick an **Auto-refresh** interval (5 s to 2 min) and press **Start**. The interval and Start/Stop are remembered, so next time the page starts refreshing by itself.
@@ -82,6 +84,50 @@ Special cases:
 - **A circle of sessions blocking each other** is a deadlock the deadlock monitor hasn't resolved yet, usually within seconds. It is drawn from its lowest SPID and not listed as a head blocker. Once resolved, it appears on the [Deadlocks](Deadlocks.md) page with its victim.
 - A blocker that isn't a user process (a system task) is still shown, so its chain has a head.
 
+### Grid view
+
+Press **Grid** to see one row per session, **grouped by [login](Glossary.md)**, so you can see at once which login has the most sessions, the blocked ones, or the heaviest load. It's the same snapshot as the map: switching doesn't query the server again, and **Auto-refresh**, the interval and the countdown drive both views.
+
+**The group header** shows the login and a summary of its sessions, for example:
+
+`CORP\svc-orders` · `142 sessions (3 running, 139 sleeping) · 2 blocked · 1 head blocker · CPU 12,340 ms · 5 open tran`
+
+Parts that are zero are left out. *Running* counts sessions with a request (running, runnable, suspended); *open tran* counts sessions with an open transaction. A coloured bar on the left marks a group with a head blocker (orange) or a blocked session (blue). Groups are ordered **problems first**: groups with a head blocker, then groups with a blocked session, then the most sessions, then by name. Logins are grouped ignoring case; sessions without a login are under **(no login)**.
+
+Click a header to collapse or expand the group, or use **Expand all** / **Collapse all**. Groups start expanded. An auto-refresh keeps which groups you collapsed, the sort, the selected row and the scroll position. A login whose sessions have all gone disappears; a new login appears as a new group. Untick **Group by login** for one flat list with a **Login** column (remembered too).
+
+| Column | Meaning |
+|---|---|
+| **SPID** | The session ID |
+| **State** | *Head blocker*, *Blocked*, *Active* or *Sleeping*, with a bar in the map's colour for it |
+| **Blocked by** | The session blocking it, or SQL Server's negative code when the blocker isn't a session (hover for which kind) |
+| **Blocking** | How many sessions it blocks **directly** |
+| **Head of chain** | The head blocker at the top of its chain; empty for a session not in a chain |
+| **Status**, **Host**, **Program**, **Database**, **Command** | What the session is doing and where it comes from |
+| **Wait type**, **Wait (s)**, **Wait resource** | What it's waiting on now, and for how long |
+| **CPU (ms)**, **Physical I/O**, **Memory (pages)**, **Open tran** | As `cpu`, `physical_io`, `memusage` (8-KB pages) and `open_tran` in Session Details |
+| **Login time**, **Last batch** | When the session logged in, and when its last batch ended |
+| **Query text** | The first line of its current or last batch; hover for the whole text |
+
+**Using it**
+
+- **Click a column header** to sort. Rows are sorted inside each group; the groups keep their order.
+- **Select a row** to open the same **Session Details** as clicking a node on the map, with **Copy SQL**.
+- **Follow a chain across logins**: the **Blocked by** and **Head of chain** SPIDs are underlined. Click one to jump to that session's row, even in another login's group, which is expanded for you. A blocked `svc-orders` session whose head is in `report-job` takes you straight to the report job's session.
+- **Ctrl+C** copies the selected rows with their headers (select several with Ctrl or Shift). Right-click for *Copy*, *Copy with headers* and *Export to CSV*.
+
+**Filters.** They combine:
+
+| Filter | What it does |
+|---|---|
+| **Show:** *Head blocker · Blocked · Active · Sleeping* | Each chip shows how many sessions are in that state; click it to hide or show them. Hide *Sleeping* to see only what's doing something. |
+| **Filter rows…** | Shows only the rows containing every word typed, in any column **or the login**, like the filter box on other grids. `svc-orders` shows one login's sessions; `LCK_M` the sessions waiting on locks. The group headers then sum up only the rows shown. **Esc** clears it. |
+| **Blocking chains only**, **Search SPID** | As on the map: only sessions in a chain, or the sessions whose SPID matches with their whole chain. |
+
+Going to a session that a filter hides (from a head blocker chip, or a SPID link) clears the filters so its row can be shown.
+
+The **Process Map** chart on Live Metrics is always the map.
+
 ---
 
 ## Active Waits
@@ -108,5 +154,5 @@ Press **↻ Refresh** for a new snapshot.
 - **Live Metrics** reads `sys.dm_os_performance_counters` and `sys.dm_os_ring_buffers` in one lightweight query per interval. On Azure SQL Database, CPU comes from `sys.dm_db_resource_stats` instead (the portal's *CPU percentage*, a share of the service tier's limit, per 15 seconds), so it can jump between 0 and a high figure where the portal's one-minute average looks smoother. Rates such as batch requests/sec are computed from the difference between two samples, so the first sample after a start has nothing to compare with.
 - The collector belongs to the connection (`MonitoringSession`), not to the page. Leaving the page doesn't stop it. The page keeps the last 60 samples in memory, and every sample is also written to the [history database](Monitoring-History-Database.md) (table `metric_samples`).
 - **Active Waits** reads `sys.dm_exec_requests` joined to `sys.dm_exec_sessions` and `sys.dm_exec_sql_text`, user sessions only, excluding SqlVitals' own session. Query text is cut to 500 characters.
-- **Processes** uses `GetProcessesAsync`: `sys.dm_exec_sessions` joined to `sys.dm_exec_requests`, user sessions plus any session blocking one. A session without a request gets its text from `sys.dm_exec_connections.most_recent_sql_handle` and its open transactions from the session. `Engine/Monitoring/BlockingChains` marks head blockers and builds the trees; `Controls/ProcessMapControl` draws them. It runs only while the page (or the Live Metrics *Process Map*) is on screen.
+- **Processes** uses `GetProcessesAsync`: `sys.dm_exec_sessions` joined to `sys.dm_exec_requests`, user sessions plus any session blocking one. A session without a request gets its text from `sys.dm_exec_connections.most_recent_sql_handle` and its open transactions from the session. `Engine/Monitoring/BlockingChains` marks head blockers and builds the trees; `Controls/ProcessMapControl` draws them. It runs only while the page (or the Live Metrics *Process Map*) is on screen. The grid view uses the same query, so it adds no load: `Engine/Monitoring/ProcessGroups` groups the sessions by login and sums up each group, and the grid draws only the rows on screen (rows are virtualised while grouped).
 - All queries run under `READ UNCOMMITTED` so monitoring never waits on the locks it's reporting. See [Server Impact](Server-Impact-and-Permissions.md).

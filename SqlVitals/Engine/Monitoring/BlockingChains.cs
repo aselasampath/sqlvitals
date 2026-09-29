@@ -165,14 +165,55 @@ public static class BlockingChains
     }
 
     /// <summary>The session at the top of <paramref name="sessionId"/>'s chain; the session itself when nothing visible blocks it.</summary>
-    public static int HeadOf(IReadOnlyList<ProcessNode> nodes, int sessionId)
+    public static int HeadOf(IReadOnlyList<ProcessNode> nodes, int sessionId) => HeadOf(ById(nodes), sessionId);
+
+    /// <summary><see cref="HeadOf"/> for every session at once, for a grid of thousands of sessions (#116).</summary>
+    public static IReadOnlyDictionary<int, int> Heads(IReadOnlyList<ProcessNode> nodes)
     {
         var byId = ById(nodes);
+        return byId.Keys.ToDictionary(id => id, id => HeadOf(byId, id));
+    }
+
+    private static int HeadOf(Dictionary<int, ProcessNode> byId, int sessionId)
+    {
         var seen = new HashSet<int>();
         int id   = sessionId;
         while (seen.Add(id) && byId.TryGetValue(id, out var n) && n.ParentId != id && byId.ContainsKey(n.ParentId))
             id = n.ParentId;
         return id;
+    }
+
+    /// <summary>How many sessions each session blocks directly. Sessions blocking nothing have no entry.</summary>
+    public static IReadOnlyDictionary<int, int> BlockedDirectly(IReadOnlyList<ProcessNode> nodes) =>
+        nodes.Where(n => n.ParentId > 0 && n.ParentId != n.SessionId)
+             .GroupBy(n => n.ParentId)
+             .ToDictionary(g => g.Key, g => g.Count());
+
+    /// <summary>
+    /// The sessions the Processes map and grid show: with <paramref name="chainsOnly"/>, only those in a
+    /// chain; with a <paramref name="spidSearch"/>, the sessions whose SPID contains it and the whole
+    /// chain of each, so its head is on screen with it.
+    /// </summary>
+    public static IReadOnlyList<ProcessNode> Visible(IReadOnlyList<ProcessNode> nodes, bool chainsOnly, string? spidSearch)
+    {
+        var visible = nodes;
+        if (chainsOnly)
+        {
+            var inChains = InChains(visible);
+            visible = visible.Where(n => inChains.Contains(n.SessionId)).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(spidSearch))
+        {
+            var search = spidSearch.Trim();
+            var keep   = new HashSet<int>();
+            foreach (var match in visible.Where(n => n.SessionId.ToString(System.Globalization.CultureInfo.InvariantCulture).Contains(search)))
+            {
+                if (!keep.Contains(match.SessionId))
+                    keep.UnionWith(ChainOf(visible, match.SessionId));
+            }
+            visible = visible.Where(n => keep.Contains(n.SessionId)).ToList();
+        }
+        return visible;
     }
 
     /// <summary>Every session in the same tree as <paramref name="sessionId"/>: its head and everything under it.</summary>

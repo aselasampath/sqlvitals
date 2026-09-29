@@ -58,8 +58,8 @@ public static class DataGridExport
         return menu;
     }
 
-    // Copies the selected rows, or every row when nothing is selected, as tab-separated text.
-    private static void Copy(DataGrid grid, bool includeHeaders)
+    /// <summary>Copies the selected rows, or every row when nothing is selected, as tab-separated text.</summary>
+    internal static void Copy(DataGrid grid, bool includeHeaders)
     {
         var all      = DataItems(grid).ToList();
         var selected = grid.SelectedItems.Cast<object>().ToHashSet();
