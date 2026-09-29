@@ -142,6 +142,50 @@ public class BlockingChainsTests
     }
 
     [Fact]
+    public void Heads_IsHeadOfForEverySession()
+    {
+        var nodes = TypicalChain();
+        var heads = BlockingChains.Heads(nodes);
+
+        Assert.Equal(nodes.Count, heads.Count);
+        foreach (var n in nodes)
+            Assert.Equal(BlockingChains.HeadOf(nodes, n.SessionId), heads[n.SessionId]);
+    }
+
+    [Fact]
+    public void Heads_StopsOnACycle()
+    {
+        var heads = BlockingChains.Heads(BlockingChains.Classify([Node(41, blockedBy: 40), Node(40, blockedBy: 41)]));
+
+        Assert.Equal(2, heads.Count);   // returned at all: the walk didn't loop forever
+    }
+
+    [Fact]
+    public void BlockedDirectly_CountsOnlyTheSessionsRightUnderEach()
+    {
+        var counts = BlockingChains.BlockedDirectly(TypicalChain());
+
+        Assert.Equal(2, counts[55]);    // 60 and 61, not 70
+        Assert.Equal(1, counts[61]);
+        Assert.False(counts.ContainsKey(90));
+    }
+
+    [Fact]
+    public void Visible_ChainsOnly_KeepsTheChains()
+    {
+        Assert.Equal([70, 61, 55, 60], BlockingChains.Visible(TypicalChain(), chainsOnly: true, spidSearch: null).Select(n => n.SessionId));
+    }
+
+    [Fact]
+    public void Visible_ASearch_KeepsTheWholeChainOfAMatch()
+    {
+        // 70 matches "70"; its chain brings its head 55 and 55's other victim 60.
+        Assert.Equal([70, 61, 55, 60], BlockingChains.Visible(TypicalChain(), chainsOnly: false, spidSearch: " 70 ").Select(n => n.SessionId));
+        Assert.Equal([80],             BlockingChains.Visible(TypicalChain(), chainsOnly: false, spidSearch: "80").Select(n => n.SessionId));
+        Assert.Equal(6,                BlockingChains.Visible(TypicalChain(), chainsOnly: false, spidSearch: "").Count);
+    }
+
+    [Fact]
     public void ChainOf_IsTheWholeTree()
     {
         var nodes = TypicalChain();

@@ -173,6 +173,13 @@ public class ConnectionSettingsService
         store.ProcessesAutoRefresh    = autoRefresh;
     });
 
+    /// <summary>Saves how the Processes page shows its sessions: the map or the grid, and whether the grid is grouped by login (#116).</summary>
+    public void SetProcessesView(ProcessesView view, bool groupByLogin) => Update(ActivitySources.Page("Processes"), store =>
+    {
+        store.ProcessesView         = view;
+        store.ProcessesGroupByLogin = groupByLogin;
+    });
+
     /// <summary>Saves which metrics the Query Store page charts over time.</summary>
     public void SetQueryStoreChartMetrics(IReadOnlyList<QueryStoreMetric> metrics) => Update(ActivitySources.Page("Query Store"), store =>
         store.QueryStoreChartMetrics = QueryStoreMetrics.ParseChartMetrics(metrics.Select(m => m.ToString())));
@@ -256,6 +263,8 @@ public class ConnectionSettingsService
                 TrayHintShown           = raw.TrayHintShown,
                 ProcessesRefreshSeconds = ConnectionStore.NormalizeProcessesRefresh(raw.ProcessesRefreshSeconds),
                 ProcessesAutoRefresh    = raw.ProcessesAutoRefresh,
+                ProcessesView           = ConnectionStore.ParseProcessesView(raw.ProcessesView),
+                ProcessesGroupByLogin   = raw.ProcessesGroupByLogin,
                 QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
             };
 
@@ -412,6 +421,8 @@ public class ConnectionSettingsService
             TrayHintShown           = store.TrayHintShown,
             ProcessesRefreshSeconds = store.ProcessesRefreshSeconds,
             ProcessesAutoRefresh    = store.ProcessesAutoRefresh,
+            ProcessesView           = store.ProcessesView.ToString(),
+            ProcessesGroupByLogin   = store.ProcessesGroupByLogin,
             QueryStoreChartMetrics  = store.QueryStoreChartMetrics.Select(m => m.ToString()).ToList(),
         };
 
@@ -466,6 +477,8 @@ public class ConnectionSettingsService
         public bool    TrayHintShown             { get; set; }
         public int     ProcessesRefreshSeconds   { get; set; } = ConnectionStore.DefaultProcessesRefreshSeconds;
         public bool    ProcessesAutoRefresh      { get; set; }
+        public string? ProcessesView             { get; set; }
+        public bool    ProcessesGroupByLogin     { get; set; } = true;
         public List<string>? QueryStoreChartMetrics { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
@@ -559,6 +572,16 @@ public class ConnectionStore
     /// <summary>The Processes page starts refreshing on its own when opened (#37).</summary>
     public bool ProcessesAutoRefresh { get; set; }
 
+    /// <summary>The Processes page shows the map or the grid (#116): the map unless the user picks the grid.</summary>
+    public ProcessesView ProcessesView { get; set; } = ProcessesView.Map;
+
+    /// <summary>The Processes grid is grouped by login (#116); off, it is one flat list.</summary>
+    public bool ProcessesGroupByLogin { get; set; } = true;
+
+    /// <summary>A saved Processes view; the map for anything missing or unknown.</summary>
+    public static ProcessesView ParseProcessesView(string? value) =>
+        Enum.TryParse<ProcessesView>(value, ignoreCase: true, out var view) && Enum.IsDefined(view) ? view : ProcessesView.Map;
+
     /// <summary>The Query Store page's Over Time charts, in order (#111).</summary>
     public IReadOnlyList<QueryStoreMetric> QueryStoreChartMetrics { get; set; } = QueryStoreMetrics.DefaultChartMetrics;
 
@@ -567,6 +590,13 @@ public class ConnectionStore
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;
+}
+
+/// <summary>How the Processes page shows its sessions (#116).</summary>
+public enum ProcessesView
+{
+    Map,
+    Grid,
 }
 
 public enum SqlAuthMode

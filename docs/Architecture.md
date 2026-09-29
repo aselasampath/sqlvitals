@@ -25,6 +25,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │                 ── base: BaseRepository                                                            │
 │  Monitoring/    LiveMetricSample, HealthRules, HealthThresholds, HealthScore, BlockingChains       │
 │                 MonitoringPlan (which connections are monitored, and why)                          │
+│                 ProcessGroups (the Processes grid's login groups, problems first)                  │
 │  Deadlocks/     DeadlockReportParser → DeadlockReport, DeadlockPatterns                            │
 │  AgentJobs/     AgentJob, AgentJobHistory (runs and steps), MsdbTime                               │
 │  Backups/       DatabaseBackup (RPO warnings, recovery point), BackupRpo, BackupHistoryEntry       │
@@ -193,7 +194,7 @@ There are **no `.sql` files**. Each query is a C# raw string literal (`"""…"""
 | Feature | Key DMVs |
 |---|---|
 | Waits | `sys.dm_os_wait_stats`; live: `sys.dm_exec_requests`, `sys.dm_exec_sessions` |
-| Processes (blocking chains) | `sys.dm_exec_sessions`, `sys.dm_exec_requests` (`blocking_session_id`), `sys.dm_exec_connections` (`most_recent_sql_handle`), `sys.dm_exec_sql_text`; chains built by `Engine/Monitoring/BlockingChains` |
+| Processes (blocking chains) | `sys.dm_exec_sessions`, `sys.dm_exec_requests` (`blocking_session_id`), `sys.dm_exec_connections` (`most_recent_sql_handle`), `sys.dm_exec_sql_text`; chains built by `Engine/Monitoring/BlockingChains`; the grid view's login groups by `Engine/Monitoring/ProcessGroups` (same query, no extra load) |
 | Deadlocks | `sys.dm_xe_sessions`, `sys.dm_xe_session_targets` (system_health), `sys.fn_xe_file_target_read_file`; parsed by `Engine/Deadlocks/DeadlockReportParser` |
 | Backups | `msdb.dbo.backupset`, `backupmediafamily`; `sys.databases`, `sys.database_recovery_status`; worked out by `Engine/Backups` |
 | File I/O | `sys.dm_io_virtual_file_stats`, `sys.master_files` (`sys.database_files` on Azure SQL Database), `sys.dm_os_volume_stats`, `sys.dm_os_sys_info`; latency worked out by `Engine/FileIo` from the change between readings |

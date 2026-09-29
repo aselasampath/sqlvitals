@@ -39,6 +39,11 @@ public partial class ProcessesPage : Page, IRefreshable
         var store = settings.Load();
         CmbInterval.SelectedIndex = Math.Max(0, Array.IndexOf(Intervals, store.ProcessesRefreshSeconds));
 
+        // So is the view, and the grid's grouping (#116).
+        ProcessMap.GroupByLogin = store.ProcessesGroupByLogin;
+        if (store.ProcessesView == ProcessesView.Grid) BtnGrid.IsChecked = true;
+        ProcessMap.GroupByLoginChanged += (_, _) => SaveViewChoice();
+
         // Wire timer (ticks every second for the countdown display)
         _timer.Interval = TimeSpan.FromSeconds(1);
         _timer.Tick    += Timer_Tick;
@@ -68,6 +73,27 @@ public partial class ProcessesPage : Page, IRefreshable
         {
             AppLog.Error("Processes: saving the auto-refresh choice failed", ex);
         }
+    }
+
+    private void SaveViewChoice()
+    {
+        if (_restoring) return;
+        try
+        {
+            _settings.SetProcessesView(ProcessMap.ShowGrid ? ProcessesView.Grid : ProcessesView.Map, ProcessMap.GroupByLogin);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Processes: saving the view failed", ex);
+        }
+    }
+
+    // Both views draw the snapshot already loaded: switching doesn't query the server.
+    private void View_Checked(object sender, RoutedEventArgs e)
+    {
+        if (ProcessMap is null) return;   // while the XAML loads
+        ProcessMap.ShowGrid = BtnGrid.IsChecked == true;
+        SaveViewChoice();
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()

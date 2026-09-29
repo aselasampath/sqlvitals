@@ -4,6 +4,8 @@ Step-by-step guides for common situations. You don't need to know which screen t
 
 - [The server is slow right now](#the-server-is-slow-right-now)
 - [Users say the application is hanging](#users-say-the-application-is-hanging)
+- [Find which login has the most sessions](#find-which-login-has-the-most-sessions)
+- [Spot a connection-pool leak](#spot-a-connection-pool-leak)
 - [Users get deadlock errors (1205)](#users-get-deadlock-errors-1205)
 - [A scheduled job failed or is taking too long](#a-scheduled-job-failed-or-is-taking-too-long)
 - [Are my backups meeting the RPO?](#are-my-backups-meeting-the-rpo)
@@ -51,6 +53,26 @@ This is usually **blocking**.
 3. In **Session Details**, check `status`, `open_tran`, `program_name`, `host_name` and the query text.
 4. **Sleeping with `open_tran` ≥ 1** = an application opened a transaction and didn't commit. Give the query text and program name to the application team.
 5. If it must be stopped now, a DBA can run `KILL <spid>` in SSMS. The transaction will roll back, which can take a while.
+6. When the blocked sessions and the head belong to different applications, switch to **Grid**: the group headers show which login holds the head blocker, and clicking **Head of chain** on a blocked row jumps to it.
+
+## Find which login has the most sessions
+
+1. Open **🔗 Processes** and press **Grid**. **Group by login** is ticked.
+2. Groups with a head blocker or a blocked session come first, then the rest **by session count**, most first. Each header reads like `CORP\svc-orders · 142 sessions (3 running, 139 sleeping) · CPU 12,340 ms`.
+3. **Collapse all**, then read the headers down the page: that's the server's sessions by login, busiest first.
+4. To compare logins on load rather than count, expand a group and **sort by CPU (ms)** or **Physical I/O**; or untick **Group by login** and sort the whole list.
+5. Type a login, host or program in **Filter rows…** to see only its sessions; the headers then sum up just those.
+
+## Spot a connection-pool leak
+
+An application that opens connections and doesn't close them fills its pool with idle sessions, until it hits the pool's limit (100 by default in .NET) and new requests time out.
+
+1. Open **🔗 Processes** → **Grid**, and press **Start** so it keeps refreshing.
+2. Look for a login with far more sessions than the others, **nearly all sleeping**: `CORP\svc-orders · 300 sessions (2 running, 298 sleeping)`.
+3. Expand it and **sort by Last batch**. Many sessions whose last batch ended long ago, from the same **Host** and **Program**, are connections the application is holding and not using.
+4. Click the **Active** and **Blocked** chips to hide those states and leave only **Sleeping**, then watch the count over a few refreshes. A number that only goes up is a leak; one that rises and falls with traffic is a pool doing its job.
+5. Check **Open tran**: sleeping sessions with an open transaction also hold locks, and can become [head blockers](#users-say-the-application-is-hanging).
+6. Give the application team the login, host, program and the **Query text** of a few idle sessions: it's their last batch, which points at the code that didn't close its connection.
 
 ## Users get deadlock errors (1205)
 

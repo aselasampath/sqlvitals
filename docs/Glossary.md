@@ -39,6 +39,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Key / RID lookup** | After an index seek, fetching the rest of the row from the clustered index (key) or heap (RID). Expensive when repeated many times. |
 | **Latch** | A short internal lock on a memory structure. `PAGELATCH` = in-memory page; `PAGEIOLATCH` = page being read from disk: many of them point at slow [file I/O](File-IO.md). |
 | **Log chain** | The unbroken series of log backups since a full backup, which a point-in-time restore replays. Switching a database to SIMPLE breaks it; a full or differential backup starts it again. |
+| **Login** | The server-level identity a session connects as (`login_name`): a SQL login such as `sa`, or a Windows user or group such as `CORP\svc-orders`, often an application's service account. Different from a **database user**, which a login is mapped to inside each database and which is what permissions on tables are granted to. The [Processes grid](Live-Monitoring.md#grid-view) groups sessions by login. |
 | **Logical reads** | Pages read from memory. The best measure of how much data a query touches. |
 | **Max server memory** | The most memory SQL Server's buffer pool and caches may take (`sp_configure 'max server memory (MB)'`). Left at the default it has no limit, and Windows can run short. |
 | **MAXDOP** | *Max degree of parallelism*: how many CPUs one query may use. [Configuration Checks](Configuration-Checks.md) works out the recommended value from the server's processors and NUMA nodes. |

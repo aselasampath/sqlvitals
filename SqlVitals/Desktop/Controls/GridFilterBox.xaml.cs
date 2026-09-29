@@ -32,6 +32,12 @@ public partial class GridFilterBox : UserControl
 
     public bool IsActive => _terms.Count > 0;
 
+    /// <summary>
+    /// Text a row is also matched on that no visible column shows, such as the login the Processes
+    /// grid shows only in its group headers.
+    /// </summary>
+    public Func<object, string?>? ExtraRowText { get; set; }
+
     // Typing into a grid of a few thousand rows re-filters on every pause, not every key.
     private readonly DispatcherTimer _debounce = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
@@ -93,6 +99,17 @@ public partial class GridFilterBox : UserControl
         Apply();
         TxtFilter.Focus();
     }
+
+    /// <summary>Empties the box and shows every row again.</summary>
+    public void Clear()
+    {
+        if (TxtFilter.Text.Length == 0 && _terms.Count == 0) return;
+        TxtFilter.Clear();
+        Apply();
+    }
+
+    /// <summary>Whether a row passes the filter as typed now; true for every row when there is none.</summary>
+    public bool Accepts(object item) => Matches(item);
 
     private void Apply()
     {
@@ -159,11 +176,14 @@ public partial class GridFilterBox : UserControl
         if (grid is null) return "";
 
         var culture = grid.Language.GetSpecificCulture();
-        return RowFilter.RowText(grid.Columns
+        var cells   = grid.Columns
             .Where(c => c.Visibility == Visibility.Visible && c.ClipboardContentBinding is not null)
             .Select(c => RowFilter.CellText(
                 c.OnCopyingCellClipboardContent(item),
                 (c as DataGridBoundColumn)?.Binding is Binding b ? b.StringFormat : null,
-                culture)));
+                culture));
+        if (ExtraRowText?.Invoke(item) is { Length: > 0 } extra)
+            cells = cells.Append(extra);
+        return RowFilter.RowText(cells);
     }
 }
