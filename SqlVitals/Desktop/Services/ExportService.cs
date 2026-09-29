@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Services;
@@ -283,12 +284,36 @@ public class ExportService(IWaitStatsRepository repo)
             var (health, topQueries) = await repo.GetQueryStoreAsync();
             if (health is not null)
             {
-                sb.AppendLine(Kv("State",          health.ActualState));
+                sb.AppendLine(Kv("Database",        health.DatabaseName));
+                sb.AppendLine(Kv("State",          health.ActualState, health.ActualState != health.DesiredState ? $"set to {health.DesiredState}" : null));
                 sb.AppendLine(Kv("Storage Used MB", health.CurrentStorageSizeMB));
                 sb.AppendLine(Kv("Storage Max MB",  health.MaxStorageSizeMB));
                 sb.AppendLine(Kv("Storage %",       health.StorageUsedPct.ToString("N1")));
+                sb.AppendLine(Kv("Queries",         health.TotalQueries));
+                sb.AppendLine(Kv("Plans",           health.TotalPlans));
                 sb.AppendLine(Kv("Forced Plans",    health.ForcedPlans));
+                sb.AppendLine(Kv("Capture Mode",    health.CaptureMode));
+                sb.AppendLine(Kv("Size Cleanup",    health.SizeCleanupMode));
+                sb.AppendLine(Kv("Stale After Days", health.StaleQueryThresholdDays));
+                sb.AppendLine(Kv("Interval Minutes", health.IntervalLengthMin));
+                if (health.WaitStatsCaptureMode is { } waits)
+                    sb.AppendLine(Kv("Wait Stats Capture", waits));
                 sb.AppendLine();
+
+                var checks = QueryStoreChecks.Run(health);
+                sb.AppendLine($"  -- Settings Checks: {QueryStoreChecks.Worst(checks)} --");
+                if (checks.Count == 0)
+                    sb.AppendLine("  (no findings)");
+                foreach (var c in checks)
+                    sb.AppendLine($"  {c.LevelText,-8} {c.Title}: {c.Reason}");
+                sb.AppendLine();
+
+                // On its own, so a failure here still leaves the top queries below.
+                if (health.IsEnabled)
+                {
+                    try { await AppendQueryStoreProblemsAsync(sb, health); }
+                    catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); sb.AppendLine(); }
+                }
             }
             var tq = topQueries.ToList();
             if (tq.Count > 0)
@@ -304,6 +329,38 @@ public class ExportService(IWaitStatsRepository repo)
         }
         catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
         return sb.ToString();
+    }
+
+    // Forced plans that fail, and where queries waited, over the last 24 hours (#111).
+    private async Task AppendQueryStoreProblemsAsync(StringBuilder sb, QueryStoreHealth health)
+    {
+        var period = QueryStorePeriod.Last24Hours;
+
+        var failing = (await repo.GetQueryStoreForcedPlansAsync(period)).Plans.Rows.Where(p => p.ForceFailures > 0).ToList();
+        sb.AppendLine("  -- Forced Plans With Failures --");
+        if (failing.Count == 0)
+            sb.AppendLine("  (none)");
+        else
+            sb.Append(Table(failing,
+                ("Query ID",    p => (object?)p.QueryId),
+                ("Plan ID",     p => (object?)p.PlanId),
+                ("Forced By",   p => (object?)p.ForcedBy),
+                ("Failures",    p => (object?)p.ForceFailures),
+                ("Last Reason", p => (object?)p.LastFailureText)));
+        sb.AppendLine();
+
+        if (health.WaitStatsCaptureMode is null)
+            return;   // SQL Server 2016 records no waits in Query Store
+        var waits = (await repo.GetQueryStoreWaitCategoriesAsync(period)).Rows.Take(5).ToList();
+        sb.AppendLine("  -- Top 5 Wait Categories (last 24 h) --");
+        if (waits.Count == 0)
+            sb.AppendLine(health.WaitStatsCaptureMode == "OFF" ? "  (wait stats capture is off)" : "  (no waits recorded)");
+        else
+            sb.Append(Table(waits,
+                ("Category",  w => (object?)w.Name),
+                ("Wait ms",   w => (object?)w.WaitMs.ToString("N0")),
+                ("% of All",  w => (object?)w.PctOfAll.ToString("N1"))));
+        sb.AppendLine();
     }
 
     private async Task<string> FetchIndexHealth()

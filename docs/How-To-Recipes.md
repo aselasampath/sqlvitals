@@ -12,6 +12,8 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Who has the keys to this server?](#who-has-the-keys-to-this-server)
 - [Something happened overnight](#something-happened-overnight)
 - [A query got slower after a release](#a-query-got-slower-after-a-release)
+- [Find a query that's sometimes slow (parameter sniffing)](#find-a-query-thats-sometimes-slow-parameter-sniffing)
+- [Check a forced plan still works](#check-a-forced-plan-still-works)
 - [Is today normal?](#is-today-normal)
 - [CPU is high](#cpu-is-high)
 - [Plan routine index and statistics maintenance](#plan-routine-index-and-statistics-maintenance)
@@ -127,7 +129,23 @@ This is usually **blocking**.
 2. **Compared with: The 7 days before**.
 3. Sort by **Extra time ms**. That's the real impact.
 4. **Plan change = New plan**? Click **Now** and **Before** to open both [graphical plans](Execution-Plans.md) side by side. Look for a scan where there was a seek, a different join type, or a new **⚠** (spill, missing statistics). Save both as `.sqlplan` to keep them.
-5. Quick fix: force the old plan in SSMS's Query Store reports. Proper fix: find why the plan changed. Check 📉 **Stale Stats**, parameter sniffing, or new or dropped indexes.
+5. Quick fix: force the old plan in SSMS's Query Store reports (then [check it still works](#check-a-forced-plan-still-works)). Proper fix: find why the plan changed. Check 📉 **Stale Stats**, parameter sniffing, or new or dropped indexes.
+
+## Find a query that's sometimes slow (parameter sniffing)
+
+1. **📋 Query Store** → **High Variation**. Pick a **Period** that covers the complaints, e.g. *Last 7 days*.
+2. Keep **Metric: Duration**. The top rows vary most between executions; **Variation** 3× or more is a lot.
+3. **Plans** highlighted (more than one)? That's the usual sign of [parameter sniffing](Glossary.md): a plan built for one parameter value, reused for values it doesn't suit.
+4. Double-click the row for **Query details**. The chart has a line per plan: one plan fast, another slow, points to the plan rather than the load. **View Plan** on each and compare (e.g. a seek against a scan, or a much smaller estimate).
+5. Fixes, in order of preference: an index that suits every value; `OPTION (RECOMPILE)` on a cheap query; `OPTIMIZE FOR`; a [Query Store hint](Query-Performance.md#forced-plans) (SQL Server 2022+); forcing the good plan in SSMS. SqlVitals changes nothing itself.
+
+## Check a forced plan still works
+
+1. **📋 Query Store**. The **Forced plans** card says how many there are; click it for the **Forced Plans** tab.
+2. A row in amber (**Warning**) has **Failures**: SQL Server couldn't use the plan. **Last failure reason** says why, e.g. `NO_INDEX` when an index the plan uses was dropped or disabled.
+3. **Executions** far below the query's own (double-click for **Query details**) also means the forced plan isn't being used.
+4. Put the index back, or stop forcing: **Copy unforce** copies `EXEC sys.sp_query_store_unforce_plan …` to review and run yourself.
+5. **Forced by: Automatic plan correction** means automatic tuning forced it after a regression; it unforces it again if it stops helping.
 
 ## Is today normal?
 

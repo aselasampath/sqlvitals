@@ -6,7 +6,7 @@ namespace SqlVitals.Engine.Repositories;
 public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepository, ISpTraceRepository, IHistoryRepository,
                                         IQueryRegressionRepository, IDeadlockRepository, IAgentJobRepository,
                                         IBackupRepository, IFileIoRepository, IConfigurationRepository,
-                                        ISecurityAuditRepository
+                                        ISecurityAuditRepository, IQueryStoreRepository
 {
     // ── Engine edition detection ──────────────────────────────────────
     Task<bool> IsAzureSqlDatabaseAsync();
@@ -21,7 +21,6 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
     // ── New counters ────────────────────────────────────────────────
     Task<(IEnumerable<MemoryGrant> Grants, IEnumerable<MemoryClerk> Clerks, IEnumerable<MemoryCounter> Counters)>   GetMemoryGrantsAsync();
 
-    Task<(QueryStoreHealth? Health, IEnumerable<QueryStoreTopQuery> TopQueries)>                                     GetQueryStoreAsync();
     Task<(IEnumerable<MissingIndex> Missing, IEnumerable<UnusedIndex> Unused)>                                       GetIndexHealthAsync();
 
     // ── Resource-intensive queries ───────────────────────────────────

@@ -483,6 +483,9 @@ public partial class MainWindow : Window
         return ConnectionSettingsService.RedactSecrets(ex.Message);
     }
 
+    /// <summary>Opens another page, as its sidebar button would; for links between pages.</summary>
+    internal System.Threading.Tasks.Task OpenPageAsync(string tag) => NavigateTo(tag);
+
     private async void Nav_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn)
@@ -595,7 +598,7 @@ public partial class MainWindow : Window
             "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId)),
             "TempDb"          => new TempDbPage(Repo),
             "Memory"          => new MemoryGrantsPage(Repo),
-            "QueryStore"      => new QueryStorePage(Repo),
+            "QueryStore"      => new QueryStorePage(Repo, SettingsService),
             "QueryRegressions" => new QueryRegressionsPage(Repo, Monitoring.HistoryFor(_activeConnectionId), SettingsService),
             "IndexHealth"     => new IndexHealthPage(Repo),
             "ResourceQueries" => new ResourceQueriesPage(Repo),

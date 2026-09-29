@@ -28,6 +28,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Estimated vs. actual plan** | An *estimated* plan (plan cache, Query Store) has SQL Server's guesses only. An *actual* plan was captured while the query ran and adds the real row counts and times. |
 | **Execution plan** | The steps SQL Server chose to run a query: which indexes, joins and order. SqlVitals draws it graphically ([Execution Plans](Execution-Plans.md)); it can also be saved as `.sqlplan` for SSMS. |
 | **Extended Events (XE)** | SQL Server's lightweight tracing system, used by SP Trace; the Deadlocks page reads the built-in *system_health* session |
+| **Forced plan** | A plan Query Store makes a query use (`sp_query_store_force_plan`), by hand or by *automatic plan correction*. If forcing fails, e.g. because an index the plan uses was dropped (`NO_INDEX`), the query runs with whatever plan the optimizer picks. See [Query Store → Forced Plans](Query-Performance.md#forced-plans). |
 | **Fragmentation** | How out of order an index's pages are. High fragmentation on large indexes can slow scans. |
 | **FULLSCAN** | Updating statistics by reading every row: most accurate, most expensive |
 | **Health dot** | The coloured indicator per connection in the sidebar |
@@ -49,13 +50,14 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Orphaned user** | A SQL user in a database whose SID matches no login on the server, usually left by restoring the database on another server or dropping its login. See [Security Audit](Security-Audit.md#orphaned-users). |
 | **Page life expectancy (PLE)** | Seconds a data page is expected to stay in memory. Low or quickly falling = memory pressure. |
 | **Page verify** | How a database detects damaged pages. **CHECKSUM** (the default since SQL Server 2005) checks every page as it's read; TORN_PAGE_DETECTION and NONE catch little or nothing. |
-| **Parameter sniffing** | A plan compiled for one parameter value, reused for very different values |
+| **Parameter sniffing** | A plan compiled for the parameter values of its first run, reused for very different values it doesn't suit. The usual sign is a query that's sometimes fast and sometimes slow: high variation, often with more than one plan. See [How-To Recipes](How-To-Recipes.md#find-a-query-thats-sometimes-slow-parameter-sniffing). |
 | **Physical reads** | Pages read from disk because they weren't in memory |
 | **Plan cache** | Where SQL Server keeps compiled plans for reuse. Cleared on restart and under memory pressure. |
 | **Plan guide** | A hint attached to a query from outside, used to force a plan |
 | **Plan regression** | A query getting a worse execution plan than before, and running slower |
 | **Query hash** | A fingerprint that groups queries differing only in literal values |
 | **Query Store** | A per-database feature (SQL Server 2016+, Azure SQL) that keeps query history and plans across restarts |
+| **Query Store interval** | The time Query Store sums a plan's runtime statistics over (`INTERVAL_LENGTH_MINUTES`, 60 by default): one row per plan, interval and execution type. A period on the Query Store page counts whole intervals. |
 | **Recovery model** | How a database keeps its transaction log. **SIMPLE**: the log is reused after each checkpoint, so the database can only be restored to its last full or differential backup. **FULL** (and **BULK_LOGGED**): the log is kept until a **log backup**, which allows a restore to any point in time; without log backups the log keeps growing. |
 | **REORGANIZE / REBUILD** | Index maintenance. Reorganize is light and always online. Rebuild recreates the index and is thorough but heavier. |
 | **Resource wait** | The part of a wait spent waiting for the resource itself (disk, lock, memory) |
@@ -74,3 +76,4 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **VIEW ANY DEFINITION** | A server permission to see the definitions of every login, user, role and object, but no data. The [Security Audit](Security-Audit.md) needs it to list sysadmin members and orphaned users. |
 | **VIEW SERVER STATE** | The permission needed to read server-level DMVs. On Azure SQL Database the equivalent is `VIEW DATABASE STATE`. |
 | **Wait / wait type** | A reason a task couldn't continue, and how long it waited. See [Wait Statistics](Wait-Statistics.md). |
+| **Wait category** | Query Store's grouping of wait types per query (SQL Server 2017+), e.g. *Lock* for `LCK_M_%` or *Buffer IO* for `PAGEIOLATCH_%`. See [Query Store → Waits](Query-Performance.md#waits). |
