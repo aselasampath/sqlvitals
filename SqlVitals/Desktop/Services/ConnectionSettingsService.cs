@@ -8,6 +8,7 @@ using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.FileIo;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Regressions;
 
 namespace SqlVitals.Desktop.Services;
@@ -184,6 +185,14 @@ public class ConnectionSettingsService
         Save(store);
     }
 
+    /// <summary>Saves which metrics the Query Store page charts over time.</summary>
+    public void SetQueryStoreChartMetrics(IReadOnlyList<QueryStoreMetric> metrics)
+    {
+        var store = Load();
+        store.QueryStoreChartMetrics = QueryStoreMetrics.ParseChartMetrics(metrics.Select(m => m.ToString()));
+        Save(store);
+    }
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id)
     {
@@ -252,6 +261,7 @@ public class ConnectionSettingsService
                 TrayHintShown           = raw.TrayHintShown,
                 ProcessesRefreshSeconds = ConnectionStore.NormalizeProcessesRefresh(raw.ProcessesRefreshSeconds),
                 ProcessesAutoRefresh    = raw.ProcessesAutoRefresh,
+                QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
             };
 
             if (!string.IsNullOrWhiteSpace(raw.EncryptedConnections))
@@ -395,6 +405,7 @@ public class ConnectionSettingsService
             TrayHintShown           = store.TrayHintShown,
             ProcessesRefreshSeconds = store.ProcessesRefreshSeconds,
             ProcessesAutoRefresh    = store.ProcessesAutoRefresh,
+            QueryStoreChartMetrics  = store.QueryStoreChartMetrics.Select(m => m.ToString()).ToList(),
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -445,6 +456,7 @@ public class ConnectionSettingsService
         public bool    TrayHintShown             { get; set; }
         public int     ProcessesRefreshSeconds   { get; set; } = ConnectionStore.DefaultProcessesRefreshSeconds;
         public bool    ProcessesAutoRefresh      { get; set; }
+        public List<string>? QueryStoreChartMetrics { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -529,6 +541,9 @@ public class ConnectionStore
 
     /// <summary>The Processes page starts refreshing on its own when opened (#37).</summary>
     public bool ProcessesAutoRefresh { get; set; }
+
+    /// <summary>The Query Store page's Over Time charts, in order (#111).</summary>
+    public IReadOnlyList<QueryStoreMetric> QueryStoreChartMetrics { get; set; } = QueryStoreMetrics.DefaultChartMetrics;
 
     public static int NormalizeProcessesRefresh(int seconds) =>
         seconds is >= 5 and <= 120 && seconds % 5 == 0 ? seconds : DefaultProcessesRefreshSeconds;

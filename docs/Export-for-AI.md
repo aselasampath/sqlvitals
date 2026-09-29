@@ -24,7 +24,7 @@
 | Signal vs Resource Wait | The CPU-pressure indicator. See [Wait Statistics](Wait-Statistics.md#signal-vs-resource-waits). |
 | TempDB Pressure | TempDB usage by session |
 | Memory Grants | Queries holding or waiting for memory |
-| Query Store Health | Query Store state and top queries |
+| Query Store Health | Query Store's state and settings, the settings checks' results, forced plans that fail, the top 5 wait categories of the last 24 hours (SQL Server 2017+), and the top 20 queries by CPU in the last 24 hours |
 | Missing / Unused Indexes | Index suggestions and unused indexes |
 | Resource-Intensive Queries | Top queries by reads and CPU |
 | Index Usage Patterns | Seeks, scans, lookups and updates per index |

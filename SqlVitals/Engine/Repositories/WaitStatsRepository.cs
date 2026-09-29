@@ -35,6 +35,9 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     private readonly QueryRegressionRepository _regressions = new(configuration);
 
+    // Remembers which Query Store views and columns the server has, so one instance per connection.
+    private readonly QueryStoreRepository _queryStore = new(configuration);
+
     private readonly DeadlockRepository _deadlocks = new(configuration);
 
     private readonly AgentJobRepository _agentJobs = new(configuration);
@@ -465,161 +468,6 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
         return (grants, clerks, counters);
     }
-
-    // ── 10. Query Store ───────────────────────────────────────────────
-    /// <summary>
-    /// sys.database_query_store_options.readonly_reason, a bit map of why Query Store went read-only,
-    /// in words; null when it isn't read-only for any reason (0).
-    /// </summary>
-    internal static string? DescribeReadOnlyReason(int reason)
-    {
-        if (reason == 0) return null;
-
-        (int Bit, string Text)[] reasons =
-        [
-            (1,      "the database is read-only"),
-            (2,      "the database is in single-user mode"),
-            (4,      "the database is in emergency mode"),
-            (8,      "the database is a secondary replica"),
-            (65536,  "Query Store reached MAX_STORAGE_SIZE_MB"),
-            (131072, "the number of different statements reached Query Store's internal memory limit"),
-            (262144, "the in-memory items waiting to be written to disk reached Query Store's internal memory limit"),
-            (524288, "the database reached its disk size limit"),
-        ];
-        var known = reasons.Where(r => (reason & r.Bit) != 0).Select(r => r.Text).ToList();
-        var other = reason & ~reasons.Aggregate(0, (all, r) => all | r.Bit);
-        if (other != 0)
-            known.Add($"reason code {other}");
-        return string.Join("; ", known);
-    }
-
-    // plan_type_desc is SQL Server 2022+. Before that every plan is a compiled plan: the
-    // dispatcher and query variant plans of parameter-sensitive plan optimization came with it.
-    internal static string QueryStoreTopQueriesSql(bool hasPlanType) =>
-        QueryStoreTopQueriesSqlTemplate.Replace("/*PLAN_TYPE*/", hasPlanType ? "p.plan_type_desc" : "N'Compiled Plan'");
-
-    public async Task<(QueryStoreHealth?, IEnumerable<QueryStoreTopQuery>)> GetQueryStoreAsync()
-    {
-        const string healthSql = """
-            SELECT actual_state_desc AS ActualState, desired_state_desc AS DesiredState,
-                readonly_reason AS ReadOnlyReason,
-                current_storage_size_mb AS CurrentStorageSizeMB,
-                max_storage_size_mb AS MaxStorageSizeMB,
-                CAST(current_storage_size_mb*100.0/NULLIF(max_storage_size_mb,0) AS DECIMAL(10,1)) AS StorageUsedPct,
-                flush_interval_seconds AS FlushIntervalSec,
-                interval_length_minutes AS IntervalLengthMin,
-                stale_query_threshold_days AS StaleQueryThresholdDays,
-                size_based_cleanup_mode_desc AS SizeCleanupMode,
-                query_capture_mode_desc AS CaptureMode,
-                max_plans_per_query AS MaxPlansPerQuery,
-                (SELECT COUNT(*) FROM sys.query_store_query) AS TotalQueries,
-                (SELECT COUNT(*) FROM sys.query_store_plan) AS TotalPlans,
-                (SELECT COUNT(*) FROM sys.query_store_plan WHERE is_forced_plan=1) AS ForcedPlans,
-                GETDATE() AS CaptureTime
-            FROM sys.database_query_store_options
-            """;
-
-        using var conn = CreateConnection();
-
-        QueryStoreHealth? health = null;
-        try
-        {
-            var hr = await QFirst(conn, healthSql);
-            if (hr is not null)
-            {
-                bool enabled = ((string)hr.ActualState).StartsWith("READ", StringComparison.OrdinalIgnoreCase);
-                double used = (double)(hr.StorageUsedPct ?? 0);
-                string sev = !enabled ? "WARNING" : used > 90 ? "WARNING" : "OK";
-                health = new QueryStoreHealth(
-                    (string)hr.ActualState, (string)hr.DesiredState,
-                    DescribeReadOnlyReason(hr.ReadOnlyReason is null ? 0 : Convert.ToInt32((object)hr.ReadOnlyReason)),
-                    (long)hr.CurrentStorageSizeMB, (long)hr.MaxStorageSizeMB,
-                    used, (int)hr.FlushIntervalSec, (int)hr.IntervalLengthMin,
-                    (int)hr.StaleQueryThresholdDays, (string)hr.SizeCleanupMode,
-                    (string)hr.CaptureMode, (int)hr.MaxPlansPerQuery,
-                    (int)hr.TotalQueries, (int)hr.TotalPlans, (int)hr.ForcedPlans,
-                    (DateTime)hr.CaptureTime, enabled, sev);
-            }
-        }
-        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
-
-        IEnumerable<QueryStoreTopQuery> queries = [];
-        try
-        {
-            var sql  = QueryStoreTopQueriesSql(await HasColumnAsync(conn, "sys.query_store_plan", "plan_type_desc"));
-            var rows = await Q(conn, sql);
-            queries = rows.Select(r =>
-            {
-                double cpu = (double)r.TotalCpuMs;
-                string sev = cpu > 60_000 ? "Critical" : cpu > 10_000 ? "Warning" : "Info";
-                return new QueryStoreTopQuery(
-                    (long)r.QueryId, (long)r.PlanId,
-                    (string)r.QueryText, (long)r.TotalExecutions,
-                    cpu, (double)r.AvgCpuMs,
-                    (double)r.TotalDurationMs, (double)r.AvgDurationMs,
-                    (long)r.TotalLogicalReads, (double)r.AvgLogicalReads,
-                    (long)r.TotalLogicalWrites, (long)r.TotalPhysicalReads,
-                    (double)r.TotalMemoryMB, (double)r.AvgMemoryKB,
-                    (bool)r.IsForcedPlan, (string)r.PlanType,
-                    ToUtc((object)r.LastExecutionTimeUtc), (DateTime)r.CaptureTime, sev);
-            }).ToList();
-        }
-        catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208) { /* Query Store catalog views don't exist on this SQL version */ }
-
-        return (health, queries);
-    }
-
-    // Query Store keeps its times as datetimeoffset, in UTC.
-    private static DateTime ToUtc(object value) => value switch
-    {
-        DateTimeOffset offset => offset.UtcDateTime,
-        DateTime time         => DateTime.SpecifyKind(time, DateTimeKind.Utc),
-        _                     => DateTime.MinValue,
-    };
-
-    private const string QueryStoreTopQueriesSqlTemplate = """
-            ;WITH PlanAgg AS (
-                SELECT rs.plan_id,
-                    SUM(rs.avg_cpu_time*rs.count_executions) AS TotalCpuUs,
-                    SUM(rs.avg_duration*rs.count_executions) AS TotalDurationUs,
-                    SUM(rs.avg_logical_io_reads*rs.count_executions) AS TotalLogicalReads,
-                    SUM(rs.avg_logical_io_writes*rs.count_executions) AS TotalLogicalWrites,
-                    SUM(rs.avg_physical_io_reads*rs.count_executions) AS TotalPhysicalReads,
-                    SUM(rs.avg_query_max_used_memory*rs.count_executions) AS TotalMemoryPages,
-                    SUM(rs.count_executions) AS TotalExecutions,
-                    MAX(rs.last_execution_time) AS LastExecutionTime
-                FROM sys.query_store_runtime_stats rs
-                WHERE rs.last_execution_time >= DATEADD(HOUR,-24,GETUTCDATE())
-                GROUP BY rs.plan_id
-            ),
-            Ranked AS (
-                SELECT p.query_id, pa.plan_id, pa.TotalCpuUs, pa.TotalDurationUs,
-                    pa.TotalLogicalReads, pa.TotalLogicalWrites, pa.TotalPhysicalReads,
-                    pa.TotalMemoryPages, pa.TotalExecutions, pa.LastExecutionTime,
-                    p.is_forced_plan, /*PLAN_TYPE*/ AS plan_type_desc,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalCpuUs/pa.TotalExecutions ELSE 0 END AS AvgCpuUs,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalDurationUs/pa.TotalExecutions ELSE 0 END AS AvgDurationUs,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalLogicalReads/pa.TotalExecutions ELSE 0 END AS AvgLogicalReads,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalMemoryPages*8/pa.TotalExecutions ELSE 0 END AS AvgMemoryKB,
-                    ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY pa.TotalCpuUs DESC) AS rn
-                FROM PlanAgg pa JOIN sys.query_store_plan p ON pa.plan_id=p.plan_id
-                WHERE p.query_plan IS NOT NULL
-            )
-            SELECT TOP 20 r.query_id AS QueryId, r.plan_id AS PlanId,
-                qt.query_sql_text AS QueryText,
-                r.TotalExecutions,
-                r.TotalCpuUs/1000.0 AS TotalCpuMs, r.AvgCpuUs/1000.0 AS AvgCpuMs,
-                r.TotalDurationUs/1000.0 AS TotalDurationMs, r.AvgDurationUs/1000.0 AS AvgDurationMs,
-                r.TotalLogicalReads, r.AvgLogicalReads,
-                r.TotalLogicalWrites, r.TotalPhysicalReads,
-                r.TotalMemoryPages*8/1024.0 AS TotalMemoryMB, r.AvgMemoryKB*1.0 AS AvgMemoryKB,
-                r.is_forced_plan AS IsForcedPlan, r.plan_type_desc AS PlanType,
-                r.LastExecutionTime AS LastExecutionTimeUtc, GETDATE() AS CaptureTime
-            FROM Ranked r
-            JOIN sys.query_store_query q ON r.query_id=q.query_id
-            JOIN sys.query_store_query_text qt ON q.query_text_id=qt.query_text_id
-            WHERE r.rn=1 ORDER BY r.TotalCpuUs DESC OPTION (LOOP JOIN)
-            """;
 
     // ── 11. Index health ──────────────────────────────────────────────
     public async Task<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)> GetIndexHealthAsync()
@@ -1825,6 +1673,36 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
 
     public Task<string?> GetCachedPlanForQueryHashAsync(string queryHash)
         => _regressions.GetCachedPlanForQueryHashAsync(queryHash);
+
+    // ── Query Store (delegated to QueryStoreRepository) ───────────────
+    public Task<(QueryStoreHealth? Health, IEnumerable<QueryStoreTopQuery> TopQueries)> GetQueryStoreAsync()
+        => _queryStore.GetQueryStoreAsync();
+
+    public Task<QueryStoreStatus> GetQueryStoreStatusAsync()
+        => _queryStore.GetQueryStoreStatusAsync();
+
+    public Task<QueryStoreRows<QueryStoreQueryRow>> GetQueryStoreTopQueriesAsync(
+        QueryStore.QueryStorePeriod period, QueryStore.QueryStoreMetric metric, QueryStore.QueryStoreStatistic statistic, int top)
+        => _queryStore.GetQueryStoreTopQueriesAsync(period, metric, statistic, top);
+
+    public Task<QueryStoreRows<QueryStoreSlot>> GetQueryStoreOverTimeAsync(QueryStore.QueryStorePeriod period, TimeSpan slotLength, DateTimeOffset origin)
+        => _queryStore.GetQueryStoreOverTimeAsync(period, slotLength, origin);
+
+    public Task<QueryStoreRows<QueryStoreVariationRow>> GetQueryStoreHighVariationAsync(
+        QueryStore.QueryStorePeriod period, QueryStore.QueryStoreMetric metric, int minExecutions, int top)
+        => _queryStore.GetQueryStoreHighVariationAsync(period, metric, minExecutions, top);
+
+    public Task<QueryStoreRows<QueryStoreWaitCategory>> GetQueryStoreWaitCategoriesAsync(QueryStore.QueryStorePeriod period)
+        => _queryStore.GetQueryStoreWaitCategoriesAsync(period);
+
+    public Task<QueryStoreRows<QueryStoreWaitQuery>> GetQueryStoreWaitQueriesAsync(QueryStore.QueryStorePeriod period, int category, int top)
+        => _queryStore.GetQueryStoreWaitQueriesAsync(period, category, top);
+
+    public Task<QueryStoreForcedPlans> GetQueryStoreForcedPlansAsync(QueryStore.QueryStorePeriod period)
+        => _queryStore.GetQueryStoreForcedPlansAsync(period);
+
+    public Task<QueryStoreQueryDetails> GetQueryStoreQueryDetailsAsync(long queryId, QueryStore.QueryStorePeriod period)
+        => _queryStore.GetQueryStoreQueryDetailsAsync(queryId, period);
 
     // ── Deadlock history (delegated to DeadlockRepository) ────────────
     public Task<Deadlocks.DeadlockHistory> GetDeadlockHistoryAsync()

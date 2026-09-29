@@ -21,6 +21,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 ┌────────────────────────────────▼──────────────── SqlVitals.Engine (net8.0 library) ───────────────┐
 │  Repositories/  WaitStatsRepository, SpTrace-, TempDb-, PlanCacheHealth-, History-, Configuration-,│
 │                 QueryRegression-, Deadlock-, AgentJob-, Backup-, FileIo-, SecurityAudit-           │
+│                 QueryStore-                                                                        │
 │                 ── base: BaseRepository                                                            │
 │  Monitoring/    LiveMetricSample, HealthRules, HealthThresholds, HealthScore, BlockingChains       │
 │  Deadlocks/     DeadlockReportParser → DeadlockReport, DeadlockPatterns                            │
@@ -33,6 +34,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │  Alerts/        AlertTracker, Alert, AlertSettings, AlertNotification                               │
 │  ExecutionPlans/ ShowplanParser → ExecutionPlan, PlanTreeLayout                                     │
 │  Regressions/   RegressionWindows, QueryRegressionDetector                                          │
+│  QueryStore/    QueryStorePeriod, time slots, CombinedStdDev, QueryStoreChecks, metrics            │
 │  Scripting/     CREATE / DROP / ALTER INDEX / UPDATE STATISTICS generators                          │
 │  Filtering/  Export/  Models/  Errors/      Controllers/ + ApiHost (optional REST, unused)           │
 └───────────────┬──────────────────────────────────────────────────────┬─────────────────────────────┘
@@ -114,6 +116,10 @@ MonitoringManager ─ one MonitoringSession per connection with "Monitor in back
 ### 8. Query regressions
 
 `QueryRegressionsPage` → `RegressionWindows` (recent + baseline periods) → `QueryRegressionRepository` (Query Store) **or** `HistoryReader` (`query_deltas`) → per-plan stats → `QueryRegressionDetector` with `RegressionCriteria` → rows ordered by extra time. See [Query Regressions](Query-Regressions.md#under-the-hood).
+
+### 8a. Query Store
+
+`QueryStorePage` → `QueryStoreRepository` (delegated from `WaitStatsRepository`; one `sys.all_columns` probe per connection for what the version has, then `sys.database_query_store_options` for the settings) → `QueryStoreChecks.Run` (Engine, pure: the settings checks and their fixes). Each tab reads only when it's opened, after **Refresh** or a new period: the SQL groups `sys.query_store_runtime_stats` by query and plan on the server, ranks with `TOP (@top)`, and returns only those rows. The period is `QueryStorePeriod` (minutes back on the server's clock, or a fixed custom range), Over Time's points come from `QueryStoreTimeSlots`, and High Variation's std dev follows `CombinedStdDev`, the tested reference for the SQL. A missing view or column (207, 208) empties only its tab, with the reason. `QueryStoreQueryWindow` shows one query's intervals and plans. See [Query Performance → Query Store](Query-Performance.md#query-store).
 
 ### 9. Deadlock history
 

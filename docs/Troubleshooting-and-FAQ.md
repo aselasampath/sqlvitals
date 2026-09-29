@@ -66,8 +66,16 @@ Closing only hides it. Right-click its icon in the notification area → **Exit*
 **A screen says a query timed out.**
 Large servers can take longer than 30 seconds on heavy screens (Index Health, Implicit Conversions, Plan Cache Health). Raise **Settings → Command Timeout**.
 
-**Query Store shows "Not Enabled".**
-Query Store is off for the connected database. Ask your DBA: `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`. [Query Regressions](Query-Regressions.md) falls back to monitoring history in the meantime.
+**Query Store says "Query Store is off for *database*".**
+Query Store is off for the connected database. Each tab shows the statement to copy, `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`; run it yourself or ask your DBA. [Query Regressions](Query-Regressions.md) falls back to monitoring history in the meantime.
+
+**The Waits tab on Query Store is empty.**
+- *"This version of SQL Server doesn't record waits in Query Store"*: SQL Server 2016 has no per-query waits; they came with 2017.
+- *"Wait stats capture is off"*: copy the `ALTER DATABASE … SET QUERY_STORE (WAIT_STATS_CAPTURE_MODE = ON);` it shows. Waits are recorded from then on, not before.
+- *"No waits recorded"*: nothing waited in the period, or Query Store was read-only (see the settings checks at the top of the page).
+
+**A Query Store tab times out.**
+Its reads have a 2-minute timeout, as on Query Regressions. A shorter period (e.g. *Last 7 days* instead of *30*) reads fewer runtime-stats rows.
 
 **DB Storage shows no Used or Free space for some databases.**
 Used space is read inside each database, so it's shown only for databases your login can open. Sizes and settings are shown for every database.

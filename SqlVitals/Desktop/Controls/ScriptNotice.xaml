@@ -1,0 +1,21 @@
+<UserControl x:Class="SqlVitals.Desktop.Controls.ScriptNotice"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Visibility="Collapsed">
+    <!-- A tab's explanation instead of an empty grid, with the statement to copy when there is one. -->
+    <StackPanel Margin="0,4,0,8">
+        <TextBlock x:Name="TxtMessage" TextWrapping="Wrap" FontSize="13"
+                   Foreground="{DynamicResource TextPrimary}"/>
+        <DockPanel x:Name="ScriptPanel" Margin="0,8,0,0" Visibility="Collapsed">
+            <Button DockPanel.Dock="Right" Content="⧉ Copy" Style="{DynamicResource SecondaryButton}"
+                    Padding="10,2" Margin="8,0,0,0" VerticalAlignment="Top"
+                    ToolTip="Copy this statement. Review it, then run it yourself: SqlVitals never changes Query Store."
+                    Click="BtnCopy_Click"/>
+            <TextBox x:Name="TxtScript" IsReadOnly="True" TextWrapping="NoWrap"
+                     HorizontalScrollBarVisibility="Auto"
+                     Background="{DynamicResource BgDeep}" Foreground="{DynamicResource TextPrimary}"
+                     BorderBrush="{DynamicResource Border}" BorderThickness="1"
+                     FontFamily="Consolas" FontSize="12" Padding="6"/>
+        </DockPanel>
+    </StackPanel>
+</UserControl>

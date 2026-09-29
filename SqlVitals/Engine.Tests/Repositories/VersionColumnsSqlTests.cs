@@ -1,3 +1,4 @@
+using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Engine.Tests.Repositories;
@@ -58,13 +59,13 @@ public class VersionColumnsSqlTests
     [Fact]
     public void Query_store_reads_the_plan_type_where_the_server_has_it()
     {
-        Assert.Contains("p.plan_type_desc AS plan_type_desc", WaitStatsRepository.QueryStoreTopQueriesSql(hasPlanType: true));
+        Assert.Contains("p.plan_type_desc AS plan_type_desc", QueryStoreRepository.QueryStoreTopQueriesSql(hasPlanType: true));
     }
 
     [Fact]
     public void Query_store_before_2022_calls_every_plan_a_compiled_plan()
     {
-        var sql = WaitStatsRepository.QueryStoreTopQueriesSql(hasPlanType: false);
+        var sql = QueryStoreRepository.QueryStoreTopQueriesSql(hasPlanType: false);
 
         Assert.DoesNotContain("p.plan_type_desc", sql);
         Assert.Contains("N'Compiled Plan' AS plan_type_desc", sql);
@@ -96,7 +97,7 @@ public class VersionColumnsSqlTests
                  {
                      WaitStatsRepository.ActiveWaitsSql(has),
                      WaitStatsRepository.StaleStatisticsSql(has),
-                     WaitStatsRepository.QueryStoreTopQueriesSql(has),
+                     QueryStoreRepository.QueryStoreTopQueriesSql(has),
                      WaitStatsRepository.DatabaseFilesSql(has),
                  })
             Assert.DoesNotContain("/*", sql);
@@ -107,7 +108,7 @@ public class VersionColumnsSqlTests
     [Fact]
     public void A_readonly_reason_of_0_is_no_reason()
     {
-        Assert.Null(WaitStatsRepository.DescribeReadOnlyReason(0));
+        Assert.Null(QueryStoreChecks.DescribeReadOnlyReason(0));
     }
 
     [Theory]
@@ -117,14 +118,14 @@ public class VersionColumnsSqlTests
     [InlineData(524288, "the database reached its disk size limit")]
     public void A_readonly_reason_is_described_in_words(int reason, string expected)
     {
-        Assert.Equal(expected, WaitStatsRepository.DescribeReadOnlyReason(reason));
+        Assert.Equal(expected, QueryStoreChecks.DescribeReadOnlyReason(reason));
     }
 
     [Fact]
     public void Several_readonly_reasons_are_all_described_and_unknown_bits_are_kept()
     {
         // readonly_reason is a bit map, and an int: reading it as a string failed the Query Store page.
-        var text = WaitStatsRepository.DescribeReadOnlyReason(1 | 65536 | 16);
+        var text = QueryStoreChecks.DescribeReadOnlyReason(1 | 65536 | 16);
 
         Assert.Equal("the database is read-only; Query Store reached MAX_STORAGE_SIZE_MB; reason code 16", text);
     }

@@ -18,6 +18,7 @@
 | **History detail snapshot** | Same connections | Every **5 min** by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU), memory and performance counters |
 | **Screens** (Index Health, Query Store, Plan Cache, …) | A user opens the screen or presses Refresh | On demand | **Active connection only** |
 | **Query Regressions** | On demand | On demand | Query Store runtime stats, up to ~8 days; timeout raised to 2 min |
+| **Query Store** tabs | A user opens the page or a tab, presses Refresh or picks a period | On demand; each tab only when opened | `sys.query_store_*` and `sys.database_query_store_options` in the connection's database: the period's runtime stats (up to 30 days, or what Query Store keeps), grouped and ranked on the server so only the top rows come back; timeout raised to 2 min; **active connection only** |
 | **Processes** (blocking chains) | The Processes page is open with auto-refresh on, or the *Process Map* chart is shown on Live Metrics | The page's interval (5 s to 2 min); Live Metrics' interval for the *Process Map* | `sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`; **active connection only** |
 | **Agent Jobs** | A user opens the page or presses Refresh; every 30 s while *Every 30 s* is ticked and the page is open | On demand | `msdb` job tables (`sysjobs`, `sysjobhistory`, `sysjobactivity`, `sysjobschedules`, …) and `sys.dm_server_services`; one job's history when it's selected; **active connection only** |
 | **Backups** | A user opens the page, presses Refresh or Apply | On demand, no timer | One query: `msdb.dbo.backupset` read once (newest full, differential and log per database), `backupmediafamily`, `sys.databases`, `sys.database_recovery_status`; up to 500 `backupset` rows when a database is selected; **active connection only** |
@@ -39,6 +40,7 @@ The most expensive reads, worth knowing on very large servers:
 | Index Health → Fragmentation | `sys.dm_db_index_physical_stats` scans index pages | Uses the *Min Page Count* filter; runs only on demand |
 | Implicit Conversions, Plan Cache Health | Searches cached plan XML | Runs only on demand |
 | Query Regressions (Query Store source) | Reads a week of runtime stats | Runs only on demand; per database |
+| Query Store tabs over 7 or 30 days | Reads every runtime-stats row in the period (one per plan, interval and execution type) | Runs only on demand, one tab at a time; grouped on the server; per database |
 | Deadlocks | Reads every system_health `.xel` file (tens of MB or more, depending on version and settings) | Runs only on demand; the server returns only the deadlock events; the XML is parsed on your PC |
 
 ### Protective behaviour
@@ -117,7 +119,7 @@ GRANT VIEW ANY DEFINITION TO [sqlvitals_login];   -- SQL Server / MI
 
 It shows the definitions of logins, users, roles and objects, but no data, and changes nothing. The sa login and TRUSTWORTHY are checked without it. Orphaned users are looked for only in databases the login can open.
 
-Some screens read database-scoped views (Index Health, Stale Stats, Query Store, DB Storage → Top Tables) for the **connection's database**. The login needs to be able to connect to that database.
+Some screens read database-scoped views (Index Health, Stale Stats, Query Store, DB Storage → Top Tables) for the **connection's database**. The login needs to be able to connect to that database. The Query Store page's hints grid (SQL Server 2022+) also needs `VIEW SERVER STATE` (`VIEW SERVER PERFORMANCE STATE` on 2022), which the other screens already need; without it the grid says so and the rest of the tab still loads.
 
 **DB Storage → Database Files** shows each file's used and free space only for databases the login can open (`HAS_DBACCESS`); for the rest they're blank. Sizes, growth and settings are shown for every database either way.
 
@@ -140,6 +142,8 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')          
 | All monitoring screens | ✅ | ✅ | ✅ (server-level parts skipped) |
 | DB Storage: TempDB files, `sp_configure` | ✅ | ✅ | ➖ not available, skipped |
 | Query Store / Query Regressions (Query Store source) | 2016+ | ✅ | ✅ |
+| Query Store: Waits tab, Log used / TempDB used, *Forced by* | 2017+ | ✅ | ✅ |
+| Query Store: Query Store hints | 2022+ | ✅ | ✅ |
 | SP Trace | Server-scoped XE session | Server-scoped | Database-scoped (`ON DATABASE`) |
 | Deadlocks (system_health) | ✅ | ✅ | ➖ not available (no system_health) |
 | Agent Jobs (SQL Server Agent) | ✅ (not Express, which has no Agent) | ✅ | ➖ not available (no Agent; the button is disabled) |
