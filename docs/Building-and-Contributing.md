@@ -262,6 +262,8 @@ foreach (var btn in new[] { ..., BtnYourFeature })
 "YourFeature" => new YourFeaturePage(Repo),
 ```
 
+If the page has nothing to show on Azure SQL Database, also add it to `PagesAzureSqlLacks` with the reason. Its button is then disabled on such a connection, dimmed and marked **N/A** by the `NavButton` style, with the reason as its tooltip.
+
 ### 7. Add it to Export (optional)
 
 In `ExportService.cs`:

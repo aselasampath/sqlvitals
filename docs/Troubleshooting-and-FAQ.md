@@ -86,6 +86,9 @@ Usage counters reset when SQL Server restarts (and on Azure SQL failovers). "Unu
 **Top Waits hasn't changed even though last night was terrible.**
 Top Waits accumulates since the last restart, so one night barely moves months of totals. Use **Wait Trend** with a **24h** or **Custom** range instead.
 
+**Some sidebar items are dimmed and marked N/A.**
+The connection is to an Azure SQL Database, which has no TempDB files, SQL Server Agent, msdb backup history or server-level security settings to show. Hover an item for the reason. See [Server Impact and Permissions → Compatibility](Server-Impact-and-Permissions.md#compatibility).
+
 **The history ranges (1h / 24h / 7d) are greyed out.**
 You're on the ad-hoc connection, which isn't recorded. Save the connection in Settings.
 

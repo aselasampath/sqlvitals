@@ -76,7 +76,7 @@ All times are the **server's local time**: msdb stores them that way and the sch
 | *This login can't read SQL Server Agent's tables in msdb* | The login isn't sysadmin and has no read access to msdb's job tables | Grant `SELECT` on the job tables to its msdb user (script in [Server Impact and Permissions](Server-Impact-and-Permissions.md#sql-agent-jobs)) |
 | Amber: *SQL Server Agent isn't running* | The Agent service is stopped | Start it in SQL Server Configuration Manager or SSMS Object Explorer. The jobs are still listed |
 | Amber: *SQL Server Express has no SQL Server Agent* | Express can't run Agent | Windows Task Scheduler running `sqlcmd` is the usual stand-in |
-| *Azure SQL Database has no SQL Server Agent* | Azure SQL Database has no Agent at all; the **🕒 Agent Jobs** button is disabled for such a connection | Use Elastic Jobs or Azure Automation there. **Azure SQL Managed Instance** has Agent and works here |
+| *Azure SQL Database has no SQL Server Agent* | Azure SQL Database has no Agent at all; the **🕒 Agent Jobs** button is disabled (dimmed and marked **N/A**) for such a connection | Use Elastic Jobs or Azure Automation there. **Azure SQL Managed Instance** has Agent and works here |
 
 Whether Agent is running is read from `sys.dm_server_services`, which needs `VIEW SERVER STATE`. Without it, the `Agent XPs` server option (Agent turns it on as it starts and off as it stops) decides; if even that can't be read, the status line says *state unknown* and the jobs are shown as msdb has them.
 

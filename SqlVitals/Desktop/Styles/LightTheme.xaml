@@ -10,6 +10,8 @@
     <Color x:Key="AccentLightColor">#FF9F67F5</Color>
     <Color x:Key="TextPrimaryColor">#FF1E293B</Color>
     <Color x:Key="TextMutedColor">#FF64748B</Color>
+    <!-- Lighter than TextMuted (the enabled nav text), still 3.1:1 on the sidebar -->
+    <Color x:Key="TextDisabledColor">#FF7A8594</Color>
     <Color x:Key="BorderColor">#FFD1D9E0</Color>
     <Color x:Key="SuccessColor">#FF22C55E</Color>
     <Color x:Key="WarningColor">#FFFBBF24</Color>
@@ -22,7 +24,8 @@
     <SolidColorBrush x:Key="AccentLight"   Color="{StaticResource AccentLightColor}" />
     <SolidColorBrush x:Key="TextPrimary"   Color="{StaticResource TextPrimaryColor}" />
     <SolidColorBrush x:Key="TextMuted"     Color="{StaticResource TextMutedColor}" />
-    <SolidColorBrush x:Key="Border"        Color="{StaticResource BorderColor}" />
+    <SolidColorBrush x:Key="TextDisabled"  Color="{StaticResource TextDisabledColor}" />
+    <SolidColorBrush x:Key="Border"     Color="{StaticResource BorderColor}" />
     <SolidColorBrush x:Key="Success"       Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="Warning"       Color="{StaticResource WarningColor}" />
     <SolidColorBrush x:Key="Danger"        Color="{StaticResource DangerColor}" />
@@ -45,12 +48,29 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="Bd" Background="{TemplateBinding Background}"
                             CornerRadius="6" Margin="6,1">
-                        <ContentPresenter VerticalAlignment="Center"
-                                          Margin="{TemplateBinding Padding}" />
+                        <DockPanel>
+                            <!-- Shown only while disabled, so that state doesn't rely on colour alone -->
+                            <Border x:Name="NotAvailable" DockPanel.Dock="Right" Visibility="Collapsed"
+                                    VerticalAlignment="Center" Margin="0,0,10,0" Padding="4,0,4,1"
+                                    CornerRadius="3" BorderThickness="1"
+                                    BorderBrush="{StaticResource TextDisabled}">
+                                <TextBlock Text="N/A" FontSize="10" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextDisabled}" />
+                            </Border>
+                            <ContentPresenter VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </DockPanel>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="#18000000" />
+                        </Trigger>
+                        <!-- A page this server doesn't have (see PagesAzureSqlLacks). After IsMouseOver so it wins. -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="Transparent" />
+                            <Setter TargetName="NotAvailable" Property="Visibility" Value="Visible" />
+                            <Setter Property="Foreground" Value="{StaticResource TextDisabled}" />
+                            <Setter Property="Cursor" Value="Arrow" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

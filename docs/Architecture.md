@@ -208,13 +208,13 @@ var edition = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS
 bool isAzureSqlDb = Convert.ToInt32(edition.Edition) == 5;
 ```
 
-`GetDatabaseStorageAsync` and SP Trace (`IsAzureSqlDatabaseAsync`) follow this pattern.
+`GetDatabaseStorageAsync` and SP Trace (`IsAzureSqlDatabaseAsync`) follow this pattern. Pages with nothing to show there are listed in `MainWindow.PagesAzureSqlLacks`, each with the reason; on connecting, their sidebar buttons are disabled and given that reason as the tooltip, and the `NavButton` style dims them and marks them **N/A**.
 
 ## UI conventions
 
 - **Themes:** `Styles/LightTheme.xaml` (default) and `DarkTheme.xaml`; `App.ToggleTheme()` swaps the merged dictionary.
-- Use **brush keys**, never hex: `BgDeep`, `BgCard`, `BgSidebar`, `Accent`, `AccentLight`, `TextPrimary`, `TextMuted`, `Border`, `Success`, `Warning`, `Danger`.
-- Style keys: `NavButton`, `NavButtonActive`, `SectionHeader`, `KpiCard`, `KpiValue`, `KpiLabel`, `RefreshButton`, `SecondaryButton`. `DataGrid` has an implicit style.
+- Use **brush keys**, never hex: `BgDeep`, `BgCard`, `BgSidebar`, `Accent`, `AccentLight`, `TextPrimary`, `TextMuted`, `TextDisabled`, `Border`, `Success`, `Warning`, `Danger`.
+- Style keys: `NavButton` (dimmed, arrow cursor and an **N/A** badge while disabled), `NavButtonActive`, `SectionHeader`, `KpiCard`, `KpiValue`, `KpiLabel`, `RefreshButton`, `SecondaryButton`. `DataGrid` has an implicit style.
 - Chart colours come from `Helpers/ChartTheme` (e.g. `ChartTheme.MutedAxisColor`, `ChartTheme.GridColor`) so charts follow the theme.
 - Shared building blocks: `Controls/GridFilterBox`, `TimeRangePicker`, `HealthThresholdsEditor`, `HealthScoreBreakdown`, `ProcessMapControl`, `ExecutionPlanView`; `Windows/SqlScriptWindow`, `QueryExecutionPlanWindow`; `Services/TrayIcon`; `Helpers/HealthBrushes` (health colours), `PlanOperatorIcons`, `DataGridExport` (right-click menu), `DataGridRefresh` (keep sort and filter), `BaselineSeries`, `ClipboardHelper`.
 

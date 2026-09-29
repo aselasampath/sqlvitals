@@ -91,7 +91,7 @@ msdb keeps its backup history until something deletes it (`sp_delete_backuphisto
 | Message | Why | What to do |
 |---|---|---|
 | *This login can't read the backup history in msdb* | The login isn't sysadmin and has no read access to `backupset` | Grant `SELECT` to its msdb user (script in [Server Impact and Permissions](Server-Impact-and-Permissions.md#backups)) |
-| *Azure SQL Database backs up every database itself* | Azure SQL Database records no backups in msdb; the **💾 Backups** button is disabled for such a connection | The Azure portal shows the restore points under the database's **Backups**. **Azure SQL Managed Instance** works here |
+| *Azure SQL Database backs up every database itself* | Azure SQL Database records no backups in msdb; the **💾 Backups** button is disabled (dimmed and marked **N/A**) for such a connection | The Azure portal shows the restore points under the database's **Backups**. **Azure SQL Managed Instance** works here |
 | *There are no databases to show* | The login can see no database | Check the login's `VIEW ANY DATABASE` permission |
 
 ---
