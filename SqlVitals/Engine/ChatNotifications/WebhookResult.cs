@@ -199,6 +199,27 @@ public sealed record WebhookResult(
         return ServiceError is null || IsSuccess ? text : $"{text}: {ServiceError}";
     }
 
+    /// <summary>
+    /// What's wrong, in a few words, for the Windows notification when a channel starts failing
+    /// (#122): "webhook not found", "can't reach Slack". Without the service's own error text,
+    /// which the status in Settings shows.
+    /// </summary>
+    public string Problem(ChatService service)
+    {
+        var name = ChatServices.Name(service);
+        return Outcome switch
+        {
+            WebhookOutcome.NotFound    => "webhook not found",
+            WebhookOutcome.Rejected    => $"rejected by {name}",
+            WebhookOutcome.RateLimited => $"{name} says too many messages",
+            WebhookOutcome.ServerError => $"{name} has a server error",
+            WebhookOutcome.Unexpected  => "an unexpected answer, from a proxy or a sign-in page",
+            WebhookOutcome.Unreachable => $"can't reach {name}",
+            WebhookOutcome.TimedOut    => $"{name} didn't answer in time",
+            _                          => "the message couldn't be sent",
+        };
+    }
+
     private static string Ms(TimeSpan span) => $"{Math.Max(0, span.TotalMilliseconds):0} ms";
 
     private static readonly Regex Link = new(@"(?i)\b(?:https?|ftp)://\S+", RegexOptions.Compiled);

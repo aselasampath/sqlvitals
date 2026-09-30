@@ -7,7 +7,10 @@ using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Tests;
 
-/// <summary>The chat service over a fake sender: the test message (#120) and posting alerts (#121).</summary>
+/// <summary>
+/// The chat service over a fake sender and a fake clock: the test message (#120), posting alerts
+/// (#121), and the Failing status and its notification (#122).
+/// </summary>
 public sealed class ChatNotificationServiceTests
 {
     private const string SlackUrl = "https://hooks.slack.com/services/T0001/B0002/abcdEFGHijklMNOPx7Qa";
@@ -35,15 +38,17 @@ public sealed class ChatNotificationServiceTests
 
     private static readonly WebhookResult Ok       = new(WebhookOutcome.Posted, 200, null, TimeSpan.FromMilliseconds(120));
     private static readonly WebhookResult NotFound = new(WebhookOutcome.NotFound, 404, "no_service", TimeSpan.FromMilliseconds(80));
+    private static readonly WebhookResult Busy     = new(WebhookOutcome.ServerError, 503, null, TimeSpan.FromMilliseconds(90));
 
     private static readonly ConnectionSettings Sales = new() { Name = "Sales-Prod", Server = "sql01" };
     private static readonly ConnectionSettings Hr    = new() { Name = "HR-DB", Server = "sql02" };
 
     private readonly ConcurrentQueue<string> _log = new();
+    private readonly SteppingTime _time = new();
 
     private ChatNotificationService Create(FakeSender sender, params ChatChannel[] channels)
     {
-        var service = new ChatNotificationService(sender, "DBA-PC01", _log.Enqueue);
+        var service = new ChatNotificationService(sender, "DBA-PC01", _log.Enqueue, time: _time);
         service.Apply(Store(channels));
         return service;
     }
@@ -150,7 +155,8 @@ public sealed class ChatNotificationServiceTests
 
         Assert.False(result.IsSuccess);
         Assert.DoesNotContain("hooks.slack.com", result.Describe(ChatService.Slack));
-        Assert.Equal(2, _log.Count);
+        // The test message once; the alert, then its 3 retries (#122).
+        Assert.Equal(5, _log.Count);
         Assert.All(_log, l => Assert.DoesNotContain("hooks.slack.com", l));
     }
 
@@ -232,7 +238,8 @@ public sealed class ChatNotificationServiceTests
         Assert.Equal(expected, sender.TitlesTo(SlackUrl));
         Assert.Equal(expected, sender.TitlesTo(SlackUrl + "Bad"));
         Assert.Equal(3, _log.Count(l => l.Contains("webhook not found")));
-        Assert.Equal(ChannelStatus.NeverUsed, chat.Status(bad.Id));
+        Assert.True(chat.Status(bad.Id).IsFailing);
+        Assert.False(chat.Status(good.Id).IsFailing);
     }
 
     [Fact]
@@ -258,7 +265,7 @@ public sealed class ChatNotificationServiceTests
     {
         var channel = Channel();
         var sender  = new FakeSender(() => Ok);
-        using var chat = new ChatNotificationService(sender, "DBA-PC01", _log.Enqueue);
+        using var chat = new ChatNotificationService(sender, "DBA-PC01", _log.Enqueue, time: _time);
         var store = Store(channel);
         store.NotificationsMuted.Add(Sales.Id);
         chat.Apply(store);
@@ -322,6 +329,155 @@ public sealed class ChatNotificationServiceTests
         await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal(["🔴 Critical: CPU on a deleted connection"], sender.TitlesTo(SlackUrl));
+    }
+
+    // ── Failing (#122) ────────────────────────────────────────────────────────
+
+    private (ChatNotificationService Chat, ChatChannel Channel, List<string> Notices) Failing(Func<WebhookResult> answer)
+    {
+        var channel = Channel();
+        var chat    = Create(new FakeSender(answer), channel);
+        var notices = new List<string>();
+        chat.StartedFailing += (_, text) => { lock (notices) notices.Add(text); };
+        return (chat, channel, notices);
+    }
+
+    [Fact]
+    public async Task AMessageGivenUp_MarksTheChannelFailing_AndNotifiesOnce()
+    {
+        var (chat, channel, notices) = Failing(() => NotFound);
+        using var _ = chat;
+
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        chat.OnAlertsRaised(Hr.Id, Started(Alert(Hr.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        var status = chat.Status(channel.Id);
+        Assert.True(status.IsFailing);
+        Assert.Equal("webhook not found (404): no_service", status.Problem);
+        Assert.Equal(["Alerts aren't reaching DBA team (Slack): webhook not found. Check Settings → Alerts."], notices);
+    }
+
+    [Fact]
+    public async Task FailingSince_IsWhenTheFirstMessageWasGivenUp_AfterItsRetries()
+    {
+        var (chat, channel, notices) = Failing(() => Busy);
+        using var _ = chat;
+
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Tried at 0, 2, 12 and 42 s.
+        Assert.Equal(new DateTime(2026, 9, 30, 10, 42, 42, DateTimeKind.Utc), chat.Status(channel.Id).FailingSinceUtc);
+        Assert.Single(notices);
+        Assert.Contains(_log, l => l.EndsWith("alert on Sales-Prod server error (503); retry 1 of 3 in 2 s"));
+        Assert.Contains(_log, l => l.EndsWith("alert on Sales-Prod server error (503); not sent after 4 tries"));
+    }
+
+    [Fact]
+    public async Task AChannelThatComesBack_RecoversByItself_AndNotifiesAgainIfItFailsAgain()
+    {
+        var answer = NotFound;
+        var channel = Channel();
+        using var chat = Create(new FakeSender(() => Volatile.Read(ref answer)), channel);
+        var notices = 0;
+        chat.StartedFailing += (_, _) => Interlocked.Increment(ref notices);
+
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Volatile.Write(ref answer, Ok);
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id, HealthIndicator.Blocking)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.False(chat.Status(channel.Id).IsFailing);
+        Assert.NotNull(chat.Status(channel.Id).LastPostedUtc);
+
+        Volatile.Write(ref answer, NotFound);
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id, HealthIndicator.LogSpace)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(chat.Status(channel.Id).IsFailing);
+        Assert.Equal(2, notices);
+    }
+
+    [Fact]
+    public async Task ATestMessageThatWorks_ClearsFailing_AndOneThatFails_DoesntMarkIt()
+    {
+        var answer = NotFound;
+        var channel = Channel();
+        using var chat = Create(new FakeSender(() => Volatile.Read(ref answer)), channel);
+        var notices = 0;
+        chat.StartedFailing += (_, _) => Interlocked.Increment(ref notices);
+
+        await chat.SendTestAsync(channel.Id);
+        Assert.Equal(ChannelStatus.NeverUsed, chat.Status(channel.Id));
+
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(chat.Status(channel.Id).IsFailing);
+
+        Volatile.Write(ref answer, Ok);
+        await chat.SendTestAsync(channel.Id);
+
+        Assert.False(chat.Status(channel.Id).IsFailing);
+        Assert.Equal(1, notices);
+    }
+
+    [Fact]
+    public async Task TurningAFailingChannelOff_ClearsFailing()
+    {
+        var (chat, channel, _) = Failing(() => NotFound);
+        using var __ = chat;
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        var off = channel.Clone();
+        off.Enabled = false;
+        chat.Apply(Store(off));
+
+        Assert.False(chat.Status(channel.Id).IsFailing);
+    }
+
+    [Fact]
+    public async Task AFailingChannel_NotifiesEvenForAMutedConnection()
+    {
+        var (chat, _, notices) = Failing(() => NotFound);
+        using var __ = chat;
+        var store = Store(chat.Channels.ToArray());
+        store.NotificationsMuted.Add(Sales.Id);
+        chat.Apply(store);
+
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Single(notices);
+    }
+
+    [Fact]
+    public async Task TheUrl_IsNeverLogged_OnTheRetryAndFailurePaths()
+    {
+        var tries = 0;
+        var channel = Channel();
+        using var chat = Create(new FakeSender(_ => Interlocked.Increment(ref tries) switch
+        {
+            1 => Busy,
+            2 => throw new System.Net.Http.HttpRequestException($"POST {SlackUrl} failed"),
+            3 => new WebhookResult(WebhookOutcome.RateLimited, 429, null, TimeSpan.Zero, TimeSpan.FromSeconds(5)),
+            4 => new WebhookResult(WebhookOutcome.TimedOut, null, null, TimeSpan.Zero),
+            _ => NotFound,
+        }), channel);
+        var notices = new ConcurrentQueue<string>();
+        chat.StartedFailing += (_, text) => notices.Enqueue(text);
+
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(5, _log.Count);
+        Assert.All(_log.Concat(notices).Append(chat.Status(channel.Id).Text(DateTime.Now)), text =>
+        {
+            Assert.DoesNotContain("hooks.slack.com", text);
+            Assert.DoesNotContain("T0001", text);
+        });
     }
 
     [Fact]

@@ -63,7 +63,7 @@ What raises an alert is set by the health thresholds above.
 
 ### Chat channels (Slack and Teams)
 
-From 0.49.0, a list of the Slack and Microsoft Teams channels alerts are posted to (from 0.50.0), each with its service, its webhook URL masked (`hooks.slack.com/…/x7Qa`) and **Never used** or **Last posted 10:42**.
+From 0.49.0, a list of the Slack and Microsoft Teams channels alerts are posted to (from 0.50.0), each with its service, its webhook URL masked (`hooks.slack.com/…/x7Qa`) and **Never used**, **Last posted 10:42** or, from 0.51.0, **⚠ Failing since 10:42: webhook not found (404)** when messages aren't getting through ([Chat Notifications](Chat-Notifications.md#-failing)).
 
 - **+ Add channel** opens a form: **Name**, **Webhook URL** (masked once saved; **Show** reveals it), **Service** (picked from the URL), **Connections** (all monitored connections, or only the ones you tick; from 0.50.0), **Post** (warnings and critical, or critical only; from 0.50.0) and **On** (off pauses the channel without removing it). **💾 Save channel** checks the URL first and applies straight away.
 - Select a channel to edit it; **🗑 Remove** removes it after a confirmation.
