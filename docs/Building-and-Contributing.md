@@ -241,28 +241,23 @@ To keep the sort and filter across refreshes, set rows with `DataGridRefresh.Set
 
 ### 6. Wire up navigation
 
-`MainWindow.xaml`, in the sidebar `StackPanel`:
-
-```xml
-<Button x:Name="BtnYourFeature" Tag="YourFeature"
-        Content="✨  Your Feature"
-        Style="{StaticResource NavButton}"
-        Click="Nav_Click" />
-```
-
-`MainWindow.xaml.cs`, in three places:
+The sidebar is built from `Desktop/Services/NavMenu.cs` (#124). Add the page to the group whose question it answers, with an icon no other page uses:
 
 ```csharp
-// 1. The reset array
-foreach (var btn in new[] { ..., BtnYourFeature })
-    btn.Style = (Style)FindResource("NavButton");
+new("Queries", "Queries", "Which queries cost the most, which got slower, and why?",
+[
+    ...
+    new("YourFeature", "✨", "Your Feature", "Optional tooltip"),
+]),
+```
 
-// 2. The 'active' switch
-"YourFeature" => BtnYourFeature,
+Then open it in `MainWindow.xaml.cs`, in the `page` switch of `NavigateTo`:
 
-// 3. The 'page' switch
+```csharp
 "YourFeature" => new YourFeaturePage(Repo),
 ```
+
+`Desktop.Tests/NavMenuTests.cs` lists every page and the groups' layout, so update it too. A tag `NavigateTo` is given with no button in `NavMenu` fails a `Debug.Assert`.
 
 If the page has nothing to show on Azure SQL Database, also add it to `PagesAzureSqlLacks` with the reason. Its button is then disabled on such a connection, dimmed and marked **N/A** by the `NavButton` style, with the reason as its tooltip.
 

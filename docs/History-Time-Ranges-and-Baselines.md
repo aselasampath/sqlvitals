@@ -2,7 +2,7 @@
 
 SqlVitals keeps a **local history** of every server it monitors, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
 
-> **Where:** the range picker in the toolbar of 💓 Live Metrics, 📈 Wait Trend and 📈 Perfmon · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
+> **Where:** the range picker in the toolbar of 💓 Live Metrics, 📈 Wait Trend and ⏱️ Perfmon · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
 
 ## Look back in time
 

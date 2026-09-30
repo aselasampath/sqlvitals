@@ -5,6 +5,7 @@ using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
         SettingsService = new ConnectionSettingsService();
         var store  = SettingsService.Load();
         var active = store.Active;
+        BuildSidebar(store.NavCollapsedGroups);
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
 
         _tray = new TrayIcon(SettingsService);
@@ -110,6 +112,27 @@ public partial class MainWindow : Window
 
             await DisablePagesAzureSqlLacksAsync();
             await NavigateTo("LiveMetrics");
+        };
+    }
+
+    // ── Sidebar (#124) ────────────────────────────────────────────────────────
+
+    // Built from NavMenu in the constructor, before anything can update a button.
+    private NavSidebar _sidebar = null!;
+
+    private Button NavButton(string tag) => _sidebar.Button(tag);
+
+    private void BuildSidebar(IReadOnlyList<string> collapsed)
+    {
+        _sidebar = new NavSidebar(NavPanel, collapsed);
+        _sidebar.PageRequested += async tag => await NavigateTo(tag);
+
+        // Remembered for the next run, but not in the activity log. Opening a page in a collapsed
+        // group expands it, and that is saved too, so the sidebar comes back as it was left.
+        _sidebar.GroupToggled += (id, isCollapsed) =>
+        {
+            try { SettingsService.SetNavGroupCollapsed(id, isCollapsed); }
+            catch (Exception ex) { AppLog.Error("Sidebar: could not save which groups are collapsed", ex); }
         };
     }
 
@@ -231,10 +254,13 @@ public partial class MainWindow : Window
     {
         var active = Monitoring.ActiveAlerts;
         _tray.ShowActiveAlerts(active);
-        BtnAlerts.Content = active.Count == 0 ? "🔔  Alerts" : $"🔔  Alerts ({active.Count})";
-        BtnAlerts.ToolTip = active.Count switch
+        var alerts = NavButton("Alerts");
+        alerts.Content = active.Count == 0 ? "🔔  Alerts" : $"🔔  Alerts ({active.Count})";
+        System.Windows.Automation.AutomationProperties.SetName(alerts,
+            active.Count == 0 ? "Alerts" : $"Alerts ({active.Count} active)");
+        alerts.ToolTip = active.Count switch
         {
-            0     => "Health thresholds breached, now and in the past, for every monitored connection",
+            0     => NavMenu.AlertsToolTip,
             1     => "1 active alert",
             var n => $"{n} active alerts",
         };
@@ -356,14 +382,17 @@ public partial class MainWindow : Window
     private (Button Button, string Tag, object? ToolTip, string Reason)[] PagesAzureSqlLacks => _pagesAzureSqlLacks ??=
     [
         // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database doesn't expose.
-        (BtnTempDb,    "TempDb",    BtnTempDb.ToolTip,    "Not available on Azure SQL Database (sys.master_files is not accessible)"),
+        AzureSqlLacks("TempDb",    "Not available on Azure SQL Database (sys.master_files is not accessible)"),
         // There is no SQL Server Agent, so msdb has no jobs (#39).
-        (BtnAgentJobs, "AgentJobs", BtnAgentJobs.ToolTip, "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
+        AzureSqlLacks("AgentJobs", "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
         // Azure takes the backups itself and records none in msdb (#40).
-        (BtnBackups,   "Backups",   BtnBackups.ToolTip,   "Not available on Azure SQL Database, which backs up every database itself; the Azure portal shows its restore points."),
+        AzureSqlLacks("Backups",   "Not available on Azure SQL Database, which backs up every database itself; the Azure portal shows its restore points."),
         // No sysadmin role, sa login or TRUSTWORTHY setting, and the logins are in the logical server's master (#43).
-        (BtnSecurityAudit, "SecurityAudit", BtnSecurityAudit.ToolTip, "Not available on Azure SQL Database, which has no sysadmin role, sa login or TRUSTWORTHY setting; its logins are in the logical server's master database."),
+        AzureSqlLacks("SecurityAudit", "Not available on Azure SQL Database, which has no sysadmin role, sa login or TRUSTWORTHY setting; its logins are in the logical server's master database."),
     ];
+
+    private (Button Button, string Tag, object? ToolTip, string Reason) AzureSqlLacks(string tag, string reason) =>
+        (NavButton(tag), tag, NavButton(tag).ToolTip, reason);
 
     // Disable those pages up front instead of letting the user hit a query error after navigating to one.
     private async System.Threading.Tasks.Task DisablePagesAzureSqlLacksAsync()
@@ -521,12 +550,6 @@ public partial class MainWindow : Window
     /// <summary>Opens another page, as its sidebar button would; for links between pages.</summary>
     internal System.Threading.Tasks.Task OpenPageAsync(string tag) => NavigateTo(tag);
 
-    private async void Nav_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn)
-            await NavigateTo(btn.Tag?.ToString() ?? "Overview");
-    }
-
     private async void BtnRefresh_Click(object sender, RoutedEventArgs e)
     {
         if (MainFrame.Content is IRefreshable page)
@@ -571,41 +594,9 @@ public partial class MainWindow : Window
 
         _currentTag = tag;
 
-        // Update nav button styles
-        foreach (var btn in new[] { BtnLiveMetrics, BtnAlerts, BtnTopWaits, BtnActiveWaits, BtnProcesses, BtnDeadlocks, BtnAgentJobs, BtnBackups, BtnFileIo, BtnConfigChecks, BtnSecurityAudit, BtnWaitTrend, BtnTempDb, BtnMemory, BtnQueryStore, BtnRegressions, BtnIndexHealth, BtnResQueries, BtnImpConv, BtnPlanHealth, BtnStaleStats, BtnDbStorage, BtnAppConn, BtnPerfmon, BtnSpTrace, BtnExport, BtnSettings })
-            btn.Style = (Style)FindResource("NavButton");
-
-        Button active = tag switch
-        {
-            "Alerts"          => BtnAlerts,
-            "TopWaits"        => BtnTopWaits,
-            "ActiveWaits"     => BtnActiveWaits,
-            "Processes"       => BtnProcesses,
-            "Deadlocks"       => BtnDeadlocks,
-            "AgentJobs"       => BtnAgentJobs,
-            "Backups"         => BtnBackups,
-            "FileIo"          => BtnFileIo,
-            "ConfigChecks"    => BtnConfigChecks,
-            "SecurityAudit"   => BtnSecurityAudit,
-            "WaitTrend"       => BtnWaitTrend,
-            "TempDb"          => BtnTempDb,
-            "Memory"          => BtnMemory,
-            "QueryStore"      => BtnQueryStore,
-            "QueryRegressions" => BtnRegressions,
-            "IndexHealth"     => BtnIndexHealth,
-            "ResourceQueries" => BtnResQueries,
-            "ImplicitConv"    => BtnImpConv,
-            "PlanCacheHealth" => BtnPlanHealth,
-            "StaleStats"      => BtnStaleStats,
-            "DbStorage"       => BtnDbStorage,
-            "AppConnections" => BtnAppConn,
-            "Perfmon"        => BtnPerfmon,
-            "SpTrace"         => BtnSpTrace,
-            "Export"          => BtnExport,
-            "Settings"        => BtnSettings,
-            _                 => BtnLiveMetrics,
-        };
-        active.Style = (Style)FindResource("NavButtonActive");
+        // Highlight the page's button, and show it if its group is collapsed.
+        System.Diagnostics.Debug.Assert(_sidebar.HasPage(tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
+        _sidebar.Highlight(_sidebar.HasPage(tag) ? tag : "LiveMetrics");
 
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")

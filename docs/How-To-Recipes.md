@@ -145,7 +145,7 @@ An application that opens connections and doesn't close them fills its pool with
 1. History only exists for times the connection was **monitored**. To have it next time, see [Monitor my servers all the time](#monitor-my-servers-all-the-time).
 2. **💓 Live Metrics → Custom…**: set From/To around the incident, and press **Show**. Look for the CPU or wait spike.
 3. **📈 Wait Trend → same range → Top Waits**: which wait types rose.
-4. **📈 Perfmon → same range**: tick counters such as batch requests, lock waits or page life expectancy.
+4. **⏱️ Perfmon → same range**: tick counters such as batch requests, lock waits or page life expectancy.
 5. **🐢 Query Regressions**: *Recent: last 24 hours*, to see if a query got slower.
 
 ## A query got slower after a release
@@ -174,7 +174,7 @@ An application that opens connections and doesn't close them fills its pool with
 
 ## Is today normal?
 
-1. Open **💓 Live Metrics**, **📈 Wait Trend** or **📈 Perfmon**.
+1. Open **💓 Live Metrics**, **📈 Wait Trend** or **⏱️ Perfmon**.
 2. Tick **Compare to baseline**. Dashed lines show **the same time last week**.
 3. Current line well above the dashed line = unusual. Both similar = that's just your normal load.
 
@@ -184,7 +184,7 @@ An application that opens connections and doesn't close them fills its pool with
 2. **View Plan** on the top queries. In the [graphical plan](Execution-Plans.md), look at the highlighted (≥ 25 % cost) operators: scans on big tables, big sorts, and **⚠** warnings. A green missing-index hint is worth reviewing.
 3. **⚠️ Implicit Conv.**: data-type mismatches cause scans that burn CPU.
 4. **🔎 Plan Cache Health → Multi-Plan Queries**: many compilations cost CPU too.
-5. **🗄️ DB Storage → Max DOP / Cost Threshold**: a cost threshold of 5 (the default) often causes too much parallelism (`CXPACKET` waits). **✅ Config Checks** says what to set them to for this server.
+5. **📦 DB Storage → Max DOP / Cost Threshold**: a cost threshold of 5 (the default) often causes too much parallelism (`CXPACKET` waits). **✅ Config Checks** says what to set them to for this server.
 
 ## Plan routine index and statistics maintenance
 
@@ -197,7 +197,7 @@ An application that opens connections and doesn't close them fills its pool with
 ## TempDB or the log is filling up
 
 - **TempDB:** **🗄️ TempDB → Top Sessions by TempDB Allocation**. *Internal KB* = sorts and hashes from big queries; *User Obj KB* = temp tables. Find the session and its query.
-- **Log:** hover the **health dot**. The *Log space used* tooltip names the database. Then check **🗄️ DB Storage → Database Files** for its recovery model and log size. A full log in *FULL* recovery usually means log backups aren't running.
+- **Log:** hover the **health dot**. The *Log space used* tooltip names the database. Then check **📦 DB Storage → Database Files** for its recovery model and log size. A full log in *FULL* recovery usually means log backups aren't running.
 
 ## Find out what an application is calling
 

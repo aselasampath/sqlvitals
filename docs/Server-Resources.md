@@ -6,9 +6,9 @@ Five screens show how the server's memory, TempDB, storage, configuration and co
 |---|---|
 | [🗄️ TempDB](#tempdb) | How full is TempDB, and who is filling it? |
 | [🧠 Memory Grants](#memory-grants) | Where is memory going, and are queries waiting for it? |
-| [🗄️ DB Storage](#db-storage) | How big are the databases and files, and how is the server configured? |
+| [📦 DB Storage](#db-storage) | How big are the databases and files, and how is the server configured? |
 | [🔌 App Connections](#app-connections) | Which applications are connected, and what load do they create? |
-| [📈 Perfmon](#perfmon) | Any SQL Server performance counter, charted |
+| [⏱️ Perfmon](#perfmon) | Any SQL Server performance counter, charted |
 
 ---
 
@@ -58,7 +58,7 @@ Three views:
 
 ## DB Storage
 
-> **Where:** sidebar → 🗄️ DB Storage · **Use it when:** checking disk space, growth settings or basic configuration
+> **Where:** sidebar → 📦 DB Storage · **Use it when:** checking disk space, growth settings or basic configuration
 
 **Cards:** Total DB Size, Data Files, Log Files, TempDB Size, **Max DOP** and **Cost Threshold** for parallelism.
 
@@ -87,7 +87,7 @@ Connections grouped **by application** (program name): number of connections, ac
 
 ## Perfmon
 
-> **Where:** sidebar → 📈 Perfmon · **Use it when:** you need a specific SQL Server counter that the other screens don't show
+> **Where:** sidebar → ⏱️ Perfmon · **Use it when:** you need a specific SQL Server counter that the other screens don't show
 
 1. Tick counters in **Select Counters** on the left (**Select All** / **Clear All**). Up to **12** are charted at once.
 2. Set **Auto-refresh** and press **Start**, or use the sidebar **Refresh** for one reading.

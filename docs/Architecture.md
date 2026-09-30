@@ -55,7 +55,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 | `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
 | `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
 | `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
-| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls) |
+| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), and the sidebar, laid out off screen in both themes |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -63,7 +63,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 
 ### 1. Showing a screen
 
-1. A sidebar button's `Tag` (e.g. `"IndexHealth"`) goes to `MainWindow.NavigateTo(tag)`.
+1. A sidebar button's `Tag` (e.g. `"IndexHealth"`) goes to `MainWindow.NavigateTo(tag)`. The sidebar is built from `Services/NavMenu` (the groups, their pages and order) by `Controls/NavSidebar`: one collapsible `Expander` per group (style `NavGroupExpander`), a `NavButton` per page. `NavigateTo` calls `NavSidebar.Highlight(tag)`, which highlights the button and expands its group; which groups are collapsed is saved in `settings.dat` (`NavCollapsedGroups`).
 2. `NavigateTo` creates the page **fresh**, passing it the repository for the active connection, and navigates the `Frame`.
 3. It calls the page's `IRefreshable.RefreshAsync()`. The sidebar **↻ Refresh** calls it again.
 4. The page calls repository methods; results are records from `Engine/Models`, bound to `DataGrid`s and LiveCharts.

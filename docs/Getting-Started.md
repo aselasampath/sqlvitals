@@ -22,9 +22,10 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 │ ACTIVE CONNECTION    │                                              │
 │ 🟢 Production     ▾  │        The screen you picked appears here    │
 │──────────────────────│                                              │
+│ OVERVIEW           ⌄ │                                              │
 │ 💓 Live Metrics      │                                              │
-│ 📊 Top Waits         │                                              │
-│ ⚡ Active Waits      │                                              │
+│ 🔔 Alerts            │                                              │
+│ ACTIVITY NOW       ⌄ │                                              │
 │ 🔗 Processes         │                                              │
 │ …                    │                                              │
 │ ⚙️ Settings          │                                              │
@@ -39,9 +40,22 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 | **Active connection** | Which server every screen is looking at. Switch here at any time; no restart needed. |
 | **Health dot** | 🟢 healthy, 🟠 warning, 🔴 critical or unreachable, ◯ not monitored. Hover it to see why. See [Health Dot](Health-Dot-and-Background-Monitoring.md). |
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
-| **Sidebar buttons** | One per screen. The screens are grouped by topic in the [feature map](Home.md#feature-map). A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. |
+| **Sidebar groups** | The screens, grouped by the question you're asking (see the table below). Click a group's name, or Tab to it and press Enter or Space, to collapse or expand it; hover it for the question it answers. SqlVitals remembers which groups you collapsed. Opening a screen in a collapsed group, from a notification or a link say, expands it; a collapsed group holding the screen you're on is shown in the accent colour with a **●**. |
+| **Sidebar buttons** | One per screen. A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. **📤 Export / AI** and **⚙️ Settings** are below the groups. |
 | **↻ Refresh** | Reloads the current screen. Most screens load once when you open them and again when you press Refresh. |
 | **Status bar** | Shows what's loading, and errors. If a screen's automatic refresh fails, the error appears here instead of a pop-up. |
+
+The sidebar groups (from 0.48.0):
+
+| Group | Screens | The question it answers |
+|---|---|---|
+| **Overview** | 💓 Live Metrics, 🔔 Alerts | Is the server healthy, and has anything gone wrong? |
+| **Activity now** | 🔗 Processes, ⚡ Active Waits, 💥 Deadlocks, 🔌 App Connections | Who is connected, what is running, and who is blocking whom? |
+| **Waits** | 📊 Top Waits, 📈 Wait Trend | What is the server waiting on, and how has that changed over time? |
+| **Queries** | 🔥 Resource Queries, 📋 Query Store, 🐢 Query Regressions, 🔎 Plan Cache Health, ⚠️ Implicit Conv., 🛰️ SP Trace | Which queries cost the most, which got slower, and why? |
+| **Resources** | 🧠 Memory Grants, 🗄️ TempDB, 💽 File I/O, 📦 DB Storage, ⏱️ Perfmon | Is memory, TempDB, disk or storage the bottleneck? |
+| **Maintenance** | 🔍 Index Health, 📉 Stale Stats, 💾 Backups, 🕒 Agent Jobs | Are indexes, statistics, backups and jobs looked after? |
+| **Configuration** | ✅ Config Checks, 🔒 Security Audit | Is the server set up correctly and securely? |
 
 ## 3. Take a first look
 
