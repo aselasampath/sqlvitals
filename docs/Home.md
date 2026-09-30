@@ -19,7 +19,7 @@ It answers questions like:
 - *Did a query get slower?* Automatic detection of query regressions, with the before and after execution plans.
 - *What should I fix?* Ready-to-review scripts for missing indexes, unused indexes, fragmentation and stale statistics. SqlVitals never runs them for you.
 
-> This wiki describes SqlVitals **0.47.0** (the current code on `main`). Download the installer, or the [portable zip](Installation.md#portable-zip-no-installer) if you'd rather not install, from the [latest release](https://github.com/aselasampath/sqlvitals/releases/latest), under **Assets**. If the latest release is older than 0.46.0, some features described here aren't in it yet: from 0.46.0 [monitoring is off until you start it](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) (upgrades keep it on), with an [activity log](Settings.md#activity-log); the [Query Store reports](Query-Performance.md#query-store) are new in 0.45.0; the [security audit](Security-Audit.md) in 0.44.0; the portable zip in 0.43.0; the [configuration checks](Configuration-Checks.md) are new in 0.42.0; the [file I/O latency page](File-IO.md) in 0.41.0; the [backup status and RPO warnings](Backups.md) in 0.40.0; the [SQL Agent job monitor](Agent-Jobs.md) in 0.39.0; the [deadlock history](Deadlocks.md) in 0.38.0; the [blocking chain viewer](Live-Monitoring.md#processes-blocking-chains) in 0.37.0; the [health score](Health-Dot-and-Background-Monitoring.md#health-score) is new in 0.36.0; the graphical [execution plans](Execution-Plans.md) and [notifications and tray](Notifications-and-Tray.md) in 0.35.0. See [Installation](Installation.md#get-the-latest-version).
+> This wiki describes SqlVitals **0.48.0** (the current code on `main`). Download the installer, or the [portable zip](Installation.md#portable-zip-no-installer) if you'd rather not install, from the [latest release](https://github.com/aselasampath/sqlvitals/releases/latest), under **Assets**. If the latest release is older than 0.48.0, some features described here aren't in it yet: from 0.48.0 the sidebar's screens are in [collapsible groups](Getting-Started.md#2-find-your-way-around); from 0.46.0 [monitoring is off until you start it](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) (upgrades keep it on), with an [activity log](Settings.md#activity-log); the [Query Store reports](Query-Performance.md#query-store) are new in 0.45.0; the [security audit](Security-Audit.md) in 0.44.0; the portable zip in 0.43.0; the [configuration checks](Configuration-Checks.md) are new in 0.42.0; the [file I/O latency page](File-IO.md) in 0.41.0; the [backup status and RPO warnings](Backups.md) in 0.40.0; the [SQL Agent job monitor](Agent-Jobs.md) in 0.39.0; the [deadlock history](Deadlocks.md) in 0.38.0; the [blocking chain viewer](Live-Monitoring.md#processes-blocking-chains) in 0.37.0; the [health score](Health-Dot-and-Background-Monitoring.md#health-score) is new in 0.36.0; the graphical [execution plans](Execution-Plans.md) and [notifications and tray](Notifications-and-Tray.md) in 0.35.0. See [Installation](Installation.md#get-the-latest-version).
 
 ---
 
@@ -38,6 +38,8 @@ New to terms like *wait type*, *page life expectancy* or *Query Store*? See the 
 ---
 
 ## Feature map
+
+Grouped by the wiki page that describes each screen. In the app, the sidebar groups the screens by the question you're asking: see [Getting Started](Getting-Started.md#2-find-your-way-around).
 
 | Area | Screens | What you get | Page |
 |---|---|---|---|
@@ -58,7 +60,7 @@ New to terms like *wait type*, *page life expectancy* or *Query Store*? See the 
 | **Regressions** | 🐢 Query Regressions | Queries that got slower, with before/after plans | [Query Regressions](Query-Regressions.md) |
 | **Stored procedures** | 🛰️ SP Trace | Live stream of stored-procedure calls | [SP Trace](SP-Trace.md) |
 | **Maintenance** | 🔍 Index Health, 📉 Stale Stats | CREATE / DROP / REBUILD / UPDATE STATISTICS scripts | [Index and Statistics Maintenance](Index-and-Statistics-Maintenance.md) |
-| **Resources** | 🗄️ TempDB, 🧠 Memory Grants, 🗄️ DB Storage, 🔌 App Connections, 📈 Perfmon | Memory, TempDB, storage, configuration, counters | [Server Resources](Server-Resources.md) |
+| **Resources** | 🗄️ TempDB, 🧠 Memory Grants, 📦 DB Storage, 🔌 App Connections, ⏱️ Perfmon | Memory, TempDB, storage, configuration, counters | [Server Resources](Server-Resources.md) |
 | **Sharing** | Right-click on any grid, 📤 Export / AI | Copy, CSV, and a text report to paste into an AI assistant | [Working with Grids](Working-with-Grids.md), [Export for AI](Export-for-AI.md) |
 | **Setup** | ⚙️ Settings | Connections, thresholds, alerts and notifications, history, notification area, theme, logs | [Connections](Connections.md), [Settings](Settings.md) |
 

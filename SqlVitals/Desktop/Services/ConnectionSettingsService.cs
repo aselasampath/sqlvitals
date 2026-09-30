@@ -184,6 +184,16 @@ public class ConnectionSettingsService
     public void SetQueryStoreChartMetrics(IReadOnlyList<QueryStoreMetric> metrics) => Update(ActivitySources.Page("Query Store"), store =>
         store.QueryStoreChartMetrics = QueryStoreMetrics.ParseChartMetrics(metrics.Select(m => m.ToString())));
 
+    /// <summary>
+    /// Saves that a sidebar group was collapsed or expanded (#124). Not in the activity log (see
+    /// <see cref="SettingsActivity"/>), so the source is never shown.
+    /// </summary>
+    public void SetNavGroupCollapsed(string groupId, bool collapsed) => Update(ActivitySources.Page("Sidebar"), store =>
+    {
+        var ids = store.NavCollapsedGroups.Where(id => id != groupId);
+        store.NavCollapsedGroups = NavMenu.NormalizeCollapsed(collapsed ? ids.Append(groupId) : ids);
+    });
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id) => Update(ActivitySources.ConnectionSelector, store =>
         store.ActiveConnectionId = id is { } value && store.Connections.Any(c => c.Id == value) ? value : null);
@@ -266,6 +276,7 @@ public class ConnectionSettingsService
                 ProcessesView           = ConnectionStore.ParseProcessesView(raw.ProcessesView),
                 ProcessesGroupByLogin   = raw.ProcessesGroupByLogin,
                 QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
+                NavCollapsedGroups      = NavMenu.NormalizeCollapsed(raw.NavCollapsedGroups),
             };
 
             var migrated = false;
@@ -424,6 +435,7 @@ public class ConnectionSettingsService
             ProcessesView           = store.ProcessesView.ToString(),
             ProcessesGroupByLogin   = store.ProcessesGroupByLogin,
             QueryStoreChartMetrics  = store.QueryStoreChartMetrics.Select(m => m.ToString()).ToList(),
+            NavCollapsedGroups      = store.NavCollapsedGroups.Count > 0 ? store.NavCollapsedGroups.ToList() : null,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -480,6 +492,7 @@ public class ConnectionSettingsService
         public string? ProcessesView             { get; set; }
         public bool    ProcessesGroupByLogin     { get; set; } = true;
         public List<string>? QueryStoreChartMetrics { get; set; }
+        public List<string>? NavCollapsedGroups  { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -584,6 +597,9 @@ public class ConnectionStore
 
     /// <summary>The Query Store page's Over Time charts, in order (#111).</summary>
     public IReadOnlyList<QueryStoreMetric> QueryStoreChartMetrics { get; set; } = QueryStoreMetrics.DefaultChartMetrics;
+
+    /// <summary>The ids of the sidebar groups the user collapsed (#124), in sidebar order; every group starts expanded.</summary>
+    public IReadOnlyList<string> NavCollapsedGroups { get; set; } = [];
 
     public static int NormalizeProcessesRefresh(int seconds) =>
         seconds is >= 5 and <= 120 && seconds % 5 == 0 ? seconds : DefaultProcessesRefreshSeconds;
