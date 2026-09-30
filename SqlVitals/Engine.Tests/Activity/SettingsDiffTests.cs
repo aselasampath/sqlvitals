@@ -115,6 +115,53 @@ public sealed class SettingsDiffTests
         }
     }
 
+    private static readonly Guid ChannelId = Guid.Parse("00000000-0000-4000-8000-000000000002");
+
+    private static SettingsSnapshot WithChannel(string name = "DBA team", string webhook = Webhook, string on = "On", bool withChannel = true) =>
+        Snapshot() with
+        {
+            ChatChannels = withChannel
+                ? [new ConnectionSnapshot(ChannelId, name,
+                   [
+                       new("Name", name),
+                       new("Service", "Slack"),
+                       new("Webhook URL", webhook),
+                       new("On", on),
+                   ])]
+                : [],
+        };
+
+    [Fact]
+    public void AChatChannelAddedOrRemoved_IsOneRowNamingIt_WithoutItsUrl()
+    {
+        var added = Assert.Single(SettingsDiff.Between(WithChannel(withChannel: false), WithChannel(), ActivitySources.Settings, Now));
+        Assert.Equal((ActivityEvents.ChatChannelAdded, "DBA team", (string?)null), (added.Event, added.Detail, added.ConnectionName));
+
+        var removed = Assert.Single(SettingsDiff.Between(WithChannel(), WithChannel(withChannel: false), ActivitySources.Settings, Now));
+        Assert.Equal((ActivityEvents.ChatChannelRemoved, "DBA team"), (removed.Event, removed.Detail));
+    }
+
+    [Fact]
+    public void AChatChannelEdit_NamesTheChannelAndField_AndItsUrlOnlyAsChanged()
+    {
+        var rows = SettingsDiff.Between(WithChannel(), WithChannel(webhook: "https://hooks.example.com/services/NEW", on: "Off"),
+                                        ActivitySources.Settings, Now);
+
+        Assert.All(rows, r => Assert.Equal(ActivityEvents.ChatChannelEdited, r.Event));
+        Assert.Collection(rows,
+            r => Assert.Equal(("DBA team: Webhook URL", null, null, SettingsDiff.SecretChanged), (r.Setting, r.OldValue, r.NewValue, r.Detail)),
+            r => Assert.Equal(("DBA team: On", "On", "Off"), (r.Setting, r.OldValue, r.NewValue)));
+        Assert.All(rows.SelectMany(Texts), t => Assert.DoesNotContain("hooks.example.com", t));
+    }
+
+    [Fact]
+    public void ARenamedChatChannel_IsLoggedUnderItsNewName()
+    {
+        var row = Assert.Single(SettingsDiff.Between(WithChannel(), WithChannel(name: "Ops"), ActivitySources.Settings, Now));
+
+        Assert.Equal(("Ops: Name", "DBA team", "Ops"), (row.Setting, row.OldValue, row.NewValue));
+    }
+
     [Theory]
     [InlineData("Password")]
     [InlineData("password")]

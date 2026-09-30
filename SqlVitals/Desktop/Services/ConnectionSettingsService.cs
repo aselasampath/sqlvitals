@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Backups;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.FileIo;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
@@ -194,6 +195,26 @@ public class ConnectionSettingsService
         store.NavCollapsedGroups = NavMenu.NormalizeCollapsed(collapsed ? ids.Append(groupId) : ids);
     });
 
+    /// <summary>
+    /// Adds a Slack or Teams channel (#120), or replaces the saved one with the same
+    /// <see cref="ChatChannel.Id"/>. The caller checks the URL first (see <see cref="WebhookUrl.Check"/>).
+    /// </summary>
+    public void SaveChatChannel(ChatChannel channel) => Update(ActivitySources.Settings, store =>
+    {
+        var index = store.ChatChannels.FindIndex(c => c.Id == channel.Id);
+        var copy  = channel.Clone();
+        copy.Name       = copy.Name.Trim();
+        copy.WebhookUrl = copy.WebhookUrl.Trim();
+        if (index >= 0)
+            store.ChatChannels[index] = copy;
+        else
+            store.ChatChannels.Add(copy);
+    });
+
+    /// <summary>Removes a chat channel.</summary>
+    public void RemoveChatChannel(Guid id) =>
+        Update(ActivitySources.Settings, store => store.ChatChannels.RemoveAll(c => c.Id == id));
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     public void SetActive(Guid? id) => Update(ActivitySources.ConnectionSelector, store =>
         store.ActiveConnectionId = id is { } value && store.Connections.Any(c => c.Id == value) ? value : null);
@@ -319,6 +340,26 @@ public class ConnectionSettingsService
                 migrated = true;
             }
 
+            // The chat channels (#120) are their own blob, so one that can't be decrypted (the file
+            // was copied to another PC or Windows user, or the user's password was reset by an
+            // admin) loses only the channels. They're dropped and the app says so (see
+            // ConnectionStore.ChatChannelsDropped); the exception isn't logged as it is, in case
+            // it quotes part of the blob.
+            if (!string.IsNullOrWhiteSpace(raw.EncryptedChatChannels))
+            {
+                try
+                {
+                    store.ChatChannels = JsonSerializer.Deserialize<List<ChatChannel>>(Decrypt(raw.EncryptedChatChannels))
+                                         ?? new List<ChatChannel>();
+                }
+                catch (Exception ex) when (ex is CryptographicException or FormatException or JsonException)
+                {
+                    AppLog.Info($"The chat channels in the settings file couldn't be read ({ex.GetType().Name}), " +
+                                "so they were dropped. Add them again in Settings → Alerts.");
+                    store.ChatChannelsDropped = true;
+                }
+            }
+
             // Missing from files written before #115: those installations were monitoring their
             // connections, and keep doing so. Saved explicitly from then on.
             store.StartMonitoringAutomatically =
@@ -413,6 +454,7 @@ public class ConnectionSettingsService
         var raw = new RawSettings
         {
             EncryptedConnections   = Encrypt(JsonSerializer.Serialize(toStore)),
+            EncryptedChatChannels  = store.ChatChannels.Count > 0 ? Encrypt(JsonSerializer.Serialize(store.ChatChannels)) : null,
             ActiveConnectionId     = store.ActiveConnectionId,
             StartMonitoringAutomatically = store.StartMonitoringAutomatically,
             CommandTimeoutSeconds  = store.CommandTimeoutSeconds,
@@ -466,6 +508,10 @@ public class ConnectionSettingsService
     private sealed class RawSettings
     {
         public string? EncryptedConnections      { get; set; }
+
+        // The Slack and Teams channels (#120): their webhook URLs are secrets, so encrypted too.
+        public string? EncryptedChatChannels     { get; set; }
+
         public Guid?   ActiveConnectionId        { get; set; }
         public int     CommandTimeoutSeconds     { get; set; } = 30;
 
@@ -508,6 +554,15 @@ public class ConnectionStore
 
     public List<ConnectionSettings> Connections           { get; set; } = new();
     public Guid?                    ActiveConnectionId    { get; set; }
+
+    /// <summary>The Slack and Teams channels alerts are posted to (#108).</summary>
+    public List<ChatChannel>        ChatChannels          { get; set; } = new();
+
+    /// <summary>
+    /// The file had chat channels that couldn't be decrypted, so they were dropped (#120). Only
+    /// until the next save, which writes the file without them.
+    /// </summary>
+    public bool ChatChannelsDropped { get; internal set; }
     public int                      CommandTimeoutSeconds { get; set; } = 30;
 
     /// <summary>

@@ -17,6 +17,7 @@
 - [Health Dot and Background Monitoring](Health-Dot-and-Background-Monitoring.md)
 - [Alerts](Alerts.md)
 - [Notifications and Tray](Notifications-and-Tray.md)
+- [Chat Notifications](Chat-Notifications.md)
 - [Wait Statistics](Wait-Statistics.md)
 - [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md)
 

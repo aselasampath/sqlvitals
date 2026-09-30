@@ -28,6 +28,12 @@ public static class AppLog
         @"(?:""[^""]*""|'[^']*'|[^;\r\n]*)(?:;[ \t]*|(?=[\r\n])|$)){2,}",
         RegexOptions.Compiled);
 
+    // A Slack or Teams webhook URL (#120): anyone who has one can post to the channel. SqlVitals
+    // never logs one on purpose; this catches one echoed back in an exception or a service's answer.
+    private static readonly Regex WebhookUrl = new(
+        @"(?i)\bhttps?://[^\s""'<>]*(?:hooks\.slack\.com|logic\.azure\.com|powerplatform\.com|webhook\.office\.com|outlook\.office\.com/webhook)[^\s""'<>]*",
+        RegexOptions.Compiled);
+
     public static string Directory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SqlVitals", "logs");
 
@@ -60,11 +66,13 @@ public static class AppLog
     }
 
     /// <summary>
-    /// Masks passwords, then replaces anything that looks like a connection string, so neither
-    /// reaches the log even when an exception message echoes one back.
+    /// Masks passwords, then replaces anything that looks like a connection string or a chat
+    /// webhook URL, so none of them reaches the log even when an exception message echoes one back.
     /// </summary>
     public static string Redact(string message) =>
-        ConnectionString.Replace(ConnectionSettingsService.RedactSecrets(message), "[connection string removed] ");
+        WebhookUrl.Replace(
+            ConnectionString.Replace(ConnectionSettingsService.RedactSecrets(message), "[connection string removed] "),
+            "[webhook URL removed]");
 
     private static void Write(string level, string message)
     {

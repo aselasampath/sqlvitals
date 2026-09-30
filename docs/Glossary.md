@@ -79,3 +79,4 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **VIEW SERVER STATE** | The permission needed to read server-level DMVs. On Azure SQL Database the equivalent is `VIEW DATABASE STATE`. |
 | **Wait / wait type** | A reason a task couldn't continue, and how long it waited. See [Wait Statistics](Wait-Statistics.md). |
 | **Wait category** | Query Store's grouping of wait types per query (SQL Server 2017+), e.g. *Lock* for `LCK_M_%` or *Buffer IO* for `PAGEIOLATCH_%`. See [Query Store → Waits](Query-Performance.md#waits). |
+| **Webhook** | A URL that posts whatever is sent to it into one Slack or Microsoft Teams channel. Anyone who has it can post there, so SqlVitals stores it encrypted and never logs it. See [Chat Notifications](Chat-Notifications.md). |

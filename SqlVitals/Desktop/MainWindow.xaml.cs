@@ -36,6 +36,9 @@ public partial class MainWindow : Window
 
     // Background live-metrics collection for the active and every monitored connection.
     internal readonly MonitoringManager Monitoring = new();
+
+    // The Slack and Teams channels in Settings → Alerts (#108).
+    internal readonly ChatNotificationService Chat = new(new HttpWebhookSender());
     private List<ConnectionSelectorItem> _selectorItems = new();
 
     // The notification-area icon: Windows notifications for alerts, and the way back to the
@@ -84,7 +87,18 @@ public partial class MainWindow : Window
         {
             foreach (var row in rows)
                 Monitoring.Log(row);
+
+            // A channel added, edited or removed applies straight away. Only reads (see Apply).
+            if (rows.Any(r => r.Event is ActivityEvents.ChatChannelAdded or ActivityEvents.ChatChannelEdited
+                                         or ActivityEvents.ChatChannelRemoved))
+                Chat.Apply(SettingsService.Load());
         };
+
+        Chat.Apply(store);
+        if (store.ChatChannelsDropped)
+            _tray.Inform("Chat channels were removed",
+                "SqlVitals couldn't read its Slack and Teams channels on this PC or Windows account, so alerts " +
+                "can't be posted to them. Add them again in Settings → Alerts.");
 
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
         Monitoring.MonitoringChanged   += OnMonitoringChanged;
@@ -486,6 +500,7 @@ public partial class MainWindow : Window
 
         // Background collectors hold no server-side state; just stop them polling.
         Monitoring.Dispose();
+        Chat.Dispose();
 
         try
         {
@@ -601,7 +616,7 @@ public partial class MainWindow : Window
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(new SettingsPage(SettingsService, Monitoring, ApplySavedConnectionsAsync, settingsMessage, settingsConnectionId));
+            MainFrame.Navigate(new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync, settingsMessage, settingsConnectionId));
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;
