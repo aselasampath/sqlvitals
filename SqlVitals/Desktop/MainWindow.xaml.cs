@@ -38,7 +38,8 @@ public partial class MainWindow : Window
     internal readonly MonitoringManager Monitoring = new();
 
     // The Slack and Teams channels in Settings → Alerts (#108).
-    internal readonly ChatNotificationService Chat = new(new HttpWebhookSender());
+    internal readonly ChatNotificationService Chat = new(new HttpWebhookSender(), ui: System.Threading.SynchronizationContext.Current
+                                                                              ?? new System.Windows.Threading.DispatcherSynchronizationContext());
     private List<ConnectionSelectorItem> _selectorItems = new();
 
     // The notification-area icon: Windows notifications for alerts, and the way back to the
@@ -88,10 +89,9 @@ public partial class MainWindow : Window
             foreach (var row in rows)
                 Monitoring.Log(row);
 
-            // A channel added, edited or removed applies straight away. Only reads (see Apply).
-            if (rows.Any(r => r.Event is ActivityEvents.ChatChannelAdded or ActivityEvents.ChatChannelEdited
-                                         or ActivityEvents.ChatChannelRemoved))
-                Chat.Apply(SettingsService.Load());
+            // Chat channels, and the connection names their messages use, apply from the next
+            // alert. Only reads (see Apply).
+            Chat.Apply(SettingsService.Load());
         };
 
         Chat.Apply(store);
@@ -103,6 +103,8 @@ public partial class MainWindow : Window
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
         Monitoring.MonitoringChanged   += OnMonitoringChanged;
         Monitoring.AlertsChanged       += OnAlertsChanged;
+        // Separate from the Windows notification: muting a connection doesn't stop its channels (#121).
+        Monitoring.AlertsRaised        += Chat.OnAlertsRaised;
         SyncConnections(store, ActivitySources.AutomaticAtStartup);
 
         Loaded += async (_, _) =>

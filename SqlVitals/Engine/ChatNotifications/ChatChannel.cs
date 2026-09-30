@@ -36,7 +36,27 @@ public sealed class ChatChannel
     /// <summary>Off pauses the channel without removing it.</summary>
     public bool        Enabled    { get; set; } = true;
 
-    public ChatChannel Clone() => (ChatChannel)MemberwiseClone();
+    /// <summary>
+    /// Every monitored connection's alerts (#121), including connections added later. Off, only
+    /// <see cref="ConnectionIds"/>. Missing from files written before #121, where it reads as on.
+    /// </summary>
+    public bool        AllConnections { get; set; } = true;
+
+    /// <summary>The connections chosen when <see cref="AllConnections"/> is off.</summary>
+    public List<Guid>  ConnectionIds  { get; set; } = new();
+
+    /// <summary>Post critical alerts only (#121); off posts warnings and critical.</summary>
+    public bool        CriticalOnly   { get; set; }
+
+    /// <summary>Whether this channel gets a connection's alerts.</summary>
+    public bool Includes(Guid connectionId) => AllConnections || ConnectionIds.Contains(connectionId);
+
+    public ChatChannel Clone()
+    {
+        var copy = (ChatChannel)MemberwiseClone();
+        copy.ConnectionIds = new List<Guid>(ConnectionIds ?? []);
+        return copy;
+    }
 
     /// <summary>The name and the masked URL, never the URL itself.</summary>
     public override string ToString() => $"{Name} ({ChatServices.Name(Service)}, {ChatNotifications.WebhookUrl.Mask(WebhookUrl)})";

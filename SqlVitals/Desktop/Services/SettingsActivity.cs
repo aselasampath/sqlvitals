@@ -67,12 +67,18 @@ internal static class SettingsActivity
         }).ToList();
 
         // Chat channels (#120), by name. "Webhook URL" is in SettingsDiff.SecretNames: compared, never logged.
+        var names = store.Connections.ToDictionary(c => c.Id, c => c.DisplayName);
         var channels = store.ChatChannels.Select(c => new ConnectionSnapshot(c.Id, c.Name,
         [
             new("Name", c.Name),
             new("Service", ChatServices.Name(c.Service)),
             new("Webhook URL", c.WebhookUrl),
             new("On", OnOff(c.Enabled)),
+            new("Connections", c.AllConnections
+                ? "All monitored connections"
+                : string.Join(", ", c.ConnectionIds.Select(id => names.GetValueOrDefault(id, "a removed connection"))
+                                                   .OrderBy(n => n, StringComparer.OrdinalIgnoreCase))),
+            new("Post", c.CriticalOnly ? "Critical only" : "Warnings and critical"),
         ])).ToList();
 
         return new SettingsSnapshot(settings, connections, channels);

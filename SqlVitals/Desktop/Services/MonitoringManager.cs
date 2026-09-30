@@ -84,6 +84,12 @@ public sealed class MonitoringManager : IDisposable
     /// </summary>
     public event Action<Guid, IReadOnlyList<AlertChange>>? AlertsChanged;
 
+    /// <summary>
+    /// Raised with <see cref="AlertsChanged"/>, for services that outlive the window, such as the
+    /// chat channels (#121). Kept apart from the window's event, so Exit can still reach them (#123).
+    /// </summary>
+    public event Action<Guid, IReadOnlyList<AlertChange>>? AlertsRaised;
+
     /// <summary>Every monitored connection's alerts that have started and not ended.</summary>
     public IReadOnlyList<Alert> ActiveAlerts =>
         _sessions.Values.SelectMany(s => s.ActiveAlerts).ToList();
@@ -390,8 +396,26 @@ public sealed class MonitoringManager : IDisposable
 
     private void OnSessionAlertsChanged(MonitoringSession session, IReadOnlyList<AlertChange> changes)
     {
-        if (session.ConnectionId is { } id)
-            AlertsChanged?.Invoke(id, changes);
+        if (session.ConnectionId is not { } id)
+            return;
+
+        // Each on its own, services first. This runs inside the session's collection (and its
+        // Dispose), so a subscriber that throws would otherwise show the connection as "Monitoring
+        // failed", or stop the other subscribers hearing the alert.
+        Raise(AlertsRaised, id, changes, "a background service");
+        Raise(AlertsChanged, id, changes, "the window");
+    }
+
+    private static void Raise(Action<Guid, IReadOnlyList<AlertChange>>? handlers, Guid id,
+                              IReadOnlyList<AlertChange> changes, string who)
+    {
+        if (handlers is null)
+            return;
+        foreach (var handler in handlers.GetInvocationList().Cast<Action<Guid, IReadOnlyList<AlertChange>>>())
+        {
+            try { handler(id, changes); }
+            catch (Exception ex) { AppLog.Error($"Alerts: {who} failed to handle an alert change", ex); }
+        }
     }
 
     private void Remove(Guid id, string source, ConnectionSettings conn, string? detail = null) =>
@@ -417,6 +441,7 @@ public sealed class MonitoringManager : IDisposable
         SessionStateChanged = null;   // the window is closing; nothing left to update
         MonitoringChanged   = null;
         AlertsChanged       = null;
+        AlertsRaised        = null;   // #123 keeps it until the sessions are removed, for the ends on Exit
         foreach (var id in _sessions.Keys.ToList())
             Remove(id, ActivitySources.AppExit, "SqlVitals exited.");
         Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.AppExited, null, null, ActivitySources.AppExit));

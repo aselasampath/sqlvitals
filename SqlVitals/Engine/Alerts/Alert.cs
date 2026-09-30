@@ -115,6 +115,32 @@ public static class AlertText
 
     public static string Severity(HealthLevel severity) => severity == HealthLevel.Critical ? "Critical" : "Warning";
 
+    /// <summary>What the health dot said at the worst figure ("Log 93% full (Sales)"), or the figure itself ("CPU 97 %").</summary>
+    public static string Describe(Alert alert) =>
+        string.IsNullOrWhiteSpace(alert.Detail)
+            ? $"{HealthThresholds.Info(alert.Indicator).Name} {Value(alert.Indicator, alert.Value)}"
+            : alert.Detail;
+
+    /// <summary>
+    /// The worst figure against its threshold, as the Alerts page's columns show them:
+    /// "97 % (threshold ≥ 90 %)", or "97 %" when the threshold isn't known.
+    /// </summary>
+    public static string Figure(Alert alert)
+    {
+        var threshold = Threshold(alert.Indicator, alert.Threshold);
+        var value     = Value(alert.Indicator, alert.Value);
+        return threshold.Length == 0 ? value : $"{value} (threshold {threshold})";
+    }
+
+    /// <summary>
+    /// What the health dot said, when it adds to the figure: how many sessions are blocked, or
+    /// which database's log is full. Null for the indicators whose detail only repeats the figure.
+    /// </summary>
+    public static string? Context(Alert alert) =>
+        alert.Indicator is HealthIndicator.Blocking or HealthIndicator.LogSpace && !string.IsNullOrWhiteSpace(alert.Detail)
+            ? alert.Detail
+            : null;
+
     public static string EndReason(AlertEndReason? reason) => reason switch
     {
         AlertEndReason.Recovered         => "Back to normal",
