@@ -11,7 +11,7 @@
 | [Monitoring](#monitoring) | Whether monitoring starts by itself | [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) |
 | [Monitoring History](#monitoring-history) | Snapshot interval, retention, clearing | below |
 | [Health Thresholds](#health-thresholds) | When the health dot turns 🟠 or 🔴, and so what lowers the health score | [Health Dot](Health-Dot-and-Background-Monitoring.md) |
-| [Alerts](#alerts) | How long a breach lasts before it's recorded as an alert; which connections raise Windows notifications | [Alerts](Alerts.md), [Notifications and Tray](Notifications-and-Tray.md) |
+| [Alerts](#alerts) | How long a breach lasts before it's recorded as an alert; which connections raise Windows notifications; Slack and Teams channels | [Alerts](Alerts.md), [Notifications and Tray](Notifications-and-Tray.md), [Chat Notifications](Chat-Notifications.md) |
 | [Notification Area](#notification-area) | Whether minimizing or closing the window keeps SqlVitals running | [Notifications and Tray](Notifications-and-Tray.md) |
 | [Appearance](#appearance) | Light or dark theme | below |
 | [Activity Log](#activity-log) | When monitoring started and stopped, and every settings change | below |
@@ -61,6 +61,16 @@ A **Warning** and **Critical** box for each health indicator. Leave a box blank 
 
 What raises an alert is set by the health thresholds above.
 
+### Chat channels (Slack and Teams)
+
+From 0.49.0, a list of the Slack and Microsoft Teams channels SqlVitals can post to, each with its service, its webhook URL masked (`hooks.slack.com/…/x7Qa`) and **Never used** or **Last posted 10:42**.
+
+- **+ Add channel** opens a form: **Name**, **Webhook URL** (masked once saved; **Show** reveals it), **Service** (picked from the URL) and **On** (off pauses the channel without removing it). **💾 Save channel** checks the URL first and applies straight away.
+- Select a channel to edit it; **🗑 Remove** removes it after a confirmation.
+- **📨 Send test message** posts a test message to the selected channel, as saved, and shows the result under the list.
+
+The webhook URLs are stored encrypted and never logged. Setup steps for each service, what each test result means and the URL checks are on [Chat Notifications](Chat-Notifications.md).
+
 ## Notification Area
 
 | Setting | Default | Effect |
@@ -84,6 +94,7 @@ A record of what was done, kept in the history file (`history.db`, table `activi
 | **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. Not which sidebar groups you collapse or expand. |
 | **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |
 | **History cleared** | **🗑 Clear history** |
+| **Chat channel added** / **edited** / **removed** | From 0.49.0. The channel's name is in *Detail* (added, removed) or *Setting* (edited, e.g. *DBA team: On*). A new webhook URL only shows as *changed*. |
 
 Each row also has the **Windows user** and **PC name**, so a shared or copied history file still says who did it.
 
@@ -109,7 +120,7 @@ SqlVitals writes errors and warnings to a daily log file. **Open log folder** op
 
 | What | Where | Notes |
 |---|---|---|
-| Connections, command timeout, Start monitoring automatically, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop, its Map or Grid view and Group by login | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
+| Connections, chat channels (with their webhook URLs), command timeout, Start monitoring automatically, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop, its Map or Grid view and Group by login | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
 | Monitoring history and the activity log | `%LocalAppData%\SqlVitals\history.db` | Local, not roaming. See [Monitoring History Database](Monitoring-History-Database.md). |
 | Logs | `%AppData%\SqlVitals\logs\` | 14-day retention (`Services/AppLog.cs`) |
 | Defaults | `appsettings.json` in the install folder | `QuerySettings:CommandTimeoutSeconds` (30), `QuerySettings:UseNoLock` (true), fallback `ConnectionStrings:SqlServer`, `TraceSettings:SessionName` |

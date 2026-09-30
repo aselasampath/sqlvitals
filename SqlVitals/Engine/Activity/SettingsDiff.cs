@@ -7,9 +7,14 @@ public sealed record SettingValue(string Name, string Value);
 public sealed record ConnectionSnapshot(Guid Id, string Name, IReadOnlyList<SettingValue> Fields);
 
 /// <summary>Everything in the settings file as text, to compare before and after a save (#115).</summary>
-public sealed record SettingsSnapshot(IReadOnlyList<SettingValue> Settings, IReadOnlyList<ConnectionSnapshot> Connections)
+/// <param name="ChatChannels">The Slack and Teams channels (#120), each with its fields, like a connection.</param>
+public sealed record SettingsSnapshot(IReadOnlyList<SettingValue>       Settings,
+                                      IReadOnlyList<ConnectionSnapshot> Connections,
+                                      IReadOnlyList<ConnectionSnapshot>? ChatChannels = null)
 {
     public static SettingsSnapshot Empty { get; } = new([], []);
+
+    public IReadOnlyList<ConnectionSnapshot> Channels => ChatChannels ?? [];
 }
 
 /// <summary>
@@ -58,6 +63,23 @@ public static class SettingsDiff
 
         foreach (var conn in before.Connections.Where(c => !newConnections.ContainsKey(c.Id)))
             rows.Add(new ActivityEntry(nowUtc, ActivityEvents.ConnectionRemoved, conn.Id, conn.Name, source));
+
+        // Chat channels aren't connections, so the Connection column stays empty: the channel is
+        // named in the setting ("DBA team: Service") or, when added or removed, in the detail.
+        var oldChannels = before.Channels.ToDictionary(c => c.Id);
+        var newChannels = after.Channels.ToDictionary(c => c.Id);
+
+        foreach (var channel in after.Channels.Where(c => !oldChannels.ContainsKey(c.Id)))
+            rows.Add(new ActivityEntry(nowUtc, ActivityEvents.ChatChannelAdded, null, null, source, Detail: channel.Name));
+
+        foreach (var channel in after.Channels.Where(c => oldChannels.ContainsKey(c.Id)))
+            foreach (var (name, old, now) in Changes(oldChannels[channel.Id].Fields, channel.Fields))
+                rows.Add(IsSecret(name)
+                    ? new ActivityEntry(nowUtc, ActivityEvents.ChatChannelEdited, null, null, source, $"{channel.Name}: {name}", Detail: SecretChanged)
+                    : new ActivityEntry(nowUtc, ActivityEvents.ChatChannelEdited, null, null, source, $"{channel.Name}: {name}", old, now));
+
+        foreach (var channel in before.Channels.Where(c => !newChannels.ContainsKey(c.Id)))
+            rows.Add(new ActivityEntry(nowUtc, ActivityEvents.ChatChannelRemoved, null, null, source, Detail: channel.Name));
 
         return rows;
     }

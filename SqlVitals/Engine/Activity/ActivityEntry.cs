@@ -51,12 +51,16 @@ public static class ActivityEvents
     public const string ConnectionEdited   = "Connection edited";
     public const string ConnectionRemoved  = "Connection removed";
     public const string HistoryCleared     = "History cleared";
+    public const string ChatChannelAdded   = "Chat channel added";
+    public const string ChatChannelEdited  = "Chat channel edited";
+    public const string ChatChannelRemoved = "Chat channel removed";
 
     /// <summary>Every event, for the log's filter.</summary>
     public static IReadOnlyList<string> All { get; } =
     [
         AppStarted, AppExited, MonitoringStarted, MonitoringStopped,
         SettingChanged, ConnectionAdded, ConnectionEdited, ConnectionRemoved, HistoryCleared,
+        ChatChannelAdded, ChatChannelEdited, ChatChannelRemoved,
     ];
 
     /// <summary>The detail of an App started row when the run before it has no App exited row.</summary>

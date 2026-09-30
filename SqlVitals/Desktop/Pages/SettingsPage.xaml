@@ -488,6 +488,178 @@
                     <TextBlock x:Name="TxtAlertsStatus"
                                FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
                                Visibility="Collapsed" />
+
+                    <!-- Chat channels (#120) -->
+                    <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,14,0,0">
+                        <StackPanel>
+                            <DockPanel Margin="0,0,0,4">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button x:Name="BtnAddChatChannel" Style="{StaticResource SecondaryButton}"
+                                            Padding="12,5" Margin="0,0,8,0" Click="BtnAddChatChannel_Click"
+                                            Content="+  Add channel" />
+                                    <Button x:Name="BtnSendChatTest" Style="{StaticResource SecondaryButton}"
+                                            Padding="12,5" Margin="0,0,8,0" Click="BtnSendChatTest_Click" IsEnabled="False"
+                                            ToolTip="Post a test message to the selected channel, as it's saved"
+                                            Content="📨  Send test message" />
+                                    <Button x:Name="BtnRemoveChatChannel" Style="{StaticResource SecondaryButton}"
+                                            Padding="12,5" Click="BtnRemoveChatChannel_Click" IsEnabled="False"
+                                            Content="🗑  Remove" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource FieldLabel}" FontWeight="SemiBold"
+                                           Text="Chat channels (Slack and Teams)" />
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource FieldHint}" Margin="0,0,0,10"
+                                       Text="Post to a Slack or Microsoft Teams channel through its webhook, so the whole team sees what SqlVitals sees. Messages are sent only while SqlVitals is running on this PC. Webhook URLs are stored encrypted, like passwords, and never written to the log. Setup steps for Slack and Teams are on the Chat Notifications page of the wiki." />
+
+                            <TextBlock x:Name="TxtChatChannelsDropped" Visibility="Collapsed"
+                                       Foreground="{StaticResource Warning}" FontSize="11" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="⚠  SqlVitals couldn't read the chat channels saved in its settings on this PC or Windows account, so they were removed. Add them again." />
+                            <TextBlock x:Name="TxtNoChatChannels" Style="{StaticResource FieldHint}" Visibility="Collapsed"
+                                       Text="No chat channels yet. Click Add channel to set one up." />
+
+                            <ListBox x:Name="LstChatChannels"
+                                     Background="Transparent" BorderThickness="0"
+                                     AutomationProperties.Name="Chat channels"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     SelectionChanged="LstChatChannels_SelectionChanged">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Cursor" Value="Hand" />
+                                        <Setter Property="Margin" Value="0,0,0,4" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                                            BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                                            Padding="12,8">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentLight}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter TargetName="Bd" Property="Background" Value="#337C3AED" />
+                                                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0"
+                                                       Text="{Binding StatusText}"
+                                                       Foreground="{StaticResource TextMuted}" FontSize="11" />
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}"
+                                                           Foreground="{StaticResource TextPrimary}"
+                                                           FontSize="13" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Detail}"
+                                                           Foreground="{StaticResource TextMuted}"
+                                                           FontSize="11" Margin="0,2,0,0"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- Add or edit a channel -->
+                            <Border x:Name="ChatChannelForm" Visibility="Collapsed" Margin="0,8,0,0"
+                                    BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6" Padding="14,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="156" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />  <!-- 0 Title -->
+                                        <RowDefinition Height="Auto" />  <!-- 1 Name -->
+                                        <RowDefinition Height="Auto" />  <!-- 2 Webhook URL -->
+                                        <RowDefinition Height="Auto" />  <!-- 3 Service -->
+                                        <RowDefinition Height="Auto" />  <!-- 4 On -->
+                                        <RowDefinition Height="Auto" />  <!-- 5 Message -->
+                                        <RowDefinition Height="Auto" />  <!-- 6 Buttons -->
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock x:Name="TxtChatFormTitle" Grid.ColumnSpan="2" Text="New Channel"
+                                               Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"
+                                               Margin="0,0,0,10" />
+
+                                    <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,7,12,0"
+                                               Text="Name" />
+                                    <StackPanel Grid.Row="1" Grid.Column="1">
+                                        <TextBox x:Name="TxtChatName" Style="{StaticResource FieldTextBox}"
+                                                 AutomationProperties.Name="Channel name" />
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="What you call it, e.g. DBA team (Teams). Shown here, in the activity log and in the app log." />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,19,12,0"
+                                               Text="Webhook URL" />
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,12,0,0">
+                                        <!-- A saved URL stays out of every control until Show is pressed. -->
+                                        <DockPanel x:Name="PnlChatUrlMasked" Visibility="Collapsed">
+                                            <Button x:Name="BtnShowChatUrl" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}"
+                                                    Padding="12,5" Margin="8,0,0,0" Click="BtnShowChatUrl_Click"
+                                                    ToolTip="Show the whole URL, to check or change it"
+                                                    Content="Show" />
+                                            <TextBlock x:Name="TxtChatUrlMasked" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextPrimary}" FontSize="12"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <TextBox x:Name="TxtChatUrl" Style="{StaticResource FieldTextBox}"
+                                                 AutomationProperties.Name="Webhook URL"
+                                                 TextChanged="TxtChatUrl_TextChanged" />
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="Slack: an Incoming Webhook URL, starting https://hooks.slack.com/services/. Teams: the URL of a workflow made from the template &quot;Post to a channel when a webhook request is received&quot;. Anyone who has the URL can post to the channel, so treat it like a password." />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,19,12,0"
+                                               Text="Service" />
+                                    <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,12,0,0">
+                                        <ComboBox x:Name="CmbChatService" Width="200" HorizontalAlignment="Left"
+                                                  AutomationProperties.Name="Chat service">
+                                            <ComboBoxItem Content="Slack" Tag="Slack" />
+                                            <ComboBoxItem Content="Microsoft Teams" Tag="Teams" />
+                                        </ComboBox>
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="Picked from the URL when SqlVitals recognises it." />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,12,0,0">
+                                        <CheckBox x:Name="ChkChatEnabled" Content="On" IsChecked="True" />
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="Turn off to pause the channel without removing it. A test message can still be sent." />
+                                    </StackPanel>
+
+                                    <TextBlock x:Name="TxtChatFormMessage" Grid.Row="5" Grid.ColumnSpan="2"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed" />
+
+                                    <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,12,0,0">
+                                        <Button x:Name="BtnSaveChatChannel" Style="{StaticResource RefreshButton}"
+                                                Padding="14,6" Margin="0,0,8,0" Click="BtnSaveChatChannel_Click"
+                                                Content="💾  Save channel" />
+                                        <Button x:Name="BtnCancelChatChannel" Style="{StaticResource SecondaryButton}"
+                                                Padding="14,6" Click="BtnCancelChatChannel_Click"
+                                                Content="Cancel" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <TextBlock x:Name="TxtChatStatus"
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Border>
 

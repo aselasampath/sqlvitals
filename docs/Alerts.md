@@ -72,6 +72,7 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 - **No extra load on the server:** alerts are worked out from the samples SqlVitals already collects.
 - **How long they're kept:** as long as the rest of the [history](Settings.md#monitoring-history), counted from when the alert ended. An active alert is never deleted. **Clear history** deletes alerts too.
 - **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opens this page filtered to that connection. Mute a connection in **Settings → Alerts → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
+- **Chat channels:** from 0.49.0 you can set up Slack and Microsoft Teams channels in **Settings → Alerts → Chat channels** and send each a test message, so alerts can reach the whole team. Posting alerts to them is on its way. See [Chat Notifications](Chat-Notifications.md).
 - **One SqlVitals at a time:** from 0.35.0, starting SqlVitals again brings the running copy to the front instead of opening a second one. (Before that, a second copy shared the history file and ended the first one's active alerts when it started.)
 
 ---

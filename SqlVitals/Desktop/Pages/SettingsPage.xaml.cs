@@ -7,6 +7,7 @@ using SqlVitals.Desktop;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 
@@ -16,6 +17,19 @@ public partial class SettingsPage : Page
 {
     private readonly ConnectionSettingsService _service;
     private readonly MonitoringManager         _monitoring;
+    private readonly ChatNotificationService   _chat;
+
+    // The chat channel the form is editing (#120); null while adding a new one.
+    private Guid? _editingChannelId;
+
+    // The saved URL of the channel being edited. It goes into the URL box only when the user
+    // presses Show, so no control (or UI Automation client) holds it before then.
+    private string? _savedChannelUrl;
+    private bool    _channelUrlShown;
+    private bool    _isFillingChatUrl;
+
+    // Set while the channel list is repopulated in code, so the selection handler doesn't reload the form.
+    private bool _isPopulatingChatList;
 
     // The history file grows with every sample and shrinks after a purge, which the writer
     // runs on its own schedule, so the size shown is re-read while the page is open.
@@ -51,6 +65,7 @@ public partial class SettingsPage : Page
     public SettingsPage(
         ConnectionSettingsService service,
         MonitoringManager monitoring,
+        ChatNotificationService chat,
         Func<bool, Task> applyConnections,
         string? initialMessage = null,
         Guid? selectConnectionId = null)
@@ -58,6 +73,7 @@ public partial class SettingsPage : Page
         InitializeComponent();
         _service          = service;
         _monitoring       = monitoring;
+        _chat             = chat;
         _applyConnections = applyConnections;
 
         var store = _service.Load();
@@ -69,9 +85,11 @@ public partial class SettingsPage : Page
         ActivityLogView.Initialize(_monitoring.HistoryReader, store.Connections.Select(c => (c.Id, c.DisplayName)));
         _globalThresholds = store.HealthThresholds;
         GlobalThresholds.Show(_globalThresholds);
+        PopulateChatChannels(store, selectId: null);
+        TxtChatChannelsDropped.Visibility = store.ChatChannelsDropped ? Visibility.Visible : Visibility.Collapsed;
         _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
-        Loaded   += (_, _) => { UpdateHistorySize(); _historySizeTimer.Start(); };
-        Unloaded += (_, _) => _historySizeTimer.Stop();
+        Loaded   += (_, _) => { UpdateHistorySize(); _historySizeTimer.Start(); _chat.StatusChanged += OnChatStatusChanged; };
+        Unloaded += (_, _) => { _historySizeTimer.Stop(); _chat.StatusChanged -= OnChatStatusChanged; };
         var initial = (selectConnectionId is { } id ? store.Connections.FirstOrDefault(c => c.Id == id) : null)
                       ?? store.Active
                       ?? store.Connections.FirstOrDefault();
@@ -314,7 +332,7 @@ public partial class SettingsPage : Page
         // Not in the settings file, so logged here rather than by the settings diff.
         _monitoring.Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.SettingChanged, null, null, ActivitySources.Settings,
                                           "Theme", app.IsDarkTheme ? "Light" : "Dark", app.IsDarkTheme ? "Dark" : "Light"));
-        NavigationService?.Navigate(new SettingsPage(_service, _monitoring, _applyConnections, selectConnectionId: _editingId));
+        NavigationService?.Navigate(new SettingsPage(_service, _monitoring, _chat, _applyConnections, selectConnectionId: _editingId));
     }
 
     private void LnkOpenLogFolder_Click(object sender, RoutedEventArgs e)
@@ -654,6 +672,251 @@ public partial class SettingsPage : Page
 
     /// <summary>Row under Alerts → Windows notifications.</summary>
     public sealed record NotifyItem(Guid Id, string Name, string Summary, bool Notifies);
+
+    // ── Chat channels (#120) ──────────────────────────────────────────────────
+
+    private void PopulateChatChannels(ConnectionStore store, Guid? selectId)
+    {
+        _isPopulatingChatList = true;
+        try
+        {
+            var now   = DateTime.Now;
+            var items = store.ChatChannels
+                .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(c => new ChatChannelItem(
+                    c.Id, c.Name,
+                    $"{ChatServices.Name(c.Service)} · {WebhookUrl.Mask(c.WebhookUrl)}" + (c.Enabled ? "" : " · Off"),
+                    _chat.Status(c.Id).Text(now)))
+                .ToList();
+
+            LstChatChannels.ItemsSource  = items;
+            LstChatChannels.SelectedItem = items.FirstOrDefault(i => i.Id == selectId);
+            LstChatChannels.Visibility   = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            TxtNoChatChannels.Visibility = items.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            var selected = LstChatChannels.SelectedItem is not null;
+            BtnSendChatTest.IsEnabled      = selected;
+            BtnRemoveChatChannel.IsEnabled = selected;
+        }
+        finally
+        {
+            _isPopulatingChatList = false;
+        }
+    }
+
+    private void OnChatStatusChanged(Guid channelId) =>
+        PopulateChatChannels(_service.Load(), (LstChatChannels.SelectedItem as ChatChannelItem)?.Id);
+
+    private void LstChatChannels_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isPopulatingChatList)
+            return;
+
+        var item = LstChatChannels.SelectedItem as ChatChannelItem;
+        BtnSendChatTest.IsEnabled      = item is not null;
+        BtnRemoveChatChannel.IsEnabled = item is not null;
+        if (item is null)
+            return;
+
+        if (_service.Load().ChatChannels.FirstOrDefault(c => c.Id == item.Id) is { } channel)
+        {
+            OpenChannelForm(channel);
+            ShowStatus(TxtChatStatus, string.Empty, success: null);
+        }
+    }
+
+    private void BtnAddChatChannel_Click(object sender, RoutedEventArgs e)
+    {
+        _isPopulatingChatList = true;
+        try { LstChatChannels.SelectedItem = null; }
+        finally { _isPopulatingChatList = false; }
+        BtnSendChatTest.IsEnabled      = false;
+        BtnRemoveChatChannel.IsEnabled = false;
+
+        OpenChannelForm(null);
+        ShowStatus(TxtChatStatus, string.Empty, success: null);
+        TxtChatName.Focus();
+    }
+
+    private void OpenChannelForm(ChatChannel? channel)
+    {
+        _editingChannelId = channel?.Id;
+        _savedChannelUrl  = channel?.WebhookUrl;
+        _channelUrlShown  = channel is null;
+
+        TxtChatFormTitle.Text        = channel is null ? "New Channel" : $"Edit Channel — {channel.Name}";
+        TxtChatName.Text             = channel?.Name ?? string.Empty;
+        TxtChatUrl.Text              = string.Empty;
+        TxtChatUrlMasked.Text        = WebhookUrl.Mask(channel?.WebhookUrl);
+        PnlChatUrlMasked.Visibility  = channel is null ? Visibility.Collapsed : Visibility.Visible;
+        TxtChatUrl.Visibility        = channel is null ? Visibility.Visible : Visibility.Collapsed;
+        CmbChatService.SelectedIndex = channel?.Service == ChatService.Teams ? 1 : 0;
+        ChkChatEnabled.IsChecked     = channel?.Enabled ?? true;
+        ShowChatFormMessage(null, null);
+        ChatChannelForm.Visibility   = Visibility.Visible;
+    }
+
+    private void CloseChannelForm()
+    {
+        ChatChannelForm.Visibility = Visibility.Collapsed;
+        TxtChatUrl.Text   = string.Empty;
+        _savedChannelUrl  = null;
+        _editingChannelId = null;
+    }
+
+    private void BtnShowChatUrl_Click(object sender, RoutedEventArgs e)
+    {
+        _channelUrlShown = true;
+        // Filled in code: the service the user picked stays as it is.
+        _isFillingChatUrl = true;
+        try { TxtChatUrl.Text = _savedChannelUrl ?? string.Empty; }
+        finally { _isFillingChatUrl = false; }
+        PnlChatUrlMasked.Visibility = Visibility.Collapsed;
+        TxtChatUrl.Visibility       = Visibility.Visible;
+        TxtChatUrl.Focus();
+    }
+
+    // Picks the service from the URL as it's typed or pasted; the user can still change it.
+    private void TxtChatUrl_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_isFillingChatUrl && WebhookUrl.Detect(TxtChatUrl.Text) is { } detected)
+            CmbChatService.SelectedIndex = detected == ChatService.Teams ? 1 : 0;
+    }
+
+    private void BtnCancelChatChannel_Click(object sender, RoutedEventArgs e)
+    {
+        CloseChannelForm();
+        _isPopulatingChatList = true;
+        try { LstChatChannels.SelectedItem = null; }
+        finally { _isPopulatingChatList = false; }
+        BtnSendChatTest.IsEnabled      = false;
+        BtnRemoveChatChannel.IsEnabled = false;
+    }
+
+    private void BtnSaveChatChannel_Click(object sender, RoutedEventArgs e)
+    {
+        var store   = _service.Load();
+        var id      = _editingChannelId ?? Guid.NewGuid();
+        var name    = TxtChatName.Text.Trim();
+        var service = CmbChatService.SelectedIndex == 1 ? ChatService.Teams : ChatService.Slack;
+        var url     = _channelUrlShown ? TxtChatUrl.Text.Trim() : _savedChannelUrl ?? string.Empty;
+
+        if (name.Length == 0)
+        {
+            ShowChatFormMessage("Enter a name for the channel, e.g. DBA team (Teams).", success: false);
+            TxtChatName.Focus();
+            return;
+        }
+        if (store.ChatChannels.Any(c => c.Id != id && string.Equals(c.Name.Trim(), name, StringComparison.CurrentCultureIgnoreCase)))
+        {
+            ShowChatFormMessage($"A channel named \"{name}\" already exists. Enter a different name.", success: false);
+            TxtChatName.Focus();
+            return;
+        }
+
+        var check = WebhookUrl.Check(url, service, store.ChatChannels, id);
+        if (!check.IsValid)
+        {
+            ShowChatFormMessage(check.Error, success: false);
+            if (!_channelUrlShown)
+                BtnShowChatUrl_Click(sender, e);
+            TxtChatUrl.Focus();
+            return;
+        }
+
+        var channel = new ChatChannel
+        {
+            Id         = id,
+            Name       = name,
+            Service    = service,
+            WebhookUrl = url,
+            Enabled    = ChkChatEnabled.IsChecked == true,
+        };
+
+        try
+        {
+            _service.SaveChatChannel(channel);
+        }
+        catch (Exception ex)
+        {
+            ShowChatFormMessage($"Could not save the channel: {ex.Message}", success: false);
+            return;
+        }
+
+        var saved = _service.Load();
+        PopulateChatChannels(saved, id);
+        if (saved.ChatChannels.FirstOrDefault(c => c.Id == id) is { } savedChannel)
+            OpenChannelForm(savedChannel);
+
+        ShowStatus(TxtChatStatus,
+            $"Saved \"{name}\"" + (channel.Enabled ? "." : ", turned off.") +
+            (check.Warning is { } warning ? $" {warning}" : " Send a test message to check it reaches the channel."),
+            success: check.Warning is null ? true : null);
+    }
+
+    private void BtnRemoveChatChannel_Click(object sender, RoutedEventArgs e)
+    {
+        if (LstChatChannels.SelectedItem is not ChatChannelItem item)
+            return;
+
+        var confirm = MessageBox.Show(
+            $"Remove the chat channel \"{item.Name}\"?\n\nSqlVitals stops posting to it. The webhook itself stays in Slack or Teams until you delete it there.",
+            "Remove Chat Channel", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            _service.RemoveChatChannel(item.Id);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtChatStatus, $"Could not remove the channel: {ex.Message}", success: false);
+            return;
+        }
+
+        CloseChannelForm();
+        PopulateChatChannels(_service.Load(), selectId: null);
+        ShowStatus(TxtChatStatus, $"Removed \"{item.Name}\".", success: true);
+    }
+
+    private async void BtnSendChatTest_Click(object sender, RoutedEventArgs e)
+    {
+        if (LstChatChannels.SelectedItem is not ChatChannelItem item)
+            return;
+        var channel = _chat.Channels.FirstOrDefault(c => c.Id == item.Id);
+        if (channel is null)
+        {
+            ShowStatus(TxtChatStatus, $"\"{item.Name}\" isn't saved any more.", success: false);
+            return;
+        }
+
+        BtnSendChatTest.IsEnabled = false;
+        ShowStatus(TxtChatStatus, $"Sending a test message to \"{item.Name}\"…", success: null);
+        try
+        {
+            var result = await _chat.SendTestAsync(item.Id);
+            ShowStatus(TxtChatStatus, $"\"{item.Name}\": {result.Describe(channel.Service)}", success: result.IsSuccess);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(TxtChatStatus, $"Could not send the test message: {ex.Message}", success: false);
+        }
+        finally
+        {
+            BtnSendChatTest.IsEnabled = LstChatChannels.SelectedItem is not null;
+        }
+    }
+
+    private void ShowChatFormMessage(string? message, bool? success)
+    {
+        if (message is null)
+            TxtChatFormMessage.Visibility = Visibility.Collapsed;
+        else
+            ShowStatus(TxtChatFormMessage, message, success);
+    }
+
+    /// <summary>Row under Alerts → Chat channels: never the URL, only its mask.</summary>
+    public sealed record ChatChannelItem(Guid Id, string Name, string Detail, string StatusText);
 
     // ── Form ──────────────────────────────────────────────────────────────────
 
