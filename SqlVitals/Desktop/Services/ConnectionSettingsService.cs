@@ -96,6 +96,8 @@ public class ConnectionSettingsService
     {
         store.Connections.RemoveAll(c => c.Id == id);
         store.NotificationsMuted.Remove(id);
+        foreach (var channel in store.ChatChannels)
+            channel.ConnectionIds.Remove(id);
         if (store.ActiveConnectionId == id)
             store.ActiveConnectionId = null;
 
@@ -373,6 +375,10 @@ public class ConnectionSettingsService
             // Only saved connections can be muted; anything else is dropped on the next save.
             var known = store.Connections.Select(c => c.Id).ToHashSet();
             store.NotificationsMuted = (raw.NotificationsMuted ?? []).Where(known.Contains).ToHashSet();
+
+            // Likewise a chat channel's chosen connections (#121).
+            foreach (var channel in store.ChatChannels)
+                channel.ConnectionIds = (channel.ConnectionIds ?? []).Where(known.Contains).Distinct().ToList();
 
             // Guard against hand-edited files; persist so the Ids stay stable.
             var missingIds = store.Connections.Where(c => c.Id == Guid.Empty).ToList();

@@ -25,6 +25,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Keep an eye on several servers](#keep-an-eye-on-several-servers)
 - [Run SP Trace without monitoring the server](#run-sp-trace-without-monitoring-the-server)
 - [Monitor my servers all the time](#monitor-my-servers-all-the-time)
+- [Get alerts in a Teams channel](#get-alerts-in-a-teams-channel)
 - [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
 
 ---
@@ -241,6 +242,16 @@ Nothing else runs beside the trace: no Live Metrics query, history snapshot or P
 4. Keep **Settings → Monitoring History** at 14 days or more, for week-over-week baselines.
 
 From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.md) and Windows notifications. A **■** press in the selector or on Live Metrics still stops one until SqlVitals exits.
+
+## Get alerts in a Teams channel
+
+1. In Teams, go to the channel → **•••** → **Workflows** → **Post to a channel when a webhook request is received**. Name it, pick the team and channel, **Add workflow**, and copy the URL. (Slack instead: [Chat Notifications → Slack](Chat-Notifications.md#slack).)
+2. **⚙️ Settings → Alerts → Chat channels → + Add channel**: a name such as *DBA team (Teams)*, paste the URL, and **💾 Save channel**. Microsoft Teams is picked from the URL.
+3. Choose **Connections** (all monitored ones, or only some) and **Post** (warnings and critical, or critical only).
+4. Select the channel and click **📨 Send test message**. *Accepted by the workflow* means Teams took it: check that the card appears in the channel.
+5. Make sure the servers are monitored ([Monitor my servers all the time](#monitor-my-servers-all-the-time)) and SqlVitals keeps running in the notification area.
+
+From then on, an alert that starts or turns critical is posted to the channel within seconds, while SqlVitals runs on this PC. See [Chat Notifications](Chat-Notifications.md) for what is posted and what each test result means.
 
 ## Find out why there's a gap in the history
 

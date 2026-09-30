@@ -685,7 +685,7 @@ public partial class SettingsPage : Page
                 .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Select(c => new ChatChannelItem(
                     c.Id, c.Name,
-                    $"{ChatServices.Name(c.Service)} · {WebhookUrl.Mask(c.WebhookUrl)}" + (c.Enabled ? "" : " · Off"),
+                    $"{ChatServices.Name(c.Service)} · {WebhookUrl.Mask(c.WebhookUrl)} · {Scope(c)}" + (c.Enabled ? "" : " · Off"),
                     _chat.Status(c.Id).Text(now)))
                 .ToList();
 
@@ -717,9 +717,10 @@ public partial class SettingsPage : Page
         if (item is null)
             return;
 
-        if (_service.Load().ChatChannels.FirstOrDefault(c => c.Id == item.Id) is { } channel)
+        var store = _service.Load();
+        if (store.ChatChannels.FirstOrDefault(c => c.Id == item.Id) is { } channel)
         {
-            OpenChannelForm(channel);
+            OpenChannelForm(channel, store);
             ShowStatus(TxtChatStatus, string.Empty, success: null);
         }
     }
@@ -732,12 +733,12 @@ public partial class SettingsPage : Page
         BtnSendChatTest.IsEnabled      = false;
         BtnRemoveChatChannel.IsEnabled = false;
 
-        OpenChannelForm(null);
+        OpenChannelForm(null, _service.Load());
         ShowStatus(TxtChatStatus, string.Empty, success: null);
         TxtChatName.Focus();
     }
 
-    private void OpenChannelForm(ChatChannel? channel)
+    private void OpenChannelForm(ChatChannel? channel, ConnectionStore store)
     {
         _editingChannelId = channel?.Id;
         _savedChannelUrl  = channel?.WebhookUrl;
@@ -751,6 +752,16 @@ public partial class SettingsPage : Page
         TxtChatUrl.Visibility        = channel is null ? Visibility.Visible : Visibility.Collapsed;
         CmbChatService.SelectedIndex = channel?.Service == ChatService.Teams ? 1 : 0;
         ChkChatEnabled.IsChecked     = channel?.Enabled ?? true;
+        CmbChatPost.SelectedIndex    = channel?.CriticalOnly == true ? 1 : 0;
+        LstChatConnections.ItemsSource = store.Connections
+            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .Select(c => new ChatConnectionItem(c.Id, c.DisplayName) { Chosen = channel?.ConnectionIds.Contains(c.Id) == true })
+            .ToList();
+        if (channel?.AllConnections == false)
+            RadChatChosenConnections.IsChecked = true;
+        else
+            RadChatAllConnections.IsChecked = true;
+        LstChatConnections.IsEnabled = RadChatChosenConnections.IsChecked == true;
         ShowChatFormMessage(null, null);
         ChatChannelForm.Visibility   = Visibility.Visible;
     }
@@ -813,6 +824,15 @@ public partial class SettingsPage : Page
             return;
         }
 
+        var allConnections = RadChatAllConnections.IsChecked == true;
+        var chosen = (LstChatConnections.ItemsSource as IEnumerable<ChatConnectionItem> ?? [])
+            .Where(i => i.Chosen).Select(i => i.Id).ToList();
+        if (!allConnections && chosen.Count == 0)
+        {
+            ShowChatFormMessage("Tick at least one connection, or choose All monitored connections.", success: false);
+            return;
+        }
+
         var check = WebhookUrl.Check(url, service, store.ChatChannels, id);
         if (!check.IsValid)
         {
@@ -830,6 +850,9 @@ public partial class SettingsPage : Page
             Service    = service,
             WebhookUrl = url,
             Enabled    = ChkChatEnabled.IsChecked == true,
+            AllConnections = allConnections,
+            ConnectionIds  = chosen,
+            CriticalOnly   = CmbChatPost.SelectedIndex == 1,
         };
 
         try
@@ -845,7 +868,7 @@ public partial class SettingsPage : Page
         var saved = _service.Load();
         PopulateChatChannels(saved, id);
         if (saved.ChatChannels.FirstOrDefault(c => c.Id == id) is { } savedChannel)
-            OpenChannelForm(savedChannel);
+            OpenChannelForm(savedChannel, saved);
 
         ShowStatus(TxtChatStatus,
             $"Saved \"{name}\"" + (channel.Enabled ? "." : ", turned off.") +
@@ -913,6 +936,27 @@ public partial class SettingsPage : Page
             TxtChatFormMessage.Visibility = Visibility.Collapsed;
         else
             ShowStatus(TxtChatFormMessage, message, success);
+    }
+
+    private void ChatConnectionsChoice_Changed(object sender, RoutedEventArgs e)
+    {
+        if (LstChatConnections is not null)
+            LstChatConnections.IsEnabled = RadChatChosenConnections.IsChecked == true;
+    }
+
+    // "all connections", "2 connections, critical only".
+    private static string Scope(ChatChannel channel) =>
+        (channel.AllConnections ? "all connections"
+         : channel.ConnectionIds.Count == 1 ? "1 connection"
+         : $"{channel.ConnectionIds.Count} connections") +
+        (channel.CriticalOnly ? ", critical only" : "");
+
+    /// <summary>A tick box under Connections in the channel form.</summary>
+    public sealed class ChatConnectionItem(Guid id, string name)
+    {
+        public Guid   Id     { get; } = id;
+        public string Name   { get; } = name;
+        public bool   Chosen { get; set; }
     }
 
     /// <summary>Row under Alerts → Chat channels: never the URL, only its mask.</summary>

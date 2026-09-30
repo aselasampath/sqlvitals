@@ -1,10 +1,10 @@
 # Chat Notifications
 
-A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** send what SqlVitals sees to a **Slack** or **Microsoft Teams** channel, so the whole team sees it, even when nobody is looking at that PC.
+A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start or turn critical, so the whole team sees a problem when it starts, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.49.0
+> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.49.0 (channels and test message), 0.50.0 (alerts posted)
 
-> **Status:** from 0.49.0 you can set up channels and send a test message to each one. Posting alerts to them is being built in the versions that follow ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)), and this page grows with it.
+> **Status:** from 0.50.0 a channel gets a message when an alert **starts** or **turns critical**. Retries, and a warning when a channel stops receiving messages, come next, then a message when an alert **ends** ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)). Until then a message that can't be sent is written to the app log and not tried again.
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 
@@ -55,7 +55,9 @@ In **⚙️ Settings → Alerts → Chat channels (Slack and Teams)**, click **+
 | **Name** | What you call it, e.g. *DBA team (Teams)*. Shown in Settings, the activity log and the app log. |
 | **Webhook URL** | The URL you copied. Once saved it's shown masked, e.g. `hooks.slack.com/…/x7Qa`; click **Show** to see or change it. |
 | **Service** | Slack or Microsoft Teams. Picked from the URL when SqlVitals recognises it; you can change it. |
-| **On** | Turn off to pause the channel without removing it. A test message can still be sent. |
+| **Connections** | **All monitored connections** (the default): every connection SqlVitals is monitoring at the time, including ones you add later. Or **Only these**, ticked from your saved connections. A connection you remove is taken off the list. |
+| **Post** | **Warnings and critical** (the default), or **Critical only**. |
+| **On** | Turn off to pause the channel without removing it. What it had waiting is dropped. A test message can still be sent. |
 
 Click **💾 Save channel**. The URL is checked first:
 
@@ -67,11 +69,61 @@ Click **💾 Save channel**. The URL is checked first:
 | A Teams channel's URL is on a host SqlVitals knows | **Allowed with a warning**: Microsoft has changed the host before, so send a test message to check it |
 | No other channel has the same URL | Refused, naming that channel. Letter case in the host, the `:443` port and a trailing `/` don't make a URL different. |
 
-Select a channel to edit it, or click **🗑 Remove** to remove it. The webhook itself stays in Slack or Teams until you delete it there.
+Select a channel to edit it, or click **🗑 Remove** to remove it. The webhook itself stays in Slack or Teams until you delete it there. Every change applies from the next alert, with no restart.
+
+## What is posted, and when
+
+A channel gets a message at the same moments as a [Windows notification](Notifications-and-Tray.md#windows-notifications):
+
+| When | Message | Posted to |
+|---|---|---|
+| An alert **starts** | 🔴 *Critical: CPU on Sales-Prod* or 🟠 *Warning: Blocking on Sales-Prod* | Channels that take the connection; warnings only to *Warnings and critical* channels |
+| A warning **turns critical** | 🔴 *Now critical: CPU on Sales-Prod* | Channels that were told about the warning |
+| A warning a channel skipped **turns critical** | 🔴 *Critical: CPU on Sales-Prod*, as a new alert | *Critical only* channels, and a channel that was off (or not yet added) when the warning started |
+| An alert **gets worse** | Nothing | |
+
+Alerts of one connection that start on the same sample share one message, critical first: *🔴 3 alerts on Sales-Prod (1 critical)*, with a line each. After 10 lines it says *…and N more*.
+
+Each message has:
+
+- the severity: 🔴 Critical or 🟠 Warning;
+- the connection's name and the indicator;
+- the figure and threshold as the [Alerts](Alerts.md) page shows them, e.g. *97 % (threshold ≥ 90 %)*, and what the health dot said when it adds something, e.g. *Log 93% full (Sales)* or *Blocking 3.5 min (4 blocked)*;
+- when it started, shown in **each reader's own time zone** (Slack's date token; the Adaptive Card DATE and TIME functions in Teams);
+- **Sent from SqlVitals on &lt;PC name&gt;**, so a team with several copies of SqlVitals watching the same server can tell them apart.
+
+**Slack** gets Block Kit, with a plain text line that Slack's own notifications show:
+
+> **🔴 Critical: CPU on Sales-Prod**
+> **Figure** 97 % (threshold ≥ 90 %) · **Started** Today 10:42
+> *Sent from SqlVitals on DBA-PC01*
+
+**Teams** gets an Adaptive Card with the title in red (critical) or amber (warning), the figure in a fact set, and the start time under it:
+
+> **🔴 Critical: CPU on Sales-Prod**
+> Figure: 97 % (threshold ≥ 90 %)
+> **Started** 30/09/2026 10:42
+> *Sent from SqlVitals on DBA-PC01*
+
+### Separate from Windows notifications
+
+Muting a connection's Windows notifications (**Settings → Alerts → Windows notifications**, or the tray menu) doesn't stop its chat messages, and a channel's **Connections** don't change who gets Windows notifications.
+
+### What leaves your PC
+
+Only what the message shows: connection names, indicator names, figures and thresholds, database names in a log-space alert, times, and the PC's name. Never a server's connection string, a login, a password, query text or the webhook URL. If a connection has no name of its own, its name is its server and database, so name your connections if their server names are private. The messages go to Slack or Microsoft and stay in the channel's history.
+
+### Limits
+
+- **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area).
+- **One PC's view.** Two copies of SqlVitals watching the same server both post; the *Sent from* line tells them apart.
+- **Not remembered across restarts.** After SqlVitals restarts, an alert that's still happening is raised again and posted again as a new alert. That's expected.
+- **Not yet retried.** In this version a message that can't be sent is written to the [app log](Settings.md#diagnostics) by the channel's name and dropped.
+- Each channel sends its messages in order, one at a time, without holding up monitoring, the window or other channels.
 
 ## Send test message
 
-Select a channel and click **📨 Send test message**. SqlVitals posts *"Test message from SqlVitals on &lt;PC name&gt;. Alerts will be posted here."* once, without retrying, and shows the result:
+Select a channel and click **📨 Send test message**. SqlVitals posts *"Test message from SqlVitals on &lt;PC name&gt;. Alerts for &lt;connections&gt; will be posted here."* (e.g. *all monitored connections*, or *HR-DB and Sales-Prod*) once, without retrying, and shows the result:
 
 | Result | What it means | What to do |
 |---|---|---|
@@ -104,7 +156,9 @@ Anyone who has a webhook URL can post to the channel, so SqlVitals treats it lik
 
 - **Pure logic** (`SqlVitals/Engine/ChatNotifications/`, unit tested in `Engine.Tests/ChatNotifications/`): `ChatChannel`; `WebhookUrl` checks, compares and masks URLs; `ChatMessageBuilder` builds a `ChatMessage`, which `ChatFormatter` writes as Slack Block Kit (with a `text` fallback, and `&`, `<`, `>` escaped so a name can't mention `@channel`) or as an Adaptive Card 1.4 in the `{"type":"message","attachments":[…]}` envelope Teams workflows take; `WebhookResult` maps an answer or an exception to an outcome, from the status code and the exception's type only, never its message.
 - **Sending:** `IWebhookSender` is the only way out, so tests use a fake. `Desktop/Services/HttpWebhookSender.cs` is one `HttpClient` over a `SocketsHttpHandler` with the system proxy and default credentials, no redirects, and a 10-second timeout per request. It reads at most 1 KB of the answer.
-- **Service:** `Desktop/Services/ChatNotificationService.cs`, owned by the main window. It takes the saved channels at startup and whenever a channel is added, edited or removed. A settings file that couldn't be read just then is ignored, so it can't look like "no channels".
+- **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message, and remembers in memory the alert ids it told the channel about (forgotten when the alert ends or the channel is turned off). `ChatMessageBuilder.Raised` words it with `AlertText` (`Figure`, `Context`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests` and `AlertMessageTests`.
+- **Sending:** `ChannelQueue`, one per channel, sends on a worker of its own, one message at a time and in order; `Enqueue` never waits. The Slack or Teams JSON is written when the message is sent, so an edit to the channel applies to what's waiting.
+- **Service:** `Desktop/Services/ChatNotificationService.cs`, owned by the main window, subscribes to `MonitoringManager.AlertsRaised`, which is raised beside the window's `AlertsChanged`. Each subscriber runs in its own try/catch, so a bug in one can't stop the other or show the connection as failing. The service takes the saved channels and connection names at startup and after every settings save; a settings file that couldn't be read just then is ignored, so it can't look like "no channels".
 - **Storage:** `EncryptedChatChannels` in `settings.dat`, one DPAPI blob beside `EncryptedConnections`. Changes are logged as **Chat channel added / edited / removed** (`SettingsDiff`), with *Webhook URL* in its secret names.
 - **Backstop:** `AppLog.Redact` removes any Slack, Logic Apps, Power Platform or Office webhook URL from a log line.
 - The design, including what can go wrong and how each case is handled, is in [epic #108](https://github.com/aselasampath/sqlvitals/issues/108).

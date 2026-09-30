@@ -89,11 +89,7 @@ public sealed record AlertNotification(Guid ConnectionId, HealthLevel Severity, 
         };
     }
 
-    // What the health dot said at the worst figure ("Log 93% full (Sales)"), or the figure itself.
-    private static string Describe(Alert alert) =>
-        string.IsNullOrWhiteSpace(alert.Detail)
-            ? $"{HealthThresholds.Info(alert.Indicator).Name} {AlertText.Value(alert.Indicator, alert.Value)}"
-            : alert.Detail;
+    private static string Describe(Alert alert) => AlertText.Describe(alert);
 
     private static string Fit(string value, int max) =>
         value.Length <= max ? value : value[..(max - 1)] + "…";

@@ -4,7 +4,10 @@ using System.Reflection;
 using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Tests;
@@ -206,9 +209,78 @@ public sealed class MonitoringManagerTests : IDisposable
         Assert.All(rows, r => Assert.EndsWith(Environment.UserName, r.WindowsUser));
     }
 
+    // A server at 99 % CPU: with Alert samples at 1, its first sample raises a critical alert.
+    private MonitoringManager CreateHot() =>
+        new(new HistoryWriter(HistoryPath, (_, _) => { }),
+            (conn, _) => HotRepository.Create(conn.Server, _calls));
+
+    private static ConnectionStore HotStore(ConnectionSettings conn)
+    {
+        var store = Store(true, conn);
+        store.AlertSamples = 1;
+        return store;
+    }
+
+    [Fact]
+    public void AnAlert_IsRaisedToServices_AsWellAsToTheWindow()
+    {
+        var conn = Conn("sqlHot");
+        var toWindow   = new List<(Guid, IReadOnlyList<AlertChange>)>();
+        var toServices = new List<(Guid, IReadOnlyList<AlertChange>)>();
+
+        using var monitoring = CreateHot();
+        monitoring.AlertsChanged += (id, changes) => toWindow.Add((id, changes));
+        monitoring.AlertsRaised  += (id, changes) => toServices.Add((id, changes));
+        monitoring.Sync(HotStore(conn), ActivitySources.AutomaticAtStartup);
+        Pump(TimeSpan.FromSeconds(1.5));
+
+        var (id, changes) = Assert.Single(toServices);
+        Assert.Equal(conn.Id, id);
+        var change = Assert.Single(changes);
+        Assert.Equal((AlertChangeKind.Started, HealthIndicator.Cpu, HealthLevel.Critical),
+                     (change.Kind, change.Alert.Indicator, change.Alert.Severity));
+        Assert.Same(changes, Assert.Single(toWindow).Item2);
+    }
+
+    [Fact]
+    public void ASubscriberThatThrows_DoesntStopTheOthers_OrMonitoring()
+    {
+        var conn = Conn("sqlHot");
+        var heard = new List<string>();
+
+        using var monitoring = CreateHot();
+        monitoring.AlertsRaised  += (_, _) => throw new InvalidOperationException("a chat bug");
+        monitoring.AlertsRaised  += (_, _) => heard.Add("service");
+        monitoring.AlertsChanged += (_, _) => heard.Add("window");
+        monitoring.Sync(HotStore(conn), ActivitySources.AutomaticAtStartup);
+        Pump(TimeSpan.FromSeconds(1.5));
+
+        Assert.Equal(["service", "window"], heard);
+        Assert.NotEqual(HealthLevel.Unavailable, monitoring.Get(conn.Id)!.Health);
+        Assert.Single(monitoring.ActiveAlerts);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
+    }
+
+    /// <summary>As <see cref="CountingRepository"/>, but live metrics come back, at 99 % CPU.</summary>
+    public class HotRepository : CountingRepository
+    {
+        public static new IWaitStatsRepository Create(string server, ConcurrentQueue<(string, string)> calls)
+        {
+            var proxy = DispatchProxy.Create<IWaitStatsRepository, HotRepository>();
+            ((HotRepository)(object)proxy).Init(server, calls);
+            return proxy;
+        }
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method!.Name == nameof(IWaitStatsRepository.GetLiveMetricsAsync)
+                ? Task.FromResult(new LiveMetricSnapshot(DateTime.UtcNow, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 99,
+                                                         PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
+                                                         0, 0, 0, 0, 0, 0, 0))
+                : base.Invoke(method, args);
     }
 
     /// <summary>An IWaitStatsRepository that records every call and fails it, as an unreachable server would.</summary>
@@ -220,10 +292,14 @@ public sealed class MonitoringManagerTests : IDisposable
         public static IWaitStatsRepository Create(string server, ConcurrentQueue<(string, string)> calls)
         {
             var proxy = DispatchProxy.Create<IWaitStatsRepository, CountingRepository>();
-            var self  = (CountingRepository)(object)proxy;
-            self._server = server;
-            self._calls  = calls;
+            ((CountingRepository)(object)proxy).Init(server, calls);
             return proxy;
+        }
+
+        protected void Init(string server, ConcurrentQueue<(string, string)> calls)
+        {
+            _server = server;
+            _calls  = calls;
         }
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)

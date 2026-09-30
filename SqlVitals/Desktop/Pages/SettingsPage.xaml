@@ -509,7 +509,7 @@
                                            Text="Chat channels (Slack and Teams)" />
                             </DockPanel>
                             <TextBlock Style="{StaticResource FieldHint}" Margin="0,0,0,10"
-                                       Text="Post to a Slack or Microsoft Teams channel through its webhook, so the whole team sees what SqlVitals sees. Messages are sent only while SqlVitals is running on this PC. Webhook URLs are stored encrypted, like passwords, and never written to the log. Setup steps for Slack and Teams are on the Chat Notifications page of the wiki." />
+                                       Text="Post alerts to a Slack or Microsoft Teams channel through its webhook, so the whole team sees them when they start or turn critical. Messages are sent only while SqlVitals is running on this PC, for the connections it's monitoring at the time. Webhook URLs are stored encrypted, like passwords, and never written to the log. Setup steps for Slack and Teams are on the Chat Notifications page of the wiki." />
 
                             <TextBlock x:Name="TxtChatChannelsDropped" Visibility="Collapsed"
                                        Foreground="{StaticResource Warning}" FontSize="11" FontWeight="SemiBold"
@@ -585,9 +585,11 @@
                                         <RowDefinition Height="Auto" />  <!-- 1 Name -->
                                         <RowDefinition Height="Auto" />  <!-- 2 Webhook URL -->
                                         <RowDefinition Height="Auto" />  <!-- 3 Service -->
-                                        <RowDefinition Height="Auto" />  <!-- 4 On -->
-                                        <RowDefinition Height="Auto" />  <!-- 5 Message -->
-                                        <RowDefinition Height="Auto" />  <!-- 6 Buttons -->
+                                        <RowDefinition Height="Auto" />  <!-- 4 Connections -->
+                                        <RowDefinition Height="Auto" />  <!-- 5 Post -->
+                                        <RowDefinition Height="Auto" />  <!-- 6 On -->
+                                        <RowDefinition Height="Auto" />  <!-- 7 Message -->
+                                        <RowDefinition Height="Auto" />  <!-- 8 Buttons -->
                                     </Grid.RowDefinitions>
 
                                     <TextBlock x:Name="TxtChatFormTitle" Grid.ColumnSpan="2" Text="New Channel"
@@ -635,16 +637,52 @@
                                                    Text="Picked from the URL when SqlVitals recognises it." />
                                     </StackPanel>
 
+                                    <TextBlock Grid.Row="4" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,14,12,0"
+                                               Text="Connections" />
                                     <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,12,0,0">
+                                        <RadioButton x:Name="RadChatAllConnections" GroupName="ChatConnections" IsChecked="True"
+                                                     Foreground="{StaticResource TextPrimary}" FontSize="12"
+                                                     Content="All monitored connections" Checked="ChatConnectionsChoice_Changed" />
+                                        <RadioButton x:Name="RadChatChosenConnections" GroupName="ChatConnections" Margin="0,4,0,0"
+                                                     Foreground="{StaticResource TextPrimary}" FontSize="12"
+                                                     Content="Only these:" Checked="ChatConnectionsChoice_Changed" />
+                                        <ItemsControl x:Name="LstChatConnections" Margin="20,4,0,0" IsEnabled="False"
+                                                      AutomationProperties.Name="Connections this channel posts for">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding Chosen, Mode=TwoWay}" Margin="0,0,0,4"
+                                                              AutomationProperties.Name="{Binding Name, Mode=OneWay}">
+                                                        <TextBlock Text="{Binding Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                                    </CheckBox>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="All means every connection SqlVitals is monitoring at the time, including ones you add later. Muting a connection's Windows notifications doesn't affect its channels." />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Row="5" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,19,12,0"
+                                               Text="Post" />
+                                    <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,12,0,0">
+                                        <ComboBox x:Name="CmbChatPost" Width="200" HorizontalAlignment="Left"
+                                                  AutomationProperties.Name="Which alerts to post">
+                                            <ComboBoxItem Content="Warnings and critical" />
+                                            <ComboBoxItem Content="Critical only" />
+                                        </ComboBox>
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="A message is posted when an alert starts or turns critical. On Critical only, a warning that turns critical is posted as a new critical alert." />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,12,0,0">
                                         <CheckBox x:Name="ChkChatEnabled" Content="On" IsChecked="True" />
                                         <TextBlock Style="{StaticResource FieldHint}"
                                                    Text="Turn off to pause the channel without removing it. A test message can still be sent." />
                                     </StackPanel>
 
-                                    <TextBlock x:Name="TxtChatFormMessage" Grid.Row="5" Grid.ColumnSpan="2"
+                                    <TextBlock x:Name="TxtChatFormMessage" Grid.Row="7" Grid.ColumnSpan="2"
                                                FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed" />
 
-                                    <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,12,0,0">
+                                    <StackPanel Grid.Row="8" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,12,0,0">
                                         <Button x:Name="BtnSaveChatChannel" Style="{StaticResource RefreshButton}"
                                                 Padding="14,6" Margin="0,0,8,0" Click="BtnSaveChatChannel_Click"
                                                 Content="💾  Save channel" />

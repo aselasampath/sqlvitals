@@ -50,12 +50,27 @@ public static class ChatFormatter
             json.WriteStartArray("fields");
             foreach (var fact in message.Facts.Take(10))   // Slack takes 10 fields per section
             {
+                var value = fact.TimeUtc is { } time ? SlackTime(time) : SlackEscape(fact.Value);
                 json.WriteStartObject();
                 json.WriteString("type", "mrkdwn");
-                json.WriteString("text", Fit($"*{SlackEscape(fact.Title)}*\n{SlackEscape(fact.Value)}", 2000));
+                json.WriteString("text", Fit($"*{SlackEscape(fact.Title)}*\n{value}", 2000));
                 json.WriteEndObject();
             }
             json.WriteEndArray();
+            json.WriteEndObject();
+        }
+
+        if (message.Lines.Count > 0)
+        {
+            var lines = message.Lines.Select(l =>
+                $"{Emoji(l.Tone)} *{SlackEscape(l.Label)}* {SlackEscape(l.Text)}" +
+                (l.SinceUtc is { } since ? $" · since {SlackTime(since)}" : ""));
+            if (message.More > 0)
+                lines = lines.Append($"…and {message.More} more");
+
+            json.WriteStartObject();
+            json.WriteString("type", "section");
+            WriteMrkdwn(json, "text", Fit(string.Join("\n", lines), SlackSectionMax));
             json.WriteEndObject();
         }
 
@@ -112,12 +127,13 @@ public static class ChatFormatter
             json.WriteEndObject();
         }
 
-        if (message.Facts.Count > 0)
+        var plainFacts = message.Facts.Where(f => f.TimeUtc is null).ToList();
+        if (plainFacts.Count > 0)
         {
             json.WriteStartObject();
             json.WriteString("type", "FactSet");
             json.WriteStartArray("facts");
-            foreach (var fact in message.Facts)
+            foreach (var fact in plainFacts)
             {
                 json.WriteStartObject();
                 json.WriteString("title", fact.Title);
@@ -127,6 +143,17 @@ public static class ChatFormatter
             json.WriteEndArray();
             json.WriteEndObject();
         }
+
+        // Times go in TextBlocks: Microsoft documents the DATE and TIME functions for TextBlock text.
+        foreach (var fact in message.Facts.Where(f => f.TimeUtc is not null))
+            WriteTextBlock(json, $"**{fact.Title}** {TeamsTime(fact.TimeUtc!.Value)}");
+
+        foreach (var line in message.Lines)
+            WriteTextBlock(json, $"{Emoji(line.Tone)} **{line.Label}** {line.Text}" +
+                                 (line.SinceUtc is { } since ? $" · since {TeamsTime(since)}" : ""));
+
+        if (message.More > 0)
+            WriteTextBlock(json, $"…and {message.More} more", subtle: true);
 
         if (message.SentFrom is { } from)
         {
@@ -152,6 +179,47 @@ public static class ChatFormatter
     /// </summary>
     public static string SlackEscape(string text) =>
         text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+
+    /// <summary>🔴 Critical, 🟠 Warning, ✅ Good; nothing for a neutral message.</summary>
+    public static string Emoji(ChatTone tone) => tone switch
+    {
+        ChatTone.Critical => "🔴",
+        ChatTone.Warning  => "🟠",
+        ChatTone.Good     => "✅",
+        _                 => "",
+    };
+
+    /// <summary>
+    /// Slack's date token: each reader sees the time in their own time zone ("Today 10:42"), and
+    /// clients that can't show it fall back to UTC.
+    /// </summary>
+    internal static string SlackTime(DateTime utc)
+    {
+        var at = Utc(utc);
+        return $"<!date^{new DateTimeOffset(at).ToUnixTimeSeconds()}^{{date_short_pretty}} {{time}}|{at:yyyy-MM-dd HH:mm} UTC>";
+    }
+
+    /// <summary>Adaptive Card DATE and TIME functions: Teams shows them in each reader's own time zone.</summary>
+    internal static string TeamsTime(DateTime utc)
+    {
+        var iso = Utc(utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        return "{{DATE(" + iso + ", SHORT)}} {{TIME(" + iso + ")}}";
+    }
+
+    // Alert times are UTC; one that lost its kind on the way is taken as UTC, not as local time.
+    private static DateTime Utc(DateTime time) =>
+        time.Kind == DateTimeKind.Local ? time.ToUniversalTime() : DateTime.SpecifyKind(time, DateTimeKind.Utc);
+
+    private static void WriteTextBlock(Utf8JsonWriter json, string text, bool subtle = false)
+    {
+        json.WriteStartObject();
+        json.WriteString("type", "TextBlock");
+        json.WriteString("text", text);
+        json.WriteBoolean("wrap", true);
+        if (subtle)
+            json.WriteBoolean("isSubtle", true);
+        json.WriteEndObject();
+    }
 
     private static string? TeamsColour(ChatTone tone) => tone switch
     {

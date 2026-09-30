@@ -147,6 +147,106 @@ public sealed class ChatChannelSettingsTests : IDisposable
         Assert.Empty(raised);
     }
 
+    [Fact]
+    public void TheConnectionsAndPostChoices_SurviveSaveAndLoad()
+    {
+        var service = Create();
+        var conn = ConnectionSettingsServiceTests.Connection();
+        service.Upsert(conn);
+        var channel = Channel();
+        channel.AllConnections = false;
+        channel.ConnectionIds  = [conn.Id];
+        channel.CriticalOnly   = true;
+        service.SaveChatChannel(channel);
+
+        var loaded = Assert.Single(Create().Load().ChatChannels);
+
+        Assert.Equal((false, conn.Id, true), (loaded.AllConnections, Assert.Single(loaded.ConnectionIds), loaded.CriticalOnly));
+    }
+
+    [Fact]
+    public void AChannelSavedBefore121_TakesAllConnections_WarningsAndCritical()
+    {
+        // #120 wrote only Id, Name, Service, WebhookUrl and Enabled.
+        var channel = System.Text.Json.JsonSerializer.Deserialize<ChatChannel>(
+            """{"Id":"00000000-0000-4000-8000-000000000009","Name":"Old","Service":0,"WebhookUrl":"https://hooks.slack.com/services/T/B/x","Enabled":true}""")!;
+
+        Assert.True(channel.AllConnections);
+        Assert.Empty(channel.ConnectionIds);
+        Assert.False(channel.CriticalOnly);
+    }
+
+    [Fact]
+    public void ARemovedConnection_IsDroppedFromTheChannelsThatChoseIt()
+    {
+        var service = Create();
+        var keep = ConnectionSettingsServiceTests.Connection("Keep");
+        var gone = ConnectionSettingsServiceTests.Connection("Gone");
+        service.Upsert(keep);
+        service.Upsert(gone);
+        var channel = Channel();
+        channel.AllConnections = false;
+        channel.ConnectionIds  = [keep.Id, gone.Id];
+        service.SaveChatChannel(channel);
+
+        service.Remove(gone.Id);
+
+        Assert.Equal([keep.Id], Assert.Single(Create().Load().ChatChannels).ConnectionIds);
+    }
+
+    [Fact]
+    public void AnUnknownConnectionInTheFile_IsDroppedOnLoad()
+    {
+        var service = Create();
+        var channel = Channel();
+        channel.AllConnections = false;
+        channel.ConnectionIds  = [Guid.NewGuid()];
+        service.SaveChatChannel(channel);
+
+        Assert.Empty(Assert.Single(Create().Load().ChatChannels).ConnectionIds);
+    }
+
+    [Fact]
+    public void TheConnectionsAndPostChoices_AreLoggedByName()
+    {
+        var service = Create();
+        var conn = ConnectionSettingsServiceTests.Connection("Sales-Prod");
+        service.Upsert(conn);
+        var channel = Channel();
+        service.SaveChatChannel(channel);
+        var raised = new List<ActivityEntry>();
+        service.Changed += raised.AddRange;
+
+        var edited = channel.Clone();
+        edited.AllConnections = false;
+        edited.ConnectionIds  = [conn.Id];
+        edited.CriticalOnly   = true;
+        service.SaveChatChannel(edited);
+
+        Assert.Collection(raised,
+            r => Assert.Equal(("DBA team (Slack): Connections", "All monitored connections", "Sales-Prod"), (r.Setting, r.OldValue, r.NewValue)),
+            r => Assert.Equal(("DBA team (Slack): Post", "Warnings and critical", "Critical only"), (r.Setting, r.OldValue, r.NewValue)));
+    }
+
+    [Fact]
+    public void AChannelsConnections_DontChangeWhoGetsWindowsNotifications()
+    {
+        var service = Create();
+        var sales = ConnectionSettingsServiceTests.Connection("Sales-Prod");
+        var hr    = ConnectionSettingsServiceTests.Connection("HR-DB");
+        service.Upsert(sales);
+        service.Upsert(hr);
+        var channel = Channel();
+        channel.AllConnections = false;
+        channel.ConnectionIds  = [sales.Id];
+        service.SaveChatChannel(channel);
+
+        var store = Create().Load();
+
+        Assert.True(store.NotifiesFor(sales.Id));
+        Assert.True(store.NotifiesFor(hr.Id));
+    }
+
     private void ReplaceBlob(string value)
     {
         var json = JsonNode.Parse(File.ReadAllText(SettingsFile))!.AsObject();

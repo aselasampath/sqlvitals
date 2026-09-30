@@ -24,6 +24,7 @@ Untick it in **⚙️ Settings → Alerts → Windows notifications**, or right-
 - It's saved **straight away** and doesn't test the connection, so you can mute a server that's down.
 - A muted connection's alerts are **still recorded** and listed on the Alerts page, and still count in the sidebar.
 - New connections notify until you mute them.
+- Muting is only about Windows notifications on this PC. It doesn't stop a connection's alerts being posted to [Slack or Teams channels](Chat-Notifications.md), and a channel's own choice of connections doesn't change who gets Windows notifications.
 
 ### Windows' own settings still apply
 
