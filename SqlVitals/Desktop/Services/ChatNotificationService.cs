@@ -12,8 +12,8 @@ namespace SqlVitals.Desktop.Services;
 /// a <see cref="ChannelQueue"/> (sending, in order, on a worker of its own). Deciding takes no
 /// time and sending never blocks the caller, so monitoring and the UI never wait on a webhook.
 ///
-/// #120: the channels and Send test message. #121: posting new and critical alerts. Retries and
-/// the Failing status come in #122, and the end of alerts in #123.
+/// #120: the channels and Send test message. #121: posting new and critical alerts. #122: pacing,
+/// retries, and the Failing status with one Windows notification. The end of alerts comes in #123.
 ///
 /// Used on the UI thread; the queues report back to it through its synchronization context.
 /// </summary>
@@ -23,6 +23,8 @@ public sealed class ChatNotificationService : IDisposable
     private readonly string                  _pcName;
     private readonly Action<string>          _log;
     private readonly SynchronizationContext? _ui;
+    private readonly TimeProvider            _time;
+    private readonly NetworkGrace            _grace;
 
     // Replaced as a whole by Apply, so the queues' workers can read it at any time.
     private volatile IReadOnlyList<ChatChannel> _channels = [];
@@ -35,17 +37,33 @@ public sealed class ChatNotificationService : IDisposable
 
     /// <param name="log">Where posts and failures are written: the app log, or a list in tests. Never given a URL.</param>
     /// <param name="ui">The UI thread's context, where status changes are raised; null raises them on the queue's worker (tests).</param>
+    /// <param name="time">The clock for pacing, retries and the status times; the system clock when null.</param>
     public ChatNotificationService(IWebhookSender sender, string? pcName = null, Action<string>? log = null,
-                                   SynchronizationContext? ui = null)
+                                   SynchronizationContext? ui = null, TimeProvider? time = null)
     {
         _sender = sender;
         _pcName = pcName ?? Environment.MachineName;
         _log    = log ?? AppLog.Info;
         _ui     = ui;
+        _time   = time ?? TimeProvider.System;
+        _grace  = new NetworkGrace(_time);
     }
 
     /// <summary>A channel's status changed, e.g. a message reached it. Raised on the UI thread.</summary>
     public event Action<Guid>? StatusChanged;
+
+    /// <summary>
+    /// A channel started failing: a message was given up after its retries, and none has got
+    /// through since. Raised once until the channel posts again, with the Windows notification's
+    /// text. Raised on the UI thread.
+    /// </summary>
+    public event Action<Guid, string>? StartedFailing;
+
+    /// <summary>
+    /// The PC woke from sleep: for a minute, a webhook that can't be reached doesn't count toward
+    /// giving up, while the network reconnects (F18). Safe from any thread.
+    /// </summary>
+    public void OnResumed() => _grace.Resumed();
 
     /// <summary>The channels as last applied, in the order they were saved.</summary>
     public IReadOnlyList<ChatChannel> Channels => _channels;
@@ -77,6 +95,11 @@ public sealed class ChatNotificationService : IDisposable
         }
         foreach (var id in _routers.Keys.Where(id => !on.Contains(id)).ToList())
             _routers.Remove(id);
+        // A channel turned off isn't expected to receive anything, so it isn't "failing"; turned
+        // back on, it notifies again if it still fails.
+        foreach (var id in _status.Keys.Where(id => !on.Contains(id)).ToList())
+            if (_status[id].IsFailing)
+                _status[id] = new ChannelStatus(_status[id].LastPostedUtc);
 
         var ids = channels.Select(c => c.Id).ToHashSet();
         foreach (var gone in _status.Keys.Where(id => !ids.Contains(id)).ToList())
@@ -113,7 +136,8 @@ public sealed class ChatNotificationService : IDisposable
 
     /// <summary>
     /// Posts the test message to a saved channel, once, without retrying, and says how it went.
-    /// Works while the channel is off, so it can be checked before it's turned on.
+    /// Works while the channel is off, so it can be checked before it's turned on. Success clears
+    /// Failing; a failure leaves the status alone, because the result is shown by the button.
     /// </summary>
     public async Task<WebhookResult> SendTestAsync(Guid channelId, CancellationToken cancel = default)
     {
@@ -169,13 +193,15 @@ public sealed class ChatNotificationService : IDisposable
     private ChannelQueue Queue(Guid channelId)
     {
         if (!_queues.TryGetValue(channelId, out var queue))
-            _queues[channelId] = queue = new ChannelQueue(() => Target(channelId), _sender, (target, message, result) =>
+            _queues[channelId] = queue = new ChannelQueue(() => Target(channelId), _sender, report =>
             {
                 // On the queue's worker.
-                Log(target.Name, target.Service, message, result);
-                if (result.IsSuccess)
+                _log($"Chat \"{report.Target.Name}\" ({ChatServices.Name(report.Target.Service)}): {report.LogText()}");
+                if (report.Result.IsSuccess)
                     OnUi(() => MarkPosted(channelId));
-            });
+                else if (report.GaveUp)
+                    OnUi(() => MarkFailed(channelId, report.Target, report.Result));
+            }, _time, _grace);
         return queue;
     }
 
@@ -203,8 +229,22 @@ public sealed class ChatNotificationService : IDisposable
     {
         if (_channels.All(c => c.Id != channelId))
             return;
-        _status[channelId] = new ChannelStatus(DateTime.UtcNow);
+        _status[channelId] = Status(channelId).Posted(_time.GetUtcNow().UtcDateTime);
         StatusChanged?.Invoke(channelId);
+    }
+
+    // A message was given up. Notifies only on the change into Failing; a channel that keeps
+    // failing says so in its status, not in more notifications. New messages are still tried, so
+    // a channel that comes back recovers by itself (MarkPosted).
+    private void MarkFailed(Guid channelId, ChannelTarget target, WebhookResult result)
+    {
+        if (_channels.FirstOrDefault(c => c.Id == channelId) is not { Enabled: true })
+            return;
+        var before = Status(channelId);
+        _status[channelId] = before.Failed(_time.GetUtcNow().UtcDateTime, result.LogText());
+        StatusChanged?.Invoke(channelId);
+        if (!before.IsFailing)
+            StartedFailing?.Invoke(channelId, ChannelStatus.FailingNotice(target.Name, target.Service, result));
     }
 
     public void Dispose()

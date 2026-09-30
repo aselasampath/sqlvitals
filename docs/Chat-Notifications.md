@@ -2,9 +2,9 @@
 
 A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start or turn critical, so the whole team sees a problem when it starts, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.49.0 (channels and test message), 0.50.0 (alerts posted)
+> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.49.0 (channels and test message), 0.50.0 (alerts posted), 0.51.0 (retries and the *Failing* warning)
 
-> **Status:** from 0.50.0 a channel gets a message when an alert **starts** or **turns critical**. Retries, and a warning when a channel stops receiving messages, come next, then a message when an alert **ends** ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)). Until then a message that can't be sent is written to the app log and not tried again.
+> **Status:** a channel gets a message when an alert **starts** or **turns critical**. A message that can't be sent is retried, and you're told when a channel [stops receiving messages](#when-messages-dont-get-through). A message when an alert **ends** comes next ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)).
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 
@@ -118,8 +118,61 @@ Only what the message shows: connection names, indicator names, figures and thre
 - **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area).
 - **One PC's view.** Two copies of SqlVitals watching the same server both post; the *Sent from* line tells them apart.
 - **Not remembered across restarts.** After SqlVitals restarts, an alert that's still happening is raised again and posted again as a new alert. That's expected.
-- **Not yet retried.** In this version a message that can't be sent is written to the [app log](Settings.md#diagnostics) by the channel's name and dropped.
-- Each channel sends its messages in order, one at a time, without holding up monitoring, the window or other channels.
+- Each channel sends its messages in order, one at a time and at most one a second, without holding up monitoring, the window or other channels.
+
+## When messages don't get through
+
+### Retries
+
+Slack or Teams can be busy for a moment, or the network can drop. SqlVitals tries a message again, depending on the answer:
+
+| Answer | Tried again? |
+|---|---|
+| **Too many messages (429)** | Yes, after the time the service asks for (*Retry-After*), or 30 seconds if it doesn't say, up to 5 minutes. After 5 of these in a row the message is given up, so a channel that's always refused still ends up *Failing*. |
+| **Server error (5xx)**, **can't reach the service**, **timed out** | Up to **3 times**, after 2, 10 and 30 seconds |
+| **Webhook not found (404 / 410)**, **rejected** (400, 401, 403…), a **proxy that asks for a sign-in** (407), an **unexpected answer**, a redirect | No: asking again gets the same answer. Fix what it says. |
+
+- A message waiting to be retried keeps its place: the messages after it wait behind it, so they arrive in order. It never holds up another channel, monitoring or the window.
+- In the **minute after the PC wakes from sleep**, while Wi-Fi or the VPN reconnects, *can't reach the service* is tried every 10 seconds without using up a retry. So opening a laptop with messages waiting doesn't raise a false warning.
+- Each try is written to the [app log](Settings.md#diagnostics) by the channel's name, e.g. `Chat "DBA team" (Slack): alert on Sales-Prod server error (503); retry 1 of 3 in 2 s`, and a message that got through on a retry says so. The webhook URL is never in the log.
+
+### A channel that falls behind
+
+Messages go at most **one a second** per channel, Slack's limit. If more than **20** are waiting (a retry holding the line, or many alerts at once), the rest are combined into one message, sent after the 20:
+
+> **📋 14 more messages combined**
+> 14 more messages were combined while the channel was busy. See the Alerts page in SqlVitals for the details.
+> 🔴 **Sales-Prod** new or critical: CPU and Log space used
+> 🟠 **HR-DB** new or critical: Blocking
+
+Once it's sent, messages go one by one again.
+
+### ⚠ Failing
+
+When a message is given up (after its retries, or straight away for a 404), the channel's row in Settings says why:
+
+> ⚠ **Failing since 10:42: webhook not found (404)**
+
+and one Windows notification says so, even while SqlVitals is hidden in the notification area:
+
+> **Chat channel failing**
+> Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts.
+
+- *Failing since* is when the first message was given up; the reason is the latest one.
+- The notification isn't repeated while the channel keeps failing. It comes again only if the channel posts successfully and then fails again.
+- New alerts are still tried, so a channel that comes back **recovers by itself**: the next message that gets through sets it back to *Last posted*. A **test message** that gets through does the same. One that fails doesn't mark the channel failing: its result is shown by the button.
+- It isn't about a connection, so muting a connection's Windows notifications doesn't hide it.
+- Turning a failing channel **off** clears it.
+
+What each reason means, and what to do, is in the [Send test message](#send-test-message) table below: send a test message once you've fixed it.
+
+### The same message twice
+
+A channel can occasionally get the same message twice. That's expected:
+
+- **A retry after a timeout or server error.** Slack or Microsoft may have posted the message before the error, and a webhook can't tell SqlVitals it already has it. The log says the message was retried.
+- **An alert still happening after a restart** is posted again as a new alert (see [Limits](#limits)).
+- **Several copies of SqlVitals** watching the same server, each posting to the same channel. Tell them apart by *Sent from SqlVitals on &lt;PC&gt;*.
 
 ## Send test message
 
@@ -137,7 +190,7 @@ Select a channel and click **📨 Send test message**. SqlVitals posts *"Test me
 | **Can't reach Slack / Microsoft Teams** | DNS, a firewall, the proxy (for example one that asks for a sign-in) or HTTPS inspection stopped the request | Allow outbound HTTPS from this PC to `hooks.slack.com`, or to your workflow's host |
 | **Timed out** | No answer within 10 seconds | Check the network, then try again |
 
-Each channel's row shows **Never used** or **Last posted 10:42**. The status is kept while SqlVitals runs, so it starts again at *Never used* after a restart.
+Each channel's row shows **Never used**, **Last posted 10:42** or **⚠ Failing since 10:42: …** ([see above](#-failing)). A test message that gets through clears *Failing*; one that fails leaves the status as it was. The status is kept while SqlVitals runs, so it starts again at *Never used* after a restart.
 
 Requests use the **Windows proxy settings** (including an automatic configuration script), signed in as your Windows user, so corporate networks work. A redirect isn't followed, so a message can never end up on a host you didn't choose.
 
@@ -157,7 +210,8 @@ Anyone who has a webhook URL can post to the channel, so SqlVitals treats it lik
 - **Pure logic** (`SqlVitals/Engine/ChatNotifications/`, unit tested in `Engine.Tests/ChatNotifications/`): `ChatChannel`; `WebhookUrl` checks, compares and masks URLs; `ChatMessageBuilder` builds a `ChatMessage`, which `ChatFormatter` writes as Slack Block Kit (with a `text` fallback, and `&`, `<`, `>` escaped so a name can't mention `@channel`) or as an Adaptive Card 1.4 in the `{"type":"message","attachments":[…]}` envelope Teams workflows take; `WebhookResult` maps an answer or an exception to an outcome, from the status code and the exception's type only, never its message.
 - **Sending:** `IWebhookSender` is the only way out, so tests use a fake. `Desktop/Services/HttpWebhookSender.cs` is one `HttpClient` over a `SocketsHttpHandler` with the system proxy and default credentials, no redirects, and a 10-second timeout per request. It reads at most 1 KB of the answer.
 - **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message, and remembers in memory the alert ids it told the channel about (forgotten when the alert ends or the channel is turned off). `ChatMessageBuilder.Raised` words it with `AlertText` (`Figure`, `Context`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests` and `AlertMessageTests`.
-- **Sending:** `ChannelQueue`, one per channel, sends on a worker of its own, one message at a time and in order; `Enqueue` never waits. The Slack or Teams JSON is written when the message is sent, so an edit to the channel applies to what's waiting.
+- **Sending:** `ChannelQueue`, one per channel, sends on a worker of its own, one message at a time and in order, at most one a second measured start to start; `Enqueue` never waits. The Slack or Teams JSON is written when the message is sent, so an edit to the channel applies to what's waiting and to a retry. Past 20 waiting messages, the rest fold into one `ChatMessageBuilder.Summary`, built from each message's `ChatDigest` when it's sent. `RetryPolicy` decides each retry; `NetworkGrace` is the minute after `PowerModes.Resume`. Waits run on a `TimeProvider`, so tests use `FakeTimeProvider` and never wait in real time, and are measured on its timestamps, which a change to the PC's clock doesn't move. Unit tested in `ChannelQueueTests`, `RetryPolicyTests` and `SummaryMessageTests`.
+- **Status:** `ChannelStatus` (*Never used*, *Last posted*, *Failing since*). The queue reports every try as a `ChannelReport`; the service marks the channel posted or failing on the UI thread and raises `StartedFailing` only on the change into *Failing*, which the main window shows with `TrayIcon.Inform`.
 - **Service:** `Desktop/Services/ChatNotificationService.cs`, owned by the main window, subscribes to `MonitoringManager.AlertsRaised`, which is raised beside the window's `AlertsChanged`. Each subscriber runs in its own try/catch, so a bug in one can't stop the other or show the connection as failing. The service takes the saved channels and connection names at startup and after every settings save; a settings file that couldn't be read just then is ignored, so it can't look like "no channels".
 - **Storage:** `EncryptedChatChannels` in `settings.dat`, one DPAPI blob beside `EncryptedConnections`. Changes are logged as **Chat channel added / edited / removed** (`SettingsDiff`), with *Webhook URL* in its secret names.
 - **Backstop:** `AppLog.Redact` removes any Slack, Logic Apps, Power Platform or Office webhook URL from a log line.

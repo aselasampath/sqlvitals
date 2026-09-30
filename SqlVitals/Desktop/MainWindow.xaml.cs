@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
@@ -95,6 +96,8 @@ public partial class MainWindow : Window
         };
 
         Chat.Apply(store);
+        Chat.StartedFailing += OnChatChannelFailing;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         if (store.ChatChannelsDropped)
             _tray.Inform("Chat channels were removed",
                 "SqlVitals couldn't read its Slack and Teams channels on this PC or Windows account, so alerts " +
@@ -476,6 +479,18 @@ public partial class MainWindow : Window
         Activate();
     }
 
+    // Raised on a SystemEvents thread; OnResumed is thread-safe.
+    private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+            Chat.OnResumed();
+    }
+
+    // Once each time a chat channel starts failing, even while the window is hidden, and whatever
+    // connections are muted: it's about the channel (#122).
+    private void OnChatChannelFailing(Guid channelId, string text) =>
+        _tray.Inform(ChannelStatus.FailingTitle, text, warning: true);
+
     // Exit in the tray menu: quit for real, with the usual clean-up in OnClosing.
     private void ExitApp()
     {
@@ -498,7 +513,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A status report still queued for the UI thread mustn't reach the disposed icon.
+        Chat.StartedFailing -= OnChatChannelFailing;
         _tray.Dispose();
+        // A static event: it would keep this window alive.
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
 
         // Background collectors hold no server-side state; just stop them polling.
         Monitoring.Dispose();

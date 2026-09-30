@@ -555,8 +555,21 @@
                                     <DataTemplate>
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0"
-                                                       Text="{Binding StatusText}"
-                                                       Foreground="{StaticResource TextMuted}" FontSize="11" />
+                                                       MaxWidth="280" TextWrapping="Wrap" TextAlignment="Right"
+                                                       Text="{Binding StatusText}" FontSize="11">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                                        <Style.Triggers>
+                                                            <!-- #122: a channel alerts aren't reaching stands out without opening it. -->
+                                                            <DataTrigger Binding="{Binding Failing}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource Danger}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                             <StackPanel>
                                                 <TextBlock Text="{Binding Name}"
                                                            Foreground="{StaticResource TextPrimary}"

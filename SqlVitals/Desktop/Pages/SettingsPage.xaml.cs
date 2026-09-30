@@ -683,10 +683,13 @@ public partial class SettingsPage : Page
             var now   = DateTime.Now;
             var items = store.ChatChannels
                 .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(c => (Channel: c, Status: _chat.Status(c.Id)))
                 .Select(c => new ChatChannelItem(
-                    c.Id, c.Name,
-                    $"{ChatServices.Name(c.Service)} · {WebhookUrl.Mask(c.WebhookUrl)} · {Scope(c)}" + (c.Enabled ? "" : " · Off"),
-                    _chat.Status(c.Id).Text(now)))
+                    c.Channel.Id, c.Channel.Name,
+                    $"{ChatServices.Name(c.Channel.Service)} · {WebhookUrl.Mask(c.Channel.WebhookUrl)} · {Scope(c.Channel)}" +
+                    (c.Channel.Enabled ? "" : " · Off"),
+                    c.Status.Text(now),
+                    c.Status.IsFailing))
                 .ToList();
 
             LstChatChannels.ItemsSource  = items;
@@ -960,7 +963,7 @@ public partial class SettingsPage : Page
     }
 
     /// <summary>Row under Alerts → Chat channels: never the URL, only its mask.</summary>
-    public sealed record ChatChannelItem(Guid Id, string Name, string Detail, string StatusText);
+    public sealed record ChatChannelItem(Guid Id, string Name, string Detail, string StatusText, bool Failing = false);
 
     // ── Form ──────────────────────────────────────────────────────────────────
 

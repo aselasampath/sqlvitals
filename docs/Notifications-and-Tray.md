@@ -26,6 +26,17 @@ Untick it in **⚙️ Settings → Alerts → Windows notifications**, or right-
 - New connections notify until you mute them.
 - Muting is only about Windows notifications on this PC. It doesn't stop a connection's alerts being posted to [Slack or Teams channels](Chat-Notifications.md), and a channel's own choice of connections doesn't change who gets Windows notifications.
 
+### When a chat channel stops receiving alerts
+
+From 0.51.0, if SqlVitals can't post to one of your [Slack or Teams channels](Chat-Notifications.md) (after its retries), one notification says so:
+
+> **Chat channel failing**
+> Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts.
+
+- It appears once when the channel **starts** failing, and not again until the channel has posted successfully and failed again. The channel's row in **Settings → Alerts → Chat channels** shows *⚠ Failing since …* meanwhile.
+- It's shown while the window is hidden in the notification area, and muting a connection doesn't hide it: it's about the channel, not a connection.
+- Clicking it brings SqlVitals to the front.
+
 ### Windows' own settings still apply
 
 SqlVitals uses the standard Windows notification system, so:
@@ -71,6 +82,6 @@ Starting SqlVitals while it's already running brings the running copy to the fro
 - **Icon and notifications:** `Desktop/Services/TrayIcon.cs` wraps WinForms' `NotifyIcon` (`UseWindowsForms` in `SqlVitals.Desktop.csproj`). Windows 10 and 11 show its balloon as an ordinary notification, attributed to the exe's description (`AssemblyTitle`: *SqlVitals*). It needs no AUMID, Start-menu registration or extra package. `BalloonTipClicked` raises `AlertsRequested(connectionId)`.
 - **Menu:** *Start monitoring all* and *Stop monitoring all* raise `StartAllRequested` / `StopAllRequested`, which call `MonitoringManager.StartAll` / `StopAll` with the source `user: tray menu`. The tooltip comes from `AlertNotification.TrayToolTip(active, monitoredConnections)`.
 - **Wording:** `Engine/Alerts/AlertNotification.cs` turns one sample's `AlertChange`s for a connection into a title and text (Windows allows 63 and 255 characters), or nothing when no alert started or escalated. Unit tested in `Engine.Tests/Alerts/AlertNotificationTests.cs`.
-- **Wiring:** `MainWindow.OnAlertsChanged` handles `MonitoringManager.AlertsChanged`: it updates the sidebar count and the icon's tooltip, then notifies unless the connection is muted. Hiding is in `MainWindow.OnStateChanged` / `OnClosing`; `App.IsExiting` marks a real exit (tray **Exit**, `SessionEnding`). `App.xaml` uses `ShutdownMode="OnMainWindowClose"`.
+- **Wiring:** `MainWindow.OnAlertsChanged` handles `MonitoringManager.AlertsChanged`: it updates the sidebar count and the icon's tooltip, then notifies unless the connection is muted. `ChatNotificationService.StartedFailing` shows the chat channel notification with `TrayIcon.Inform(…, warning: true)`, whatever is muted. Hiding is in `MainWindow.OnStateChanged` / `OnClosing`; `App.IsExiting` marks a real exit (tray **Exit**, `SessionEnding`). `App.xaml` uses `ShutdownMode="OnMainWindowClose"`.
 - **Single instance:** `App.OnStartup` holds the named mutex `Local\SqlVitals.Desktop.SingleInstance`. A second copy signals the event `Local\SqlVitals.Desktop.Show` and exits; the first copy's listener thread calls `MainWindow.ShowFromTray()`.
 - **Settings** in `settings.dat`: `NotificationsMuted` (connection ids; ids of deleted connections are dropped), `KeepRunningInTray` (default true), `TrayHintShown`. Added in [#35](https://github.com/aselasampath/sqlvitals/issues/35).

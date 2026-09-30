@@ -49,7 +49,23 @@ public sealed record ChatMessage(
 
     /// <summary>What the message is about, for the app log: "test message", "2 alerts on Sales-Prod".</summary>
     public string About { get; init; } = "message";
+
+    /// <summary>What the message says, in short, for a summary it's folded into; null for a test message.</summary>
+    public ChatDigest? Digest { get; init; }
 }
+
+/// <summary>The kinds of message folded into a summary.</summary>
+public enum ChatMessageKind
+{
+    /// <summary>Alerts that started or turned critical (#121).</summary>
+    Raised,
+}
+
+/// <summary>
+/// A message in short, kept so that it can be folded into a summary when a channel falls behind
+/// (#122): which connection, which indicators, and whether any is critical.
+/// </summary>
+public sealed record ChatDigest(ChatMessageKind Kind, string Connection, IReadOnlyList<string> Indicators, bool Critical);
 
 /// <summary>An alert to post because it started or turned critical (#121).</summary>
 /// <param name="NowCritical">
@@ -111,7 +127,8 @@ public static class ChatMessageBuilder
             return new ChatMessage(tone, title, "", facts, SentFrom(pcName),
                                    Fallback: $"{title}. {name} {AlertText.Figure(alert)}.")
             {
-                About = $"alert on {connectionName}",
+                About  = $"alert on {connectionName}",
+                Digest = new ChatDigest(ChatMessageKind.Raised, connectionName, [name], critical > 0),
             };
         }
 
@@ -129,9 +146,56 @@ public static class ChatMessageBuilder
         var names = sorted.Select(a => HealthThresholds.Info(a.Alert.Indicator).Name).ToList();
         return new ChatMessage(tone, many, "", [], SentFrom(pcName), Fallback: $"{many}: {List(names)}.")
         {
+            Lines  = lines,
+            More   = sorted.Count - lines.Count,
+            About  = $"{sorted.Count} alerts on {connectionName}",
+            Digest = new ChatDigest(ChatMessageKind.Raised, connectionName, names, critical > 0),
+        };
+    }
+
+    /// <summary>
+    /// One message in place of the messages that piled up while a channel was busy or waiting to
+    /// retry (#122): a line per connection naming its indicators, so the team can still tell what
+    /// happened where. Critical connections first.
+    /// </summary>
+    /// <param name="folded">The messages it replaces, in the order they were queued.</param>
+    public static ChatMessage Summary(IReadOnlyList<ChatMessage> folded)
+    {
+        if (folded.Count == 0)
+            throw new ArgumentException("There's nothing to summarise.", nameof(folded));
+
+        var byConnection = folded
+            .Select(m => m.Digest).OfType<ChatDigest>()
+            .GroupBy(d => d.Connection, StringComparer.CurrentCulture)
+            .Select(g => (
+                Connection: g.Key,
+                Critical:   g.Any(d => d.Critical),
+                Indicators: g.SelectMany(d => d.Indicators).Distinct(StringComparer.CurrentCulture).ToList()))
+            .OrderByDescending(c => c.Critical)
+            .ToList();
+
+        var tone  = byConnection.Any(c => c.Critical) ? ChatTone.Critical
+                  : byConnection.Count > 0            ? ChatTone.Warning
+                  : ChatTone.Neutral;
+        var what  = folded.Count == 1 ? "1 more message" : $"{folded.Count} more messages";
+        var were  = folded.Count == 1 ? "was" : "were";
+        var title = $"📋 {what} combined";
+        var text  = $"{what} {were} combined while the channel was busy. See the Alerts page in SqlVitals for the details.";
+
+        var lines = byConnection.Take(MaxLines).Select(c => new ChatLine(
+            c.Critical ? ChatTone.Critical : ChatTone.Warning,
+            c.Connection,
+            $"new or critical: {List(c.Indicators)}")).ToList();
+
+        var connections = byConnection.Select(c => c.Connection).ToList();
+        var fallback = connections.Count == 0
+            ? $"{what} {were} combined while the channel was busy."
+            : $"{what} {were} combined while the channel was busy: alerts on {List(connections)}.";
+        return new ChatMessage(tone, title, text, [], folded.Select(m => m.SentFrom).FirstOrDefault(s => s is not null), fallback)
+        {
             Lines = lines,
-            More  = sorted.Count - lines.Count,
-            About = $"{sorted.Count} alerts on {connectionName}",
+            More  = byConnection.Count - lines.Count,
+            About = folded.Count == 1 ? "summary of 1 message" : $"summary of {folded.Count} messages",
         };
     }
 

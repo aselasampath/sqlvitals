@@ -1,5 +1,3 @@
-using System.Threading.Channels;
-
 namespace SqlVitals.Engine.ChatNotifications;
 
 /// <summary>
@@ -16,57 +14,135 @@ public sealed class ChannelTarget(string name, ChatService service, Uri url)
     public override string ToString() => $"{Name} ({ChatServices.Name(Service)}, {WebhookUrl.Mask(Url.OriginalString)})";
 }
 
+/// <summary>How one try at sending a message went, and what happens next (#122).</summary>
+/// <param name="Attempt">1 for the first try, 2 for the first retry, and so on.</param>
+/// <param name="Next">When the message will be tried again; null when it won't: it was sent, or it was given up.</param>
+public sealed record ChannelReport(ChannelTarget Target, ChatMessage Message, WebhookResult Result, int Attempt, RetryDecision? Next)
+{
+    /// <summary>The message was given up after its retries (or straight away, for a 404): the channel is failing.</summary>
+    public bool GaveUp => !Result.IsSuccess && Next is null && Result.Outcome != WebhookOutcome.Cancelled;
+
+    /// <summary>
+    /// For the app log, after the channel's name: "alert on Sales-Prod server error (503); retry 1
+    /// of 3 in 2 s", "alert on Sales-Prod posted (200) in 120 ms, on try 2". Never the URL.
+    /// </summary>
+    public string LogText()
+    {
+        var text = $"{Message.About} {Result.LogText()}";
+        if (Result.IsSuccess)
+            return Attempt > 1 ? $"{text}, on try {Attempt} (a retry)" : text;
+        if (Next is { } next)
+            return $"{text}; {next.LogText()}";
+        if (Result.Outcome == WebhookOutcome.Cancelled)
+            return text;
+        return Attempt > 1 ? $"{text}; not sent after {Attempt} tries" : $"{text}; not sent";
+    }
+}
+
 /// <summary>
-/// One chat channel's messages, sent one at a time and in the order they were queued (#121), on a
-/// worker of its own. <see cref="Enqueue"/> never waits, so neither the UI nor monitoring does,
-/// and a slow or failing channel never holds up another.
-///
-/// #121: a failed message is reported and dropped. Pacing, retries and the Failing status come
-/// in #122.
+/// One chat channel's messages, sent on a worker of its own (#121, #122):
+/// <list type="bullet">
+/// <item>one at a time, in the order they were queued, and at most one a second (Slack's limit),
+/// measured start to start;</item>
+/// <item>retried as <see cref="RetryPolicy"/> says, the message holding its place meanwhile, so a
+/// later one never overtakes it;</item>
+/// <item>when more than <see cref="MaxWaiting"/> are waiting, the rest are folded into one summary
+/// message (<see cref="ChatMessageBuilder.Summary"/>), built when it's sent.</item>
+/// </list>
+/// <see cref="Enqueue"/> never waits, so neither the UI nor monitoring does, and a channel waiting
+/// to retry never holds up another. Waits run on a <see cref="TimeProvider"/>, so tests don't wait
+/// in real time, and are measured on its timestamps, which the PC's clock changing doesn't move.
 /// </summary>
 public sealed class ChannelQueue : IDisposable
 {
-    private readonly Func<ChannelTarget?> _target;
-    private readonly IWebhookSender       _sender;
-    private readonly Action<ChannelTarget, ChatMessage, WebhookResult> _sent;
+    /// <summary>Individual messages that may wait; the next ones are folded into a summary.</summary>
+    public const int MaxWaiting = 20;
 
-    private readonly Channel<ChatMessage>    _queue = Channel.CreateUnbounded<ChatMessage>(new UnboundedChannelOptions { SingleReader = true });
-    private readonly CancellationTokenSource _stop  = new();
+    /// <summary>The least time between the starts of two sends.</summary>
+    public static readonly TimeSpan Pace = TimeSpan.FromSeconds(1);
+
+    private readonly Func<ChannelTarget?>  _target;
+    private readonly IWebhookSender        _sender;
+    private readonly Action<ChannelReport> _report;
+    private readonly TimeProvider          _time;
+    private readonly NetworkGrace?         _grace;
+
+    private readonly CancellationTokenSource _stop   = new();
+    // Taken once: the source's Token throws after Dispose, and a send can outlive Dispose's wait.
+    private readonly CancellationToken       _cancel;
+    private readonly SemaphoreSlim           _signal = new(0);
     private readonly Task                    _worker;
 
-    // Messages queued and not yet sent or dropped, and a task that completes when that's none.
-    private readonly object _gate = new();
-    private int _pending;
+    // What's waiting, in order: messages, and at most one summary, at the tail while it's
+    // still taking messages. Under _gate, with the counts.
+    private readonly object      _gate  = new();
+    private readonly Queue<Item> _items = new();
+    private Item? _summary;
+    private int   _individual;   // individual messages waiting or being sent
+    private int   _pending;      // every message waiting or being sent, the folded ones included
+    private bool  _stopped;
     private TaskCompletionSource _idle = Completed();
 
+    // When the last send started, as a _time timestamp. Only the worker uses it.
+    private long? _lastStart;
+
+    private sealed class Item(ChatMessage? message, List<ChatMessage>? folded)
+    {
+        public ChatMessage?       Message { get; } = message;
+        public List<ChatMessage>? Folded  { get; } = folded;
+        public int Count => Folded?.Count ?? 1;
+    }
+
     /// <param name="target">Where to send, or null when the channel is gone or off: the message is dropped.</param>
-    /// <param name="sent">
-    /// Called on the worker after each message with how it went. It mustn't throw; if it does, the
+    /// <param name="report">
+    /// Called on the worker after each try with how it went. It mustn't throw; if it does, the
     /// queue carries on.
     /// </param>
-    public ChannelQueue(Func<ChannelTarget?> target, IWebhookSender sender, Action<ChannelTarget, ChatMessage, WebhookResult> sent)
+    /// <param name="time">The clock for pacing and retries; <see cref="TimeProvider.System"/> when null.</param>
+    /// <param name="grace">Tells when the PC has just woken up (F18); none when null.</param>
+    public ChannelQueue(Func<ChannelTarget?> target, IWebhookSender sender, Action<ChannelReport> report,
+                        TimeProvider? time = null, NetworkGrace? grace = null)
     {
         _target = target;
         _sender = sender;
-        _sent   = sent;
+        _report = report;
+        _time   = time ?? TimeProvider.System;
+        _grace  = grace;
+        _cancel = _stop.Token;
         // Off the caller's thread and its synchronization context, so nothing here waits on the UI.
         _worker = Task.Run(RunAsync);
     }
 
-    /// <summary>Queues a message. Never waits and never throws; after <see cref="Dispose"/> the message is dropped.</summary>
+    /// <summary>Queues a message. Never waits and never throws; after <see cref="Stop"/> the message is dropped.</summary>
     public void Enqueue(ChatMessage message)
     {
         lock (_gate)
         {
-            if (_stop.IsCancellationRequested)
+            if (_stopped)
                 return;
             if (_pending++ == 0)
                 _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            if (_summary is { } summary)
+            {
+                summary.Folded!.Add(message);
+                return;
+            }
+            if (_individual >= MaxWaiting)
+            {
+                _summary = new Item(null, [message]);
+                _items.Enqueue(_summary);
+            }
+            else
+            {
+                _individual++;
+                _items.Enqueue(new Item(message, null));
+            }
         }
-        _queue.Writer.TryWrite(message);
+        _signal.Release();
     }
 
-    /// <summary>How many messages are waiting or being sent.</summary>
+    /// <summary>How many messages are waiting or being sent, those folded into a summary included.</summary>
     public int Pending
     {
         get { lock (_gate) return _pending; }
@@ -83,12 +159,31 @@ public sealed class ChannelQueue : IDisposable
     {
         try
         {
-            while (await _queue.Reader.WaitToReadAsync(_stop.Token).ConfigureAwait(false))
+            while (true)
             {
-                while (_queue.Reader.TryRead(out var message))
+                await _signal.WaitAsync(_cancel).ConfigureAwait(false);
+
+                Item? item;
+                lock (_gate)
                 {
-                    await SendAsync(message).ConfigureAwait(false);
-                    Done();
+                    if (!_items.TryDequeue(out item))
+                        continue;
+                    // Being sent now: what comes next starts a new summary, if it has to.
+                    if (ReferenceEquals(item, _summary))
+                        _summary = null;
+                }
+
+                try
+                {
+                    await DeliverAsync(item.Message ?? ChatMessageBuilder.Summary(item.Folded!)).ConfigureAwait(false);
+                }
+                catch (Exception) when (!_cancel.IsCancellationRequested)
+                {
+                    // A bug building the message: drop it rather than stop the channel for good.
+                }
+                finally
+                {
+                    Done(item);
                 }
             }
         }
@@ -98,53 +193,94 @@ public sealed class ChannelQueue : IDisposable
         }
     }
 
-    private async Task SendAsync(ChatMessage message)
+    // Sends one message, trying again as the policy says. Throws OperationCanceledException when stopped.
+    private async Task DeliverAsync(ChatMessage message)
     {
-        if (_stop.IsCancellationRequested || _target() is not { } target)
-            return;
+        int retries = 0, rateLimited = 0, attempt = 0;
+        while (true)
+        {
+            await PaceAsync().ConfigureAwait(false);
+            if (_cancel.IsCancellationRequested || _target() is not { } target)
+                return;
 
-        WebhookResult result;
+            attempt++;
+            _lastStart = _time.GetTimestamp();
+            var result = await SendAsync(target, message).ConfigureAwait(false);
+            // Stopped while it was in flight: whoever stopped the queue counts it as not sent.
+            _cancel.ThrowIfCancellationRequested();
+
+            var next = result.IsSuccess ? null : RetryPolicy.Decide(result, retries, rateLimited, _grace?.IsSettling == true);
+            try { _report(new ChannelReport(target, message, result, attempt, next)); }
+            catch { /* reporting must never stop the channel */ }
+
+            if (next is not { } retry)
+                return;
+            if (retry.Number > 0)
+                retries = retry.Number;
+            rateLimited = result.Outcome == WebhookOutcome.RateLimited ? rateLimited + 1 : 0;
+            await Task.Delay(retry.Wait, _time, _cancel).ConfigureAwait(false);
+        }
+    }
+
+    private async Task PaceAsync()
+    {
+        if (_lastStart is not { } last)
+            return;
+        var wait = Pace - _time.GetElapsedTime(last);
+        if (wait > TimeSpan.Zero)
+            await Task.Delay(wait, _time, _cancel).ConfigureAwait(false);
+    }
+
+    private async Task<WebhookResult> SendAsync(ChannelTarget target, ChatMessage message)
+    {
         try
         {
-            result = await _sender.SendAsync(target.Url, ChatFormatter.Format(message, target.Service), target.Service, _stop.Token)
-                                  .ConfigureAwait(false);
+            return await _sender.SendAsync(target.Url, ChatFormatter.Format(message, target.Service), target.Service, _cancel)
+                                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
+            // Stopped (the exception is the cancellation): DeliverAsync sees that next.
             // The sender doesn't throw for a failed post; this is a bug. Its message may hold the URL.
-            result = new WebhookResult(WebhookOutcome.Unreachable, null, $"the request failed ({ex.GetType().Name})", TimeSpan.Zero);
+            return new WebhookResult(WebhookOutcome.Unreachable, null, $"the request failed ({ex.GetType().Name})", TimeSpan.Zero);
         }
-
-        try { _sent(target, message, result); }
-        catch { /* reporting must never stop the channel */ }
     }
 
-    private void Done()
+    private void Done(Item item)
     {
         lock (_gate)
         {
-            if (_pending > 0 && --_pending == 0)
+            if (_stopped)
+                return; // already counted as dropped
+            if (item.Message is not null)
+                _individual--;
+            _pending -= item.Count;
+            if (_pending == 0)
                 _idle.TrySetResult();
         }
     }
 
     /// <summary>
-    /// Stops the worker. Messages still waiting are dropped, and a request in flight is
-    /// cancelled. Returns how many were dropped, for the log.
+    /// Stops the worker. Messages still waiting are dropped, and a request in flight or a wait to
+    /// retry is cancelled. Returns how many messages were dropped, for the log.
     /// </summary>
     public int Stop()
     {
         int dropped;
         lock (_gate)
         {
-            if (_stop.IsCancellationRequested)
+            if (_stopped)
                 return 0;
-            _stop.Cancel();
-            dropped  = _pending;
-            _pending = 0;
+            _stopped    = true;
+            dropped     = _pending;
+            _pending    = 0;
+            _individual = 0;
+            _items.Clear();
+            _summary = null;
             _idle.TrySetResult();
         }
-        _queue.Writer.TryComplete();
+        // Outside the lock: cancelling can run the worker's continuation on this thread.
+        _stop.Cancel();
         return dropped;
     }
 

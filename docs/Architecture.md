@@ -34,7 +34,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │  Security/      SecurityAudit: Risk / Review / Pass, the risk explained, fix scripts               │
 │  History/       HistoryRecorder → HistoryWriter → HistoryStore (SQLite)   HistoryReader            │
 │  Activity/      ActivityEntry (activity log rows), SettingsDiff (a save → rows, no secrets)        │
-│  ChatNotifications/ ChannelRouter → ChatMessage → ChatFormatter, ChannelQueue, WebhookUrl          │
+│  ChatNotifications/ ChannelRouter → ChannelQueue (1/s, RetryPolicy) → ChatFormatter, WebhookUrl    │
 │  Alerts/        AlertTracker, Alert, AlertSettings, AlertNotification                               │
 │  ExecutionPlans/ ShowplanParser → ExecutionPlan, PlanTreeLayout                                     │
 │  Regressions/   RegressionWindows, QueryRegressionDetector                                          │

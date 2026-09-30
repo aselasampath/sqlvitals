@@ -119,11 +119,16 @@ internal sealed class TrayIcon : IDisposable
             notification.Severity == HealthLevel.Critical ? Forms.ToolTipIcon.Error : Forms.ToolTipIcon.Warning);
     }
 
-    /// <summary>Raises a Windows notification that isn't about an alert; clicking it shows the window.</summary>
-    public void Inform(string title, string text)
+    /// <summary>
+    /// Raises a Windows notification that isn't about an alert, e.g. a chat channel failing
+    /// (#122); clicking it shows the window. Muting a connection doesn't affect it.
+    /// </summary>
+    /// <param name="warning">Shown with the warning icon instead of the information one.</param>
+    public void Inform(string title, string text, bool warning = false)
     {
         _notifiedConnection = null;
-        _icon.ShowBalloonTip((int)TimeSpan.FromSeconds(10).TotalMilliseconds, title, text, Forms.ToolTipIcon.Info);
+        _icon.ShowBalloonTip((int)TimeSpan.FromSeconds(10).TotalMilliseconds, title, text,
+                             warning ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info);
     }
 
     /// <summary>Puts the number of active alerts in the icon's tooltip and menu.</summary>
