@@ -63,9 +63,9 @@ What raises an alert is set by the health thresholds above.
 
 ### Chat channels (Slack and Teams)
 
-From 0.49.0, a list of the Slack and Microsoft Teams channels alerts are posted to (from 0.50.0), each with its service, its webhook URL masked (`hooks.slack.com/…/x7Qa`) and **Never used**, **Last posted 10:42** or, from 0.51.0, **⚠ Failing since 10:42: webhook not found (404)** when messages aren't getting through ([Chat Notifications](Chat-Notifications.md#-failing)).
+From 0.52.0, a list of the Slack and Microsoft Teams channels alerts are posted to, each with its service, its webhook URL masked (`hooks.slack.com/…/x7Qa`) and **Never used**, **Last posted 10:42** or **⚠ Failing since 10:42: webhook not found (404)** when messages aren't getting through ([Chat Notifications](Chat-Notifications.md#-failing)).
 
-- **+ Add channel** opens a form: **Name**, **Webhook URL** (masked once saved; **Show** reveals it), **Service** (picked from the URL), **Connections** (all monitored connections, or only the ones you tick; from 0.50.0), **Post** (warnings and critical, or critical only; from 0.50.0) and **On** (off pauses the channel without removing it). **💾 Save channel** checks the URL first and applies straight away.
+- **+ Add channel** opens a form: **Name**, **Webhook URL** (masked once saved; **Show** reveals it), **Service** (picked from the URL), **Connections** (all monitored connections, or only the ones you tick), **Post** (warnings and critical, or critical only), **Also post when an alert ends** (on by default: *Back to normal* for the alerts the channel was told about; *Stopped monitoring* is posted either way) and **On** (off pauses the channel without removing it). **💾 Save channel** checks the URL first and applies straight away.
 - Select a channel to edit it; **🗑 Remove** removes it after a confirmation.
 - **📨 Send test message** posts a test message to the selected channel, as saved, and shows the result under the list.
 
@@ -94,7 +94,7 @@ A record of what was done, kept in the history file (`history.db`, table `activi
 | **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. Not which sidebar groups you collapse or expand. |
 | **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |
 | **History cleared** | **🗑 Clear history** |
-| **Chat channel added** / **edited** / **removed** | From 0.49.0. The channel's name is in *Detail* (added, removed) or *Setting* (edited, e.g. *DBA team: On*). A new webhook URL only shows as *changed*. |
+| **Chat channel added** / **edited** / **removed** | From 0.52.0. The channel's name is in *Detail* (added, removed) or *Setting* (edited, e.g. *DBA team: On*). A new webhook URL only shows as *changed*. |
 
 Each row also has the **Windows user** and **PC name**, so a shared or copied history file still says who did it.
 

@@ -174,6 +174,25 @@ public sealed class ChatChannelSettingsTests : IDisposable
         Assert.True(channel.AllConnections);
         Assert.Empty(channel.ConnectionIds);
         Assert.False(channel.CriticalOnly);
+        Assert.True(channel.PostEnds);
+    }
+
+    [Fact]
+    public void AlsoPostWhenAnAlertEnds_SurvivesSaveAndLoad_AndIsLogged()
+    {
+        var service = Create();
+        var channel = Channel();
+        service.SaveChatChannel(channel);
+        var raised = new List<ActivityEntry>();
+        service.Changed += raised.AddRange;
+
+        var edited = channel.Clone();
+        edited.PostEnds = false;
+        service.SaveChatChannel(edited);
+
+        Assert.False(Assert.Single(Create().Load().ChatChannels).PostEnds);
+        var row = Assert.Single(raised);
+        Assert.Equal(("DBA team (Slack): Also post when an alert ends", "On", "Off"), (row.Setting, row.OldValue, row.NewValue));
     }
 
     [Fact]

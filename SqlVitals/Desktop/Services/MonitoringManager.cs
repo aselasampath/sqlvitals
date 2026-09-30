@@ -86,9 +86,17 @@ public sealed class MonitoringManager : IDisposable
 
     /// <summary>
     /// Raised with <see cref="AlertsChanged"/>, for services that outlive the window, such as the
-    /// chat channels (#121). Kept apart from the window's event, so Exit can still reach them (#123).
+    /// chat channels (#121). Unlike <see cref="AlertsChanged"/>, it's still raised during
+    /// <see cref="Dispose"/>, for the ends of the alerts that were active at Exit (#123).
     /// </summary>
     public event Action<Guid, IReadOnlyList<AlertChange>>? AlertsRaised;
+
+    /// <summary>
+    /// Raised once during <see cref="Dispose"/> (Exit), after every session has stopped and
+    /// <see cref="AlertsRaised"/> has had their ends, and before the history is flushed, so a
+    /// service can start sending its last messages while that runs (#123).
+    /// </summary>
+    public event Action? AllStopped;
 
     /// <summary>Every monitored connection's alerts that have started and not ended.</summary>
     public IReadOnlyList<Alert> ActiveAlerts =>
@@ -440,10 +448,16 @@ public sealed class MonitoringManager : IDisposable
     {
         SessionStateChanged = null;   // the window is closing; nothing left to update
         MonitoringChanged   = null;
-        AlertsChanged       = null;
-        AlertsRaised        = null;   // #123 keeps it until the sessions are removed, for the ends on Exit
+        AlertsChanged       = null;   // the window and the Alerts page stop here…
         foreach (var id in _sessions.Keys.ToList())
             Remove(id, ActivitySources.AppExit, "SqlVitals exited.");
+        // …while the services still hear the ends of the alerts that were active (#123): the
+        // chat channels' "stopped monitoring". Neither closing page subscribes to this one.
+        AlertsRaised = null;
+        // Before the history's wait below, so the chat channels send meanwhile, not after it.
+        try { AllStopped?.Invoke(); }
+        catch (Exception ex) { AppLog.Error("Exit: a background service failed when monitoring stopped", ex); }
+        AllStopped = null;
         Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.AppExited, null, null, ActivitySources.AppExit));
 
         // After the sessions, so their last samples are queued; waits a few seconds at most.

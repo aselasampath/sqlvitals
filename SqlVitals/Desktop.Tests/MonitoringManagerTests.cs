@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -258,6 +259,62 @@ public sealed class MonitoringManagerTests : IDisposable
         Assert.Equal(["service", "window"], heard);
         Assert.NotEqual(HealthLevel.Unavailable, monitoring.Get(conn.Id)!.Health);
         Assert.Single(monitoring.ActiveAlerts);
+    }
+
+    [Fact]
+    public void OnExit_TheEndsReachServices_NotTheClosingWindow_ThenAllStopped()
+    {
+        var conn = Conn("sqlHot");
+        var heard = new List<string>();
+
+        var monitoring = CreateHot();
+        monitoring.AlertsChanged += (_, changes) => heard.Add($"window {changes[0].Kind}");
+        monitoring.AlertsRaised  += (_, changes) => heard.Add($"service {changes[0].Kind} {changes[0].Alert.EndReason}");
+        monitoring.AllStopped    += () => heard.Add("all stopped");
+        monitoring.Sync(HotStore(conn), ActivitySources.AutomaticAtStartup);
+        Pump(TimeSpan.FromSeconds(1.5));
+
+        monitoring.Dispose();
+
+        Assert.Equal(["service Started ", "window Started", "service Ended MonitoringStopped", "all stopped"], heard);
+    }
+
+    [Fact]
+    public void OnExit_AChatChannelIsToldMonitoringStopped()
+    {
+        var conn   = Conn("sqlHot");
+        var sender = new RecordingSender();
+        var store  = HotStore(conn);
+        store.ChatChannels = [new ChatChannel { Name = "DBA team", WebhookUrl = "https://hooks.slack.com/services/T0001/B0002/abcdEFGH" }];
+
+        var monitoring = CreateHot();
+        using var chat = new ChatNotificationService(sender, "DBA-PC01", _ => { }, time: new SteppingTime());
+        chat.Apply(store);
+        monitoring.AlertsRaised += chat.OnAlertsRaised;
+        monitoring.AllStopped   += chat.OnAllStopped;
+        monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
+        Pump(TimeSpan.FromSeconds(1.5));
+        chat.WhenIdleAsync().Wait(TimeSpan.FromSeconds(10));
+
+        chat.BeginExit();
+        monitoring.Dispose();
+        chat.Shutdown(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(2, sender.Json.Count);
+        Assert.Contains("Critical: CPU on", sender.Json.First());
+        Assert.Contains("stopped monitoring", sender.Json.Last());
+        Assert.Contains("with 1 alert still active (CPU). No further updates will be posted.", sender.Json.Last());
+    }
+
+    private sealed class RecordingSender : IWebhookSender
+    {
+        public readonly ConcurrentQueue<string> Json = new();
+
+        public Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default)
+        {
+            Json.Enqueue(json);
+            return Task.FromResult(new WebhookResult(WebhookOutcome.Posted, 200, "ok", TimeSpan.Zero));
+        }
     }
 
     public void Dispose()

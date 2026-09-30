@@ -374,6 +374,85 @@ public sealed class ChannelQueueTests
         Assert.Equal(["📋 2 more messages combined", "later"], sender.Sent.TakeLast(2));
     }
 
+    [Fact]
+    public async Task AStoppedMonitoringMessage_IsNeverFolded_AndGoesAfterTheSummary()
+    {
+        var gate   = new TaskCompletionSource<WebhookResult>();
+        var sender = new FakeSender(_time, title => title == "m1" ? gate.Task : Task.FromResult(Ok));
+        using var queue = Create(sender);
+        foreach (var i in Enumerable.Range(1, 22))
+            queue.Enqueue(Message($"m{i}"));
+
+        queue.Enqueue(Message("stop") with { Digest = new ChatDigest(ChatMessageKind.Stopped, "Sales-Prod", ["CPU"], false) });
+        queue.Enqueue(Message("after"));
+        gate.SetResult(Ok);
+        await queue.WhenIdleAsync().WaitAsync(Wait);
+
+        Assert.Equal(["📋 2 more messages combined", "stop", "📋 1 more message combined"], sender.Sent.TakeLast(3));
+    }
+
+    // ── Exit (#123) ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Hurry_CutsAWaitToRetryShort_ForOneTryStraightAway()
+    {
+        // A clock that moves only when the test moves it, a second at a time.
+        var still  = new FakeTimeProvider(SteppingTime.Start);
+        var tries  = 0;
+        var sender = new FakeSender(still, _ => Interlocked.Increment(ref tries) == 1 ? Busy : Ok);
+        using var queue = Create(sender, time: still);
+        queue.Enqueue(Message("alert"));
+        await WaitUntil(() => !_reports.IsEmpty);   // waiting 2 s to retry
+
+        queue.Hurry();
+        await Drive(still, queue);
+
+        // Tried again at the next second (pacing), not after the 2 s wait.
+        Assert.Equal([0d, 1], sender.SecondsOf("alert"));
+        Assert.True(_reports.Last().Result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task AfterHurry_NothingIsRetried()
+    {
+        var sender = Answer(_ => Busy);
+        using var queue = Create(sender);
+        queue.Hurry();
+
+        queue.Enqueue(Message("alert"));
+        await queue.WhenIdleAsync().WaitAsync(Wait);
+
+        Assert.Single(sender.Sent);
+        Assert.Equal("alert server error (503); not sent", _reports.Single().LogText());
+    }
+
+    [Fact]
+    public async Task AfterHurry_MessagesAreStillPacedAtOneASecond()
+    {
+        var sender = Answer(_ => Ok);
+        using var queue = Create(sender);
+        queue.Hurry();
+
+        queue.Enqueue(Message("m1"));
+        queue.Enqueue(Message("m2"));
+        await queue.WhenIdleAsync().WaitAsync(Wait);
+
+        Assert.Equal([0d, 1], sender.Tries.Select(t => (t.At - SteppingTime.Start).TotalSeconds));
+    }
+
+    // Moves a still clock on a second at a time until the queue has nothing left.
+    private static async Task Drive(FakeTimeProvider time, ChannelQueue queue)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (!queue.WhenIdleAsync().IsCompleted)
+        {
+            Assert.True(watch.Elapsed < Wait, "Timed out waiting for the queue.");
+            await Task.Delay(20);
+            if (!queue.WhenIdleAsync().IsCompleted)
+                time.Advance(TimeSpan.FromSeconds(1));
+        }
+    }
+
     // ── Stopping ──────────────────────────────────────────────────────────────
 
     [Fact]

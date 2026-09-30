@@ -79,6 +79,7 @@ internal static class SettingsActivity
                 : string.Join(", ", c.ConnectionIds.Select(id => names.GetValueOrDefault(id, "a removed connection"))
                                                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase))),
             new("Post", c.CriticalOnly ? "Critical only" : "Warnings and critical"),
+            new("Also post when an alert ends", OnOff(c.PostEnds)),
         ])).ToList();
 
         return new SettingsSnapshot(settings, connections, channels);

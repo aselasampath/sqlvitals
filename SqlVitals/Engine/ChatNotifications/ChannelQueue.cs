@@ -47,7 +47,10 @@ public sealed record ChannelReport(ChannelTarget Target, ChatMessage Message, We
 /// <item>retried as <see cref="RetryPolicy"/> says, the message holding its place meanwhile, so a
 /// later one never overtakes it;</item>
 /// <item>when more than <see cref="MaxWaiting"/> are waiting, the rest are folded into one summary
-/// message (<see cref="ChatMessageBuilder.Summary"/>), built when it's sent.</item>
+/// message (<see cref="ChatMessageBuilder.Summary"/>), built when it's sent; a stopped monitoring
+/// message never is (#123);</item>
+/// <item>at Exit, <see cref="Hurry"/>: a message waiting to retry is tried once straight away,
+/// and nothing is retried any more, so what's waiting fits in the few seconds left (#123).</item>
 /// </list>
 /// <see cref="Enqueue"/> never waits, so neither the UI nor monitoring does, and a channel waiting
 /// to retry never holds up another. Waits run on a <see cref="TimeProvider"/>, so tests don't wait
@@ -70,6 +73,10 @@ public sealed class ChannelQueue : IDisposable
     private readonly CancellationTokenSource _stop   = new();
     // Taken once: the source's Token throws after Dispose, and a send can outlive Dispose's wait.
     private readonly CancellationToken       _cancel;
+    // Hurry cancels it, to cut a wait to retry short. Its token is taken once, like _cancel.
+    private readonly CancellationTokenSource _hurry  = new();
+    private readonly CancellationToken       _hurried;
+    private volatile bool                    _draining;
     private readonly SemaphoreSlim           _signal = new(0);
     private readonly Task                    _worker;
 
@@ -108,7 +115,8 @@ public sealed class ChannelQueue : IDisposable
         _report = report;
         _time   = time ?? TimeProvider.System;
         _grace  = grace;
-        _cancel = _stop.Token;
+        _cancel  = _stop.Token;
+        _hurried = _hurry.Token;
         // Off the caller's thread and its synchronization context, so nothing here waits on the UI.
         _worker = Task.Run(RunAsync);
     }
@@ -123,12 +131,20 @@ public sealed class ChannelQueue : IDisposable
             if (_pending++ == 0)
                 _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            if (_summary is { } summary)
+            if (!message.CanFold)
+            {
+                // Stopped monitoring (#123): never a count in a summary. It goes after the summary,
+                // and what comes after it starts a new one.
+                _individual++;
+                _items.Enqueue(new Item(message, null));
+                _summary = null;
+            }
+            else if (_summary is { } summary)
             {
                 summary.Folded!.Add(message);
                 return;
             }
-            if (_individual >= MaxWaiting)
+            else if (_individual >= MaxWaiting)
             {
                 _summary = new Item(null, [message]);
                 _items.Enqueue(_summary);
@@ -209,7 +225,8 @@ public sealed class ChannelQueue : IDisposable
             // Stopped while it was in flight: whoever stopped the queue counts it as not sent.
             _cancel.ThrowIfCancellationRequested();
 
-            var next = result.IsSuccess ? null : RetryPolicy.Decide(result, retries, rateLimited, _grace?.IsSettling == true);
+            // Exiting: no time left to wait for a retry.
+            var next = result.IsSuccess || _draining ? null : RetryPolicy.Decide(result, retries, rateLimited, _grace?.IsSettling == true);
             try { _report(new ChannelReport(target, message, result, attempt, next)); }
             catch { /* reporting must never stop the channel */ }
 
@@ -218,8 +235,35 @@ public sealed class ChannelQueue : IDisposable
             if (retry.Number > 0)
                 retries = retry.Number;
             rateLimited = result.Outcome == WebhookOutcome.RateLimited ? rateLimited + 1 : 0;
-            await Task.Delay(retry.Wait, _time, _cancel).ConfigureAwait(false);
+            await WaitToRetryAsync(retry.Wait).ConfigureAwait(false);
         }
+    }
+
+    // Waits to retry, unless Hurry cuts it short: then the message is tried once straight away.
+    private async Task WaitToRetryAsync(TimeSpan wait)
+    {
+        if (_draining)
+            return;
+        using var either = CancellationTokenSource.CreateLinkedTokenSource(_cancel, _hurried);
+        try
+        {
+            await Task.Delay(wait, _time, either.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!_cancel.IsCancellationRequested)
+        {
+            // Hurried.
+        }
+    }
+
+    /// <summary>
+    /// SqlVitals is exiting (#123): a message waiting to retry is tried once straight away, and
+    /// nothing is retried after this, so what's waiting fits in the seconds left. The pacing stays
+    /// (Slack's limit still applies). Safe from any thread.
+    /// </summary>
+    public void Hurry()
+    {
+        _draining = true;
+        _hurry.Cancel();
     }
 
     private async Task PaceAsync()
@@ -289,6 +333,7 @@ public sealed class ChannelQueue : IDisposable
         Stop();
         try { _worker.Wait(TimeSpan.FromSeconds(1)); } catch { /* cancelled */ }
         _stop.Dispose();
+        // _hurry isn't disposed: a worker that outlived the wait may still link to its token.
     }
 
     private static TaskCompletionSource Completed()

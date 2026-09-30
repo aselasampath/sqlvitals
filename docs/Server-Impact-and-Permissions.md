@@ -9,7 +9,7 @@
 - **Never runs generated scripts.** Index and statistics scripts are shown for review only.
 - **Never blocks.** Every query runs under `READ UNCOMMITTED` with a command timeout (30 s by default).
 - **Nothing runs by default.** From 0.46.0 a new installation monitors no server until the user presses **Start** or turns on **Start monitoring automatically**. Until then the only queries are the ones of the pages the user opens, plus the Azure SQL Database edition check on connecting. See [below](#what-runs-by-default).
-- **Chat channels add nothing on the server.** The [Slack and Teams channels](Chat-Notifications.md) (from 0.49.0) are posted to over outbound HTTPS from this PC, using what SqlVitals already knows. They need no new SQL and no new permissions.
+- **Chat channels add nothing on the server.** The [Slack and Teams channels](Chat-Notifications.md) (from 0.52.0) are posted to over outbound HTTPS from this PC, using what SqlVitals already knows. They need no new SQL and no new permissions.
 - **No agent, no service, no inbound ports.** It's a desktop app making ordinary client connections. From 0.35.0 closing its window hides it to the [notification area](Notifications-and-Tray.md) by default, so any monitoring carries on until the user stops it or chooses **Exit**. The load is the same as with the window open.
 
 ## What runs, and when

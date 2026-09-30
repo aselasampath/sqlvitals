@@ -64,6 +64,8 @@ An alert needs someone watching. When nothing is, active alerts end with **Ended
 
 If the problem is still there when monitoring resumes, a **new** alert starts after the usual run of samples.
 
+[Chat channels](Chat-Notifications.md#stopped-monitoring) that were told about those alerts get one *Stopped monitoring* message instead of *Back to normal*, except when SqlVitals was killed or the PC turned off: nothing is posted for the alerts ended at the next start.
+
 A **failed collection** (the server can't be reached) counts neither way, so an active alert stays active while the server is unreachable. The health dot shows 🔴 for that.
 
 ## Good to know
@@ -72,7 +74,7 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 - **No extra load on the server:** alerts are worked out from the samples SqlVitals already collects.
 - **How long they're kept:** as long as the rest of the [history](Settings.md#monitoring-history), counted from when the alert ended. An active alert is never deleted. **Clear history** deletes alerts too.
 - **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opens this page filtered to that connection. Mute a connection in **Settings → Alerts → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
-- **Chat channels:** from 0.50.0 an alert that starts or turns critical is also posted to the Slack and Microsoft Teams channels in **Settings → Alerts → Chat channels**, so the whole team sees it, in the same words as this page. Each channel can take all monitored connections or chosen ones, and warnings and critical or critical only. See [Chat Notifications](Chat-Notifications.md).
+- **Chat channels:** from 0.52.0 an alert that starts, turns critical or ends is also posted to the Slack and Microsoft Teams channels in **Settings → Alerts → Chat channels**, so the whole team sees it, in the same words as this page. Each channel can take all monitored connections or chosen ones, warnings and critical or critical only, and whether to post ends. When monitoring stops with alerts active, a channel is told once that no more updates will come. See [Chat Notifications](Chat-Notifications.md).
 - **One SqlVitals at a time:** from 0.35.0, starting SqlVitals again brings the running copy to the front instead of opening a second one. (Before that, a second copy shared the history file and ended the first one's active alerts when it started.)
 
 ---

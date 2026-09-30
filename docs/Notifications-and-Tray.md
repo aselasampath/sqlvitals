@@ -28,7 +28,7 @@ Untick it in **⚙️ Settings → Alerts → Windows notifications**, or right-
 
 ### When a chat channel stops receiving alerts
 
-From 0.51.0, if SqlVitals can't post to one of your [Slack or Teams channels](Chat-Notifications.md) (after its retries), one notification says so:
+From 0.52.0, if SqlVitals can't post to one of your [Slack or Teams channels](Chat-Notifications.md) (after its retries), one notification says so:
 
 > **Chat channel failing**
 > Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts.
