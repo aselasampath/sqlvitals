@@ -239,6 +239,49 @@ public sealed class HistoryReader(string path)
             .ToList();
     }
 
+    /// <summary>
+    /// Health scores of one connection (#130), per bucket, oldest first: the lowest score in each,
+    /// so a dip isn't averaged away, and whether the server couldn't be reached at any time in it.
+    /// Empty for a file from before health scores (schema 5).
+    /// </summary>
+    public IReadOnlyList<ScoreHistoryPoint> ReadScores(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket)
+    {
+        using var conn = OpenOrNull(out var version);
+        if (conn is null || version < 5)
+            return [];
+
+        return conn.Query("""
+            SELECT CAST(AVG(captured_utc) AS INTEGER) AS t, MIN(score) AS lowest, MIN(reachable) AS reachable
+            FROM health_scores
+            WHERE connection_id = @connectionId AND captured_utc >= @from AND captured_utc < @to
+            GROUP BY captured_utc / @bucketMs
+            ORDER BY 1
+            """,
+            Args(connectionId, fromUtc, toUtc, bucket))
+            .Select(r => new ScoreHistoryPoint(HistoryStore.FromEpochMs((long)r.t), (int)(long)r.lowest, (long)r.reachable == 1))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The last score of one connection taken while the server could be reached, before
+    /// <paramref name="beforeUtc"/>; null when there is none, or the file is from before schema 5.
+    /// </summary>
+    public ScoreHistoryPoint? ReadLastReachableScore(Guid connectionId, DateTime beforeUtc)
+    {
+        using var conn = OpenOrNull(out var version);
+        if (conn is null || version < 5)
+            return null;
+
+        var row = conn.QueryFirstOrDefault("""
+            SELECT captured_utc, score FROM health_scores
+            WHERE connection_id = @connectionId AND captured_utc < @before AND reachable = 1
+            ORDER BY captured_utc DESC
+            LIMIT 1
+            """,
+            new { connectionId = connectionId.ToString("D"), before = HistoryStore.ToEpochMs(beforeUtc) });
+        return row is null ? null : new ScoreHistoryPoint(HistoryStore.FromEpochMs((long)row.captured_utc), (int)(long)row.score, true);
+    }
+
     /// <summary>The most activity log rows <see cref="ReadActivity"/> returns.</summary>
     public const int MaxActivityRows = 10_000;
 
@@ -360,6 +403,12 @@ public sealed record WaitHistoryBucket(DateTime TimeUtc, double Seconds, IReadOn
 
 /// <summary>Perfmon counters averaged over one bucket; a counter not listed was zero.</summary>
 public sealed record CounterHistoryBucket(DateTime TimeUtc, IReadOnlyDictionary<string, double> Values);
+
+/// <summary>
+/// Health scores over one bucket (#130): the lowest, and whether the server could be reached at
+/// every score in it. A single score when read with <see cref="HistoryReader.ReadLastReachableScore"/>.
+/// </summary>
+public sealed record ScoreHistoryPoint(DateTime TimeUtc, int Score, bool Reachable);
 
 /// <summary>An alert read from the history, with the name its connection was last saved under.</summary>
 public sealed record StoredAlert(Alert Alert, string ConnectionName);

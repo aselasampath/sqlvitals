@@ -35,6 +35,7 @@ public sealed class MonitoringSession : IDisposable
     private HealthThresholds                _thresholds = HealthThresholds.Default;
     private DateTime                        _lastSuccess;
     private bool                            _disposed;
+    private DateTime?                       _failingSince;
 
     /// <param name="history">
     /// Saves this session's samples and alerts to the local history; null (the ad-hoc Live
@@ -79,6 +80,21 @@ public sealed class MonitoringSession : IDisposable
     /// first collection finishes.
     /// </summary>
     public HealthScore? Score { get; private set; }
+
+    /// <summary>The score of the last collection that worked, kept while later ones fail (#130); null before one has.</summary>
+    public HealthScore? LastGoodScore { get; private set; }
+
+    /// <summary>When the last collection that worked finished, on this PC's clock; null before one has.</summary>
+    public DateTime? LastSuccess => _lastSuccess == default ? null : _lastSuccess;
+
+    /// <summary>When collections started failing, on this PC's clock; null while the last one worked.</summary>
+    public DateTime? FailingSince => _failingSince;
+
+    /// <summary>Collections in a row that have failed; zero while the last one worked.</summary>
+    public int ConsecutiveFailures => _consecutiveFailures;
+
+    /// <summary>Why the last collection failed, credentials masked; null while the last one worked.</summary>
+    public string? LastError { get; private set; }
 
     public int IntervalSeconds
     {
@@ -220,9 +236,12 @@ public sealed class MonitoringSession : IDisposable
                 _samples.RemoveRange(0, _samples.Count - MaxPoints);
 
             _consecutiveFailures = 0;
+            _failingSince        = null;
+            LastError            = null;
             _lastSuccess         = DateTime.Now;
             var readings = HealthRules.Grade(sample, _thresholds);
             GradeHealth(readings, sample);
+            _history?.RecordScore(Score!);
             // Every collected sample counts towards an alert, the first one too: the health
             // gauges don't need a previous sample. A failed collection counts neither way, and
             // neither does one finishing after Pause, which has already ended the alerts.
@@ -246,12 +265,13 @@ public sealed class MonitoringSession : IDisposable
             if (_disposed) throw;
 
             _consecutiveFailures++;
+            _failingSince ??= DateTime.Now;
             Health     = HealthLevel.Unavailable;
             var detail = ex is WaitStatsException { InnerException: { } inner } ? inner.Message : ex.Message;
-            HealthText = $"Monitoring failed at {DateTime.Now:HH:mm:ss}: " +
-                         ConnectionSettingsService.RedactSecrets(detail) +
-                         $" Retrying in {FormatDelay(CurrentDelay())}.";
+            LastError  = ConnectionSettingsService.RedactSecrets(detail);
+            HealthText = $"Monitoring failed at {DateTime.Now:HH:mm:ss}: {LastError} Retrying in {FormatDelay(CurrentDelay())}.";
             Score      = HealthScore.Unavailable(HealthText, DateTime.Now);
+            _history?.RecordScore(Score);
             throw;
         }
         finally
@@ -268,12 +288,13 @@ public sealed class MonitoringSession : IDisposable
     private void GradeHealth(IReadOnlyList<HealthReading> readings, LiveMetricSample sample)
     {
         var (level, reasons) = HealthRules.Summarize(readings);
-        Health     = level;
-        Score      = HealthScore.From(readings, _lastSuccess);
-        HealthText = (reasons.Count == 0
-                         ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
-                         : string.Join(" · ", reasons))
-                     + $" · updated {_lastSuccess:HH:mm:ss}";
+        Health        = level;
+        Score         = HealthScore.From(readings, _lastSuccess);
+        LastGoodScore = Score;
+        HealthText    = (reasons.Count == 0
+                            ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
+                            : string.Join(" · ", reasons))
+                        + $" · updated {_lastSuccess:HH:mm:ss}";
     }
 
     // Saves the changes and tells the app. Neither waits on the disk.

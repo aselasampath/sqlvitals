@@ -25,8 +25,10 @@ public partial class MainWindow : Window
     private Guid? _activeConnectionId;
     private string _activeFingerprint = string.Empty;
 
-    // Page the user is on, reopened against the new database after a switch.
+    // Page the user is on, reopened against the new database after a switch; and the server a
+    // server detail page shows (#130).
     private string _currentTag = "LiveMetrics";
+    private Guid?  _currentServerId;
 
     // Bumped on every navigation and connection switch. A page load that finishes after
     // either has happened belongs to a previous database, so its result is discarded.
@@ -131,7 +133,8 @@ public partial class MainWindow : Window
             }
 
             await DisablePagesAzureSqlLacksAsync();
-            await NavigateTo("LiveMetrics");
+            // With more than one server, Home shows them all at a glance (#130).
+            await NavigateTo(store.Connections.Count >= 2 ? "Home" : "LiveMetrics");
         };
     }
 
@@ -361,36 +364,57 @@ public partial class MainWindow : Window
         if (target.Id == _activeConnectionId)
             return;
 
-        var store = SettingsService.Load();
-
-        if (target.NeedsPassword)
+        if (!await SwitchToAsync(target.Id, ActivitySources.ConnectionSelector))
         {
-            // Switching would only fail the login — ask for the password first, and keep the
-            // selector on the connection that is still active.
-            RefreshConnectionSelector(store);
-            await NavigateTo("Settings", PasswordPrompt(target), target.Id);
+            // Keep the selector on the connection that is still active.
+            RefreshConnectionSelector(SettingsService.Load());
             return;
         }
-
-        try
-        {
-            SettingsService.SetActive(target.Id);
-        }
-        catch (Exception ex)
-        {
-            RefreshConnectionSelector(store);
-            TxtStatus.Text = $"Could not switch: {ConnectionSettingsService.RedactSecrets(ex.Message)}";
-            return;
-        }
-
-        store = SettingsService.Load();
-        SyncConnections(store, ActivitySources.ConnectionSelector);
-        await SwapRepositoryAsync(store);
 
         // Reopen the current page as a fresh instance so nothing from the previous database
         // stays on screen. The page may have just been disabled for an Azure SQL database.
         var tag = PagesAzureSqlLacks.Any(p => p.Tag == _currentTag && !p.Button.IsEnabled) ? "LiveMetrics" : _currentTag;
-        await NavigateTo(tag, tag == "Settings" ? $"Switched to \"{target.DisplayName}\"." : null, target.Id);
+        await NavigateTo(tag, tag == "Settings" ? $"Switched to \"{target.DisplayName}\"." : null, target.Id,
+                         serverId: _currentServerId);
+    }
+
+    /// <summary>
+    /// Makes a saved connection the active one, as the selector does: every page then queries it.
+    /// False when it couldn't: its password isn't saved (Settings is opened to ask for it), or the
+    /// change couldn't be saved (the status bar says why).
+    /// </summary>
+    /// <param name="source">Where the user switched, for the activity log.</param>
+    private async System.Threading.Tasks.Task<bool> SwitchToAsync(Guid connectionId, string source)
+    {
+        if (connectionId == _activeConnectionId)
+            return true;
+
+        var store  = SettingsService.Load();
+        var target = store.Connections.FirstOrDefault(c => c.Id == connectionId);
+        if (target is null)
+            return false;
+
+        if (target.NeedsPassword)
+        {
+            // Switching would only fail the login: ask for the password first.
+            await NavigateTo("Settings", PasswordPrompt(target), target.Id);
+            return false;
+        }
+
+        try
+        {
+            SettingsService.SetActive(target.Id, source);
+        }
+        catch (Exception ex)
+        {
+            TxtStatus.Text = $"Could not switch: {ConnectionSettingsService.RedactSecrets(ex.Message)}";
+            return false;
+        }
+
+        store = SettingsService.Load();
+        SyncConnections(store, source);
+        await SwapRepositoryAsync(store);
+        return true;
     }
 
     private async void ManageConnections_Click(object sender, RoutedEventArgs e) =>
@@ -590,6 +614,39 @@ public partial class MainWindow : Window
         return ConnectionSettingsService.RedactSecrets(ex.Message);
     }
 
+    // ── Home and server details (#130) ────────────────────────────────────────
+
+    private HomePage CreateHomePage()
+    {
+        var page = new HomePage(Monitoring, SettingsService);
+        page.OpenRequested          += async id => await NavigateTo("ServerDetail", serverId: id);
+        page.AddConnectionRequested += async () => await NavigateTo("Settings", newConnection: true);
+        return page;
+    }
+
+    private ServerDetailPage CreateServerDetailPage(Guid connectionId)
+    {
+        var page = new ServerDetailPage(connectionId, Monitoring, SettingsService);
+        page.BackRequested       += async () => await NavigateTo("Home");
+        page.EditRequested       += async id => await NavigateTo("Settings", settingsConnectionId: id);
+        page.AlertsRequested     += async id => await NavigateTo("Alerts", alertsConnectionId: id);
+        page.MakeActiveRequested += async id =>
+        {
+            if (await SwitchToAsync(id, ActivitySources.Home))
+                TxtStatus.Text = $"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".";
+        };
+        // A page about the server, e.g. Processes for its blocking chain. It queries the active
+        // connection, so this one is made active first.
+        page.OpenPageRequested += async (id, tag) =>
+        {
+            if (!await SwitchToAsync(id, ActivitySources.Home))
+                return;
+            var disabled = PagesAzureSqlLacks.Any(p => p.Tag == tag && !p.Button.IsEnabled);
+            await NavigateTo(disabled ? "LiveMetrics" : tag);
+        };
+        return page;
+    }
+
     /// <summary>Opens another page, as its sidebar button would; for links between pages.</summary>
     internal System.Threading.Tasks.Task OpenPageAsync(string tag) => NavigateTo(tag);
 
@@ -620,14 +677,21 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <param name="serverId">The connection a server detail page (#130) shows.</param>
+    /// <param name="newConnection">Settings opens on an empty connection form, for "+ Add a connection".</param>
     private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, Guid? settingsConnectionId = null,
-                                                         Guid? alertsConnectionId = null)
+                                                         Guid? alertsConnectionId = null, Guid? serverId = null, bool newConnection = false)
     {
         var version = ++_loadVersion;
 
+        // A server detail page needs its server; without one, Home lists them all.
+        if (tag == "ServerDetail" && serverId is null)
+            tag = "Home";
+
         // Without a connection every data page would just fail — point the user at Settings.
         // Alerts only reads the local history, and a notification can lead there with none active.
-        if (!_isConnectionConfigured && tag is not ("Settings" or "Alerts"))
+        // Home and a server's details only read the sessions and the history too (#130).
+        if (!_isConnectionConfigured && tag is not ("Settings" or "Alerts" or "Home" or "ServerDetail"))
         {
             tag = "Settings";
             settingsMessage ??= SettingsService.Load().Connections.Count == 0
@@ -635,16 +699,20 @@ public partial class MainWindow : Window
                 : "No connection is active. Select a saved connection in the sidebar, or add a new one below.";
         }
 
-        _currentTag = tag;
+        _currentTag      = tag;
+        _currentServerId = tag == "ServerDetail" ? serverId : null;
 
-        // Highlight the page's button, and show it if its group is collapsed.
-        System.Diagnostics.Debug.Assert(_sidebar.HasPage(tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
-        _sidebar.Highlight(_sidebar.HasPage(tag) ? tag : "LiveMetrics");
+        // Highlight the page's button, and show it if its group is collapsed. A server's details
+        // are under Home.
+        var button = tag == "ServerDetail" ? "Home" : tag;
+        System.Diagnostics.Debug.Assert(_sidebar.HasPage(button), $"No sidebar button for \"{tag}\": add it to NavMenu.");
+        _sidebar.Highlight(_sidebar.HasPage(button) ? button : "LiveMetrics");
 
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync, settingsMessage, settingsConnectionId));
+            MainFrame.Navigate(new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync, settingsMessage,
+                                                settingsConnectionId, newConnection));
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;
@@ -653,6 +721,8 @@ public partial class MainWindow : Window
         var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
         IRefreshable page = tag switch
         {
+            "Home"            => CreateHomePage(),
+            "ServerDetail"    => CreateServerDetailPage(serverId!.Value),
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
             "Alerts"          => new AlertsPage(Monitoring, SettingsService, alertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),

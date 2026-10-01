@@ -73,7 +73,9 @@ public static class ActivitySources
     public const string LiveMetrics         = "user: Live Metrics";
     public const string ConnectionSelector  = "user: connection selector";
     public const string TrayMenu            = "user: tray menu";
-    public const string Settings            = "user: Settings";    public const string AutomaticAtStartup  = "automatic at startup";
+    public const string Settings            = "user: Settings";
+    public const string Home                = "user: Home";
+    public const string AutomaticAtStartup  = "automatic at startup";
     public const string SettingChanged      = "setting changed";
     public const string ConnectionEdited    = "connection edited";
     public const string AppExit             = "app exit";

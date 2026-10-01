@@ -218,7 +218,7 @@ An application that opens connections and doesn't close them fills its pool with
 ## Keep an eye on several servers
 
 1. Add each server in **⚙️ Settings** with **Monitor in background** ticked, and tick **Settings → Monitoring → Start monitoring automatically** (see [Monitor my servers all the time](#monitor-my-servers-all-the-time)).
-2. Open the sidebar selector and look at the **health scores**: the lowest one needs attention first. Click a score to see which checks lowered it, without switching connection.
+2. Open **🏠 Home**: a tile per server, the ones that need attention first, each with its score, its last hour and a bar per check. **Open** a tile to see why, with links to the pages that explain each check. See [Your Servers](Your-Servers.md). The scores are in the sidebar selector too: click one to see which checks lowered it, without switching connection.
 3. Open **🔔 Alerts** to see what went wrong while you weren't looking, and when. Filter by connection. See [Alerts](Alerts.md).
 4. Servers that always run hot: tick **Use its own health thresholds** so they don't cry wolf.
 5. Use **Settings → Monitoring History** to keep 14+ days, so you can compare against last week, and keep the alerts that long.

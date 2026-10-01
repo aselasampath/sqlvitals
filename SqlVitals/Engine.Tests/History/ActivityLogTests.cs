@@ -63,7 +63,7 @@ public sealed class ActivityLogTests : IDisposable
         }
 
         using var check = Raw();
-        Assert.Equal(4L, check.ExecuteScalar<long>("PRAGMA user_version;"));
+        Assert.Equal(HistoryStore.SchemaVersion, check.ExecuteScalar<long>("PRAGMA user_version;"));
         Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM alerts;"));
         Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM activity_log;"));
     }

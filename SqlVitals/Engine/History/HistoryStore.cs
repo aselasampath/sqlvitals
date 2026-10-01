@@ -19,9 +19,9 @@ public sealed class HistoryStore(string path) : IDisposable
 {
     /// <summary>
     /// 1: the tables from #28. 2: adds counter_values (#30). 3: adds alerts (#34). 4: adds
-    /// activity_log (#115).
+    /// activity_log (#115). 5: adds health_scores (#130).
     /// </summary>
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
 
     private const long DayMs          = 24L * 60 * 60 * 1000;
     private const int  PurgeBatchSize = 500;
@@ -159,6 +159,14 @@ public sealed class HistoryStore(string path) : IDisposable
         );
         CREATE INDEX IF NOT EXISTS ix_activity_log_time
             ON activity_log (time_utc);
+
+        CREATE TABLE IF NOT EXISTS health_scores (
+            connection_id   TEXT    NOT NULL,
+            captured_utc    INTEGER NOT NULL,
+            score           INTEGER NOT NULL,
+            reachable       INTEGER NOT NULL,
+            PRIMARY KEY (connection_id, captured_utc)
+        ) WITHOUT ROWID;
         """;
 
     private SqliteConnection? _conn;
@@ -272,6 +280,15 @@ public sealed class HistoryStore(string path) : IDisposable
                     break;
                 case AlertRecord a:
                     WriteAlert(conn, tx, connectionId, a.Alert);
+                    break;
+                case HealthScoreRecord h:
+                    // OR IGNORE: two scores in the same millisecond for one connection are the same one.
+                    conn.Execute("""
+                        INSERT OR IGNORE INTO health_scores (connection_id, captured_utc, score, reachable)
+                        VALUES (@connectionId, @capturedMs, @Score, @reachable)
+                        """,
+                        new { connectionId, capturedMs, h.Score, reachable = h.Reachable ? 1 : 0 },
+                        tx);
                     break;
             }
         }
@@ -483,21 +500,21 @@ public sealed class HistoryStore(string path) : IDisposable
         var conn   = Connection;
         var cutoff = ToEpochMs(cutoffUtc);
 
+        // A day per statement, per connection: these two tables get a row per sample.
         foreach (var connectionId in conn.Query<string>("SELECT connection_id FROM connections;").ToList())
-        {
-            while (true)
-            {
-                var oldest = conn.ExecuteScalar<long?>(
-                    "SELECT MIN(captured_utc) FROM metric_samples WHERE connection_id = @connectionId;",
-                    new { connectionId });
-                if (oldest is null || oldest >= cutoff)
-                    break;
+            foreach (var table in new[] { "metric_samples", "health_scores" })
+                while (true)
+                {
+                    var oldest = conn.ExecuteScalar<long?>(
+                        $"SELECT MIN(captured_utc) FROM {table} WHERE connection_id = @connectionId;",
+                        new { connectionId });
+                    if (oldest is null || oldest >= cutoff)
+                        break;
 
-                conn.Execute(
-                    "DELETE FROM metric_samples WHERE connection_id = @connectionId AND captured_utc < @until;",
-                    new { connectionId, until = Math.Min(oldest.Value + DayMs, cutoff) });
-            }
-        }
+                    conn.Execute(
+                        $"DELETE FROM {table} WHERE connection_id = @connectionId AND captured_utc < @until;",
+                        new { connectionId, until = Math.Min(oldest.Value + DayMs, cutoff) });
+                }
 
         while (true)
         {
@@ -546,6 +563,7 @@ public sealed class HistoryStore(string path) : IDisposable
                 DELETE FROM detail_snapshots;
                 DELETE FROM query_texts;
                 DELETE FROM metric_samples;
+                DELETE FROM health_scores;
                 DELETE FROM alerts;
                 DELETE FROM connections;
                 """, transaction: tx);

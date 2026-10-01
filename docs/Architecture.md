@@ -32,6 +32,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │  FileIo/        FileIoTracker (readings) → FileLatencyList (per file, per volume), thresholds      │
 │  ConfigChecks/  ConfigurationChecks: Pass / Warn, recommended values, fix scripts                  │
 │  Security/      SecurityAudit: Risk / Review / Pass, the risk explained, fix scripts               │
+│  Home/          ServerTile, TileOrder, ScoreTrend, BlockingNow, OutageTimeline, ThingsToCheck      │
 │  History/       HistoryRecorder → HistoryWriter → HistoryStore (SQLite)   HistoryReader            │
 │  Activity/      ActivityEntry (activity log rows), SettingsDiff (a save → rows, no secrets)        │
 │  ChatNotifications/ ChannelRouter → ChannelQueue (1/s, RetryPolicy) → ChatFormatter, WebhookUrl    │
@@ -56,7 +57,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 | `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
 | `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
 | `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
-| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), and the sidebar, laid out off screen in both themes |
+| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar, laid out off screen in both themes, and Home and a server's details as whole pages on one STA thread with the light theme (`UiThread`) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -90,7 +91,8 @@ MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor
    └─ every interval: repo → LiveMetricSample.From(previous, current)  (counters + ring buffer + requests)
          ├─► HealthRules.Grade(sample, thresholds) → one reading per indicator
          │     ├─► HealthRules.Summarize → (level, reasons) → 🟢 🟠 🔴 dot + tooltip
-         │     ├─► HealthScore.From(readings) → 0–100 score + checks → selector, Live Metrics, breakdown popup
+         │     ├─► HealthScore.From(readings) → 0–100 score + checks → selector, Live Metrics, Home, breakdown popup
+         │     │     └─► HistoryRecorder.RecordScore → health_scores (failed collections too, as 0)
          │     └─► AlertTracker.Evaluate → alert started / escalated / worsened / ended
          │           └─► HistoryRecorder.RecordAlerts → alerts table;  MonitoringManager.AlertsChanged → Alerts page, sidebar count
          ├─► last 60 samples in memory (for the Live Metrics charts)
@@ -103,6 +105,12 @@ MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor
 `HealthRules.Evaluate` returns the worst level any indicator reached and one reason per indicator past its threshold. Page life expectancy and TempDB are skipped when the counter reads 0 (not reported, e.g. Azure SQL Database). Blocking is checked only when a session is blocked. `HealthScore` weights each indicator (CPU, blocking and log space 20, page life expectancy 16, memory grants and TempDB 12); a warning costs half the weight, critical all of it, and a failed collection is `HealthScore.Unavailable` (0). See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). Unreachable servers back off exponentially: `HealthRules.NextDelay` doubles the delay per consecutive failure, capped at 5 minutes. MFA connections, and SQL logins without a saved password, start only after the user has switched to them once.
 
 Which connections are monitored is decided by `MonitoringPlan` (Engine, pure, unit tested): nothing, until the user presses **Start** (on Live Metrics, ▶ in the selector, or the tray menu), unless **Start monitoring automatically** is on, in which case the active connection and those with *Monitor in background*. Start and Stop last until the app exits (`MonitoringOverrides`). `MonitoringManager.Sync(store, source)` starts and stops sessions to match, and raises `SessionStateChanged` and `MonitoringChanged` so the selector, Live Metrics, the Alerts banner and the tray tooltip all show the same state. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
+
+### 3a. Home and a server's details
+
+`HomePage` (Desktop) builds a `TileInput` per saved connection from the settings and its `MonitoringSession` (score, last success, when it started failing, the error), and `ServerTile.From` (Engine, pure) turns it into what the tile says: status in words, reason, six `CheckBar`s, footer and button. `TileOrder.Sort` puts unreachable and critical first; a new order waits while the mouse is over the tiles. `SessionStateChanged` updates one tile in place. Sparklines read the last hour from `HistoryReader.ReadScores` (the lowest score per bucket) and append the live scores (`ScoreTrend.Merge`); `Controls/ScoreChart` draws them in one pass with `ScoreTrend.Segments` (breaks at gaps) and `UnreachableSpans`. Home sends nothing to a server.
+
+`ServerDetailPage` reuses `HealthScoreBreakdown` inline, with a link per check that cost points (`CheckLinks`); the link makes the connection active (`MainWindow.SwitchToAsync`, as the selector does) and opens the page. Only *Blocking right now* queries the server: the session's own repository's `GetProcessesAsync`, summarised by `BlockingNow.From`, once per sample while blocking is past its warning threshold. For a server that can't be reached it shows `ThingsToCheck.For(server, error)` and `OutageTimeline.Build` from the session, the activity log and the alerts. Pages raise events (`OpenRequested`, `MakeActiveRequested`…) that `MainWindow` handles. See [Your Servers](Your-Servers.md).
 
 ### 4. Alerts
 

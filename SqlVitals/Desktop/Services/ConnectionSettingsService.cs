@@ -218,7 +218,8 @@ public class ConnectionSettingsService
         Update(ActivitySources.Settings, store => store.ChatChannels.RemoveAll(c => c.Id == id));
 
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
-    public void SetActive(Guid? id) => Update(ActivitySources.ConnectionSelector, store =>
+    /// <param name="source">Where the user switched, for the activity log: the selector, or Home (#130).</param>
+    public void SetActive(Guid? id, string source = ActivitySources.ConnectionSelector) => Update(source, store =>
         store.ActiveConnectionId = id is { } value && store.Connections.Any(c => c.Id == value) ? value : null);
 
     // Every setter goes through here: load, change, save, and tell the activity log what changed,

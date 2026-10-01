@@ -34,6 +34,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **FULLSCAN** | Updating statistics by reading every row: most accurate, most expensive |
 | **Health dot** | The coloured indicator per connection in the sidebar |
 | **Health score** | A 0–100 number per connection: 100 minus the points lost by health checks past their thresholds. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
+| **Home** | The 🏠 page with a tile per saved connection: its health score and status, its last hour, a bar per check, the ones that need attention first. Each opens the server's details. See [Your Servers](Your-Servers.md). |
 | **Implicit conversion** | See *CONVERT_IMPLICIT* |
 | **I/O latency** | How long one read or write to a database file takes, in milliseconds. SQL Server records the total wait for each file's reads and writes (its **I/O stall**); divided by how many there were, it's the average latency. The [File I/O](File-IO.md) page works it out over the last few seconds. |
 | **Key / RID lookup** | After an index seek, fetching the rest of the row from the clustered index (key) or heap (RID). Expensive when repeated many times. |
