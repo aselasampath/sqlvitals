@@ -36,9 +36,10 @@ public sealed class NavSidebarTests
             Assert.Equal(group.Pages.Select(p => p.Tag),
                          ((Panel)expander.Content).Children.OfType<Button>().Select(b => (string)b.Tag));
 
-        // Export / AI and Settings below the groups, each after a separator, as before.
+        // Home above the groups (#130); Export / AI and Settings below them, each after a separator, as before.
+        Assert.Equal("Home", (string)((Button)panel.Children[0]).Tag);
         Assert.Equal(["Separator", "Export", "Separator", "Settings"],
-                     panel.Children.Cast<UIElement>().Skip(groups.Count)
+                     panel.Children.Cast<UIElement>().Skip(NavMenu.Header.Count + groups.Count)
                           .Select(e => e is Button b ? (string)b.Tag : e.GetType().Name));
         Assert.All(NavMenu.AllPages, p => Assert.Equal(p.Label, AutomationProperties.GetName(sidebar.Button(p.Tag))));
     });

@@ -32,7 +32,7 @@ These are the defaults. **off** means that level isn't checked.
 
 ## Health score
 
-The dot says *whether* a server has a problem. The **health score** says *how much*: a number from **0 to 100** beside each connection in the selector, and at the top of the **💓 Live Metrics** dashboard. With several servers, the lowest score is the one to look at first.
+The dot says *whether* a server has a problem. The **health score** says *how much*: a number from **0 to 100** beside each connection in the selector, at the top of the **💓 Live Metrics** dashboard, and on each connection's tile on **[🏠 Home](Your-Servers.md)**, which puts the servers that need attention first. With several servers, the lowest score is the one to look at first.
 
 **Click the score** to see which checks lowered it. A panel lists every check with its current figure, its warning and critical thresholds, its weight and the points it cost. The checks that cost points are in bold. In the selector, clicking a score opens the panel for that connection without switching to it.
 
@@ -69,6 +69,7 @@ The score's **colour is the dot's colour**, not a banding of the number. A singl
 ### Good to know
 
 - The score is for the **latest sample**, like the dot, so it moves with every refresh. For how long a problem lasted, see [Alerts](Alerts.md).
+- From 0.53.0 every score is saved to the [history](Monitoring-History-Database.md) as it was graded, failed collections as 0, so a server's details on [🏠 Home](Your-Servers.md#score-over-time) chart it over the last hour, day or week.
 - On Live Metrics it always shows the score **now**, also while the charts show a past range.
 - Change a threshold and the score updates straight away, without waiting for the next sample.
 - A connection that isn't monitored has no score, in the selector or on Live Metrics: an old score would read as the server's health now.

@@ -34,8 +34,8 @@ monitoring platform first.
 
 ## Features
 
-- 🩺 **Live health.** A 0–100 health score and a 🟢 🟠 🔴 dot for every server, live metrics, active waits and
-  blocking chains with the head blocker named.
+- 🩺 **Live health.** A 0–100 health score and a 🟢 🟠 🔴 dot for every server, on a Home page that puts the ones in
+  trouble first; live metrics, active waits and blocking chains with the head blocker named.
 - 🔔 **Watches in the background.** Alerts with start, end and worst value, and Windows notifications, even with the
   window closed to the notification area.
 - 🕰️ **Remembers.** A local history of metrics, waits and top queries, compared with the same time last week.

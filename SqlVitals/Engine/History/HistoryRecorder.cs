@@ -78,6 +78,23 @@ public sealed class HistoryRecorder
         }
     }
 
+    /// <summary>
+    /// Queues a health score (#130), stamped with this PC's UTC clock: one per collection, the
+    /// failed ones too, so the score's history shows when the server couldn't be reached. Never throws.
+    /// </summary>
+    public void RecordScore(HealthScore score)
+    {
+        try
+        {
+            _sink.Enqueue(new HealthScoreRecord(Connection, _time.GetUtcNow().UtcDateTime, score.Value,
+                                                Reachable: score.Level != HealthLevel.Unavailable));
+        }
+        catch (Exception ex)
+        {
+            _reporter.Report($"Could not queue the health score for {Connection.Name}.", ex);
+        }
+    }
+
     /// <summary>Queues alerts that started, changed or ended. Never throws.</summary>
     public void RecordAlerts(IReadOnlyList<AlertChange> changes)
     {

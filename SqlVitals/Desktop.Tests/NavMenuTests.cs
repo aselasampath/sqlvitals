@@ -30,6 +30,9 @@ public sealed class NavMenuTests : IDisposable
             "Configuration: Config Checks, Security Audit",
         ], layout);
         Assert.Equal(["Export", "Settings"], NavMenu.Footer.Select(p => p.Tag));
+        Assert.Equal(["Home"], NavMenu.Header.Select(p => p.Tag));   // above the groups (#130)
+        Assert.Equal("Home", NavMenu.AllPages.First().Tag);
+        Assert.Null(NavMenu.GroupOf("Home"));
     }
 
     [Fact]
@@ -42,7 +45,7 @@ public sealed class NavMenuTests : IDisposable
         Assert.Equal(
             new[]
             {
-                "LiveMetrics", "Alerts", "TopWaits", "ActiveWaits", "Processes", "Deadlocks", "AgentJobs", "Backups",
+                "Home", "LiveMetrics", "Alerts", "TopWaits", "ActiveWaits", "Processes", "Deadlocks", "AgentJobs", "Backups",
                 "FileIo", "ConfigChecks", "SecurityAudit", "WaitTrend", "TempDb", "Memory", "QueryStore",
                 "QueryRegressions", "IndexHealth", "ResourceQueries", "ImplicitConv", "PlanCacheHealth", "StaleStats",
                 "DbStorage", "AppConnections", "Perfmon", "SpTrace", "Export", "Settings",

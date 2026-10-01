@@ -8,8 +8,9 @@ using SqlVitals.Desktop.Services;
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
-/// The sidebar's pages (#124): the groups in <see cref="NavMenu"/>, each collapsible, then Export / AI
-/// and Settings below them. Built into MainWindow's nav panel; which page is open is up to MainWindow.
+/// The sidebar's pages (#124): Home above the groups in <see cref="NavMenu"/> (#130), each group
+/// collapsible, then Export / AI and Settings below them. Built into MainWindow's nav panel; which
+/// page is open is up to MainWindow.
 /// </summary>
 internal sealed class NavSidebar
 {
@@ -20,6 +21,9 @@ internal sealed class NavSidebar
     /// <param name="collapsed">The groups the user left collapsed; the others start expanded.</param>
     public NavSidebar(Panel panel, IReadOnlyList<string> collapsed)
     {
+        foreach (var page in NavMenu.Header)
+            panel.Children.Add(CreateButton(page));
+
         foreach (var group in NavMenu.Groups)
         {
             var pages = new StackPanel();

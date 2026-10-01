@@ -68,7 +68,8 @@ public partial class SettingsPage : Page
         ChatNotificationService chat,
         Func<bool, Task> applyConnections,
         string? initialMessage = null,
-        Guid? selectConnectionId = null)
+        Guid? selectConnectionId = null,
+        bool newConnection = false)
     {
         InitializeComponent();
         _service          = service;
@@ -106,6 +107,18 @@ public partial class SettingsPage : Page
 
         if (!string.IsNullOrWhiteSpace(initialMessage))
             SetStatus(initialMessage, success: null);
+
+        // "+ Add a connection" on Home (#130): an empty form, as New connection gives. Once, when shown.
+        if (newConnection)
+        {
+            RoutedEventHandler? once = null;
+            once = (_, _) =>
+            {
+                Loaded -= once;
+                BtnNewConnection_Click(this, new RoutedEventArgs());
+            };
+            Loaded += once;
+        }
     }
 
     // ── Saved connections list ────────────────────────────────────────────────
@@ -300,19 +313,7 @@ public partial class SettingsPage : Page
     }
 
     // Returns null on success, otherwise the failure message with any credentials masked.
-    private static async Task<string?> TryOpenConnectionAsync(string connStr)
-    {
-        try
-        {
-            await using var conn = new SqlConnection(connStr);
-            await conn.OpenAsync();
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return Redact(ex.Message);
-        }
-    }
+    private static Task<string?> TryOpenConnectionAsync(string connStr) => ConnectionTest.TryOpenAsync(connStr);
 
     private void SetBusy(bool busy)
     {

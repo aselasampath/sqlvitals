@@ -20,6 +20,12 @@ public sealed record NavGroup(string Id, string Name, string Question, IReadOnly
 /// </summary>
 public static class NavMenu
 {
+    /// <summary>The pages above the groups, never collapsed: Home, every server at a glance (#130).</summary>
+    public static readonly IReadOnlyList<NavPage> Header =
+    [
+        new("Home", "🏠", "Home", "Every saved connection as a tile with its health score, the ones that need attention first"),
+    ];
+
     public static readonly IReadOnlyList<NavGroup> Groups =
     [
         new("Overview", "Overview", "Is the server healthy, and has anything gone wrong?",
@@ -87,9 +93,9 @@ public static class NavMenu
     public const string AlertsToolTip = "Health thresholds breached, now and in the past, for every monitored connection";
 
     /// <summary>Every page in the sidebar, in the order shown.</summary>
-    public static IEnumerable<NavPage> AllPages => Groups.SelectMany(g => g.Pages).Concat(Footer);
+    public static IEnumerable<NavPage> AllPages => Header.Concat(Groups.SelectMany(g => g.Pages)).Concat(Footer);
 
-    /// <summary>The group a page is in; null for a footer page or an unknown tag.</summary>
+    /// <summary>The group a page is in; null for a header or footer page, or an unknown tag.</summary>
     public static NavGroup? GroupOf(string tag) =>
         Groups.FirstOrDefault(g => g.Pages.Any(p => p.Tag == tag));
 

@@ -13,6 +13,35 @@ public partial class HealthScoreBreakdown : UserControl
 {
     public HealthScoreBreakdown() => InitializeComponent();
 
+    /// <summary>
+    /// Shows only the checks and the footnote, without its own frame and score, for a page that
+    /// shows the score itself: the server detail page (#130).
+    /// </summary>
+    public void ShowInline()
+    {
+        Frame.Background      = null;
+        Frame.BorderThickness = new Thickness(0);
+        Frame.Padding         = new Thickness(0);
+        Frame.MinWidth        = 0;
+        Frame.MaxWidth        = double.PositiveInfinity;
+        Header.Visibility     = Visibility.Collapsed;
+        TxtLoweredBy.Visibility = Visibility.Collapsed;
+        GridChecks.Margin     = new Thickness(0);
+    }
+
+    /// <summary>
+    /// Opens the page that explains a check (#130). When set, each check that cost points gets a
+    /// link under its name, worded as <see cref="Services.CheckLinks"/> says.
+    /// </summary>
+    public Action<HealthIndicator>? OpenCheck { get; set; }
+
+    /// <summary>The footnote under the checks, e.g. which thresholds the connection uses.</summary>
+    public string Footnote
+    {
+        get => TxtFootnote.Text;
+        set => TxtFootnote.Text = value;
+    }
+
     /// <param name="connectionName">Named in the subtitle.</param>
     /// <param name="score">Null when there is no score yet; <paramref name="noScore"/> then says why.</param>
     /// <param name="paused">The connection's monitoring is paused, so the score is the last one taken.</param>
@@ -62,8 +91,29 @@ public partial class HealthScoreBreakdown : UserControl
             }
             if (lost)
                 row[^1].Foreground = HealthBrushes.For(check.Level);
+            if (lost && OpenCheck is { } open)
+                AddLink(row[0], check.Indicator, open);
         }
         AddRow(header: true, null, "Score", "", "", "", HealthScore.Max.ToString(), score.Value.ToString());
+    }
+
+    // "Blocking chain →" on a line of its own under the check's name. The name cell's tooltip
+    // explains the figure; the link's says where it goes.
+    private static void AddLink(TextBlock nameCell, HealthIndicator indicator, Action<HealthIndicator> open)
+    {
+        var link = Services.CheckLinks.For(indicator);
+        var hyperlink = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run($"{link.Text} →"))
+        {
+            FontWeight = FontWeights.SemiBold,
+            ToolTip    = $"Open {link.Text} for this connection",
+        };
+        hyperlink.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "Accent");
+        System.Windows.Automation.AutomationProperties.SetName(hyperlink, link.Text);
+        hyperlink.Click += (_, _) => open(indicator);
+
+        nameCell.Inlines.Add(new System.Windows.Documents.LineBreak());
+        nameCell.Inlines.Add(new System.Windows.Documents.Run("    "));
+        nameCell.Inlines.Add(hyperlink);
     }
 
     // Adds a row of six cells; a header row is muted and bold. Returns the cells.

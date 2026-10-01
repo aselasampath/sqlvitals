@@ -9,6 +9,7 @@
 - **Never runs generated scripts.** Index and statistics scripts are shown for review only.
 - **Never blocks.** Every query runs under `READ UNCOMMITTED` with a command timeout (30 s by default).
 - **Nothing runs by default.** From 0.46.0 a new installation monitors no server until the user presses **Start** or turns on **Start monitoring automatically**. Until then the only queries are the ones of the pages the user opens, plus the Azure SQL Database edition check on connecting. See [below](#what-runs-by-default).
+- **Home adds nothing on the server.** [🏠 Home](Your-Servers.md) (from 0.53.0) shows what monitoring has already collected and the local history. A server's details page reads the sessions once per sample only while blocking is past its warning threshold (see *Blocking right now* below).
 - **Chat channels add nothing on the server.** The [Slack and Teams channels](Chat-Notifications.md) (from 0.52.0) are posted to over outbound HTTPS from this PC, using what SqlVitals already knows. They need no new SQL and no new permissions.
 - **No agent, no service, no inbound ports.** It's a desktop app making ordinary client connections. From 0.35.0 closing its window hides it to the [notification area](Notifications-and-Tray.md) by default, so any monitoring carries on until the user stops it or chooses **Exit**. The load is the same as with the window open.
 
@@ -30,8 +31,9 @@
 | **DB Storage** | A user opens the page or presses Refresh | On demand, no timer | `sys.master_files`, `sys.databases`, `sys.configurations`; the used space of each database the login can open, read with one light `sys.database_files` query in that database (through its `sys.sp_executesql`) into a temporary table that is dropped at the end of the batch; **active connection only** |
 | **Deadlocks** | A user opens the page or presses Refresh | On demand, no timer | Reads the existing **system_health** session: its `.xel` files through `sys.fn_xe_file_target_read_file`, filtered to `xml_deadlock_report` on the server, or its ring buffer. Creates nothing; timeout raised to 2 min |
 | **SP Trace** | A user presses Start | Poll interval chosen by the user | Extended Events session, or `sys.dm_exec_procedure_stats` |
+| **Blocking right now** (a server's details on 🏠 Home) | The page is open, the connection is monitored, and its Blocking check is past its warning threshold | Once per Live Metrics sample, while all three hold | The Processes query (`sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`), through that connection's monitoring, so it may be a connection other than the active one |
 
-Heavy screens **never run in the background**, and never against connections other than the active one.
+Heavy screens **never run in the background**, and never against connections other than the active one. The one light exception is *Blocking right now*, above, which only runs while a user is looking at a server that's blocking.
 
 ### What runs by default
 

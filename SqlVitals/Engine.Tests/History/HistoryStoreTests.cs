@@ -57,7 +57,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal("wal", raw.ExecuteScalar<string>("PRAGMA journal_mode;"));
         Assert.Equal(2, raw.ExecuteScalar<long>("PRAGMA auto_vacuum;"));   // 2 = incremental
         Assert.Equal(
-            new[] { "activity_log", "alerts", "connections", "counter_values", "detail_snapshots", "file_io_deltas", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
+            new[] { "activity_log", "alerts", "connections", "counter_values", "detail_snapshots", "file_io_deltas", "health_scores", "metric_samples", "query_deltas", "query_texts", "wait_deltas" },
             raw.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;"));
     }
 
@@ -176,6 +176,46 @@ public sealed class HistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Open_UpgradesAVersion4FileAndKeepsItsData()
+    {
+        // The tables exactly as SqlVitals 0.46–0.52 created them: everything but health_scores.
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([new MetricSampleRecord(Conn, T0, Sample(10)), AlertAt(T0)]);
+        }
+        using (var raw = Raw())
+            raw.Execute("DROP TABLE health_scores; PRAGMA user_version = 4;");
+
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            Assert.Single(store.ReadSamples(Conn.Id, T0, T0.AddSeconds(1)));
+            store.Write([new HealthScoreRecord(Conn, T0, 70, Reachable: true)]);
+        }
+
+        using var check = Raw();
+        Assert.Equal(HistoryStore.SchemaVersion, check.ExecuteScalar<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM alerts;"));
+        Assert.Equal(1L, check.ExecuteScalar<long>("SELECT COUNT(*) FROM health_scores;"));
+    }
+
+    [Fact]
+    public void Write_HealthScoreIsStored_OnceForTheSameMillisecond()
+    {
+        using var store = new HistoryStore(DbPath);
+        store.Open();
+
+        store.Write([new HealthScoreRecord(Conn, T0, 70, Reachable: true), new HealthScoreRecord(Conn, T0, 71, Reachable: true),
+                     new HealthScoreRecord(Conn, T0.AddSeconds(10), 0, Reachable: false)]);
+
+        using var raw = Raw();
+        Assert.Equal(new[] { (70L, 1L), (0L, 0L) },
+                     raw.Query<(long, long)>("SELECT score, reachable FROM health_scores ORDER BY captured_utc;"));
+        Assert.Equal("Prod", raw.ExecuteScalar<string>("SELECT name FROM connections;"));
+    }
+
+    [Fact]
     public void Write_AlertIsStoredAndALaterRecordOfItReplacesIt()
     {
         using var store = new HistoryStore(DbPath);
@@ -281,6 +321,9 @@ public sealed class HistoryStoreTests : IDisposable
             new MetricSampleRecord(Conn, recent, Sample(3)),
             Detail(old, new QueryTextInfo("0xAB", "Sales", "old text")),
             Detail(recent),
+            new HealthScoreRecord(Conn, old, 50, Reachable: true),
+            new HealthScoreRecord(Conn, old.AddDays(3), 60, Reachable: true),
+            new HealthScoreRecord(Conn, recent, 70, Reachable: true),
         ]);
 
         store.Purge(T0.AddDays(-14));
@@ -294,6 +337,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM counter_values;"));
         // The recent snapshot saw 0xAB again, so its text (first stored 20 days ago) is kept.
         Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM query_texts;"));
+        Assert.Equal(new[] { 70L }, raw.Query<long>("SELECT score FROM health_scores;"));
     }
 
     [Fact]
@@ -318,6 +362,7 @@ public sealed class HistoryStoreTests : IDisposable
                               .Select(i => (HistoryRecord)new MetricSampleRecord(Conn, T0.AddSeconds(10 * i), Sample(i)))
                               .Append(Detail(T0, new QueryTextInfo("0xAB", "Sales", "SELECT 1")))
                               .Append(AlertAt(T0))
+                              .Append(new HealthScoreRecord(Conn, T0, 70, Reachable: true))
                               .ToList());
         store.Purge(T0.AddYears(-1));   // checkpoints the WAL into the file, so the size below is the data
         var before = HistoryStore.SizeOnDisk(DbPath);
@@ -328,7 +373,7 @@ public sealed class HistoryStoreTests : IDisposable
         Assert.True(after < before / 10, $"{before:N0} bytes before, {after:N0} after");
         using var raw = Raw();
         foreach (var table in new[] { "connections", "metric_samples", "detail_snapshots", "wait_deltas",
-                                      "file_io_deltas", "query_deltas", "query_texts", "counter_values", "alerts" })
+                                      "file_io_deltas", "query_deltas", "query_texts", "counter_values", "alerts", "health_scores" })
             Assert.Equal(0L, raw.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table};"));
     }
 

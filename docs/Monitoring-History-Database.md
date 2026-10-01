@@ -9,13 +9,14 @@ SqlVitals saves every monitored connection to a local **SQLite** file, with an [
 | **Location** | `%LocalAppData%\SqlVitals\history.db` (plus `history.db-wal` / `-shm` while in use) |
 | **Why local, not roaming** | The file grows, and SQLite's WAL mode doesn't work on the network shares roaming profiles are often redirected to |
 | **Why SQLite** | Recorded on [issue #28](https://github.com/aselasampath/sqlvitals/issues/28) (vs DuckDB, LiteDB, flat files) |
-| **Schema version** | `PRAGMA user_version`: 1 from v0.28, 2 from v0.30 (adds `counter_values`), 3 from v0.34 (adds `alerts`), **4** from v0.46 (adds `activity_log`) |
+| **Schema version** | `PRAGMA user_version`: 1 from v0.28, 2 from v0.30 (adds `counter_values`), 3 from v0.34 (adds `alerts`), 4 from v0.46 (adds `activity_log`), **5** from v0.53 (adds `health_scores`) |
 
 ## What's recorded
 
 | Tier | Written | Source on the server | Tables |
 |---|---|---|---|
 | **Samples** | Every Live Metrics interval (10 s default) | The Live Metrics query itself; **no extra server query** | `metric_samples` |
+| **Health scores** | Every collection, including ones that failed | The [health score](Health-Dot-and-Background-Monitoring.md#health-score) as it was graded at the time; **no server query** | `health_scores` |
 | **Alerts** | When an [alert](Alerts.md) starts, escalates, gets worse or ends | Worked out from the samples; **no server query** | `alerts` |
 | **Activity log** | When monitoring starts or stops, SqlVitals starts or exits, a setting or connection changes, or history is cleared | Nothing on the server | `activity_log` |
 | **Detail snapshots** | Every 5 min by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU, grouped by `query_hash`), memory counters, `sys.dm_os_performance_counters` | `detail_snapshots` + `wait_deltas`, `file_io_deltas`, `query_deltas`, `query_texts`, `counter_values` |
@@ -26,6 +27,7 @@ Detail tables hold the **change over the interval** (deltas), not the server's c
 
 ```text
 connections ─┬─< metric_samples
+             ├─< health_scores
              ├─< detail_snapshots ─┬─< wait_deltas
              │                     ├─< file_io_deltas
              │                     ├─< query_deltas >── query_texts (by connection_id + query_hash)
@@ -40,6 +42,7 @@ activity_log   (on its own: it copies the connection's name in)
 |---|---|---|
 | `connections` | `connection_id` (text), `name`, `server`, `database_name`, `last_seen_utc` | **Never credentials.** Kept after a connection is deleted in the app, so its history stays readable. |
 | `metric_samples` | `connection_id`, `captured_utc`, `server_time`, `sql_cpu_pct`, `wait_{cpu,io,lock,memory,network,other}_ms_per_sec`, `batch_requests_per_sec`, `compilations_per_sec`, `recompilations_per_sec`, `transactions_per_sec`, `physical_reads_per_sec`, `physical_writes_per_sec`, `page_life_expectancy_sec`, `memory_grants_pending`, `buffer_cache_hit_ratio` | One row per sample |
+| `health_scores` | `connection_id`, `captured_utc`, `score`, `reachable` | One row per collection: the 0–100 score on the thresholds in force then, or 0 with `reachable` = 0 when the server couldn't be reached or read. Stored as graded because the samples don't keep every figure it's graded on (blocking, log and TempDB space). Read by [Your Servers](Your-Servers.md). |
 | `detail_snapshots` | `snapshot_id` (PK), `connection_id`, `captured_utc`, `server_time`, `interval_sec`, `total_server_memory_kb`, `target_server_memory_kb`, `database_cache_memory_kb`, `sql_cache_memory_kb`, `granted_workspace_memory_kb`, `free_memory_kb`, `memory_grants_outstanding` | One row per snapshot; memory is "as it stood" |
 | `wait_deltas` | `snapshot_id`, `wait_type`, `waiting_tasks`, `wait_time_ms`, `signal_wait_time_ms` | Idle waits excluded |
 | `file_io_deltas` | `snapshot_id`, `database_name`, `file_id`, `file_name`, `file_type`, `reads`, `bytes_read`, `read_stall_ms`, `writes`, `bytes_written`, `write_stall_ms` | Stall ÷ count = average latency |
@@ -69,6 +72,20 @@ JOIN connections c USING (connection_id)
 WHERE c.name = 'Production'
   AND m.captured_utc > (strftime('%s', 'now') - 86400) * 1000
 ORDER BY m.captured_utc;
+```
+
+**The lowest health score per hour today, and whether the server was ever unreachable:**
+
+```sql
+SELECT strftime('%H:00', h.captured_utc / 1000, 'unixepoch', 'localtime') AS hour_local,
+       MIN(h.score)                                                       AS lowest_score,
+       MIN(h.reachable) = 0                                               AS was_unreachable
+FROM health_scores h
+JOIN connections c USING (connection_id)
+WHERE c.name = 'Production'
+  AND h.captured_utc > strftime('%s', 'now', 'localtime', 'start of day', 'utc') * 1000
+GROUP BY hour_local
+ORDER BY hour_local;
 ```
 
 **Top waits in the last 24 hours:**
@@ -200,7 +217,7 @@ The table behind **⚙️ Settings → [Activity Log](Settings.md#activity-log)*
 
 - **Never breaks live monitoring.** Samples go into a **bounded in-memory queue**; one background thread (`HistoryWriter`, shared by all connections) writes them in batches. If the disk is slow, the **oldest queued records are dropped**. Failures are logged (at most one line a minute) and never change a health dot.
 - **Deltas** (`HistoryDetailTracker`) turn cumulative DMV totals into per-interval changes. An interval is **skipped** when the server restarted (counters reset). A query is left out when its earlier totals are unknown. The first detail read of a session is only the baseline.
-- **The first sample** of each session isn't stored: its rates are zero, with nothing to compare against.
+- **The first sample** of each session isn't stored: its rates are zero, with nothing to compare against. Its health score is: the health gauges don't need a previous sample.
 - **Retention:** older rows are purged **hourly**, and straight away when retention is shortened. `auto_vacuum = INCREMENTAL` plus `incremental_vacuum` and a WAL checkpoint shrink the file as it goes.
 - **Clear history** runs on the writer's own thread, including records still queued, so it's safe while monitoring continues and while another SqlVitals window uses the same file. It empties every table except `activity_log`.
 - **Settings:** `journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 5000`.
@@ -214,7 +231,7 @@ The table behind **⚙️ Settings → [Activity Log](Settings.md#activity-log)*
 |---|---|
 | `HistoryStore.cs` | Schema, writes, purge, corrupt-file recovery |
 | `HistoryWriter.cs` | Bounded queue + writer thread shared by all connections |
-| `HistoryRecorder.cs` | Per connection: queues samples, takes detail snapshots |
+| `HistoryRecorder.cs` | Per connection: queues samples and health scores, takes detail snapshots |
 | `HistoryDetailTracker.cs` | Cumulative totals → per-interval deltas |
 | `HistoryReader.cs` | Read-only: ranges for trend pages, averaged into buckets |
 | `HistoryRange.cs`, `HistoryGaps.cs` | Range choices and bucket sizes; where a line breaks |

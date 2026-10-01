@@ -3,10 +3,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FontFamily="Segoe UI">
     <!-- Shown in a popup when a health score is clicked (#36): the score, and each check's share of it. -->
-    <Border Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
+    <Border x:Name="Frame" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
             BorderThickness="1" CornerRadius="6" Padding="16,12" MinWidth="420" MaxWidth="560">
         <StackPanel>
-            <DockPanel>
+            <DockPanel x:Name="Header">
                 <TextBlock DockPanel.Dock="Right" VerticalAlignment="Bottom" Margin="12,0,0,0">
                     <Run x:Name="RunScore" FontSize="26" FontWeight="Bold" /><Run
                          Text=" / 100" FontSize="12" Foreground="{DynamicResource TextMuted}" />

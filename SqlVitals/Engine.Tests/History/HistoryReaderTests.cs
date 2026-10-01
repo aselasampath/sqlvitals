@@ -262,6 +262,59 @@ public sealed class HistoryReaderTests : IDisposable
     }
 
     [Fact]
+    public void ReadScores_GivesTheLowestScorePerBucket_AndWhetherTheServerWasUnreachableInIt()
+    {
+        using (var store = OpenStore())
+            store.Write(
+            [
+                new HealthScoreRecord(Conn,  T0,                100, Reachable: true),
+                new HealthScoreRecord(Conn,  T0.AddSeconds(20), 70,  Reachable: true),
+                new HealthScoreRecord(Conn,  T0.AddSeconds(40), 90,  Reachable: true),
+                new HealthScoreRecord(Conn,  T0.AddMinutes(1),  0,   Reachable: false),
+                new HealthScoreRecord(Conn,  T0.AddMinutes(2),  100, Reachable: true),
+                new HealthScoreRecord(Conn,  T0.AddHours(1),    50,  Reachable: true),   // end is excluded
+                new HealthScoreRecord(Other, T0.AddSeconds(10), 10,  Reachable: true),
+            ]);
+
+        var points = new HistoryReader(DbPath).ReadScores(Conn.Id, T0, T0.AddHours(1), TimeSpan.FromMinutes(1));
+
+        Assert.Equal(new[] { (T0.AddSeconds(20), 70, true), (T0.AddMinutes(1), 0, false), (T0.AddMinutes(2), 100, true) },
+                     points.Select(p => (p.TimeUtc, p.Score, p.Reachable)));
+        Assert.All(points, p => Assert.Equal(DateTimeKind.Utc, p.TimeUtc.Kind));
+    }
+
+    [Fact]
+    public void ReadLastReachableScore_IsTheLatestScoreBeforeTheTime_WhileTheServerCouldBeReached()
+    {
+        using (var store = OpenStore())
+            store.Write(
+            [
+                new HealthScoreRecord(Conn, T0,                92, Reachable: true),
+                new HealthScoreRecord(Conn, T0.AddSeconds(10), 0,  Reachable: false),
+                new HealthScoreRecord(Conn, T0.AddMinutes(5),  80, Reachable: true),
+            ]);
+        var reader = new HistoryReader(DbPath);
+
+        Assert.Equal(new ScoreHistoryPoint(T0, 92, true), reader.ReadLastReachableScore(Conn.Id, T0.AddMinutes(1)));
+        Assert.Null(reader.ReadLastReachableScore(Conn.Id, T0));
+        Assert.Null(reader.ReadLastReachableScore(Other.Id, T0.AddHours(1)));
+    }
+
+    [Fact]
+    public void ReadScores_WithoutAFileOrFromAVersion4FileReturnsNothing()
+    {
+        var reader = new HistoryReader(DbPath);
+        Assert.Empty(reader.ReadScores(Conn.Id, T0, T0.AddHours(1), TimeSpan.FromMinutes(1)));
+        Assert.Null(reader.ReadLastReachableScore(Conn.Id, T0));
+
+        Directory.CreateDirectory(_dir);
+        using (var raw = Raw())
+            raw.Execute("PRAGMA user_version = 4; CREATE TABLE metric_samples (x);");
+        Assert.Empty(reader.ReadScores(Conn.Id, T0, T0.AddHours(1), TimeSpan.FromMinutes(1)));
+        Assert.Null(reader.ReadLastReachableScore(Conn.Id, T0));
+    }
+
+    [Fact]
     public void Read_FileFromANewerVersionThrowsAndIsLeftAlone()
     {
         Directory.CreateDirectory(_dir);

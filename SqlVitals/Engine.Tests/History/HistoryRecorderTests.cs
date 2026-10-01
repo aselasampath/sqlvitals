@@ -1,6 +1,7 @@
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using static SqlVitals.Engine.Tests.History.HistoryStoreTests;
 
@@ -48,6 +49,29 @@ public class HistoryRecorderTests
         var records = _sink.Records.Cast<AlertRecord>().ToList();
         Assert.Equal(new[] { started, ended }, records.Select(r => r.Alert));
         Assert.All(records, r => Assert.Equal((Conn, T0), (r.Connection, r.CapturedUtc)));
+    }
+
+    [Fact]
+    public void RecordScore_QueuesTheScoreWithThisPcsUtcTime_AndWhetherTheServerCouldBeReached()
+    {
+        var recorder = Create();
+
+        recorder.RecordScore(new HealthScore(70, HealthLevel.Critical, [], T0));
+        recorder.RecordScore(HealthScore.Unavailable("Login failed.", T0));
+
+        var records = _sink.Records.Cast<HealthScoreRecord>().ToList();
+        Assert.Equal(new[] { (70, true), (0, false) }, records.Select(r => (r.Score, r.Reachable)));
+        Assert.All(records, r => Assert.Equal((Conn, T0), (r.Connection, r.CapturedUtc)));
+    }
+
+    [Fact]
+    public void RecordScore_SwallowsAFailingSink()
+    {
+        var recorder = new HistoryRecorder(Conn, _repo, new ThrowingSink(), (m, _) => _errors.Add(m), _time);
+
+        recorder.RecordScore(new HealthScore(100, HealthLevel.Healthy, [], T0));
+
+        Assert.Single(_errors);
     }
 
     [Fact]

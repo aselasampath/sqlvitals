@@ -22,6 +22,7 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 │ ACTIVE CONNECTION    │                                              │
 │ 🟢 Production     ▾  │        The screen you picked appears here    │
 │──────────────────────│                                              │
+│ 🏠 Home              │                                              │
 │ OVERVIEW           ⌄ │                                              │
 │ 💓 Live Metrics      │                                              │
 │ 🔔 Alerts            │                                              │
@@ -41,7 +42,8 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 | **Health dot** | 🟢 healthy, 🟠 warning, 🔴 critical or unreachable, ◯ not monitored. Hover it to see why. See [Health Dot](Health-Dot-and-Background-Monitoring.md). |
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
 | **Sidebar groups** | The screens, grouped by the question you're asking (see the table below). Click a group's name, or Tab to it and press Enter or Space, to collapse or expand it; hover it for the question it answers. SqlVitals remembers which groups you collapsed. Opening a screen in a collapsed group, from a notification or a link say, expands it; a collapsed group holding the screen you're on is shown in the accent colour with a **●**. |
-| **Sidebar buttons** | One per screen. A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. **📤 Export / AI** and **⚙️ Settings** are below the groups. |
+| **Sidebar buttons** | One per screen. A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. **🏠 Home** is above the groups, **📤 Export / AI** and **⚙️ Settings** below them. |
+| **🏠 Home** | Every saved connection as a tile with its health score, the ones that need attention first. With two or more connections, SqlVitals opens here. See [Your Servers](Your-Servers.md). |
 | **↻ Refresh** | Reloads the current screen. Most screens load once when you open them and again when you press Refresh. |
 | **Status bar** | Shows what's loading, and errors. If a screen's automatic refresh fails, the error appears here instead of a pop-up. |
 

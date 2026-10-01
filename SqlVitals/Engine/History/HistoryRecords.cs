@@ -35,6 +35,15 @@ public sealed record AlertRecord(HistoryConnection Connection, DateTime Captured
     : HistoryRecord(Connection, CapturedUtc);
 
 /// <summary>
+/// A health score as it was graded at the time (#130), on the thresholds then in force: the
+/// samples don't keep every figure it is graded on (blocking, log and TempDB space), so it can't
+/// be worked out again later. <paramref name="Reachable"/> is false when the server couldn't be
+/// reached or read, which scores 0.
+/// </summary>
+public sealed record HealthScoreRecord(HistoryConnection Connection, DateTime CapturedUtc, int Score, bool Reachable)
+    : HistoryRecord(Connection, CapturedUtc);
+
+/// <summary>
 /// An activity log row (#115). It carries its own connection id and name, so it isn't tied to a
 /// row in the connections table and outlives the connection.
 /// </summary>
