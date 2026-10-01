@@ -684,6 +684,9 @@
                                         </ComboBox>
                                         <TextBlock Style="{StaticResource FieldHint}"
                                                    Text="A message is posted when an alert starts or turns critical. On Critical only, a warning that turns critical is posted as a new critical alert." />
+                                        <CheckBox x:Name="ChkChatPostEnds" Content="Also post when an alert ends" IsChecked="True" Margin="0,10,0,0" />
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="Back to normal, for the alerts this channel was told about. When SqlVitals stops monitoring a connection with alerts still active, the channel is told either way, because no more updates will come." />
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,12,0,0">

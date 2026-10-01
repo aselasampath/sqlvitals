@@ -1,10 +1,8 @@
 # Chat Notifications
 
-A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start or turn critical, so the whole team sees a problem when it starts, even when nobody is looking at that PC.
+A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start, turn critical and end, so the whole team sees a problem when it starts and knows when it's over, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.49.0 (channels and test message), 0.50.0 (alerts posted), 0.51.0 (retries and the *Failing* warning)
-
-> **Status:** a channel gets a message when an alert **starts** or **turns critical**. A message that can't be sent is retried, and you're told when a channel [stops receiving messages](#when-messages-dont-get-through). A message when an alert **ends** comes next ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)).
+> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108))
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 
@@ -57,6 +55,7 @@ In **⚙️ Settings → Alerts → Chat channels (Slack and Teams)**, click **+
 | **Service** | Slack or Microsoft Teams. Picked from the URL when SqlVitals recognises it; you can change it. |
 | **Connections** | **All monitored connections** (the default): every connection SqlVitals is monitoring at the time, including ones you add later. Or **Only these**, ticked from your saved connections. A connection you remove is taken off the list. |
 | **Post** | **Warnings and critical** (the default), or **Critical only**. |
+| **Also post when an alert ends** | On by default: *Back to normal* for the alerts this channel was told about. Off, only starts and escalations are posted. *Stopped monitoring* is posted either way. |
 | **On** | Turn off to pause the channel without removing it. What it had waiting is dropped. A test message can still be sent. |
 
 Click **💾 Save channel**. The URL is checked first:
@@ -73,7 +72,7 @@ Select a channel to edit it, or click **🗑 Remove** to remove it. The webhook 
 
 ## What is posted, and when
 
-A channel gets a message at the same moments as a [Windows notification](Notifications-and-Tray.md#windows-notifications):
+A channel gets a message when an alert starts or turns critical, the same moments as a [Windows notification](Notifications-and-Tray.md#windows-notifications), and when it ends:
 
 | When | Message | Posted to |
 |---|---|---|
@@ -81,6 +80,10 @@ A channel gets a message at the same moments as a [Windows notification](Notific
 | A warning **turns critical** | 🔴 *Now critical: CPU on Sales-Prod* | Channels that were told about the warning |
 | A warning a channel skipped **turns critical** | 🔴 *Critical: CPU on Sales-Prod*, as a new alert | *Critical only* channels, and a channel that was off (or not yet added) when the warning started |
 | An alert **gets worse** | Nothing | |
+| An alert is **back to normal** | ✅ *Back to normal: CPU on Sales-Prod* ([below](#back-to-normal)) | Channels that were told about the alert and have **Also post when an alert ends** on |
+| **Monitoring stops** with alerts active | ⏹ *Stopped monitoring Sales-Prod* ([below](#stopped-monitoring)) | Channels that were told about any of them, whatever **Also post when an alert ends** says |
+
+**Ends follow starts.** A channel only hears the end of an alert it was told about. It isn't told the end of an alert it filtered out (another connection, or a warning on a *Critical only* channel), and it is told the end of one it was told about even if its **Connections** or **Post** changed since. A warning that turned critical and was posted to a *Critical only* channel posts its end.
 
 Alerts of one connection that start on the same sample share one message, critical first: *🔴 3 alerts on Sales-Prod (1 critical)*, with a line each. After 10 lines it says *…and N more*.
 
@@ -105,6 +108,40 @@ Each message has:
 > **Started** 30/09/2026 10:42
 > *Sent from SqlVitals on DBA-PC01*
 
+### Back to normal
+
+When an alert ends because its figure has been back within its thresholds for the [usual run of samples](Alerts.md#how-an-alert-starts-and-ends), the channel gets how long it lasted, its worst figure, and when it started and ended, in each reader's own time zone. Teams shows the title in green.
+
+> **✅ Back to normal: CPU on Sales-Prod**
+> **Worst** 97 % (threshold ≥ 90 %) · **Lasted** 12 min · **Started** Today 10:42 · **Ended** Today 10:54
+> *Sent from SqlVitals on DBA-PC01*
+
+Alerts of one connection that end on the same sample share one message: *✅ 2 alerts back to normal on Sales-Prod*, with a line each (*CPU worst 97 % (threshold ≥ 90 %), lasted 12 min*).
+
+An alert that keeps ending and starting again, a figure hovering around its threshold, posts each time. The run of samples an alert needs to start and to end already stops most of that; if a channel gets noisy, raise **Settings → Alerts → Raise an alert after**, or turn off **Also post when an alert ends** for that channel.
+
+### Stopped monitoring
+
+An alert needs someone watching. When SqlVitals stops monitoring a connection that has alerts still active, the channel gets **one** message for that connection instead of *Back to normal* ones:
+
+> **⏹ Stopped monitoring Sales-Prod**
+> SqlVitals on DBA-PC01 stopped monitoring Sales-Prod with 2 alerts still active (CPU, Blocking). No further updates will be posted.
+
+- That's when you press **Stop** (Live Metrics, the sidebar selector, or **Stop monitoring all** in the tray menu), turn off **Start monitoring automatically**, edit or remove the connection, or **Exit** SqlVitals.
+- It lists only the alerts that channel was told about, and isn't sent when there are none.
+- It's sent whether or not **Also post when an alert ends** is on, because it says no more updates are coming.
+- **Editing a connection** (its server, sign-in or timeout) restarts its monitoring: the channel gets *Stopped monitoring*, then new alerts after the usual run of samples if the problem is still there.
+- **A removed connection** is named as it was when the channel was told.
+
+**On Exit**, every connection stops at once, so each channel gets one message for all of them:
+
+> **⏹ Stopped monitoring 2 connections**
+> SqlVitals on DBA-PC01 stopped monitoring Sales-Prod (CPU, Blocking) and HR-DB (Log space used), with alerts still active. No further updates will be posted.
+
+SqlVitals then gives the channels **up to 5 seconds** to send what's waiting, while it saves its history. A message waiting to retry gets one try straight away, and nothing is retried. What's still waiting after that is dropped and written to the [app log](Settings.md#diagnostics). Closing or minimizing the window to the [notification area](Notifications-and-Tray.md#running-in-the-notification-area) isn't an exit: monitoring and posting carry on.
+
+**If SqlVitals is killed** (Task Manager, a crash) **or the PC turns off**, the channel isn't told. The alerts that were active are ended the next time SqlVitals starts, as the Alerts page shows, but that posts nothing: it would be late and could mislead. A Windows sign-out or shutdown is an exit, but Windows may cut it short, or the network may already be down.
+
 ### Separate from Windows notifications
 
 Muting a connection's Windows notifications (**Settings → Alerts → Windows notifications**, or the tray menu) doesn't stop its chat messages, and a channel's **Connections** don't change who gets Windows notifications.
@@ -117,7 +154,7 @@ Only what the message shows: connection names, indicator names, figures and thre
 
 - **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area).
 - **One PC's view.** Two copies of SqlVitals watching the same server both post; the *Sent from* line tells them apart.
-- **Not remembered across restarts.** After SqlVitals restarts, an alert that's still happening is raised again and posted again as a new alert. That's expected.
+- **Not remembered across restarts.** After SqlVitals restarts, an alert that's still happening is raised again and posted again as a new alert. That's expected. An alert already active when a channel is added or turned on isn't posted until it turns critical, and then its end is posted too.
 - Each channel sends its messages in order, one at a time and at most one a second, without holding up monitoring, the window or other channels.
 
 ## When messages don't get through
@@ -143,9 +180,9 @@ Messages go at most **one a second** per channel, Slack's limit. If more than **
 > **📋 14 more messages combined**
 > 14 more messages were combined while the channel was busy. See the Alerts page in SqlVitals for the details.
 > 🔴 **Sales-Prod** new or critical: CPU and Log space used
-> 🟠 **HR-DB** new or critical: Blocking
+> 🟠 **HR-DB** new or critical: Blocking; back to normal: CPU
 
-Once it's sent, messages go one by one again.
+Once it's sent, messages go one by one again. A **Stopped monitoring** message is never combined: it's sent on its own after the summary, because "no further updates will be posted" mustn't become a count.
 
 ### ⚠ Failing
 
@@ -209,7 +246,8 @@ Anyone who has a webhook URL can post to the channel, so SqlVitals treats it lik
 
 - **Pure logic** (`SqlVitals/Engine/ChatNotifications/`, unit tested in `Engine.Tests/ChatNotifications/`): `ChatChannel`; `WebhookUrl` checks, compares and masks URLs; `ChatMessageBuilder` builds a `ChatMessage`, which `ChatFormatter` writes as Slack Block Kit (with a `text` fallback, and `&`, `<`, `>` escaped so a name can't mention `@channel`) or as an Adaptive Card 1.4 in the `{"type":"message","attachments":[…]}` envelope Teams workflows take; `WebhookResult` maps an answer or an exception to an outcome, from the status code and the exception's type only, never its message.
 - **Sending:** `IWebhookSender` is the only way out, so tests use a fake. `Desktop/Services/HttpWebhookSender.cs` is one `HttpClient` over a `SocketsHttpHandler` with the system proxy and default credentials, no redirects, and a 10-second timeout per request. It reads at most 1 KB of the answer.
-- **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message, and remembers in memory the alert ids it told the channel about (forgotten when the alert ends or the channel is turned off). `ChatMessageBuilder.Raised` words it with `AlertText` (`Figure`, `Context`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests` and `AlertMessageTests`.
+- **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message of each kind, and remembers in memory the alert ids it told the channel about, with the connection's name then (forgotten when the alert ends or the channel is turned off). An `Ended` change of a told alert is `ChatMessageBuilder.Recovered` (when `ChatChannel.PostEnds`) or, with `AlertEndReason.MonitoringStopped`, `ChatMessageBuilder.Stopped`. `ChatMessageBuilder` words them with `AlertText` (`Figure`, `Context`, `Duration`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests`, `AlertMessageTests` and `EndMessageTests` (expected Slack and Teams JSON).
+- **Exit:** `MonitoringManager.Dispose` clears the window's `AlertsChanged` before it stops the sessions, but raises `AlertsRaised` with their ends, then `AllStopped`, before it waits for the history writer. `MainWindow.OnClosing` calls `ChatNotificationService.BeginExit` first (routers collect the stopped ends; no more status or tray updates), and `OnAllStopped` queues one *Stopped monitoring* message per channel and calls `ChannelQueue.Hurry` (a wait to retry is cut short, and nothing is retried), so the channels send while the history is saved. `Shutdown(5 s − time already spent)` then waits for what's left, off any UI dependency, and `Dispose` drops and logs the rest. Tested in `MonitoringManagerTests` and `ChatNotificationServiceTests`.
 - **Sending:** `ChannelQueue`, one per channel, sends on a worker of its own, one message at a time and in order, at most one a second measured start to start; `Enqueue` never waits. The Slack or Teams JSON is written when the message is sent, so an edit to the channel applies to what's waiting and to a retry. Past 20 waiting messages, the rest fold into one `ChatMessageBuilder.Summary`, built from each message's `ChatDigest` when it's sent. `RetryPolicy` decides each retry; `NetworkGrace` is the minute after `PowerModes.Resume`. Waits run on a `TimeProvider`, so tests use `FakeTimeProvider` and never wait in real time, and are measured on its timestamps, which a change to the PC's clock doesn't move. Unit tested in `ChannelQueueTests`, `RetryPolicyTests` and `SummaryMessageTests`.
 - **Status:** `ChannelStatus` (*Never used*, *Last posted*, *Failing since*). The queue reports every try as a `ChannelReport`; the service marks the channel posted or failing on the UI thread and raises `StartedFailing` only on the change into *Failing*, which the main window shows with `TrayIcon.Inform`.
 - **Service:** `Desktop/Services/ChatNotificationService.cs`, owned by the main window, subscribes to `MonitoringManager.AlertsRaised`, which is raised beside the window's `AlertsChanged`. Each subscriber runs in its own try/catch, so a bug in one can't stop the other or show the connection as failing. The service takes the saved channels and connection names at startup and after every settings save; a settings file that couldn't be read just then is ignored, so it can't look like "no channels".

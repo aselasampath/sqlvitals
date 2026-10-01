@@ -756,6 +756,7 @@ public partial class SettingsPage : Page
         CmbChatService.SelectedIndex = channel?.Service == ChatService.Teams ? 1 : 0;
         ChkChatEnabled.IsChecked     = channel?.Enabled ?? true;
         CmbChatPost.SelectedIndex    = channel?.CriticalOnly == true ? 1 : 0;
+        ChkChatPostEnds.IsChecked    = channel?.PostEnds ?? true;
         LstChatConnections.ItemsSource = store.Connections
             .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .Select(c => new ChatConnectionItem(c.Id, c.DisplayName) { Chosen = channel?.ConnectionIds.Contains(c.Id) == true })
@@ -856,6 +857,7 @@ public partial class SettingsPage : Page
             AllConnections = allConnections,
             ConnectionIds  = chosen,
             CriticalOnly   = CmbChatPost.SelectedIndex == 1,
+            PostEnds       = ChkChatPostEnds.IsChecked == true,
         };
 
         try
@@ -947,12 +949,13 @@ public partial class SettingsPage : Page
             LstChatConnections.IsEnabled = RadChatChosenConnections.IsChecked == true;
     }
 
-    // "all connections", "2 connections, critical only".
+    // "all connections", "2 connections, critical only, no ends".
     private static string Scope(ChatChannel channel) =>
         (channel.AllConnections ? "all connections"
          : channel.ConnectionIds.Count == 1 ? "1 connection"
          : $"{channel.ConnectionIds.Count} connections") +
-        (channel.CriticalOnly ? ", critical only" : "");
+        (channel.CriticalOnly ? ", critical only" : "") +
+        (channel.PostEnds ? "" : ", no ends");
 
     /// <summary>A tick box under Connections in the channel form.</summary>
     public sealed class ChatConnectionItem(Guid id, string name)

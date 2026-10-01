@@ -39,8 +39,35 @@ public sealed class SummaryMessageTests
              new ChatLine(ChatTone.Warning, "HR-DB", "new or critical: CPU")],
             summary.Lines);
         Assert.Equal("Sent from SqlVitals on DBA-PC01", summary.SentFrom);
-        Assert.Equal("3 more messages were combined while the channel was busy: alerts on Sales-Prod and HR-DB.", summary.FallbackText);
+        Assert.Equal("3 more messages were combined while the channel was busy: updates on Sales-Prod and HR-DB.", summary.FallbackText);
         Assert.Equal("summary of 3 messages", summary.About);
+    }
+
+    [Fact]
+    public void ASummary_NamesWhatEndedToo_SoTheTeamCanTellWhichAlertsAreOver()
+    {
+        var ended = new Alert(Guid.NewGuid(), Guid.NewGuid(), HealthIndicator.Blocking, HealthLevel.Warning,
+                              AlertMessageTests.Started, AlertMessageTests.Started.AddMinutes(5), 212, 60, "", AlertEndReason.Recovered);
+        var summary = ChatMessageBuilder.Summary([
+            Raised("Sales-Prod", (HealthIndicator.Cpu, HealthLevel.Warning)),
+            ChatMessageBuilder.Recovered("Sales-Prod", [ended], "DBA-PC01"),
+            ChatMessageBuilder.Recovered("HR-DB", [ended], "DBA-PC01"),
+        ]);
+
+        Assert.Equal(ChatTone.Warning, summary.Tone);
+        Assert.Equal(
+            [new ChatLine(ChatTone.Warning, "Sales-Prod", "new or critical: CPU; back to normal: Blocking"),
+             new ChatLine(ChatTone.Good, "HR-DB", "back to normal: Blocking")],
+            summary.Lines);
+    }
+
+    [Fact]
+    public void ASummaryOfEndsOnly_IsGood()
+    {
+        var ended = new Alert(Guid.NewGuid(), Guid.NewGuid(), HealthIndicator.Cpu, HealthLevel.Critical,
+                              AlertMessageTests.Started, AlertMessageTests.Started.AddMinutes(5), 97, 90, "", AlertEndReason.Recovered);
+
+        Assert.Equal(ChatTone.Good, ChatMessageBuilder.Summary([ChatMessageBuilder.Recovered("HR-DB", [ended], "DBA-PC01")]).Tone);
     }
 
     [Fact]

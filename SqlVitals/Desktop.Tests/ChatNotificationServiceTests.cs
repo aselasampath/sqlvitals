@@ -480,6 +480,151 @@ public sealed class ChatNotificationServiceTests
         });
     }
 
+    // ── Ends and Exit (#123) ──────────────────────────────────────────────────
+
+    private static AlertChange Ended(Alert alert, AlertEndReason reason) =>
+        new(alert with { EndedUtc = alert.StartedUtc.AddMinutes(12), EndReason = reason }, AlertChangeKind.Ended);
+
+    [Fact]
+    public async Task BackToNormal_IsPosted_OnlyToChannelsThatWereTold_AndHavePostEndsOn()
+    {
+        var told    = Channel("Told");
+        var noEnds  = Channel("No ends", url: SlackUrl + "N");
+        noEnds.PostEnds = false;
+        var sender  = new FakeSender(() => Ok);
+        using var chat = Create(sender, told, noEnds);
+        var alert = Alert(Sales.Id);
+        chat.OnAlertsRaised(Sales.Id, Started(alert));
+
+        var later = Channel("Added later", url: SlackUrl + "L");
+        chat.Apply(Store(told, noEnds, later));
+        chat.OnAlertsRaised(Sales.Id, [Ended(alert, AlertEndReason.Recovered)]);
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(["🔴 Critical: CPU on Sales-Prod", "✅ Back to normal: CPU on Sales-Prod"], sender.TitlesTo(SlackUrl));
+        Assert.Equal(["🔴 Critical: CPU on Sales-Prod"], sender.TitlesTo(SlackUrl + "N"));
+        Assert.Empty(sender.TitlesTo(SlackUrl + "L"));
+    }
+
+    [Fact]
+    public async Task StoppingAConnection_PostsOneStoppedMessage_WhetherOrNotEndsAreOn()
+    {
+        var channel = Channel();
+        channel.PostEnds = false;
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, channel);
+        var (cpu, log) = (Alert(Sales.Id), Alert(Sales.Id, HealthIndicator.LogSpace));
+        chat.OnAlertsRaised(Sales.Id, Started(cpu, log));
+
+        chat.OnAlertsRaised(Sales.Id, [Ended(cpu, AlertEndReason.MonitoringStopped), Ended(log, AlertEndReason.MonitoringStopped)]);
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("⏹ Stopped monitoring Sales-Prod", sender.TitlesTo(SlackUrl).Last());
+        Assert.Contains("SqlVitals on DBA-PC01 stopped monitoring Sales-Prod with 2 alerts still active", sender.Sent.Last().Json);
+        Assert.Equal(2, sender.Sent.Count);
+    }
+
+    [Fact]
+    public async Task ARemovedConnection_IsNamedInItsStoppedMessage()
+    {
+        var channel = Channel();
+        var sender  = new FakeSender(() => Ok);
+        using var chat = Create(sender, channel);
+        var alert = Alert(Sales.Id);
+        chat.OnAlertsRaised(Sales.Id, Started(alert));
+
+        // Removing a connection saves the settings (forgetting its name) before its session stops (F8).
+        chat.Apply(new ConnectionStore { Connections = [Hr], ChatChannels = [channel] });
+        chat.OnAlertsRaised(Sales.Id, [Ended(alert, AlertEndReason.MonitoringStopped)]);
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("⏹ Stopped monitoring Sales-Prod", sender.TitlesTo(SlackUrl).Last());
+    }
+
+    [Fact]
+    public async Task AtExit_EachChannelGetsOneStoppedMessage_ForEveryConnection()
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+        var (sales, hr) = (Alert(Sales.Id), Alert(Hr.Id, HealthIndicator.Blocking));
+        chat.OnAlertsRaised(Sales.Id, Started(sales));
+        chat.OnAlertsRaised(Hr.Id, Started(hr));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        chat.BeginExit();
+        chat.OnAlertsRaised(Sales.Id, [Ended(sales, AlertEndReason.MonitoringStopped)]);
+        chat.OnAlertsRaised(Hr.Id, [Ended(hr, AlertEndReason.MonitoringStopped)]);
+        chat.OnAllStopped();
+        chat.Shutdown(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("⏹ Stopped monitoring 2 connections", sender.TitlesTo(SlackUrl).Last());
+        Assert.Contains("stopped monitoring Sales-Prod (CPU) and HR-DB (Blocking), with alerts still active.", sender.Sent.Last().Json);
+        Assert.Equal(3, sender.Sent.Count);
+    }
+
+    [Fact]
+    public void AtExit_WhatCantBeSentInTime_IsDroppedAndLogged()
+    {
+        // Two channels stuck on a request that never answers.
+        using var chat = new ChatNotificationService(new HangingSender(), "DBA-PC01", _log.Enqueue, time: _time);
+        chat.Apply(Store(Channel(), Channel("Ops", url: SlackUrl + "O")));
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id)));
+        chat.OnAlertsRaised(Hr.Id, Started(Alert(Hr.Id)));
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        chat.BeginExit();
+        chat.Shutdown(TimeSpan.FromMilliseconds(300));
+        chat.Dispose();
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1.5), $"Exit took {watch.Elapsed}.");
+        Assert.Contains("Chat \"DBA team\": 2 message(s) not sent, because SqlVitals exited", _log);
+        Assert.Contains("Chat \"Ops\": 2 message(s) not sent, because SqlVitals exited", _log);
+    }
+
+    [Fact]
+    public async Task AtExit_AChannelThatFails_DoesntNotifyOrChangeItsStatus()
+    {
+        var channel = Channel();
+        using var chat = Create(new FakeSender(() => NotFound), channel);
+        var notices = 0;
+        chat.StartedFailing += (_, _) => Interlocked.Increment(ref notices);
+        var alert = Alert(Sales.Id);
+        chat.OnAlertsRaised(Sales.Id, Started(alert));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(1, notices);
+        chat.OnAlertsRaised(Sales.Id, Started(Alert(Sales.Id, HealthIndicator.Blocking)));
+
+        chat.BeginExit();
+        var before = chat.Status(channel.Id);
+        chat.Shutdown(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, notices);
+        Assert.Equal(before, chat.Status(channel.Id));
+    }
+
+    [Fact]
+    public void AtExit_WithNothingToldOrWaiting_NothingIsSent()
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+
+        chat.BeginExit();
+        chat.OnAlertsRaised(Sales.Id, [Ended(Alert(Sales.Id), AlertEndReason.MonitoringStopped)]);
+        chat.Shutdown(TimeSpan.FromSeconds(5));
+
+        Assert.Empty(sender.Sent);
+    }
+
+    // Never answers until SqlVitals gives up the request.
+    private sealed class HangingSender : IWebhookSender
+    {
+        public async Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancel);
+            return Ok;
+        }
+    }
+
     [Fact]
     public async Task GettingWorse_PostsNothing()
     {

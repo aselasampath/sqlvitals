@@ -13,7 +13,9 @@ namespace SqlVitals.Desktop.Services;
 /// time and sending never blocks the caller, so monitoring and the UI never wait on a webhook.
 ///
 /// #120: the channels and Send test message. #121: posting new and critical alerts. #122: pacing,
-/// retries, and the Failing status with one Windows notification. The end of alerts comes in #123.
+/// retries, and the Failing status with one Windows notification. #123: Back to normal, stopped
+/// monitoring, and a few seconds at Exit to send what's waiting (<see cref="BeginExit"/>,
+/// <see cref="Shutdown"/>).
 ///
 /// Used on the UI thread; the queues report back to it through its synchronization context.
 /// </summary>
@@ -25,6 +27,16 @@ public sealed class ChatNotificationService : IDisposable
     private readonly SynchronizationContext? _ui;
     private readonly TimeProvider            _time;
     private readonly NetworkGrace            _grace;
+
+    /// <summary>
+    /// How long, from the start of Exit, the channels have to send what's waiting (#123). It
+    /// runs alongside the history's own wait, so exit isn't this much slower.
+    /// </summary>
+    public static readonly TimeSpan ExitTime = TimeSpan.FromSeconds(5);
+
+    // Set by BeginExit; read by the queues' workers.
+    private volatile bool _exiting;
+    private bool _stopsQueued;
 
     // Replaced as a whole by Apply, so the queues' workers can read it at any time.
     private volatile IReadOnlyList<ChatChannel> _channels = [];
@@ -115,15 +127,14 @@ public sealed class ChatNotificationService : IDisposable
     /// </summary>
     public void OnAlertsRaised(Guid connectionId, IReadOnlyList<AlertChange> changes)
     {
-        var name = _connectionNames.TryGetValue(connectionId, out var n) ? n : "a deleted connection";
+        // Null for a removed connection: its name is forgotten before its session ends its
+        // alerts, so the routers use the name they were told with (F8).
+        var name = _connectionNames.TryGetValue(connectionId, out var n) ? n : null;
         foreach (var channel in _channels.Where(c => c.Enabled))
         {
             try
             {
-                if (!_routers.TryGetValue(channel.Id, out var router))
-                    _routers[channel.Id] = router = new ChannelRouter();
-
-                foreach (var message in router.Route(channel, connectionId, name, changes, _pcName))
+                foreach (var message in Router(channel.Id).Route(channel, connectionId, name, changes, _pcName))
                     Queue(channel.Id).Enqueue(message);
             }
             catch (Exception ex)
@@ -217,8 +228,18 @@ public sealed class ChatNotificationService : IDisposable
     private void Log(string channel, ChatService service, ChatMessage message, WebhookResult result) =>
         _log($"Chat \"{channel}\" ({ChatServices.Name(service)}): {message.About} {result.LogText()}");
 
+    private ChannelRouter Router(Guid channelId)
+    {
+        if (!_routers.TryGetValue(channelId, out var router))
+            _routers[channelId] = router = new ChannelRouter { CollectingStops = _exiting };
+        return router;
+    }
+
     private void OnUi(Action action)
     {
+        // Exiting: the window is closing, and the UI thread is waiting in Shutdown.
+        if (_exiting)
+            return;
         if (_ui is null)
             action();
         else
@@ -227,7 +248,7 @@ public sealed class ChatNotificationService : IDisposable
 
     private void MarkPosted(Guid channelId)
     {
-        if (_channels.All(c => c.Id != channelId))
+        if (_exiting || _channels.All(c => c.Id != channelId))
             return;
         _status[channelId] = Status(channelId).Posted(_time.GetUtcNow().UtcDateTime);
         StatusChanged?.Invoke(channelId);
@@ -238,7 +259,7 @@ public sealed class ChatNotificationService : IDisposable
     // a channel that comes back recovers by itself (MarkPosted).
     private void MarkFailed(Guid channelId, ChannelTarget target, WebhookResult result)
     {
-        if (_channels.FirstOrDefault(c => c.Id == channelId) is not { Enabled: true })
+        if (_exiting || _channels.FirstOrDefault(c => c.Id == channelId) is not { Enabled: true })
             return;
         var before = Status(channelId);
         _status[channelId] = before.Failed(_time.GetUtcNow().UtcDateTime, result.LogText());
@@ -247,15 +268,75 @@ public sealed class ChatNotificationService : IDisposable
             StartedFailing?.Invoke(channelId, ChannelStatus.FailingNotice(target.Name, target.Service, result));
     }
 
+    /// <summary>
+    /// SqlVitals is exiting for real (#123). Call before <see cref="MonitoringManager.Dispose"/>
+    /// ends the active alerts: their stopped monitoring ends then collect into one message per
+    /// channel (F5), and nothing more reaches the status or the tray, which are closing.
+    /// </summary>
+    public void BeginExit()
+    {
+        _exiting = true;
+        foreach (var router in _routers.Values)
+            router.CollectingStops = true;
+    }
+
+    /// <summary>
+    /// Every connection has stopped (<see cref="MonitoringManager.AllStopped"/>, at Exit): queues
+    /// each channel's one stopped monitoring message, and hurries every queue: a message waiting
+    /// to retry is tried once straight away, and nothing is retried any more. Runs once; after
+    /// <see cref="BeginExit"/> only.
+    /// </summary>
+    public void OnAllStopped()
+    {
+        if (!_exiting || _stopsQueued)
+            return;
+        _stopsQueued = true;
+
+        foreach (var channel in _channels.Where(c => c.Enabled))
+        {
+            try
+            {
+                if (_routers.TryGetValue(channel.Id, out var router) && router.TakeStops(_pcName) is { } stopped)
+                    Queue(channel.Id).Enqueue(stopped);
+            }
+            catch (Exception ex)
+            {
+                _log($"Chat \"{channel.Name}\": couldn't write the stopped monitoring message ({ex.GetType().Name})");
+            }
+        }
+
+        foreach (var queue in _queues.Values)
+            queue.Hurry();
+    }
+
+    /// <summary>
+    /// Gives what's waiting until <paramref name="timeLeft"/> to send (after
+    /// <see cref="OnAllStopped"/>, which it runs if it hasn't). Blocks the calling thread, which
+    /// the queues never need. Then call <see cref="Dispose"/>, which drops and logs what's left.
+    /// </summary>
+    public void Shutdown(TimeSpan timeLeft)
+    {
+        BeginExit();
+        OnAllStopped();
+
+        var queues = _queues.Values.ToList();
+        if (timeLeft <= TimeSpan.Zero || queues.Count == 0)
+            return;
+        try { Task.WhenAll(queues.Select(q => q.WhenIdleAsync())).Wait(timeLeft); }
+        catch { /* whatever is left is dropped and logged by Dispose */ }
+    }
+
     public void Dispose()
     {
-        // Exiting: what's still waiting isn't sent (#123 gives it a few seconds first).
+        // Exiting: what's still waiting after Shutdown's few seconds isn't sent. Every queue is
+        // stopped first, cancelling their requests together, so each Dispose's wait is short and
+        // several channels stuck on a request don't add a second each to the exit.
+        var dropped = _queues.ToDictionary(q => q.Key, q => q.Value.Stop());
         foreach (var (id, queue) in _queues)
         {
-            var dropped = queue.Stop();
             queue.Dispose();
-            if (dropped > 0)
-                _log($"Chat \"{Name(id)}\": {dropped} message(s) not sent, because SqlVitals exited");
+            if (dropped[id] > 0)
+                _log($"Chat \"{Name(id)}\": {dropped[id]} message(s) not sent, because SqlVitals exited");
         }
         _queues.Clear();
         (_sender as IDisposable)?.Dispose();

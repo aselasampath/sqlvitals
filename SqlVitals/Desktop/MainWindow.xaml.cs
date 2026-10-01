@@ -108,6 +108,7 @@ public partial class MainWindow : Window
         Monitoring.AlertsChanged       += OnAlertsChanged;
         // Separate from the Windows notification: muting a connection doesn't stop its channels (#121).
         Monitoring.AlertsRaised        += Chat.OnAlertsRaised;
+        Monitoring.AllStopped          += Chat.OnAllStopped;
         SyncConnections(store, ActivitySources.AutomaticAtStartup);
 
         Loaded += async (_, _) =>
@@ -519,8 +520,14 @@ public partial class MainWindow : Window
         // A static event: it would keep this window alive.
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
 
-        // Background collectors hold no server-side state; just stop them polling.
+        // Background collectors hold no server-side state; just stop them polling. Their alerts'
+        // ends reach the chat channels as one "stopped monitoring" message each, which send while
+        // the history is flushed; then whatever is still waiting gets the rest of a few seconds
+        // (#123). Closing to the notification area doesn't come here.
+        var exitStarted = System.Diagnostics.Stopwatch.StartNew();
+        Chat.BeginExit();
         Monitoring.Dispose();
+        Chat.Shutdown(ChatNotificationService.ExitTime - exitStarted.Elapsed);
         Chat.Dispose();
 
         try

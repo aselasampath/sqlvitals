@@ -48,6 +48,13 @@ public sealed class ChatChannel
     /// <summary>Post critical alerts only (#121); off posts warnings and critical.</summary>
     public bool        CriticalOnly   { get; set; }
 
+    /// <summary>
+    /// Also post "Back to normal" when an alert the channel was told about ends (#123). Missing
+    /// from files written before #123, where it reads as on. "Stopped monitoring" is posted
+    /// either way, because it says no more updates are coming.
+    /// </summary>
+    public bool        PostEnds       { get; set; } = true;
+
     /// <summary>Whether this channel gets a connection's alerts.</summary>
     public bool Includes(Guid connectionId) => AllConnections || ConnectionIds.Contains(connectionId);
 
