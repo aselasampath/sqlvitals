@@ -53,7 +53,7 @@ At the top are the server's name, status, server / database, sign-in and whether
 
 - **Make active**: switches every page to this connection, as the sidebar selector does. It's hidden when the connection is already active.
 - **Pause monitoring** or **Start monitoring**: stops or starts it until SqlVitals exits, as ▶ / ■ in the selector does.
-- **Edit connection**: opens it in ⚙️ Settings.
+- **Edit connection**: opens its page in ⚙️ Settings → Connections.
 
 ### Health score
 
@@ -83,7 +83,7 @@ The same table as the score's breakdown: each check's figure, warning and critic
 | Log space used | Log space | 📦 DB Storage |
 | TempDB space used | TempDB | 🗄️ TempDB |
 
-Those pages show the active connection, so a link **makes this connection active first**. Under the table, a line says whether the connection uses the default thresholds or its own, with **Change** to edit them.
+Those pages show the active connection, so a link **makes this connection active first**. Under the table, a line says whether the connection uses the default thresholds or its own, with **Change**, which opens the connection's **Health thresholds** tab in Settings.
 
 ### Blocking right now
 

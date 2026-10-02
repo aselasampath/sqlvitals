@@ -135,15 +135,8 @@ public static class HealthRules
 
         void Check(HealthIndicator indicator, double value, bool measured, Func<string> reason)
         {
-            var info      = HealthThresholds.Info(indicator);
             var threshold = thresholds.Get(indicator);
-
-            bool Past(double? limit) =>
-                measured && limit is { } l && (info.LowerIsWorse ? value < l : value >= l);
-
-            var level = Past(threshold.Critical) ? HealthLevel.Critical
-                      : Past(threshold.Warning)  ? HealthLevel.Warning
-                      : HealthLevel.Healthy;
+            var level     = LevelOf(indicator, value, measured, threshold);
 
             readings.Add(new HealthReading(indicator, level, value, threshold,
                                            level == HealthLevel.Healthy ? null : reason(), measured));
@@ -171,6 +164,23 @@ public static class HealthRules
               () => $"TempDB {sample.TempDbUsedPct:0}% full");
 
         return readings;
+    }
+
+    /// <summary>
+    /// One figure's level on a threshold: critical, warning or healthy. A figure the sample didn't
+    /// have (<paramref name="measured"/> false) is healthy. Settings grades its preview with this
+    /// too (#131), so the preview never disagrees with the dot.
+    /// </summary>
+    public static HealthLevel LevelOf(HealthIndicator indicator, double value, bool measured, HealthThreshold threshold)
+    {
+        var info = HealthThresholds.Info(indicator);
+
+        bool Past(double? limit) =>
+            measured && limit is { } l && (info.LowerIsWorse ? value < l : value >= l);
+
+        return Past(threshold.Critical) ? HealthLevel.Critical
+             : Past(threshold.Warning)  ? HealthLevel.Warning
+             : HealthLevel.Healthy;
     }
 
     private static string FormatSeconds(double seconds) =>

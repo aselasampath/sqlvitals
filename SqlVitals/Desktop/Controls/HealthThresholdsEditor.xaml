@@ -2,26 +2,16 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FontFamily="Segoe UI">
-    <!-- One row per HealthIndicator, built in code from HealthThresholds.Indicators. -->
+    <!-- The Checks table of a server's detail page (#130), with Warning and Critical as boxes (#131):
+         a row per HealthIndicator, built in code from HealthThresholds.Indicators. -->
     <Grid x:Name="GridRows">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="170" />
-            <ColumnDefinition Width="120" />
-            <ColumnDefinition Width="120" />
-            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" MinWidth="170" />
+            <ColumnDefinition x:Name="ColNow" Width="110" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="64" />
+            <ColumnDefinition x:Name="ColPoints" Width="64" />
         </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <!-- Same colours as the sidebar health dot (ConnectionSelectorItem). -->
-        <TextBlock Grid.Column="1" Margin="0,0,0,6"
-                   Foreground="{DynamicResource TextMuted}" FontSize="11" FontWeight="SemiBold">
-            <Run Text="●" Foreground="#FBBF24" /><Run Text=" Warning" />
-        </TextBlock>
-        <TextBlock Grid.Column="2" Margin="0,0,0,6"
-                   Foreground="{DynamicResource TextMuted}" FontSize="11" FontWeight="SemiBold">
-            <Run Text="●" Foreground="#EF4444" /><Run Text=" Critical" />
-        </TextBlock>
     </Grid>
 </UserControl>

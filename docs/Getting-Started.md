@@ -4,13 +4,13 @@ This page takes you from a fresh install to your first look at a server in about
 
 ## 1. Add your first connection
 
-On first launch SqlVitals opens **⚙️ Settings**.
+On first launch SqlVitals opens **⚙️ Settings → Connections**. Click **+ New connection**, then on the *Connection* tab:
 
 1. **Connection name**: something you'll recognise, like *Production* or *UAT*. Leave it blank to use *server / database*.
 2. **Server name**: for example `myserver.database.windows.net`, `localhost\SQLEXPRESS`, or `host,1433` for a custom port.
 3. **Authentication**: *Windows Authentication*, *SQL Server Authentication* (login and password) or *Microsoft Entra MFA* (sign in with your Microsoft account).
 4. **Database name**: leave it blank for your login's default database, or open the list to browse the server.
-5. Click **⚡ Save & Connect**.
+5. Click **Save & make active** in the bar at the bottom.
 
 SqlVitals checks the connection before saving it. If the check fails, it tells you why and saves nothing. More options, such as encryption, certificates and timeouts, are explained in [Connections](Connections.md).
 
@@ -72,14 +72,14 @@ A good first tour, in order:
 
 Repeat step 1 for each server you look after. A connection you started keeps collecting while you look at another one, until SqlVitals exits; press **▶** on its row in the sidebar selector to start one without switching to it. That keeps its health dot and score current, fills its history and raises its alerts.
 
-To have SqlVitals monitor your servers every time it starts, tick **⚙️ Settings → Monitoring → Start monitoring automatically**, and **Monitor in background** on each connection to watch while another is active. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
+To have SqlVitals monitor your servers every time it starts, turn on **⚙️ Settings → Monitoring & history → Start monitoring automatically**, and **Monitor in background** on each connection's *Monitoring & alerts* tab to watch while another is active. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
 
 ## Tips
 
 - **Right-click any grid** to copy rows or export them to CSV. See [Working with Grids](Working-with-Grids.md).
 - **Hover** column headers, buttons and dots. Most have a tooltip explaining them.
 - Prefer a dark screen? **Settings → Appearance → Theme**.
-- Something not working? See [Troubleshooting and FAQ](Troubleshooting-and-FAQ.md). **Settings → Diagnostics → Open log folder** shows the app's log.
+- Something not working? See [Troubleshooting and FAQ](Troubleshooting-and-FAQ.md). **Settings → Activity log & diagnostics → Open log folder** shows the app's log.
 
 ## Next
 

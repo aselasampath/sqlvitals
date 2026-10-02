@@ -159,7 +159,7 @@ public partial class AlertsPage : Page, IRefreshable
         {
             readProblem,
             NotMonitoredNote(connectionId),
-            $"An alert starts after {SamplesText(store.AlertSamples)} in a row past a health threshold and ends after as many back to normal (Settings → Alerts). Times are on this PC's clock.",
+            $"An alert starts after {SamplesText(store.AlertSamples)} in a row past a health threshold and ends after as many back to normal (Settings → Alerts & chat). Times are on this PC's clock.",
         }.Where(t => !string.IsNullOrEmpty(t)));
 
         TxtNoData.Text       = EmptyText(status, period, connectionId is null);
@@ -216,7 +216,7 @@ public partial class AlertsPage : Page, IRefreshable
             StatusFilter.Active => $"No active alerts{who}.",
             StatusFilter.Past   => $"No past alerts{who} {when}.",
             _ => $"No alerts{who} {when}. Every sample of a monitored connection is checked against its health thresholds " +
-                 "(Settings → Health Thresholds); an indicator that stays past one is listed here.",
+                 "(Settings → Health thresholds); an indicator that stays past one is listed here.",
         };
     }
 

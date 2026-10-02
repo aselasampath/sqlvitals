@@ -82,7 +82,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
     // The live buffers above are kept while one is shown, so switching back to Live loses nothing.
     private const string NoLiveDataText = "Select wait types on the left, then start auto-refresh to begin trending";
     private const string NotRecordedText =
-        "Waits per type are recorded every few minutes while SqlVitals monitors this connection (Settings → Monitoring History).";
+        "Waits per type are recorded every few minutes while SqlVitals monitors this connection (Settings → Monitoring & history).";
     private readonly ConnectionHistory? _history;
     private HistoryRange _range = HistoryRange.Live;
     private int _historyVersion;   // bumped per load; a stale load is dropped

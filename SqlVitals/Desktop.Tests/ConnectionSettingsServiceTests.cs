@@ -156,6 +156,44 @@ public sealed class ConnectionSettingsServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public void AConnectionAndItsNotifications_SaveInOneWrite_LoggedUnderTheirUsualNames()
+    {
+        var service = Create();
+        var conn = Connection();
+        service.Upsert(conn);
+        var writes = new List<IReadOnlyList<ActivityEntry>>();
+        service.Changed += writes.Add;
+
+        conn.Name = "Production";
+        service.Upsert(conn, notifications: false);
+
+        var rows = Assert.Single(writes);
+        Assert.Equal(["Name", "Windows notifications"], rows.Select(r => r.Setting).Order());
+        Assert.False(service.Load().NotifiesFor(conn.Id));
+
+        service.Upsert(conn, notifications: true);
+        Assert.True(service.Load().NotifiesFor(conn.Id));
+        service.Upsert(conn);   // null leaves it as it is
+        Assert.True(service.Load().NotifiesFor(conn.Id));
+    }
+
+    [Fact]
+    public void TheCommandTimeout_SavesOnItsOwn_ForEveryConnection()
+    {
+        var service = Create();
+        service.Upsert(Connection());
+        var rows = new List<ActivityEntry>();
+        service.Changed += rows.AddRange;
+
+        service.SetCommandTimeout(90);
+
+        var store = Create().Load();
+        Assert.Equal(90, store.CommandTimeoutSeconds);
+        Assert.All(store.Connections, c => Assert.Equal(90, c.CommandTimeoutSeconds));
+        Assert.Equal(("Command timeout", "30 s", "90 s"), (rows.Single().Setting, rows.Single().OldValue, rows.Single().NewValue));
+    }
+
     // As a settings.dat written before #115: the same file without the new value.
     private void RemoveSetting()
     {

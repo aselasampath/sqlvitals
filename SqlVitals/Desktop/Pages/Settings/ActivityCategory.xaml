@@ -1,0 +1,46 @@
+<UserControl x:Class="SqlVitals.Desktop.Pages.Settings.ActivityCategory"
+             x:ClassModifier="internal"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+             FontFamily="Segoe UI">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SqlVitals.Desktop;component/Pages/Settings/SettingsStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="32,24,32,24" MaxWidth="1100" HorizontalAlignment="Stretch">
+            <TextBlock Text="Activity log &amp; diagnostics" Style="{StaticResource PageTitle}" />
+            <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+
+            <!-- Activity log (#115) -->
+            <Border Style="{StaticResource SettingsCard}">
+                <StackPanel>
+                    <TextBlock Text="Activity log" Style="{StaticResource CardTitle}" />
+                    <TextBlock Style="{StaticResource CardText}" Margin="0,3,0,12"
+                               Text="When monitoring was started and stopped, and by whom or what; when SqlVitals started and exited; every settings and connection change, with the value before and after; and when history was cleared. It explains a gap in the history or an alert that never came. Saved in the history file with the Windows user and PC name. Passwords, connection strings and other secrets are never logged: a secret setting only says it changed." />
+                    <controls:ActivityLogView x:Name="ActivityLogView" />
+                </StackPanel>
+            </Border>
+
+            <!-- Diagnostics -->
+            <Border Style="{StaticResource SettingsCard}">
+                <StackPanel>
+                    <DockPanel>
+                        <Button x:Name="BtnOpenLogFolder" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                Style="{StaticResource SecondaryButton}" Content="Open log folder" Click="OpenLogFolder_Click" />
+                        <StackPanel>
+                            <TextBlock Text="Diagnostics" Style="{StaticResource RowLabel}" />
+                            <TextBlock x:Name="TxtLogInfo" Style="{StaticResource RowHelp}" />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock x:Name="TxtLogStatus" Style="{StaticResource Status}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -2,7 +2,7 @@
 
 A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start, turn critical and end, so the whole team sees a problem when it starts and knows when it's over, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts* → *Chat channels (Slack and Teams)* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108))
+> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108))
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 
@@ -46,7 +46,7 @@ Good to know:
 
 ## Add the channel in SqlVitals
 
-In **⚙️ Settings → Alerts → Chat channels (Slack and Teams)**, click **+ Add channel**:
+In **⚙️ Settings → Alerts & chat → Chat channels**, click **+ Add channel**:
 
 | Field | What to enter |
 |---|---|
@@ -118,7 +118,7 @@ When an alert ends because its figure has been back within its thresholds for th
 
 Alerts of one connection that end on the same sample share one message: *✅ 2 alerts back to normal on Sales-Prod*, with a line each (*CPU worst 97 % (threshold ≥ 90 %), lasted 12 min*).
 
-An alert that keeps ending and starting again, a figure hovering around its threshold, posts each time. The run of samples an alert needs to start and to end already stops most of that; if a channel gets noisy, raise **Settings → Alerts → Raise an alert after**, or turn off **Also post when an alert ends** for that channel.
+An alert that keeps ending and starting again, a figure hovering around its threshold, posts each time. The run of samples an alert needs to start and to end already stops most of that; if a channel gets noisy, raise **Settings → Alerts & chat → Raise an alert after**, or turn off **Also post when an alert ends** for that channel.
 
 ### Stopped monitoring
 
@@ -144,7 +144,7 @@ SqlVitals then gives the channels **up to 5 seconds** to send what's waiting, wh
 
 ### Separate from Windows notifications
 
-Muting a connection's Windows notifications (**Settings → Alerts → Windows notifications**, or the tray menu) doesn't stop its chat messages, and a channel's **Connections** don't change who gets Windows notifications.
+Muting a connection's Windows notifications (on its **Monitoring & alerts** tab in Settings, or the tray menu) doesn't stop its chat messages, and a channel's **Connections** don't change who gets Windows notifications.
 
 ### What leaves your PC
 
@@ -186,14 +186,14 @@ Once it's sent, messages go one by one again. A **Stopped monitoring** message i
 
 ### ⚠ Failing
 
-When a message is given up (after its retries, or straight away for a 404), the channel's row in Settings says why:
+When a message is given up (after its retries, or straight away for a 404), the channel's card in Settings is labelled **FAILING** and says why:
 
 > ⚠ **Failing since 10:42: webhook not found (404)**
 
 and one Windows notification says so, even while SqlVitals is hidden in the notification area:
 
 > **Chat channel failing**
-> Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts.
+> Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts & chat.
 
 - *Failing since* is when the first message was given up; the reason is the latest one.
 - The notification isn't repeated while the channel keeps failing. It comes again only if the channel posts successfully and then fails again.

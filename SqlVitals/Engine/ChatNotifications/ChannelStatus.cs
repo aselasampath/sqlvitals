@@ -42,7 +42,7 @@ public sealed record ChannelStatus(DateTime? LastPostedUtc, DateTime? FailingSin
 
     /// <summary>
     /// The Windows notification's text when a channel starts failing: "Alerts aren't reaching DBA
-    /// team (Teams): webhook not found. Check Settings → Alerts."
+    /// team (Teams): webhook not found. Check Settings → Alerts & chat."
     /// </summary>
     public static string FailingNotice(string channelName, ChatService service, WebhookResult result)
     {
@@ -50,7 +50,7 @@ public sealed record ChannelStatus(DateTime? LastPostedUtc, DateTime? FailingSin
         // "DBA team (Microsoft Teams)", unless the name already says which it is: "DBA team (Teams)".
         if (!name.Contains(service == ChatService.Teams ? "Teams" : "Slack", StringComparison.OrdinalIgnoreCase))
             name += $" ({ChatServices.Name(service)})";
-        return $"Alerts aren't reaching {name}: {result.Problem(service)}. Check Settings → Alerts.";
+        return $"Alerts aren't reaching {name}: {result.Problem(service)}. Check Settings → Alerts & chat.";
     }
 
     private static string Time(DateTime utc, DateTime nowLocal)

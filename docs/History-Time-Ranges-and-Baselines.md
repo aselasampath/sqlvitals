@@ -42,7 +42,7 @@ Tick **Compare to baseline** (next to the range picker) to overlay **the same ti
 - Works with **Live** and with any past range.
 - Where nothing was recorded last week, there's no line, and the status line says so.
 
-Baselines need a week of history. See [Settings → Monitoring History](Settings.md#monitoring-history) to keep enough.
+Baselines need a week of history. See [Settings → Monitoring & history](Settings.md#monitoring--history) to keep enough.
 
 ## What is recorded, and how often
 

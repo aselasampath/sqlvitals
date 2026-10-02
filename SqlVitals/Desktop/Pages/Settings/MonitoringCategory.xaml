@@ -1,0 +1,110 @@
+<UserControl x:Class="SqlVitals.Desktop.Pages.Settings.MonitoringCategory"
+             x:ClassModifier="internal"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FontFamily="Segoe UI">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SqlVitals.Desktop;component/Pages/Settings/SettingsStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="32,24,32,24" MaxWidth="900" HorizontalAlignment="Stretch">
+            <TextBlock Text="Monitoring &amp; history" Style="{StaticResource PageTitle}" />
+            <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+
+            <!-- Monitoring -->
+            <Border Style="{StaticResource SettingsCard}">
+                <StackPanel>
+                    <TextBlock Text="Monitoring" Style="{StaticResource CardTitle}" Margin="0,0,0,10" />
+                    <Border Style="{StaticResource SettingRow}">
+                        <DockPanel>
+                            <CheckBox x:Name="ChkStartMonitoringAutomatically" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                      AutomationProperties.Name="Start monitoring automatically"
+                                      Click="ChkStartMonitoringAutomatically_Click" />
+                            <StackPanel>
+                                <TextBlock Text="Start monitoring automatically" Style="{StaticResource RowLabel}" />
+                                <TextBlock Style="{StaticResource RowHelp}"
+                                           Text="Collect live metrics, history and alerts as soon as SqlVitals starts or connects. Off: nothing is collected until you press Start." />
+                                <TextBlock Style="{StaticResource RowHelp}" Margin="0,6,24,0"
+                                           Text="On, the active connection and those with Monitor in background (on each connection's Monitoring &amp; alerts tab) are monitored from the start. Either way you can start and stop any connection with ▶ / ■ in the sidebar selector, on Home, on Live Metrics, or from the SqlVitals icon's menu in the notification area; that lasts until SqlVitals exits. Alerts are only raised for connections being monitored." />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingRow}">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBox x:Name="TxtTimeout" Style="{StaticResource FieldTextBox}" Width="80" FontFamily="Consolas"
+                                         AutomationProperties.Name="Command timeout in seconds"
+                                         LostKeyboardFocus="TxtTimeout_LostKeyboardFocus" KeyDown="TxtTimeout_KeyDown" />
+                                <TextBlock Text="s" Foreground="{DynamicResource TextMuted}" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Command timeout" Style="{StaticResource RowLabel}" />
+                                <TextBlock Style="{StaticResource RowHelp}"
+                                           Text="How long a query may run before it's stopped, on every connection. Default: 30 seconds. Increase for long-running diagnostic queries. Saved when you leave the box or press Enter." />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <TextBlock x:Name="TxtMonitoringStatus" Style="{StaticResource Status}" />
+                </StackPanel>
+            </Border>
+
+            <!-- History -->
+            <Border Style="{StaticResource SettingsCard}">
+                <StackPanel>
+                    <TextBlock Text="Monitoring history" Style="{StaticResource CardTitle}" Margin="0,0,0,10" />
+                    <Border Style="{StaticResource SettingRow}">
+                        <DockPanel>
+                            <ComboBox x:Name="CmbHistoryInterval" DockPanel.Dock="Right" Width="160" VerticalAlignment="Center"
+                                      AutomationProperties.Name="Snapshot every" SelectionChanged="HistorySetting_Changed" />
+                            <StackPanel>
+                                <TextBlock Text="Snapshot every" Style="{StaticResource RowLabel}" />
+                                <TextBlock Style="{StaticResource RowHelp}"
+                                           Text="How often waits by type, file I/O, memory and the top queries are read from each monitored server and saved. Shorter intervals show more detail but add load and use more disk. Live Metrics figures are saved at every sample regardless." />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingRow}">
+                        <DockPanel>
+                            <ComboBox x:Name="CmbHistoryRetention" DockPanel.Dock="Right" Width="160" VerticalAlignment="Center"
+                                      AutomationProperties.Name="Keep history for" SelectionChanged="HistorySetting_Changed" />
+                            <StackPanel>
+                                <TextBlock Text="Keep history for" Style="{StaticResource RowLabel}" />
+                                <TextBlock Style="{StaticResource RowHelp}"
+                                           Text="Older history is deleted automatically, and the file shrinks as it goes. Changes apply straight away." />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingRow}">
+                        <StackPanel>
+                            <TextBlock x:Name="TxtHistorySize" Style="{StaticResource RowLabel}" FontWeight="Normal" FontSize="12" />
+                            <TextBlock x:Name="TxtHistoryPath" Style="{StaticResource RowHelp}" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="TxtHistoryStatus" Style="{StaticResource Status}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Danger -->
+            <Border Style="{StaticResource SettingsCard}" BorderBrush="{DynamicResource Danger}">
+                <StackPanel>
+                    <DockPanel>
+                        <Button x:Name="BtnClearHistory" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                Style="{StaticResource SecondaryButton}" BorderBrush="{DynamicResource Danger}" Foreground="{DynamicResource Danger}"
+                                Click="BtnClearHistory_Click" Content="Clear history…" />
+                        <StackPanel>
+                            <TextBlock Text="Clear history" Style="{StaticResource RowLabel}" />
+                            <TextBlock Style="{StaticResource RowHelp}"
+                                       Text="Delete all monitoring history, for every connection. Monitoring carries on, and the activity log is kept. This cannot be undone." />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock x:Name="TxtClearStatus" Style="{StaticResource Status}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

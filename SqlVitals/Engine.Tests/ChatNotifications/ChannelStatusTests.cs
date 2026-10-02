@@ -71,10 +71,10 @@ public sealed class ChannelStatusTests
     {
         var notFound = new WebhookResult(WebhookOutcome.NotFound, 404, "no_service", TimeSpan.Zero);
 
-        Assert.Equal("Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts.",
+        Assert.Equal("Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts & chat.",
                      ChannelStatus.FailingNotice("DBA team", ChatService.Teams, notFound));
         // Not "DBA team (Teams) (Microsoft Teams)".
-        Assert.Equal("Alerts aren't reaching DBA team (Teams): webhook not found. Check Settings → Alerts.",
+        Assert.Equal("Alerts aren't reaching DBA team (Teams): webhook not found. Check Settings → Alerts & chat.",
                      ChannelStatus.FailingNotice("DBA team (Teams)", ChatService.Teams, notFound));
     }
 

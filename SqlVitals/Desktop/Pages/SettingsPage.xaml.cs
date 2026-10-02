@@ -1,1220 +1,212 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Threading;
-using Microsoft.Data.SqlClient;
-using SqlVitals.Desktop;
+using System.Windows.Input;
+using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
-using SqlVitals.Engine.Alerts;
-using SqlVitals.Engine.ChatNotifications;
-using SqlVitals.Engine.History;
-using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
 
+/// <summary>
+/// Settings (#131): a side menu of categories in groups, and the category beside it. Each category
+/// is built the first time it's opened. Connections holds a card per saved connection and a page
+/// per connection; the categories for the whole app save as they change.
+/// </summary>
 public partial class SettingsPage : Page
 {
-    private readonly ConnectionSettingsService _service;
-    private readonly MonitoringManager         _monitoring;
-    private readonly ChatNotificationService   _chat;
+    private readonly SettingsContext _context;
+    private readonly Dictionary<SettingsCategory, FrameworkElement> _built = new();
+    private readonly Dictionary<SettingsCategory, RadioButton> _items = new();
+    private TextBlock? _connectionsCount;
 
-    // The chat channel the form is editing (#120); null while adding a new one.
-    private Guid? _editingChannelId;
+    // Set while a menu item is checked in code, so it isn't a click.
+    private bool _isSelecting;
+    private SettingsCategory _category;
 
-    // The saved URL of the channel being edited. It goes into the URL box only when the user
-    // presses Show, so no control (or UI Automation client) holds it before then.
-    private string? _savedChannelUrl;
-    private bool    _channelUrlShown;
-    private bool    _isFillingChatUrl;
-
-    // Set while the channel list is repopulated in code, so the selection handler doesn't reload the form.
-    private bool _isPopulatingChatList;
-
-    // The history file grows with every sample and shrinks after a purge, which the writer
-    // runs on its own schedule, so the size shown is re-read while the page is open.
-    private readonly DispatcherTimer _historySizeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
-
-    // Set while the history choices are filled in or put back in code, so they aren't saved.
-    private bool _isLoadingHistorySettings;
-    private int  _savedIntervalMinutes;
-    private int  _savedRetentionDays;
-
-    // Set while the alert choice is filled in or put back in code, so it isn't saved.
-    private bool _isLoadingAlertSettings;
-    private int  _savedAlertSamples;
-
-    // The saved thresholds every connection without its own uses.
-    private HealthThresholds _globalThresholds = HealthThresholds.Default;
-
-    // Tells the running app the saved connections changed so it can pick up a new or edited
-    // active connection. The bool asks it to open the dashboard afterwards.
-    private readonly Func<bool, Task> _applyConnections;
-
-    // The saved connection the form is editing; null while adding a new one.
-    private Guid? _editingId;
-
-    // Set while the list is repopulated in code, so the selection handler doesn't reload the form.
-    private bool _isPopulatingList;
-
-    // Connection string the database list was last loaded with. Any change to the server or
-    // credentials clears it, so reopening the list queries the new server.
-    private string? _databaseListSource;
-    private bool _isLoadingDatabases;
-
+    /// <param name="applyConnections">
+    /// Tells the running app the saved connections changed; true asks it to open Live Metrics afterwards.
+    /// </param>
+    /// <param name="location">Where it opens; Connections when null.</param>
+    /// <param name="message">Shown above the category, e.g. "Switched to UAT." or a password prompt.</param>
     public SettingsPage(
         ConnectionSettingsService service,
         MonitoringManager monitoring,
         ChatNotificationService chat,
         Func<bool, Task> applyConnections,
-        string? initialMessage = null,
-        Guid? selectConnectionId = null,
-        bool newConnection = false)
+        SettingsLocation? location = null,
+        string? message = null)
     {
         InitializeComponent();
-        _service          = service;
-        _monitoring       = monitoring;
-        _chat             = chat;
-        _applyConnections = applyConnections;
+        _context = new SettingsContext(service, monitoring, chat, applyConnections,
+                                       (text, caption, buttons, icon) => Prompt(text, caption, buttons, icon),
+                                       target => _ = OpenAsync(target),
+                                       id => ServerRequested?.Invoke(id));
+        BuildMenu();
+        UpdateCount();
 
-        var store = _service.Load();
-        TxtTimeout.Text = store.CommandTimeoutSeconds.ToString();
-        LoadHistorySettings(store);
-        LoadAlertSettings(store);
-        ChkKeepRunningInTray.IsChecked = store.KeepRunningInTray;
-        ChkStartMonitoringAutomatically.IsChecked = store.StartMonitoringAutomatically;
-        ActivityLogView.Initialize(_monitoring.HistoryReader, store.Connections.Select(c => (c.Id, c.DisplayName)));
-        _globalThresholds = store.HealthThresholds;
-        GlobalThresholds.Show(_globalThresholds);
-        PopulateChatChannels(store, selectId: null);
-        TxtChatChannelsDropped.Visibility = store.ChatChannelsDropped ? Visibility.Visible : Visibility.Collapsed;
-        _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
-        Loaded   += (_, _) => { UpdateHistorySize(); _historySizeTimer.Start(); _chat.StatusChanged += OnChatStatusChanged; };
-        Unloaded += (_, _) => { _historySizeTimer.Stop(); _chat.StatusChanged -= OnChatStatusChanged; };
-        var initial = (selectConnectionId is { } id ? store.Connections.FirstOrDefault(c => c.Id == id) : null)
-                      ?? store.Active
-                      ?? store.Connections.FirstOrDefault();
-        PopulateConnectionList(store, initial?.Id);
-        if (initial is not null)
-            LoadIntoForm(initial);
-        else
-            ClearForm();
+        // Nothing is open yet, so there's nothing to leave: this completes straight away.
+        _ = OpenAsync(location ?? new SettingsLocation(SettingsCategory.Connections));
+        ShowMessage(message);
 
-        var app = (App)Application.Current;
-        BtnThemeToggle.Content = app.IsDarkTheme ? "☀  Light" : "🌙  Dark";
-        TxtLogInfo.Text = $"{AppLog.Directory} — one file per day, kept for {AppLog.RetentionDays} days. " +
-                          "Passwords and connection strings are never written. Attach the latest file to a bug report.";
+        Loaded   += (_, _) => _context.Service.Changed += OnSettingsChanged;
+        Unloaded += (_, _) => _context.Service.Changed -= OnSettingsChanged;
+    }
 
-        if (!string.IsNullOrWhiteSpace(initialMessage))
-            SetStatus(initialMessage, success: null);
+    /// <summary>"View on Home" on a connection's page: open that server's detail page (#130).</summary>
+    public event Action<Guid>? ServerRequested;
 
-        // "+ Add a connection" on Home (#130): an empty form, as New connection gives. Once, when shown.
-        if (newConnection)
+    /// <summary>The theme was switched: open Settings again on Appearance, in the new theme.</summary>
+    public event Action? ThemeChanged;
+
+    /// <summary>A category was opened, so Settings can open on it again this session.</summary>
+    public event Action<SettingsCategory>? CategoryShown;
+
+    /// <summary>Asks the user; tests answer instead of a message box.</summary>
+    internal Ask Prompt { get; set; } = (text, caption, buttons, icon) =>
+        MessageBox.Show(text, caption, buttons, icon,
+                        buttons == MessageBoxButton.YesNoCancel ? MessageBoxResult.Cancel : MessageBoxResult.No);
+
+    /// <summary>The category on screen.</summary>
+    public SettingsCategory Category => _category;
+
+    /// <summary>The category's control on screen.</summary>
+    internal FrameworkElement? Shown => CategoryHost.Content as FrameworkElement;
+
+    /// <summary>Connections, once it has been opened.</summary>
+    internal ConnectionsCategory? Connections => _built.GetValueOrDefault(SettingsCategory.Connections) as ConnectionsCategory;
+
+    internal RadioButton MenuItemFor(SettingsCategory category) => _items[category];
+
+    /// <summary>
+    /// Whether Settings can be left for another page. With unsaved changes on a connection's page
+    /// or the default thresholds, it asks to save, discard or stay; false when the user stays.
+    /// </summary>
+    public Task<bool> TryLeaveAsync() =>
+        Shown is ISettingsCategory category ? category.TryLeaveAsync() : Task.FromResult(true);
+
+    /// <summary>Opens a category, or a connection's tab, leaving the one on screen first.</summary>
+    public async Task OpenAsync(SettingsLocation location)
+    {
+        if (Shown is not null && location.Category != _category && !await TryLeaveAsync())
         {
-            RoutedEventHandler? once = null;
-            once = (_, _) =>
+            Select(_category);
+            return;
+        }
+
+        if (!_built.TryGetValue(location.Category, out var control))
+            _built[location.Category] = control = Build(location.Category);
+        else if (!ReferenceEquals(control, Shown) && control is ISettingsCategory again)
+            again.OnShownAgain();
+
+        _category = location.Category;
+        Select(_category);
+        CategoryHost.Content = control;
+        AutomationProperties.SetName(CategoryHost, SettingsNav.Info(_category).Title);
+        CategoryShown?.Invoke(_category);
+
+        if (control is ConnectionsCategory connections)
+            await connections.ShowAsync(location);
+    }
+
+    /// <summary>A message above the category; null or empty hides it.</summary>
+    public void ShowMessage(string? message)
+    {
+        TxtBanner.Text    = message ?? string.Empty;
+        Banner.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void CloseBanner_Click(object sender, RoutedEventArgs e) => ShowMessage(null);
+
+    // ── Side menu ─────────────────────────────────────────────────────────────
+
+    private void BuildMenu()
+    {
+        foreach (var group in SettingsNav.Groups)
+        {
+            var heading = new TextBlock
             {
-                Loaded -= once;
-                BtnNewConnection_Click(this, new RoutedEventArgs());
+                Text       = group.Name.ToUpperInvariant(),
+                FontSize   = 10,
+                FontWeight = FontWeights.SemiBold,
+                Margin     = new Thickness(12, Menu.Children.Count == 0 ? 6 : 16, 0, 4),
             };
-            Loaded += once;
-        }
-    }
+            heading.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
+            Menu.Children.Add(heading);
 
-    // ── Saved connections list ────────────────────────────────────────────────
-
-    private void PopulateConnectionList(ConnectionStore store, Guid? selectId)
-    {
-        _isPopulatingList = true;
-        try
-        {
-            var items = store.Connections
-                .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-                .Select(c => new ConnectionListItem(c, c.Id == store.ActiveConnectionId))
-                .ToList();
-
-            LstConnections.ItemsSource  = items;
-            LstConnections.SelectedItem = items.FirstOrDefault(i => i.Settings.Id == selectId);
-            LstConnections.Visibility   = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            TxtNoConnections.Visibility = items.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
-            BtnRemoveConnection.IsEnabled = LstConnections.SelectedItem is not null;
-        }
-        finally
-        {
-            _isPopulatingList = false;
-        }
-
-        PopulateNotificationList(store);
-    }
-
-    // The same connections, under Alerts → Windows notifications.
-    private void PopulateNotificationList(ConnectionStore store)
-    {
-        var items = store.Connections
-            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .Select(c => new NotifyItem(c.Id, c.DisplayName, c.Summary, store.NotifiesFor(c.Id)))
-            .ToList();
-        LstNotifyConnections.ItemsSource  = items;
-        TxtNoNotifyConnections.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void LstConnections_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        BtnRemoveConnection.IsEnabled = LstConnections.SelectedItem is not null;
-        if (_isPopulatingList || LstConnections.SelectedItem is not ConnectionListItem item)
-            return;
-
-        LoadIntoForm(item.Settings);
-        SetStatus(string.Empty, success: null);
-    }
-
-    private void BtnNewConnection_Click(object sender, RoutedEventArgs e)
-    {
-        _isPopulatingList = true;
-        LstConnections.SelectedItem = null;
-        _isPopulatingList = false;
-        BtnRemoveConnection.IsEnabled = false;
-
-        ClearForm();
-        TxtServer.Focus();
-        SetStatus("Enter the details for the new connection, then click Save or Save & Connect.", success: null);
-    }
-
-    private async void BtnRemoveConnection_Click(object sender, RoutedEventArgs e)
-    {
-        if (LstConnections.SelectedItem is not ConnectionListItem item)
-            return;
-
-        var confirm = MessageBox.Show(
-            $"Remove the connection \"{item.Settings.DisplayName}\" ({item.Settings.Server})?\n\nThis cannot be undone.",
-            "Remove Connection", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (confirm != MessageBoxResult.Yes)
-            return;
-
-        try
-        {
-            _service.Remove(item.Settings.Id);
-            await _applyConnections(false);
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Failed to remove the connection: {Redact(ex.Message)}", success: false);
-            return;
-        }
-
-        var store = _service.Load();
-        PopulateConnectionList(store, selectId: null);
-        ClearForm();
-
-        if (!item.IsActive)
-            SetStatus($"Removed \"{item.Settings.DisplayName}\".", success: true);
-        else if (store.Connections.Count > 0)
-            SetStatus($"Removed \"{item.Settings.DisplayName}\", which was the active connection. " +
-                      "Select another connection in the sidebar (or above, then Save & Connect), or add a new one.",
-                      success: null);
-        else
-            SetStatus($"Removed \"{item.Settings.DisplayName}\". No connections are left — add a new one below to continue.",
-                      success: null);
-    }
-
-    // ── Save / test ───────────────────────────────────────────────────────────
-
-    private async void BtnSave_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: false);
-
-    private async void BtnSaveAndConnect_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: true);
-
-    // Validates the connection against the server, then adds or updates it. Nothing is saved
-    // when the server can't be reached, so the list only ever holds working connections.
-    private async Task SaveAsync(bool connect)
-    {
-        if (!TryReadInputs(out var settings))
-            return;
-
-        if (ChkCustomThresholds.IsChecked == true)
-        {
-            if (!ConnectionThresholds.TryRead(out var thresholds, out var thresholdError))
+            foreach (var info in group.Categories)
             {
-                SetStatus($"This connection's health thresholds — {thresholdError}", success: false);
-                return;
-            }
-            settings.HealthThresholds = thresholds;
-        }
+                var title = new TextBlock { Text = info.Title, VerticalAlignment = VerticalAlignment.Center };
+                var row   = new DockPanel();
+                if (info.Id == SettingsCategory.Connections)
+                {
+                    _connectionsCount = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+                    DockPanel.SetDock(_connectionsCount, Dock.Right);
+                    row.Children.Add(_connectionsCount);
+                }
+                row.Children.Add(title);
 
-        var store = _service.Load();
-        var duplicate = store.Connections.FirstOrDefault(c =>
-            c.Id != settings.Id && string.Equals(c.DisplayName, settings.DisplayName, StringComparison.CurrentCultureIgnoreCase));
-        if (duplicate is not null)
-        {
-            SetStatus($"A connection named \"{settings.DisplayName}\" already exists. Enter a different connection name.", success: false);
-            TxtConnectionName.Focus();
-            return;
-        }
-
-        SetBusy(true);
-        SetStatus(ConnectingMessage(settings, "Validating connection…"), success: null);
-
-        try
-        {
-            var error = await TryOpenConnectionAsync(settings.ConnectionString);
-            if (error is not null)
-            {
-                SetStatus($"Connection failed — not saved: {error}", success: false);
-                return;
-            }
-
-            _service.Upsert(settings);
-
-            // The first connection saved becomes active, so the dashboard has something to show.
-            var makeActive = connect || store.ActiveConnectionId is null;
-            if (makeActive)
-                _service.SetActive(settings.Id);
-
-            _editingId = settings.Id;
-            PopulateConnectionList(_service.Load(), settings.Id);
-            TxtFormTitle.Text = $"Edit Connection — {settings.DisplayName}";
-
-            await _applyConnections(connect);
-
-            SetStatus(makeActive
-                ? $"Connection \"{settings.DisplayName}\" saved and is now active."
-                : $"Connection \"{settings.DisplayName}\" saved. Switch to it from the sidebar selector.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Failed to save: {Redact(ex.Message)}", success: false);
-        }
-        finally
-        {
-            SetBusy(false);
-        }
-    }
-
-    private async void BtnTestConnection_Click(object sender, RoutedEventArgs e)
-    {
-        if (!TryReadInputs(out var settings))
-            return;
-
-        BtnTestConnection.IsEnabled = false;
-        SetStatus(ConnectingMessage(settings, "Testing connection…"), success: null);
-
-        try
-        {
-            var error = await TryOpenConnectionAsync(settings.ConnectionString);
-            if (error is null)
-                SetStatus("Connection successful!", success: true);
-            else
-                SetStatus($"Connection failed: {error}", success: false);
-        }
-        finally
-        {
-            BtnTestConnection.IsEnabled = true;
-        }
-    }
-
-    // Returns null on success, otherwise the failure message with any credentials masked.
-    private static Task<string?> TryOpenConnectionAsync(string connStr) => ConnectionTest.TryOpenAsync(connStr);
-
-    private void SetBusy(bool busy)
-    {
-        BtnSave.IsEnabled             = !busy;
-        BtnSaveAndConnect.IsEnabled   = !busy;
-        BtnTestConnection.IsEnabled   = !busy;
-        BtnNewConnection.IsEnabled    = !busy;
-        BtnRemoveConnection.IsEnabled = !busy && LstConnections.SelectedItem is not null;
-        LstConnections.IsEnabled      = !busy;
-    }
-
-    private void BtnThemeToggle_Click(object sender, RoutedEventArgs e)
-    {
-        var app = (App)Application.Current;
-        app.ToggleTheme();
-
-        // Not in the settings file, so logged here rather than by the settings diff.
-        _monitoring.Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.SettingChanged, null, null, ActivitySources.Settings,
-                                          "Theme", app.IsDarkTheme ? "Light" : "Dark", app.IsDarkTheme ? "Dark" : "Light"));
-        NavigationService?.Navigate(new SettingsPage(_service, _monitoring, _chat, _applyConnections, selectConnectionId: _editingId));
-    }
-
-    private void LnkOpenLogFolder_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            // Created up front so the link works before anything has been logged.
-            System.IO.Directory.CreateDirectory(AppLog.Directory);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName        = AppLog.Directory,
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Could not open the log folder: {ex.Message}", success: false);
-        }
-    }
-
-    // ── Monitoring history ────────────────────────────────────────────────────
-
-    private void LoadHistorySettings(ConnectionStore store)
-    {
-        _isLoadingHistorySettings = true;
-        try
-        {
-            foreach (var minutes in HistorySettings.IntervalChoicesMinutes)
-                CmbHistoryInterval.Items.Add(new ComboBoxItem { Content = MinutesText(minutes), Tag = minutes });
-            foreach (var days in HistorySettings.RetentionChoicesDays)
-                CmbHistoryRetention.Items.Add(new ComboBoxItem { Content = $"{days} days", Tag = days });
-
-            ShowHistorySettings(store.HistoryIntervalMinutes, store.HistoryRetentionDays);
-        }
-        finally
-        {
-            _isLoadingHistorySettings = false;
-        }
-    }
-
-    // Selects the saved choices; the values are always ones offered (see HistorySettings.Normalize*).
-    private void ShowHistorySettings(int intervalMinutes, int retentionDays)
-    {
-        _savedIntervalMinutes = intervalMinutes;
-        _savedRetentionDays   = retentionDays;
-        CmbHistoryInterval.SelectedItem  = FindChoice(CmbHistoryInterval, intervalMinutes);
-        CmbHistoryRetention.SelectedItem = FindChoice(CmbHistoryRetention, retentionDays);
-    }
-
-    private static ComboBoxItem FindChoice(ComboBox combo, int value) =>
-        combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == value)
-        ?? (ComboBoxItem)combo.Items[0];
-
-    private void HistorySetting_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isLoadingHistorySettings ||
-            CmbHistoryInterval.SelectedItem is not ComboBoxItem { Tag: int minutes } ||
-            CmbHistoryRetention.SelectedItem is not ComboBoxItem { Tag: int days })
-            return;
-        if (minutes == _savedIntervalMinutes && days == _savedRetentionDays)
-            return;
-
-        if (days < _savedRetentionDays)
-        {
-            var confirm = MessageBox.Show(
-                $"Keep monitoring history for {days} days instead of {_savedRetentionDays}?\n\n" +
-                $"History older than {days} days is deleted straight away, for every connection. This cannot be undone.",
-                "Monitoring History", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-            if (confirm != MessageBoxResult.Yes)
-            {
-                RevertHistorySettings();
-                return;
+                var item = new RadioButton { Content = row, Tag = info.Id, Style = (Style)Resources["MenuItem"] };
+                AutomationProperties.SetName(item, info.Title);
+                item.Click   += MenuItem_Click;
+                item.KeyDown += MenuItem_KeyDown;
+                _items[info.Id] = item;
+                Menu.Children.Add(item);
             }
         }
-
-        try
-        {
-            _service.SetHistorySettings(minutes, days);
-            var store = _service.Load();
-            _monitoring.ApplyHistorySettings(store);
-            _savedIntervalMinutes = store.HistoryIntervalMinutes;
-            _savedRetentionDays   = store.HistoryRetentionDays;
-
-            ShowStatus(TxtHistoryStatus,
-                $"Saved: a snapshot every {MinutesText(store.HistoryIntervalMinutes)}, " +
-                $"history older than {store.HistoryRetentionDays} days deleted automatically.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtHistoryStatus, $"Could not save the history settings: {ex.Message}", success: false);
-            RevertHistorySettings();
-        }
     }
 
-    // Puts back the saved choices. Deferred: changing the selection inside its own
-    // SelectionChanged handler can leave the ComboBox showing the rejected choice.
-    private void RevertHistorySettings() =>
-        Dispatcher.BeginInvoke(() =>
-        {
-            _isLoadingHistorySettings = true;
-            try
-            {
-                ShowHistorySettings(_savedIntervalMinutes, _savedRetentionDays);
-            }
-            finally
-            {
-                _isLoadingHistorySettings = false;
-            }
-        });
-
-    private async void BtnClearHistory_Click(object sender, RoutedEventArgs e)
+    // A click or Space; on the category already open it goes back to its start, e.g. from a
+    // connection's page to the cards.
+    private async void MenuItem_Click(object sender, RoutedEventArgs e)
     {
-        var confirm = MessageBox.Show(
-            "Delete all monitoring history, for every connection?\n\n" +
-            "Monitoring carries on, and new history is saved from the next sample. The activity log is kept, " +
-            "and records that history was cleared. This cannot be undone.",
-            "Clear History", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (confirm != MessageBoxResult.Yes)
+        if (_isSelecting || sender is not RadioButton { Tag: SettingsCategory category })
             return;
-
-        BtnClearHistory.IsEnabled = false;
-        ShowStatus(TxtHistoryStatus, "Clearing history…", success: null);
-        try
-        {
-            await _monitoring.ClearHistoryAsync(ActivitySources.Settings);
-            ShowStatus(TxtHistoryStatus, "History cleared. The activity log is kept.", success: true);
-            _ = ActivityLogView.RefreshQuietlyAsync();   // shows the History cleared row
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtHistoryStatus, $"Could not clear the history: {ex.Message}", success: false);
-        }
-        finally
-        {
-            BtnClearHistory.IsEnabled = true;
-            UpdateHistorySize();
-        }
+        await OpenAsync(new SettingsLocation(category));
     }
 
-    private void UpdateHistorySize()
+    private void MenuItem_KeyDown(object sender, KeyEventArgs e)
     {
-        var path  = _monitoring.HistoryPath;
-        var bytes = HistoryStore.SizeOnDisk(path);
-        TxtHistorySize.Text = bytes == 0
-            ? "No history saved yet."
-            : $"Size on disk: {HistorySettings.FormatSize(bytes)}";
-        TxtHistoryPath.Text = path;
-    }
-
-    private static string MinutesText(int minutes) => minutes == 1 ? "1 minute" : $"{minutes} minutes";
-
-    // ── Health thresholds ─────────────────────────────────────────────────────
-
-    private void BtnSaveThresholds_Click(object sender, RoutedEventArgs e)
-    {
-        if (!GlobalThresholds.TryRead(out var thresholds, out var error))
-        {
-            ShowStatus(TxtThresholdsStatus, error, success: false);
+        if (e.Key != Key.Enter || sender is not RadioButton item)
             return;
-        }
-
-        try
-        {
-            _service.SetHealthThresholds(thresholds!);
-            var store = _service.Load();
-            _monitoring.ApplyHealthThresholds(store);
-            _globalThresholds = store.HealthThresholds;
-
-            // A connection without its own thresholds shows the shared ones in the form.
-            if (ChkCustomThresholds.IsChecked != true)
-                ConnectionThresholds.Show(_globalThresholds);
-
-            var own = store.Connections.Count(c => c.HealthThresholds is not null);
-            ShowStatus(TxtThresholdsStatus,
-                own == 0
-                    ? "Saved. Every connection's health dot now uses these thresholds."
-                    : $"Saved. Every connection's health dot now uses these thresholds, except {own} with its own.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtThresholdsStatus, $"Could not save the thresholds: {ex.Message}", success: false);
-        }
+        item.IsChecked = true;
+        MenuItem_Click(item, e);
+        e.Handled = true;
     }
 
-    private void BtnDefaultThresholds_Click(object sender, RoutedEventArgs e)
+    private void Select(SettingsCategory category)
     {
-        GlobalThresholds.Show(HealthThresholds.Default);
-        ShowStatus(TxtThresholdsStatus, "Defaults restored in the boxes. Click Save thresholds to use them.", success: null);
+        _isSelecting = true;
+        try { _items[category].IsChecked = true; }
+        finally { _isSelecting = false; }
     }
 
-    private void ChkCustomThresholds_Changed(object sender, RoutedEventArgs e)
+    // "Connections  5".
+    private void UpdateCount()
     {
-        // Fires during InitializeComponent, before the editor below exists.
-        if (ConnectionThresholds is null)
-            return;
-
-        ConnectionThresholds.Visibility = ChkCustomThresholds.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        var count = _context.Service.Load().Connections.Count;
+        if (_connectionsCount is not null)
+            _connectionsCount.Text = count.ToString();
+        AutomationProperties.SetName(_items[SettingsCategory.Connections],
+            count == 1 ? "Connections, 1 saved" : $"Connections, {count} saved");
     }
 
-    // ── Alerts ────────────────────────────────────────────────────────────────
+    private void OnSettingsChanged(IReadOnlyList<ActivityEntry> rows) => Dispatcher.InvokeAsync(UpdateCount);
 
-    private void LoadAlertSettings(ConnectionStore store)
+    private FrameworkElement Build(SettingsCategory category)
     {
-        _isLoadingAlertSettings = true;
-        try
+        switch (category)
         {
-            foreach (var samples in AlertSettings.SampleChoices)
-                CmbAlertSamples.Items.Add(new ComboBoxItem { Content = SamplesText(samples), Tag = samples });
-            ShowAlertSettings(store.AlertSamples);
+            case SettingsCategory.Connections:      return new ConnectionsCategory(_context);
+            case SettingsCategory.Monitoring:       return new MonitoringCategory(_context);
+            case SettingsCategory.Thresholds:       return new ThresholdsCategory(_context);
+            case SettingsCategory.Alerts:           return new AlertsCategory(_context);
+            case SettingsCategory.NotificationArea: return new NotificationAreaCategory(_context);
+            case SettingsCategory.Activity:         return new ActivityCategory(_context);
+            default:
+                var appearance = new AppearanceCategory(_context);
+                appearance.ThemeChanged += () => ThemeChanged?.Invoke();
+                return appearance;
         }
-        finally
-        {
-            _isLoadingAlertSettings = false;
-        }
-    }
-
-    private void ShowAlertSettings(int samples)
-    {
-        _savedAlertSamples           = samples;
-        CmbAlertSamples.SelectedItem = FindChoice(CmbAlertSamples, samples);
-    }
-
-    private void AlertSetting_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isLoadingAlertSettings || CmbAlertSamples.SelectedItem is not ComboBoxItem { Tag: int samples } ||
-            samples == _savedAlertSamples)
-            return;
-
-        try
-        {
-            _service.SetAlertSettings(samples);
-            var store = _service.Load();
-            _monitoring.ApplyAlertSettings(store);
-            _savedAlertSamples = store.AlertSamples;
-            ShowStatus(TxtAlertsStatus,
-                $"Saved: an alert starts after {SamplesText(store.AlertSamples)} in a row past a threshold, " +
-                "and ends after as many back to normal.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtAlertsStatus, $"Could not save the alert settings: {ex.Message}", success: false);
-            // Deferred for the same reason as RevertHistorySettings.
-            Dispatcher.BeginInvoke(() =>
-            {
-                _isLoadingAlertSettings = true;
-                try { ShowAlertSettings(_savedAlertSamples); }
-                finally { _isLoadingAlertSettings = false; }
-            });
-        }
-    }
-
-    private static string SamplesText(int samples) => samples == 1 ? "1 sample" : $"{samples} samples";
-
-    // Saved straight away, like the other choices on this card: muting doesn't need the server.
-    private void ChkNotify_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not CheckBox { DataContext: NotifyItem item } box)
-            return;
-
-        var notify = box.IsChecked == true;
-        try
-        {
-            _service.SetNotificationsMuted(item.Id, muted: !notify);
-            ShowStatus(TxtAlertsStatus,
-                notify
-                    ? $"Saved: alerts on \"{item.Name}\" raise a Windows notification."
-                    : $"Saved: alerts on \"{item.Name}\" are muted. They are still listed on the Alerts page.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtAlertsStatus, $"Could not save the notification setting: {ex.Message}", success: false);
-            box.IsChecked = !notify;
-        }
-    }
-
-    // Applies straight away: on starts the active connection and the background ones, off stops
-    // every session (their active alerts end).
-    private async void ChkStartMonitoringAutomatically_Click(object sender, RoutedEventArgs e)
-    {
-        var start = ChkStartMonitoringAutomatically.IsChecked == true;
-        try
-        {
-            _service.SetStartMonitoringAutomatically(start);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtMonitoringStatus, $"Could not save the setting: {Redact(ex.Message)}", success: false);
-            ChkStartMonitoringAutomatically.IsChecked = !start;
-            return;
-        }
-
-        try
-        {
-            await _applyConnections(false);
-            ShowStatus(TxtMonitoringStatus,
-                start
-                    ? $"Saved: {MonitoredText()} now, and from every start of SqlVitals."
-                    : "Saved: monitoring stopped for every connection. Nothing is collected until you press Start.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            // Saved, so the box stays as it is; it applies at the latest when SqlVitals next starts.
-            ShowStatus(TxtMonitoringStatus, $"Saved, but it couldn't be applied straight away: {Redact(ex.Message)}", success: false);
-        }
-    }
-
-    private string MonitoredText() => _monitoring.MonitoredCount switch
-    {
-        0     => "no connection can be monitored yet (the active one needs its password, or there is none)",
-        1     => "1 connection is monitored",
-        var n => $"{n} connections are monitored",
-    };
-
-    private void ChkKeepRunningInTray_Click(object sender, RoutedEventArgs e)
-    {
-        var keep = ChkKeepRunningInTray.IsChecked == true;
-        try
-        {
-            _service.SetKeepRunningInTray(keep);
-            ShowStatus(TxtTrayStatus,
-                keep
-                    ? "Saved: minimizing or closing the window keeps SqlVitals running in the notification area."
-                    : "Saved: closing the window exits SqlVitals and stops monitoring.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtTrayStatus, $"Could not save the setting: {ex.Message}", success: false);
-            ChkKeepRunningInTray.IsChecked = !keep;
-        }
-    }
-
-    /// <summary>Row under Alerts → Windows notifications.</summary>
-    public sealed record NotifyItem(Guid Id, string Name, string Summary, bool Notifies);
-
-    // ── Chat channels (#120) ──────────────────────────────────────────────────
-
-    private void PopulateChatChannels(ConnectionStore store, Guid? selectId)
-    {
-        _isPopulatingChatList = true;
-        try
-        {
-            var now   = DateTime.Now;
-            var items = store.ChatChannels
-                .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
-                .Select(c => (Channel: c, Status: _chat.Status(c.Id)))
-                .Select(c => new ChatChannelItem(
-                    c.Channel.Id, c.Channel.Name,
-                    $"{ChatServices.Name(c.Channel.Service)} · {WebhookUrl.Mask(c.Channel.WebhookUrl)} · {Scope(c.Channel)}" +
-                    (c.Channel.Enabled ? "" : " · Off"),
-                    c.Status.Text(now),
-                    c.Status.IsFailing))
-                .ToList();
-
-            LstChatChannels.ItemsSource  = items;
-            LstChatChannels.SelectedItem = items.FirstOrDefault(i => i.Id == selectId);
-            LstChatChannels.Visibility   = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            TxtNoChatChannels.Visibility = items.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
-            var selected = LstChatChannels.SelectedItem is not null;
-            BtnSendChatTest.IsEnabled      = selected;
-            BtnRemoveChatChannel.IsEnabled = selected;
-        }
-        finally
-        {
-            _isPopulatingChatList = false;
-        }
-    }
-
-    private void OnChatStatusChanged(Guid channelId) =>
-        PopulateChatChannels(_service.Load(), (LstChatChannels.SelectedItem as ChatChannelItem)?.Id);
-
-    private void LstChatChannels_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isPopulatingChatList)
-            return;
-
-        var item = LstChatChannels.SelectedItem as ChatChannelItem;
-        BtnSendChatTest.IsEnabled      = item is not null;
-        BtnRemoveChatChannel.IsEnabled = item is not null;
-        if (item is null)
-            return;
-
-        var store = _service.Load();
-        if (store.ChatChannels.FirstOrDefault(c => c.Id == item.Id) is { } channel)
-        {
-            OpenChannelForm(channel, store);
-            ShowStatus(TxtChatStatus, string.Empty, success: null);
-        }
-    }
-
-    private void BtnAddChatChannel_Click(object sender, RoutedEventArgs e)
-    {
-        _isPopulatingChatList = true;
-        try { LstChatChannels.SelectedItem = null; }
-        finally { _isPopulatingChatList = false; }
-        BtnSendChatTest.IsEnabled      = false;
-        BtnRemoveChatChannel.IsEnabled = false;
-
-        OpenChannelForm(null, _service.Load());
-        ShowStatus(TxtChatStatus, string.Empty, success: null);
-        TxtChatName.Focus();
-    }
-
-    private void OpenChannelForm(ChatChannel? channel, ConnectionStore store)
-    {
-        _editingChannelId = channel?.Id;
-        _savedChannelUrl  = channel?.WebhookUrl;
-        _channelUrlShown  = channel is null;
-
-        TxtChatFormTitle.Text        = channel is null ? "New Channel" : $"Edit Channel — {channel.Name}";
-        TxtChatName.Text             = channel?.Name ?? string.Empty;
-        TxtChatUrl.Text              = string.Empty;
-        TxtChatUrlMasked.Text        = WebhookUrl.Mask(channel?.WebhookUrl);
-        PnlChatUrlMasked.Visibility  = channel is null ? Visibility.Collapsed : Visibility.Visible;
-        TxtChatUrl.Visibility        = channel is null ? Visibility.Visible : Visibility.Collapsed;
-        CmbChatService.SelectedIndex = channel?.Service == ChatService.Teams ? 1 : 0;
-        ChkChatEnabled.IsChecked     = channel?.Enabled ?? true;
-        CmbChatPost.SelectedIndex    = channel?.CriticalOnly == true ? 1 : 0;
-        ChkChatPostEnds.IsChecked    = channel?.PostEnds ?? true;
-        LstChatConnections.ItemsSource = store.Connections
-            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .Select(c => new ChatConnectionItem(c.Id, c.DisplayName) { Chosen = channel?.ConnectionIds.Contains(c.Id) == true })
-            .ToList();
-        if (channel?.AllConnections == false)
-            RadChatChosenConnections.IsChecked = true;
-        else
-            RadChatAllConnections.IsChecked = true;
-        LstChatConnections.IsEnabled = RadChatChosenConnections.IsChecked == true;
-        ShowChatFormMessage(null, null);
-        ChatChannelForm.Visibility   = Visibility.Visible;
-    }
-
-    private void CloseChannelForm()
-    {
-        ChatChannelForm.Visibility = Visibility.Collapsed;
-        TxtChatUrl.Text   = string.Empty;
-        _savedChannelUrl  = null;
-        _editingChannelId = null;
-    }
-
-    private void BtnShowChatUrl_Click(object sender, RoutedEventArgs e)
-    {
-        _channelUrlShown = true;
-        // Filled in code: the service the user picked stays as it is.
-        _isFillingChatUrl = true;
-        try { TxtChatUrl.Text = _savedChannelUrl ?? string.Empty; }
-        finally { _isFillingChatUrl = false; }
-        PnlChatUrlMasked.Visibility = Visibility.Collapsed;
-        TxtChatUrl.Visibility       = Visibility.Visible;
-        TxtChatUrl.Focus();
-    }
-
-    // Picks the service from the URL as it's typed or pasted; the user can still change it.
-    private void TxtChatUrl_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (!_isFillingChatUrl && WebhookUrl.Detect(TxtChatUrl.Text) is { } detected)
-            CmbChatService.SelectedIndex = detected == ChatService.Teams ? 1 : 0;
-    }
-
-    private void BtnCancelChatChannel_Click(object sender, RoutedEventArgs e)
-    {
-        CloseChannelForm();
-        _isPopulatingChatList = true;
-        try { LstChatChannels.SelectedItem = null; }
-        finally { _isPopulatingChatList = false; }
-        BtnSendChatTest.IsEnabled      = false;
-        BtnRemoveChatChannel.IsEnabled = false;
-    }
-
-    private void BtnSaveChatChannel_Click(object sender, RoutedEventArgs e)
-    {
-        var store   = _service.Load();
-        var id      = _editingChannelId ?? Guid.NewGuid();
-        var name    = TxtChatName.Text.Trim();
-        var service = CmbChatService.SelectedIndex == 1 ? ChatService.Teams : ChatService.Slack;
-        var url     = _channelUrlShown ? TxtChatUrl.Text.Trim() : _savedChannelUrl ?? string.Empty;
-
-        if (name.Length == 0)
-        {
-            ShowChatFormMessage("Enter a name for the channel, e.g. DBA team (Teams).", success: false);
-            TxtChatName.Focus();
-            return;
-        }
-        if (store.ChatChannels.Any(c => c.Id != id && string.Equals(c.Name.Trim(), name, StringComparison.CurrentCultureIgnoreCase)))
-        {
-            ShowChatFormMessage($"A channel named \"{name}\" already exists. Enter a different name.", success: false);
-            TxtChatName.Focus();
-            return;
-        }
-
-        var allConnections = RadChatAllConnections.IsChecked == true;
-        var chosen = (LstChatConnections.ItemsSource as IEnumerable<ChatConnectionItem> ?? [])
-            .Where(i => i.Chosen).Select(i => i.Id).ToList();
-        if (!allConnections && chosen.Count == 0)
-        {
-            ShowChatFormMessage("Tick at least one connection, or choose All monitored connections.", success: false);
-            return;
-        }
-
-        var check = WebhookUrl.Check(url, service, store.ChatChannels, id);
-        if (!check.IsValid)
-        {
-            ShowChatFormMessage(check.Error, success: false);
-            if (!_channelUrlShown)
-                BtnShowChatUrl_Click(sender, e);
-            TxtChatUrl.Focus();
-            return;
-        }
-
-        var channel = new ChatChannel
-        {
-            Id         = id,
-            Name       = name,
-            Service    = service,
-            WebhookUrl = url,
-            Enabled    = ChkChatEnabled.IsChecked == true,
-            AllConnections = allConnections,
-            ConnectionIds  = chosen,
-            CriticalOnly   = CmbChatPost.SelectedIndex == 1,
-            PostEnds       = ChkChatPostEnds.IsChecked == true,
-        };
-
-        try
-        {
-            _service.SaveChatChannel(channel);
-        }
-        catch (Exception ex)
-        {
-            ShowChatFormMessage($"Could not save the channel: {ex.Message}", success: false);
-            return;
-        }
-
-        var saved = _service.Load();
-        PopulateChatChannels(saved, id);
-        if (saved.ChatChannels.FirstOrDefault(c => c.Id == id) is { } savedChannel)
-            OpenChannelForm(savedChannel, saved);
-
-        ShowStatus(TxtChatStatus,
-            $"Saved \"{name}\"" + (channel.Enabled ? "." : ", turned off.") +
-            (check.Warning is { } warning ? $" {warning}" : " Send a test message to check it reaches the channel."),
-            success: check.Warning is null ? true : null);
-    }
-
-    private void BtnRemoveChatChannel_Click(object sender, RoutedEventArgs e)
-    {
-        if (LstChatChannels.SelectedItem is not ChatChannelItem item)
-            return;
-
-        var confirm = MessageBox.Show(
-            $"Remove the chat channel \"{item.Name}\"?\n\nSqlVitals stops posting to it. The webhook itself stays in Slack or Teams until you delete it there.",
-            "Remove Chat Channel", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (confirm != MessageBoxResult.Yes)
-            return;
-
-        try
-        {
-            _service.RemoveChatChannel(item.Id);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtChatStatus, $"Could not remove the channel: {ex.Message}", success: false);
-            return;
-        }
-
-        CloseChannelForm();
-        PopulateChatChannels(_service.Load(), selectId: null);
-        ShowStatus(TxtChatStatus, $"Removed \"{item.Name}\".", success: true);
-    }
-
-    private async void BtnSendChatTest_Click(object sender, RoutedEventArgs e)
-    {
-        if (LstChatChannels.SelectedItem is not ChatChannelItem item)
-            return;
-        var channel = _chat.Channels.FirstOrDefault(c => c.Id == item.Id);
-        if (channel is null)
-        {
-            ShowStatus(TxtChatStatus, $"\"{item.Name}\" isn't saved any more.", success: false);
-            return;
-        }
-
-        BtnSendChatTest.IsEnabled = false;
-        ShowStatus(TxtChatStatus, $"Sending a test message to \"{item.Name}\"…", success: null);
-        try
-        {
-            var result = await _chat.SendTestAsync(item.Id);
-            ShowStatus(TxtChatStatus, $"\"{item.Name}\": {result.Describe(channel.Service)}", success: result.IsSuccess);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(TxtChatStatus, $"Could not send the test message: {ex.Message}", success: false);
-        }
-        finally
-        {
-            BtnSendChatTest.IsEnabled = LstChatChannels.SelectedItem is not null;
-        }
-    }
-
-    private void ShowChatFormMessage(string? message, bool? success)
-    {
-        if (message is null)
-            TxtChatFormMessage.Visibility = Visibility.Collapsed;
-        else
-            ShowStatus(TxtChatFormMessage, message, success);
-    }
-
-    private void ChatConnectionsChoice_Changed(object sender, RoutedEventArgs e)
-    {
-        if (LstChatConnections is not null)
-            LstChatConnections.IsEnabled = RadChatChosenConnections.IsChecked == true;
-    }
-
-    // "all connections", "2 connections, critical only, no ends".
-    private static string Scope(ChatChannel channel) =>
-        (channel.AllConnections ? "all connections"
-         : channel.ConnectionIds.Count == 1 ? "1 connection"
-         : $"{channel.ConnectionIds.Count} connections") +
-        (channel.CriticalOnly ? ", critical only" : "") +
-        (channel.PostEnds ? "" : ", no ends");
-
-    /// <summary>A tick box under Connections in the channel form.</summary>
-    public sealed class ChatConnectionItem(Guid id, string name)
-    {
-        public Guid   Id     { get; } = id;
-        public string Name   { get; } = name;
-        public bool   Chosen { get; set; }
-    }
-
-    /// <summary>Row under Alerts → Chat channels: never the URL, only its mask.</summary>
-    public sealed record ChatChannelItem(Guid Id, string Name, string Detail, string StatusText, bool Failing = false);
-
-    // ── Form ──────────────────────────────────────────────────────────────────
-
-    private void LoadIntoForm(ConnectionSettings settings)
-    {
-        _editingId = settings.Id;
-        TxtFormTitle.Text = $"Edit Connection — {settings.DisplayName}";
-
-        TxtConnectionName.Text              = settings.Name;
-        TxtServer.Text                      = settings.Server;
-        SelectByTag(CmbAuthentication, settings.Authentication.ToString());
-        TxtUserName.Text                    = settings.UserName;
-        TxtPassword.Password                = settings.Password;
-        ChkSavePassword.IsChecked           = settings.SavePassword;
-        CmbDatabase.ItemsSource             = null;
-        CmbDatabase.Text                    = settings.Database;
-        SelectByTag(CmbEncrypt, settings.Encrypt.ToString());
-        ChkTrustServerCertificate.IsChecked = settings.TrustServerCertificate;
-        TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
-        TxtAdditionalParameters.Text        = settings.AdditionalParameters;
-        ChkMonitorInBackground.IsChecked    = settings.MonitorInBackground;
-
-        // Starts from the shared thresholds, so ticking the box begins from what the dot uses now.
-        ConnectionThresholds.Show(settings.HealthThresholds ?? _globalThresholds);
-        ChkCustomThresholds.IsChecked       = settings.HealthThresholds is not null;
-
-        _databaseListSource = null;
-        ApplyAuthenticationLayout();
-    }
-
-    private void ClearForm()
-    {
-        var blank = new ConnectionSettings();
-        LoadIntoForm(blank);
-        _editingId        = null;
-        TxtFormTitle.Text = "New Connection";
-    }
-
-    // ── Connection form ───────────────────────────────────────────────────────
-
-    private void CmbAuthentication_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        ApplyAuthenticationLayout();
-        ConnectionField_Changed(sender, e);
-    }
-
-    // Mirrors SSMS: the credential fields shown depend on the authentication type.
-    private void ApplyAuthenticationLayout()
-    {
-        // Fires during InitializeComponent, before the named fields below exist.
-        if (TxtPassword is null)
-            return;
-
-        var auth = SelectedAuthentication();
-
-        var showUser     = auth != SqlAuthMode.Windows;
-        var showPassword = auth == SqlAuthMode.SqlServer;
-
-        LblUserName.Visibility     = showUser ? Visibility.Visible : Visibility.Collapsed;
-        PanelUserName.Visibility   = showUser ? Visibility.Visible : Visibility.Collapsed;
-        RunUserNameText.Text       = auth == SqlAuthMode.EntraMfa ? "User name" : "Login";
-        RunUserNameRequired.Text   = auth == SqlAuthMode.SqlServer ? " *" : string.Empty;
-        TxtUserNameHint.Visibility = auth == SqlAuthMode.EntraMfa ? Visibility.Visible : Visibility.Collapsed;
-
-        LblPassword.Visibility     = showPassword ? Visibility.Visible : Visibility.Collapsed;
-        TxtPassword.Visibility     = showPassword ? Visibility.Visible : Visibility.Collapsed;
-        ChkSavePassword.Visibility = showPassword ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void ConnectionField_Changed(object sender, RoutedEventArgs e) => _databaseListSource = null;
-
-    private async void CmbDatabase_DropDownOpened(object sender, EventArgs e)
-    {
-        if (_isLoadingDatabases || !TryBuildSettings(out var settings, out _))
-            return;
-
-        // Browse from master: the typed database may not exist, or the login may lack access to it.
-        var connStr = settings.BuildConnectionString(databaseOverride: string.Empty);
-        if (connStr == _databaseListSource)
-            return;
-
-        _isLoadingDatabases = true;
-        var typed = CmbDatabase.Text;
-        TxtDatabaseHint.Text = settings.Authentication == SqlAuthMode.EntraMfa
-            ? "Loading databases… complete the Microsoft sign-in if prompted."
-            : "Loading databases…";
-
-        try
-        {
-            var names = await Task.Run(async () =>
-            {
-                await using var conn = new SqlConnection(connStr);
-                await conn.OpenAsync();
-                await using var cmd = new SqlCommand(
-                    "SELECT name FROM sys.databases WHERE HAS_DBACCESS(name) = 1 ORDER BY name;", conn);
-                await using var reader = await cmd.ExecuteReaderAsync();
-
-                var list = new List<string>();
-                while (await reader.ReadAsync())
-                    list.Add(reader.GetString(0));
-                return list;
-            });
-
-            CmbDatabase.ItemsSource = names;
-            CmbDatabase.Text        = typed;   // replacing ItemsSource clears the typed text
-            _databaseListSource     = connStr;
-            TxtDatabaseHint.Text    = $"{names.Count} database(s) on {settings.Server}.";
-        }
-        catch (Exception ex)
-        {
-            CmbDatabase.IsDropDownOpen = false;
-            TxtDatabaseHint.Text = $"Could not list databases: {ex.Message} You can still type a name.";
-        }
-        finally
-        {
-            _isLoadingDatabases = false;
-        }
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private SqlAuthMode SelectedAuthentication() =>
-        Enum.TryParse<SqlAuthMode>((CmbAuthentication.SelectedItem as ComboBoxItem)?.Tag as string, out var mode)
-            ? mode
-            : SqlAuthMode.SqlServer;
-
-    private static void SelectByTag(ComboBox combo, string tag)
-    {
-        combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == tag)
-                             ?? combo.Items[0];
-    }
-
-    private static string ConnectingMessage(ConnectionSettings settings, string message) =>
-        settings.Authentication == SqlAuthMode.EntraMfa
-            ? message + " Complete the Microsoft sign-in in the window that opens."
-            : message;
-
-    // Reads the form, reporting the first problem in the status line.
-    private bool TryReadInputs(out ConnectionSettings settings)
-    {
-        if (!TryBuildSettings(out settings, out var error))
-        {
-            SetStatus(error!, success: false);
-            return false;
-        }
-        return true;
-    }
-
-    private bool TryBuildSettings(out ConnectionSettings settings, out string? error)
-    {
-        var auth = SelectedAuthentication();
-        settings = new ConnectionSettings
-        {
-            Id                     = _editingId ?? Guid.NewGuid(),
-            Name                   = TxtConnectionName.Text.Trim(),
-            Server                 = TxtServer.Text.Trim(),
-            Authentication         = auth,
-            UserName               = auth == SqlAuthMode.Windows ? string.Empty : TxtUserName.Text.Trim(),
-            Password               = auth == SqlAuthMode.SqlServer ? TxtPassword.Password : string.Empty,
-            SavePassword           = auth == SqlAuthMode.SqlServer && ChkSavePassword.IsChecked == true,
-            Database               = CmbDatabase.Text.Trim(),
-            Encrypt                = Enum.TryParse<EncryptMode>((CmbEncrypt.SelectedItem as ComboBoxItem)?.Tag as string, out var enc)
-                                         ? enc : EncryptMode.Mandatory,
-            TrustServerCertificate = ChkTrustServerCertificate.IsChecked == true,
-            AdditionalParameters   = TxtAdditionalParameters.Text.Trim(),
-            MonitorInBackground    = ChkMonitorInBackground.IsChecked == true,
-        };
-
-        if (string.IsNullOrWhiteSpace(settings.Server))
-        {
-            error = "Server name is required.";
-            return false;
-        }
-
-        if (auth == SqlAuthMode.SqlServer && string.IsNullOrWhiteSpace(settings.UserName))
-        {
-            error = "Login is required for SQL Server Authentication.";
-            return false;
-        }
-
-        if (auth == SqlAuthMode.SqlServer && string.IsNullOrEmpty(settings.Password))
-        {
-            error = "Password is required for SQL Server Authentication.";
-            return false;
-        }
-
-        if (!int.TryParse(TxtConnectTimeout.Text.Trim(), out var connectTimeout) || connectTimeout <= 0)
-        {
-            error = "Connection timeout must be a positive integer.";
-            return false;
-        }
-        settings.ConnectTimeoutSeconds = connectTimeout;
-
-        if (!int.TryParse(TxtTimeout.Text.Trim(), out var timeout) || timeout <= 0)
-        {
-            error = "Command timeout must be a positive integer.";
-            return false;
-        }
-        settings.CommandTimeoutSeconds = timeout;
-
-        try
-        {
-            // Credentials typed here would sit in plain text in a visible field, and the
-            // form's own fields would silently override them anyway.
-            var extra = new SqlConnectionStringBuilder(settings.AdditionalParameters);
-            if (!string.IsNullOrEmpty(extra.Password) || !string.IsNullOrEmpty(extra.UserID))
-            {
-                error = "Additional parameters must not contain a user name or password. Use the Login and Password fields instead.";
-                return false;
-            }
-
-            _ = settings.BuildConnectionString();
-        }
-        catch (Exception ex)
-        {
-            error = $"Additional parameters are not valid: {Redact(ex.Message)}";
-            return false;
-        }
-
-        error = null;
-        return true;
-    }
-
-    private static string Redact(string message) => ConnectionSettingsService.RedactSecrets(message);
-
-    /// <summary>Row in the saved connections list.</summary>
-    public sealed record ConnectionListItem(ConnectionSettings Settings, bool IsActive)
-    {
-        public Visibility ActiveVisibility => IsActive ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void SetStatus(string message, bool? success) => ShowStatus(TxtStatus, message, success);
-
-    private static void ShowStatus(TextBlock target, string message, bool? success)
-    {
-        target.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
-        target.Text = success switch
-        {
-            true  => "✓  " + message,   // ✓
-            false => "✗  " + message,   // ✗
-            null  => message,
-        };
-        target.Foreground = success switch
-        {
-            true  => new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)),   // green
-            false => new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),   // red
-            null  => new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),   // muted
-        };
     }
 }

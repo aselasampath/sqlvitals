@@ -30,6 +30,9 @@ public partial class MainWindow : Window
     private string _currentTag = "LiveMetrics";
     private Guid?  _currentServerId;
 
+    // The Settings category last opened, so Settings opens on it again this session (#131).
+    private SettingsCategory _settingsCategory = SettingsCategory.Connections;
+
     // Bumped on every navigation and connection switch. A page load that finishes after
     // either has happened belongs to a previous database, so its result is discarded.
     private int _loadVersion;
@@ -40,7 +43,7 @@ public partial class MainWindow : Window
     // Background live-metrics collection for the active and every monitored connection.
     internal readonly MonitoringManager Monitoring = new();
 
-    // The Slack and Teams channels in Settings → Alerts (#108).
+    // The Slack and Teams channels in Settings → Alerts & chat (#108).
     internal readonly ChatNotificationService Chat = new(new HttpWebhookSender(), ui: System.Threading.SynchronizationContext.Current
                                                                               ?? new System.Windows.Threading.DispatcherSynchronizationContext());
     private List<ConnectionSelectorItem> _selectorItems = new();
@@ -103,7 +106,7 @@ public partial class MainWindow : Window
         if (store.ChatChannelsDropped)
             _tray.Inform("Chat channels were removed",
                 "SqlVitals couldn't read its Slack and Teams channels on this PC or Windows account, so alerts " +
-                "can't be posted to them. Add them again in Settings → Alerts.");
+                "can't be posted to them. Add them again in Settings → Alerts & chat.");
 
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
         Monitoring.MonitoringChanged   += OnMonitoringChanged;
@@ -120,15 +123,16 @@ public partial class MainWindow : Window
                 // First run, or the active connection was removed: send the user to Settings
                 // instead of letting every page fail against an empty connection string.
                 await NavigateTo("Settings", store.Connections.Count == 0
-                    ? "Welcome to SqlVitals! Enter your SQL Server connection details below, then click Save & Connect."
-                    : "No connection is active. Select a saved connection in the sidebar, or add a new one below.");
+                    ? "Welcome to SqlVitals! Click + New connection to add your SQL Server, then Save & make active."
+                    : "No connection is active. Choose a saved connection in the sidebar selector, or add a new one.",
+                    new SettingsLocation(SettingsCategory.Connections));
                 return;
             }
 
             if (active is { NeedsPassword: true })
             {
                 // "Remember password" was off last session, so every query would fail the login.
-                await NavigateTo("Settings", PasswordPrompt(active), active.Id);
+                await NavigateTo("Settings", PasswordPrompt(active), SettingsLocation.Connection(active.Id));
                 return;
             }
 
@@ -160,7 +164,7 @@ public partial class MainWindow : Window
     }
 
     private static string PasswordPrompt(ConnectionSettings conn) =>
-        $"Enter the password for {conn.UserName} on {conn.Server} (\"{conn.DisplayName}\"), then click Save & Connect.";
+        $"Enter the password for {conn.UserName} on {conn.Server} (\"{conn.DisplayName}\"), then click Save & make active.";
 
     private static string Fingerprint(ConnectionSettings? conn, int commandTimeoutSeconds) =>
         RepositoryFactory.Fingerprint(conn, commandTimeoutSeconds);
@@ -371,11 +375,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Settings follows the change itself (#131), and a connection's page may hold unsaved changes.
+        if (MainFrame.Content is SettingsPage settings)
+        {
+            settings.ShowMessage($"Switched to \"{target.DisplayName}\".");
+            return;
+        }
+
         // Reopen the current page as a fresh instance so nothing from the previous database
         // stays on screen. The page may have just been disabled for an Azure SQL database.
         var tag = PagesAzureSqlLacks.Any(p => p.Tag == _currentTag && !p.Button.IsEnabled) ? "LiveMetrics" : _currentTag;
-        await NavigateTo(tag, tag == "Settings" ? $"Switched to \"{target.DisplayName}\"." : null, target.Id,
-                         serverId: _currentServerId);
+        await NavigateTo(tag, serverId: _currentServerId);
     }
 
     /// <summary>
@@ -397,7 +407,7 @@ public partial class MainWindow : Window
         if (target.NeedsPassword)
         {
             // Switching would only fail the login: ask for the password first.
-            await NavigateTo("Settings", PasswordPrompt(target), target.Id);
+            await NavigateTo("Settings", PasswordPrompt(target), SettingsLocation.Connection(target.Id));
             return false;
         }
 
@@ -418,7 +428,7 @@ public partial class MainWindow : Window
     }
 
     private async void ManageConnections_Click(object sender, RoutedEventArgs e) =>
-        await NavigateTo("Settings");
+        await NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Connections));
 
     // Pages Azure SQL Database has nothing for (see the wiki's Server Impact and Permissions →
     // Compatibility), with their own tooltip, captured on first use, to restore on another server.
@@ -620,7 +630,7 @@ public partial class MainWindow : Window
     {
         var page = new HomePage(Monitoring, SettingsService);
         page.OpenRequested          += async id => await NavigateTo("ServerDetail", serverId: id);
-        page.AddConnectionRequested += async () => await NavigateTo("Settings", newConnection: true);
+        page.AddConnectionRequested += async () => await NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage);
         return page;
     }
 
@@ -628,7 +638,8 @@ public partial class MainWindow : Window
     {
         var page = new ServerDetailPage(connectionId, Monitoring, SettingsService);
         page.BackRequested       += async () => await NavigateTo("Home");
-        page.EditRequested       += async id => await NavigateTo("Settings", settingsConnectionId: id);
+        page.EditRequested       += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
+        page.ThresholdsRequested += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id, ConnectionTab.Thresholds));
         page.AlertsRequested     += async id => await NavigateTo("Alerts", alertsConnectionId: id);
         page.MakeActiveRequested += async id =>
         {
@@ -644,6 +655,17 @@ public partial class MainWindow : Window
             var disabled = PagesAzureSqlLacks.Any(p => p.Tag == tag && !p.Button.IsEnabled);
             await NavigateTo(disabled ? "LiveMetrics" : tag);
         };
+        return page;
+    }
+
+    // Settings (#131): links out of it come back here, and switching theme opens it again.
+    private SettingsPage CreateSettingsPage(SettingsLocation? location, string? message)
+    {
+        var page = new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync,
+                                    location ?? new SettingsLocation(_settingsCategory), message);
+        page.CategoryShown   += category => _settingsCategory = category;
+        page.ServerRequested += async id => await NavigateTo("ServerDetail", serverId: id);
+        page.ThemeChanged    += async () => await NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Appearance));
         return page;
     }
 
@@ -677,11 +699,17 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <param name="settingsMessage">Shown at the top of Settings.</param>
+    /// <param name="settingsLocation">Where Settings opens (#131); the category last used when null.</param>
     /// <param name="serverId">The connection a server detail page (#130) shows.</param>
-    /// <param name="newConnection">Settings opens on an empty connection form, for "+ Add a connection".</param>
-    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, Guid? settingsConnectionId = null,
-                                                         Guid? alertsConnectionId = null, Guid? serverId = null, bool newConnection = false)
+    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, SettingsLocation? settingsLocation = null,
+                                                         Guid? alertsConnectionId = null, Guid? serverId = null)
     {
+        // A connection's page, or the default thresholds, may hold unsaved changes: ask first, and
+        // stay when the user says so (#131).
+        if (MainFrame.Content is SettingsPage leaving && !await leaving.TryLeaveAsync())
+            return;
+
         var version = ++_loadVersion;
 
         // A server detail page needs its server; without one, Home lists them all.
@@ -695,8 +723,9 @@ public partial class MainWindow : Window
         {
             tag = "Settings";
             settingsMessage ??= SettingsService.Load().Connections.Count == 0
-                ? "No SQL Server connection is configured yet. Enter your connection details below, then click Save & Connect."
-                : "No connection is active. Select a saved connection in the sidebar, or add a new one below.";
+                ? "No SQL Server connection is configured yet. Click + New connection to add one, then Save & make active."
+                : "No connection is active. Choose a saved connection in the sidebar selector, or add a new one.";
+            settingsLocation ??= new SettingsLocation(SettingsCategory.Connections);
         }
 
         _currentTag      = tag;
@@ -711,8 +740,7 @@ public partial class MainWindow : Window
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync, settingsMessage,
-                                                settingsConnectionId, newConnection));
+            MainFrame.Navigate(CreateSettingsPage(settingsLocation, settingsMessage));
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;
