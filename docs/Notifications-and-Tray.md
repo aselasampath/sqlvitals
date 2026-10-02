@@ -2,7 +2,7 @@
 
 SqlVitals can watch your servers in the background. It keeps an icon in the Windows **notification area** (beside the clock) and shows a **Windows notification** when an [alert](Alerts.md) starts, so you hear about a problem without keeping the window open.
 
-> **Where:** the SqlVitals icon in the notification area · **Configure:** ⚙️ Settings → *Alerts → Windows notifications* and *Notification Area* · **Since:** 0.35.0
+> **Where:** the SqlVitals icon in the notification area · **Configure:** ⚙️ Settings → *Alerts & chat → Windows notifications*, a connection's *Monitoring & alerts* tab, and *Notification area* · **Since:** 0.35.0
 
 ## Windows notifications
 
@@ -15,11 +15,11 @@ Alerts that start on the same sample share one notification, critical ones liste
 
 **Click the notification** to bring SqlVitals to the front on the **🔔 Alerts** page, filtered to that connection. This works from the window being hidden, minimized or behind other windows.
 
-Notifications follow the same rules as alerts: only for saved connections that are **monitored**, after the usual run of samples ([Settings → Alerts](Settings.md#alerts)). While monitoring is off there are no alerts, so there are no notifications; the icon's tooltip says *monitoring is off*.
+Notifications follow the same rules as alerts: only for saved connections that are **monitored**, after the usual run of samples ([Settings → Alerts & chat](Settings.md#alerts--chat)). While monitoring is off there are no alerts, so there are no notifications; the icon's tooltip says *monitoring is off*.
 
 ### Mute a connection
 
-Untick it in **⚙️ Settings → Alerts → Windows notifications**, or right-click the SqlVitals icon → **Notifications** → click the connection. A ticked connection notifies; an unticked one is muted.
+Turn off **Windows notifications** on its **Monitoring & alerts** tab (**⚙️ Settings → Connections → Edit**), or right-click the SqlVitals icon → **Notifications** → click the connection. **⚙️ Settings → Alerts & chat → Windows notifications** mutes or unmutes every connection at once, and lists the muted ones.
 
 - It's saved **straight away** and doesn't test the connection, so you can mute a server that's down.
 - A muted connection's alerts are **still recorded** and listed on the Alerts page, and still count in the sidebar.
@@ -31,9 +31,9 @@ Untick it in **⚙️ Settings → Alerts → Windows notifications**, or right-
 From 0.52.0, if SqlVitals can't post to one of your [Slack or Teams channels](Chat-Notifications.md) (after its retries), one notification says so:
 
 > **Chat channel failing**
-> Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts.
+> Alerts aren't reaching DBA team (Microsoft Teams): webhook not found. Check Settings → Alerts & chat.
 
-- It appears once when the channel **starts** failing, and not again until the channel has posted successfully and failed again. The channel's row in **Settings → Alerts → Chat channels** shows *⚠ Failing since …* meanwhile.
+- It appears once when the channel **starts** failing, and not again until the channel has posted successfully and failed again. The channel's card in **Settings → Alerts & chat → Chat channels** shows *⚠ Failing since …* meanwhile.
 - It's shown while the window is hidden in the notification area, and muting a connection doesn't hide it: it's about the channel, not a connection.
 - Clicking it brings SqlVitals to the front.
 
@@ -63,7 +63,7 @@ The icon may be under the **^** arrow. Drag it next to the clock to keep it in s
 
 ### Prefer the old behaviour?
 
-Untick **⚙️ Settings → Notification Area → Keep SqlVitals running in the notification area when the window is minimized or closed**. Minimizing then goes to the taskbar and closing the window exits. The icon and notifications stay while SqlVitals is open.
+Untick **⚙️ Settings → Notification area → Keep SqlVitals running in the notification area when the window is minimized or closed**. Minimizing then goes to the taskbar and closing the window exits. The icon and notifications stay while SqlVitals is open.
 
 ### One copy at a time
 

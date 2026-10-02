@@ -2,7 +2,7 @@
 
 Every saved connection has a **health dot** and a **health score** in the sidebar's connection selector. They tell you at a glance whether each of your servers is fine, and which one needs attention first, without opening them one by one.
 
-> **Where:** sidebar → *Active connection* selector; the score is also at the top of 💓 Live Metrics · **Configure:** ⚙️ Settings → *Health Thresholds* · **Score since:** 0.36.0
+> **Where:** sidebar → *Active connection* selector; the score is also at the top of 💓 Live Metrics · **Configure:** ⚙️ Settings → *Health thresholds* · **Score since:** 0.36.0
 
 ## What the colours mean
 
@@ -77,9 +77,9 @@ The score's **colour is the dot's colour**, not a banding of the number. A singl
 
 ## Change the thresholds
 
-1. Go to **⚙️ Settings → Health Thresholds**.
-2. Each indicator has a **Warning** box and a **Critical** box. **Leave a box blank to turn that level off.**
-3. Click **💾 Save thresholds**. The dots and scores update straight away, and [alerts](Alerts.md) use the new values from the next sample. **↺ Defaults** puts the default values back in the boxes; click Save to use them.
+1. Go to **⚙️ Settings → Health thresholds**.
+2. Each check has a **Warning** box and a **Critical** box, in the same table as a server's checks. **Leave a box blank to turn that level off.**
+3. Click **Save** in the bar at the bottom. The dots and scores update straight away, and [alerts](Alerts.md) use the new values from the next sample. **Reset to defaults** puts SqlVitals' own values back in the boxes; click Save to use them.
 
 The critical value must be past the warning one: higher, or lower for page life expectancy.
 
@@ -87,9 +87,9 @@ The critical value must be past the warning one: higher, or lower for page life 
 
 Some servers always run hot, such as a reporting server that sits at 85 % CPU all night. To stop it showing 🟠 all the time without changing every other server:
 
-1. Open that connection in **Settings**.
-2. Tick **Use its own health thresholds** and enter its values.
-3. Click **Save**.
+1. Open that connection's **Health thresholds** tab: **⚙️ Settings → Connections → Edit**, or **Change** under its checks on [Home](Your-Servers.md#checks).
+2. Turn on **Use its own health thresholds** and enter its values. While you type, the table grades its latest sample on them: *On the latest sample, UAT would score 70 → 80*.
+3. Click **Save**. The tab shows an **OWN** tag from then on.
 
 Other connections keep using the shared thresholds.
 
@@ -97,7 +97,7 @@ Other connections keep using the shared thresholds.
 
 **Monitoring** means collecting Live Metrics every few seconds, saving [history](History-Time-Ranges-and-Baselines.md) and raising [alerts](Alerts.md). A connection that isn't monitored gets none of it: no queries go to its server except the ones of the pages you open. From 0.46.0 nothing is monitored until you ask for it.
 
-> **Configure:** ⚙️ Settings → *Monitoring* → **Start monitoring automatically** (off for a new installation) · **Since:** 0.46.0
+> **Configure:** ⚙️ Settings → *Monitoring & history* → **Start monitoring automatically** (off for a new installation) · **Since:** 0.46.0
 
 ### Start monitoring automatically
 
@@ -108,7 +108,7 @@ Other connections keep using the shared thresholds.
 
 An installation upgraded from an earlier version keeps monitoring **on**, so nobody silently loses alerts they rely on. Changing the setting applies straight away: turning it on starts the active connection and the background ones; turning it off stops every connection (their active alerts end, as they do on **Stop**).
 
-**Monitor in background** (per connection, in Settings) only matters with the setting on: it keeps a connection monitored while another one is active. It's off for a new connection; saved connections keep their value.
+**Monitor in background** (per connection, on its *Monitoring & alerts* tab in Settings) only matters with the setting on: it keeps a connection monitored while another one is active. It's off for a new connection; saved connections keep their value.
 
 ### Start and stop any time
 

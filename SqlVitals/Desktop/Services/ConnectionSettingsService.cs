@@ -75,7 +75,10 @@ public class ConnectionSettingsService
     }
 
     /// <summary>Adds the connection, or replaces the saved one with the same <see cref="ConnectionSettings.Id"/>.</summary>
-    public void Upsert(ConnectionSettings settings) => Update(ActivitySources.Settings, store =>
+    /// <param name="notifications">
+    /// Whether its alerts raise Windows notifications, saved in the same write (#131); null leaves it as it is.
+    /// </param>
+    public void Upsert(ConnectionSettings settings, bool? notifications = null) => Update(ActivitySources.Settings, store =>
     {
         var index = store.Connections.FindIndex(c => c.Id == settings.Id);
         if (index >= 0)
@@ -84,6 +87,13 @@ public class ConnectionSettingsService
             store.Connections.Add(settings.Clone());
 
         store.CommandTimeoutSeconds = settings.CommandTimeoutSeconds;
+        if (notifications is { } notify)
+        {
+            if (notify)
+                store.NotificationsMuted.Remove(settings.Id);
+            else
+                store.NotificationsMuted.Add(settings.Id);
+        }
 
         if (settings.SavePassword || string.IsNullOrEmpty(settings.Password))
             _sessionPasswords.Remove(settings.Id);
@@ -110,6 +120,13 @@ public class ConnectionSettingsService
     /// </summary>
     public void SetStartMonitoringAutomatically(bool start) =>
         Update(ActivitySources.Settings, store => store.StartMonitoringAutomatically = start);
+
+    /// <summary>
+    /// Saves how long a query may run, for every connection. In Settings → Monitoring &amp; history
+    /// since #131; before, it was saved with the connection form.
+    /// </summary>
+    public void SetCommandTimeout(int seconds) =>
+        Update(ActivitySources.Settings, store => store.CommandTimeoutSeconds = seconds);
 
     /// <summary>Saves how often history detail snapshots are taken and how long history is kept.</summary>
     public void SetHistorySettings(int intervalMinutes, int retentionDays) => Update(ActivitySources.Settings, store =>
@@ -358,7 +375,7 @@ public class ConnectionSettingsService
                 catch (Exception ex) when (ex is CryptographicException or FormatException or JsonException)
                 {
                     AppLog.Info($"The chat channels in the settings file couldn't be read ({ex.GetType().Name}), " +
-                                "so they were dropped. Add them again in Settings → Alerts.");
+                                "so they were dropped. Add them again in Settings → Alerts & chat.");
                     store.ChatChannelsDropped = true;
                 }
             }

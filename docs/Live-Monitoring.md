@@ -26,7 +26,7 @@ A dashboard of live charts, updated every 10 seconds by default.
 
 ### When monitoring is off
 
-From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Settings → Start monitoring automatically** is on. Live Metrics still opens first, with a banner: *"Monitoring is off. SqlVitals isn't collecting anything from this server."*, a **▶ Start monitoring** button, and a link to the setting.
+From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Settings → Monitoring & history → Start monitoring automatically** is on. Live Metrics still opens first, with a banner: *"Monitoring is off. SqlVitals isn't collecting anything from this server."*, a **▶ Start monitoring** button, and a link to the setting.
 
 - **Nothing is sent to the server** for this page: no Live Metrics query, no history snapshot, and no **Process Map** polling. The sidebar **Refresh** does nothing here either.
 - The health score shows **—**: an old score would read as the server's health now.

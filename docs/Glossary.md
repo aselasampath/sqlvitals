@@ -4,7 +4,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 
 | Term | Meaning |
 |---|---|
-| **Activity log** | SqlVitals' record, in the history file, of when monitoring was started and stopped and by whom or what, when the app started and exited, every settings and connection change with its old and new value (never a secret), and when history was cleared. Kept 365 days. See [Settings → Activity Log](Settings.md#activity-log). |
+| **Activity log** | SqlVitals' record, in the history file, of when monitoring was started and stopped and by whom or what, when the app started and exited, every settings and connection change with its old and new value (never a secret), and when history was cleared. Kept 365 days. See [Settings → Activity log](Settings.md#activity-log). |
 | **Alert** | A record of one health indicator staying past its threshold for a few samples in a row: when it started and ended, and its worst value. See [Alerts](Alerts.md). |
 | **Auto-shrink** | A database option that shrinks its files by itself whenever a quarter of them is free. It fragments indexes and the space is usually needed again, so it should be OFF. |
 | **Azure SQL Database** | Microsoft's managed, single-database SQL service. Some server-level views aren't available on it, and SqlVitals adapts automatically. |

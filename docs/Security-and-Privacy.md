@@ -52,7 +52,7 @@ From 0.46.0 SqlVitals keeps an [activity log](Settings.md#activity-log): when mo
 Query text captured from the server (in history, exports and copied grids) may contain **literal values**: customer names, IDs, amounts. Before sharing:
 
 - **Export for AI reports**: read them before pasting into an external service.
-- **`history.db`**: don't send it to others without checking. **Settings → Clear history** deletes the history, but keeps the activity log (with your Windows user and PC names); delete the file itself to remove that too, with SqlVitals closed.
+- **`history.db`**: don't send it to others without checking. **Settings → Monitoring & history → Clear history** deletes the history, but keeps the activity log (with your Windows user and PC names); delete the file itself to remove that too, with SqlVitals closed.
 - **Logs** are safe to attach to bug reports as far as credentials go, but may include server and database names.
 
 ## Installer

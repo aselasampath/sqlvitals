@@ -103,8 +103,11 @@ public partial class ServerDetailPage : Page, IRefreshable
     /// <summary>Make active: switch the app to this connection, as the sidebar selector does.</summary>
     public event Action<Guid>? MakeActiveRequested;
 
-    /// <summary>Edit connection, or Change thresholds: open it in Settings.</summary>
+    /// <summary>Edit connection: open it in Settings.</summary>
     public event Action<Guid>? EditRequested;
+
+    /// <summary>Change, under the checks: its Health thresholds tab in Settings (#131).</summary>
+    public event Action<Guid>? ThresholdsRequested;
 
     /// <summary>All alerts: the Alerts page, filtered to this connection.</summary>
     public event Action<Guid>? AlertsRequested;
@@ -555,6 +558,8 @@ public partial class ServerDetailPage : Page, IRefreshable
     private void Back_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke();
 
     private void Edit_Click(object sender, RoutedEventArgs e) => EditRequested?.Invoke(_id);
+
+    private void ChangeThresholds_Click(object sender, RoutedEventArgs e) => ThresholdsRequested?.Invoke(_id);
 
     private void MakeActive_Click(object sender, RoutedEventArgs e) => MakeActiveRequested?.Invoke(_id);
 

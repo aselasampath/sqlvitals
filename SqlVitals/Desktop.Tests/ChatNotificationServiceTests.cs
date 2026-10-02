@@ -355,7 +355,7 @@ public sealed class ChatNotificationServiceTests
         var status = chat.Status(channel.Id);
         Assert.True(status.IsFailing);
         Assert.Equal("webhook not found (404): no_service", status.Problem);
-        Assert.Equal(["Alerts aren't reaching DBA team (Slack): webhook not found. Check Settings → Alerts."], notices);
+        Assert.Equal(["Alerts aren't reaching DBA team (Slack): webhook not found. Check Settings → Alerts & chat."], notices);
     }
 
     [Fact]

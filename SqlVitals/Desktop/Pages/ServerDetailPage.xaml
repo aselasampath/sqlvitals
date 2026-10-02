@@ -210,7 +210,7 @@
                             <controls:HealthScoreBreakdown x:Name="Breakdown"/>
                             <TextBlock x:Name="TxtThresholds" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0">
                                 <Run x:Name="RunThresholds"/>
-                                <Hyperlink Click="Edit_Click" Foreground="{StaticResource Accent}">Change</Hyperlink>
+                                <Hyperlink Click="ChangeThresholds_Click" Foreground="{StaticResource Accent}">Change</Hyperlink>
                             </TextBlock>
                         </StackPanel>
                     </Border>

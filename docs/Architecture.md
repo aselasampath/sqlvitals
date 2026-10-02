@@ -33,6 +33,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │  ConfigChecks/  ConfigurationChecks: Pass / Warn, recommended values, fix scripts                  │
 │  Security/      SecurityAudit: Risk / Review / Pass, the risk explained, fix scripts               │
 │  Home/          ServerTile, TileOrder, ScoreTrend, BlockingNow, OutageTimeline, ThingsToCheck      │
+│  Settings/      ConnectionCard (a card in Settings → Connections), ThresholdsPreview               │
 │  History/       HistoryRecorder → HistoryWriter → HistoryStore (SQLite)   HistoryReader            │
 │  Activity/      ActivityEntry (activity log rows), SettingsDiff (a save → rows, no secrets)        │
 │  ChatNotifications/ ChannelRouter → ChannelQueue (1/s, RetryPolicy) → ChatFormatter, WebhookUrl    │
@@ -57,7 +58,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 | `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
 | `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
 | `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
-| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar, laid out off screen in both themes, and Home and a server's details as whole pages on one STA thread with the light theme (`UiThread`) |
+| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar, laid out off screen in both themes, and Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -111,6 +112,8 @@ Which connections are monitored is decided by `MonitoringPlan` (Engine, pure, un
 `HomePage` (Desktop) builds a `TileInput` per saved connection from the settings and its `MonitoringSession` (score, last success, when it started failing, the error), and `ServerTile.From` (Engine, pure) turns it into what the tile says: status in words, reason, six `CheckBar`s, footer and button. `TileOrder.Sort` puts unreachable and critical first; a new order waits while the mouse is over the tiles. `SessionStateChanged` updates one tile in place. Sparklines read the last hour from `HistoryReader.ReadScores` (the lowest score per bucket) and append the live scores (`ScoreTrend.Merge`); `Controls/ScoreChart` draws them in one pass with `ScoreTrend.Segments` (breaks at gaps) and `UnreachableSpans`. Home sends nothing to a server.
 
 `ServerDetailPage` reuses `HealthScoreBreakdown` inline, with a link per check that cost points (`CheckLinks`); the link makes the connection active (`MainWindow.SwitchToAsync`, as the selector does) and opens the page. Only *Blocking right now* queries the server: the session's own repository's `GetProcessesAsync`, summarised by `BlockingNow.From`, once per sample while blocking is past its warning threshold. For a server that can't be reached it shows `ThingsToCheck.For(server, error)` and `OutageTimeline.Build` from the session, the activity log and the alerts. Pages raise events (`OpenRequested`, `MakeActiveRequested`…) that `MainWindow` handles. See [Your Servers](Your-Servers.md).
+
+Settings (#131) is a shell, `SettingsPage`: a side menu built from `Services/SettingsNav` (groups, categories, and where every setting the activity log names is changed, checked by a test) and a host that builds each category's `UserControl` in `Pages/Settings/` the first time it's opened. They share a `SettingsContext` (the services, the `Ask` prompt tests answer, links within Settings and out to a server's page). `ConnectionsCategory` shows a card per connection (`ConnectionCard.From` over the session) and a `ConnectionEditor` per connection: four tabs in one `TabControl`, so moving between them keeps what's typed, and one save bar. Unsaved changes are the `ConnectionDraft` of the fields against the saved one; `ConnectionDraft.NeedsServerCheck` decides whether saving signs in first, and the save is one `ConnectionSettingsService.Upsert(settings, notifications)`. Leaving asks through `ISettingsCategory.TryLeaveAsync`, which `MainWindow.NavigateTo` calls before any navigation away from Settings. The thresholds table is `Controls/HealthThresholdsEditor`, laid out like the detail page's Checks table; its preview is `ThresholdsPreview.Regrade`, which grades the latest score's figures with `HealthRules.LevelOf`, the dot's own rule. See [Settings](Settings.md).
 
 ### 4. Alerts
 

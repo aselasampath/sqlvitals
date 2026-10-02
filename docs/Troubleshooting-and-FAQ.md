@@ -36,7 +36,7 @@ Before 0.36.0 CPU was read from records Azure SQL Database doesn't have. From 0.
 ## Alerts
 
 **The Alerts page has no alerts, but the health dot went 🟠.**
-An alert needs the indicator past its threshold for **3 samples in a row** (30 seconds at the default interval), so a brief spike changes the dot without raising one. Lower **Settings → Alerts → Raise an alert after** to alert sooner. Alerts are also raised only for monitored, saved connections: from 0.46.0 nothing is monitored until you press **Start** (Live Metrics, or ▶ in the sidebar selector) or turn on **Settings → Start monitoring automatically**. The Alerts page says when monitoring is off. See [Alerts](Alerts.md).
+An alert needs the indicator past its threshold for **3 samples in a row** (30 seconds at the default interval), so a brief spike changes the dot without raising one. Lower **Settings → Alerts & chat → Raise an alert after** to alert sooner. Alerts are also raised only for monitored, saved connections: from 0.46.0 nothing is monitored until you press **Start** (Live Metrics, or ▶ in the sidebar selector) or turn on **Settings → Monitoring & history → Start monitoring automatically**. The Alerts page says when monitoring is off. See [Alerts](Alerts.md).
 
 **An alert ended with "Monitoring stopped".**
 Nothing was watching any more: collection was stopped on Live Metrics, the connection was edited or removed, or SqlVitals exited (or was killed). If the problem is still there, a new alert starts once monitoring resumes. See [Alerts → When monitoring stops](Alerts.md#when-monitoring-stops).
@@ -44,7 +44,7 @@ Nothing was watching any more: collection was stopped on Live Metrics, the conne
 ## Notifications and the notification area
 
 **I closed the window but SqlVitals is still running.**
-That's the default from 0.35.0: closing or minimizing hides it to the notification area so monitoring and alerts carry on. Right-click the SqlVitals icon (beside the clock; it may be under **^**) → **Exit** to quit, or turn it off in **Settings → Notification Area**. See [Notifications and Tray](Notifications-and-Tray.md).
+That's the default from 0.35.0: closing or minimizing hides it to the notification area so monitoring and alerts carry on. Right-click the SqlVitals icon (beside the clock; it may be under **^**) → **Exit** to quit, or turn it off in **Settings → Notification area**. See [Notifications and Tray](Notifications-and-Tray.md).
 
 **Where did the window go? Starting SqlVitals again does nothing.**
 It's running in the notification area, and starting it again brings that copy to the front. If no window appears, click the SqlVitals icon in the notification area.
@@ -52,7 +52,7 @@ It's running in the notification area, and starting it again brings that copy to
 **No notification appeared when an alert started.**
 Check, in order:
 1. The alert is on the **Alerts** page. No alert means no notification: see *The Alerts page has no alerts* above.
-2. The connection is ticked in **Settings → Alerts → Windows notifications**.
+2. **Windows notifications** is on for the connection, on its **Monitoring & alerts** tab in Settings (**Settings → Alerts & chat** lists the muted ones).
 3. Windows **Do Not Disturb** / **Focus** is off. Otherwise the notification waits in the notification centre.
 4. **Windows Settings → System → Notifications → SqlVitals** is on.
 
@@ -64,7 +64,7 @@ Closing only hides it. Right-click its icon in the notification area → **Exit*
 ## Screens and data
 
 **A screen says a query timed out.**
-Large servers can take longer than 30 seconds on heavy screens (Index Health, Implicit Conversions, Plan Cache Health). Raise **Settings → Command Timeout**.
+Large servers can take longer than 30 seconds on heavy screens (Index Health, Implicit Conversions, Plan Cache Health). Raise **Settings → Monitoring & history → Command timeout**.
 
 **Query Store says "Query Store is off for *database*".**
 Query Store is off for the connected database. Each tab shows the statement to copy, `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`; run it yourself or ask your DBA. [Query Regressions](Query-Regressions.md) falls back to monitoring history in the meantime.
@@ -93,10 +93,10 @@ The connection is to an Azure SQL Database, which has no TempDB files, SQL Serve
 You're on the ad-hoc connection, which isn't recorded. Save the connection in Settings.
 
 **A history chart is empty or has gaps.**
-History is only recorded while SqlVitals is running and the connection is **monitored** (from 0.46.0 nothing is, until you press Start or turn on **Settings → Start monitoring automatically**). Gaps are periods when it wasn't: **Settings → Activity Log** says when monitoring stopped, and why (see [How-To: find out why there's a gap](How-To-Recipes.md#find-out-why-theres-a-gap-in-the-history)). Perfmon history exists only from version 0.30.
+History is only recorded while SqlVitals is running and the connection is **monitored** (from 0.46.0 nothing is, until you press Start or turn on **Settings → Monitoring & history → Start monitoring automatically**). Gaps are periods when it wasn't: **Settings → Activity log & diagnostics** says when monitoring stopped, and why (see [How-To: find out why there's a gap](How-To-Recipes.md#find-out-why-theres-a-gap-in-the-history)). Perfmon history exists only from version 0.30.
 
 **Compare to baseline shows no dashed line.**
-Nothing was recorded at the same time last week. Keep history for at least 14 days (**Settings → Monitoring History**).
+Nothing was recorded at the same time last week. Keep history for at least 14 days (**Settings → Monitoring & history**).
 
 **The execution plan window shows no diagram.**
 *"No execution plan available — the plan may have been evicted from cache"* means SQL Server has already evicted the plan: run the query again, or find it in Query Store. If the XML can't be read, the parser's message is shown and the **XML** tab still has what was received. See [Execution Plans](Execution-Plans.md#when-theres-no-diagram).
@@ -127,4 +127,4 @@ No. There's no telemetry. Everything stays on your PC. See [Security and Privacy
 Known limitation: the theme choice isn't saved yet.
 
 **How do I report a bug?**
-**Settings → Diagnostics → Open log folder**, take the latest `SqlVitals-yyyyMMdd.log` (passwords are already removed), and attach it to a [new issue](https://github.com/aselasampath/sqlvitals/issues) with what you did and what you expected.
+**Settings → Activity log & diagnostics → Open log folder**, take the latest `SqlVitals-yyyyMMdd.log` (passwords are already removed), and attach it to a [new issue](https://github.com/aselasampath/sqlvitals/issues) with what you did and what you expected.

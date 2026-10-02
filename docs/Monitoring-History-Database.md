@@ -193,7 +193,7 @@ The `alerts` table is the timeline behind the [Alerts](Alerts.md) page.
 
 ## activity_log
 
-The table behind **⚙️ Settings → [Activity Log](Settings.md#activity-log)**, from schema version 4.
+The table behind **⚙️ Settings → [Activity log & diagnostics](Settings.md#activity-log)**, from schema version 4.
 
 | Column | Holds |
 |---|---|
@@ -242,4 +242,4 @@ The table behind **⚙️ Settings → [Activity Log](Settings.md#activity-log)*
 
 ## Privacy
 
-`query_texts` can contain **literal values** from your queries and **isn't encrypted**. Treat the file like the app log: don't share it without checking, and delete it with **Settings → Clear history** if needed. See [Security and Privacy](Security-and-Privacy.md).
+`query_texts` can contain **literal values** from your queries and **isn't encrypted**. Treat the file like the app log: don't share it without checking, and delete it with **Settings → Monitoring & history → Clear history** if needed. See [Security and Privacy](Security-and-Privacy.md).

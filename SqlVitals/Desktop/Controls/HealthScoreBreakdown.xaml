@@ -36,7 +36,7 @@
 
             <TextBlock x:Name="TxtFootnote" Margin="0,10,0,0" FontSize="10" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextMuted}"
-                       Text="Each check is worth its weight in points. Past its warning threshold it loses half; past critical, all of it. A server that can't be reached scores 0. Thresholds: Settings → Health Thresholds." />
+                       Text="Each check is worth its weight in points. Past its warning threshold it loses half; past critical, all of it. A server that can't be reached scores 0. Thresholds: Settings → Health thresholds." />
         </StackPanel>
     </Border>
 </UserControl>

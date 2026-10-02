@@ -217,17 +217,17 @@ An application that opens connections and doesn't close them fills its pool with
 
 ## Keep an eye on several servers
 
-1. Add each server in **⚙️ Settings** with **Monitor in background** ticked, and tick **Settings → Monitoring → Start monitoring automatically** (see [Monitor my servers all the time](#monitor-my-servers-all-the-time)).
+1. Add each server in **⚙️ Settings → Connections** with **Monitor in background** on (its *Monitoring & alerts* tab), and turn on **Settings → Monitoring & history → Start monitoring automatically** (see [Monitor my servers all the time](#monitor-my-servers-all-the-time)).
 2. Open **🏠 Home**: a tile per server, the ones that need attention first, each with its score, its last hour and a bar per check. **Open** a tile to see why, with links to the pages that explain each check. See [Your Servers](Your-Servers.md). The scores are in the sidebar selector too: click one to see which checks lowered it, without switching connection.
 3. Open **🔔 Alerts** to see what went wrong while you weren't looking, and when. Filter by connection. See [Alerts](Alerts.md).
-4. Servers that always run hot: tick **Use its own health thresholds** so they don't cry wolf.
-5. Use **Settings → Monitoring History** to keep 14+ days, so you can compare against last week, and keep the alerts that long.
+4. Servers that always run hot: turn on **Use its own health thresholds** on their *Health thresholds* tab so they don't cry wolf.
+5. Use **Settings → Monitoring & history** to keep 14+ days, so you can compare against last week, and keep the alerts that long.
 
 ## Run SP Trace without monitoring the server
 
 With **Start monitoring automatically** off (the default for a new installation from 0.46.0), SqlVitals sends nothing to the server except what you ask for.
 
-1. Check **⚙️ Settings → Monitoring**: **Start monitoring automatically** is unticked.
+1. Check **⚙️ Settings → Monitoring & history**: **Start monitoring automatically** is unticked.
 2. Open SqlVitals and connect. **💓 Live Metrics** says *Monitoring is off*; leave it.
 3. Open **🛰️ SP Trace** and trace as usual. See [Find out what an application is calling](#find-out-what-an-application-is-calling).
 4. If the connection's dot in the sidebar is coloured, it's being monitored: press **■** on its row in the selector to stop it until SqlVitals exits.
@@ -236,26 +236,26 @@ Nothing else runs beside the trace: no Live Metrics query, history snapshot or P
 
 ## Monitor my servers all the time
 
-1. **⚙️ Settings → Monitoring**: tick **Start monitoring automatically**. The active connection starts straight away.
-2. For each other server to watch while another is active: open it in **Settings**, tick **Monitor in background** and **Save**.
-3. Tick **Settings → Notification Area → Keep SqlVitals running in the notification area…**, so closing the window doesn't stop monitoring.
-4. Keep **Settings → Monitoring History** at 14 days or more, for week-over-week baselines.
+1. **⚙️ Settings → Monitoring & history**: tick **Start monitoring automatically**. The active connection starts straight away.
+2. For each other server to watch while another is active: **Settings → Connections → Edit**, turn on **Monitor in background** on the *Monitoring & alerts* tab, and **Save**.
+3. Tick **Settings → Notification area → Keep SqlVitals running in the notification area…**, so closing the window doesn't stop monitoring.
+4. Keep **Settings → Monitoring & history** at 14 days or more, for week-over-week baselines.
 
 From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.md) and Windows notifications. A **■** press in the selector or on Live Metrics still stops one until SqlVitals exits.
 
 ## Get alerts in a Teams channel
 
 1. In Teams, go to the channel → **•••** → **Workflows** → **Post to a channel when a webhook request is received**. Name it, pick the team and channel, **Add workflow**, and copy the URL. (Slack instead: [Chat Notifications → Slack](Chat-Notifications.md#slack).)
-2. **⚙️ Settings → Alerts → Chat channels → + Add channel**: a name such as *DBA team (Teams)*, paste the URL, and **💾 Save channel**. Microsoft Teams is picked from the URL.
+2. **⚙️ Settings → Alerts & chat → Chat channels → + Add channel**: a name such as *DBA team (Teams)*, paste the URL, and **Save channel**. Microsoft Teams is picked from the URL.
 3. Choose **Connections** (all monitored ones, or only some) and **Post** (warnings and critical, or critical only).
-4. Select the channel and click **📨 Send test message**. *Accepted by the workflow* means Teams took it: check that the card appears in the channel.
+4. Click **Send test** on the channel's card. *Accepted by the workflow* means Teams took it: check that the card appears in the channel.
 5. Make sure the servers are monitored ([Monitor my servers all the time](#monitor-my-servers-all-the-time)) and SqlVitals keeps running in the notification area.
 
 From then on, an alert that starts or turns critical is posted to the channel within seconds, while SqlVitals runs on this PC. See [Chat Notifications](Chat-Notifications.md) for what is posted and what each test result means.
 
 ## Find out why there's a gap in the history
 
-1. **⚙️ Settings → Activity Log**. Set **Period** to cover the gap.
+1. **⚙️ Settings → Activity log & diagnostics**. Set **Period** to cover the gap.
 2. Set **Event** to *Monitoring stopped*, or leave *All events* to see everything around it.
 3. The row before the gap says why: **Source** *user: connection selector* (someone pressed ■), *setting changed* (Start monitoring automatically was turned off), *connection edited*, or *app exit*. **Windows user** and **PC** say who.
 4. No *App exited* before the gap, and the next *App started* says *The previous run didn't exit cleanly*: SqlVitals was killed, crashed or the PC turned off.
