@@ -76,7 +76,7 @@ public partial class MainWindow : Window
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         Title = $"SqlVitals v{version?.Major}.{version?.Minor}.{version?.Build}";
-        AppVersionText.Text = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
+        Shell.VersionText.Text = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
 
         // Pages are recreated on each navigation, but the Frame journal would otherwise keep
         // the old instances — and the mouse Back button could bring back a page still showing
@@ -102,7 +102,7 @@ public partial class MainWindow : Window
         SettingsService = new ConnectionSettingsService();
         var store  = SettingsService.Load();
         var active = store.Active;
-        BuildSidebar();
+        BuildSidebar(store);
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
 
         _tray = new TrayIcon(SettingsService);
@@ -188,16 +188,35 @@ public partial class MainWindow : Window
 
     // ── Sidebar and the server workspace (#124, #141) ─────────────────────────
 
-    // Built from NavMenu in the constructor, before anything can update a button.
+    // The pinned sidebar's buttons, built from NavMenu with the shell, before anything can update one.
     private NavSidebar _sidebar = null!;
 
-    private void BuildSidebar()
+    private void BuildSidebar(ConnectionStore store)
     {
-        _sidebar = new NavSidebar(NavPanel, NavFooter);
+        _sidebar = Shell.Menu;
         // A server's page opens on the server whose pages are shown, switching to it if need be.
-        _sidebar.PageRequested          += async tag => await NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar);
-        _sidebar.ScoreRequested         += ShowWorkspaceScore;
-        _sidebar.MonitorToggleRequested += ToggleWorkspaceMonitoring;
+        Shell.PageRequested          += async tag => await NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar);
+        Shell.ScoreRequested         += ShowWorkspaceScore;
+        Shell.MonitorToggleRequested += ToggleWorkspaceMonitoring;
+
+        // Pinned, collapsed or hidden (#142): as last chosen, collapsed in a narrow window. ☰ and
+        // Ctrl+B change it, and the top bar's ☰ says what it does next.
+        Shell.ReturnFocusTo = Bar.BtnSidebar;
+        Shell.ModeShown    += ShowSidebarState;
+        Shell.ModeChosen   += SaveSidebarMode;
+        Bar.SidebarRequested += Shell.ToggleFromBar;
+        Shell.Restore(store.SidebarMode, Width);
+        SizeChanged += (_, e) => Shell.SetWindowWidth(e.NewSize.Width);
+    }
+
+    private void ShowSidebarState() =>
+        Bar.ShowSidebar(Shell.Shown, Shell.IsSlidOver, Monitoring.ActiveAlerts.Count);
+
+    // A layout preference: saved, but not in the activity log (see SettingsActivity).
+    private void SaveSidebarMode(SidebarMode mode)
+    {
+        try { SettingsService.SetSidebarMode(mode); }
+        catch (Exception ex) { AppLog.Error("Sidebar: could not save whether it is pinned, collapsed or hidden", ex); }
     }
 
     /// <summary>
@@ -211,7 +230,7 @@ public partial class MainWindow : Window
     // The sidebar's server part follows the page: its server's header and pages, or how to open one.
     private void ShowWorkspace()
     {
-        _sidebar.ShowServer(Item(WorkspaceServer));
+        Shell.ShowServer(Item(WorkspaceServer));
         ApplyPagesAzureSqlLacks();
     }
 
@@ -347,12 +366,14 @@ public partial class MainWindow : Window
     {
         var active = Monitoring.ActiveAlerts;
         _tray.ShowActiveAlerts(active);
-        _sidebar.SetCount("Alerts", active.Count, active.Count switch
+        Shell.SetCount("Alerts", active.Count, active.Count switch
         {
             0     => NavMenu.AlertsToolTip,
             1     => "1 active alert",
             var n => $"{n} active alerts",
         });
+        // On ☰ while the sidebar is hidden.
+        ShowSidebarState();
     }
 
     // Monitoring started or stopped somewhere: the tray says whether anything is monitored.
@@ -371,7 +392,7 @@ public partial class MainWindow : Window
         item.UpdateHealth(Monitoring);
         // The server header (#141) and the breadcrumb's server part (#140) show its health and score.
         if (connectionId == WorkspaceServer)
-            _sidebar.ShowServer(item);
+            Shell.ShowServer(item);
         if (_history.Current is { } current && (connectionId == WorkspaceServer || connectionId == current.AlertsConnectionId))
             UpdateBreadcrumb();
         if (_scorePopupConnectionId == connectionId)
@@ -383,15 +404,15 @@ public partial class MainWindow : Window
     // The connection whose breakdown is open beside the sidebar; kept current as samples arrive.
     private Guid? _scorePopupConnectionId;
 
-    // The score in the server header opens its breakdown beside it.
-    private void ShowWorkspaceScore()
+    // The score in the server header, or under its dot in the collapsed sidebar, opens its breakdown beside it.
+    private void ShowWorkspaceScore(FrameworkElement anchor)
     {
         if (Item(WorkspaceServer) is not { } item)
             return;
 
         _scorePopupConnectionId    = item.Settings.Id;
         ShowScoreBreakdown(item);
-        ScorePopup.PlacementTarget = _sidebar.ScoreButton;
+        ScorePopup.PlacementTarget = anchor;
         ScorePopup.IsOpen          = true;
     }
 
@@ -813,13 +834,20 @@ public partial class MainWindow : Window
 
     // Alt+← / Alt+→ and the keyboard's own Back and Forward keys, before the Frame's built-in
     // journal commands see them (its journal is kept empty). F5 refreshes the page (#140), rather
-    // than the Frame reloading it.
+    // than the Frame reloading it. Ctrl+B pins, collapses or hides the sidebar (#142).
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;
             await RefreshPageAsync();
+            return;
+        }
+
+        if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            Shell.Cycle();
             return;
         }
 
@@ -932,7 +960,7 @@ public partial class MainWindow : Window
 
         // Highlight the page's button, and open its group.
         System.Diagnostics.Debug.Assert(_sidebar.HasPage(tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
-        _sidebar.Highlight(tag);
+        Shell.Highlight(tag);
 
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")

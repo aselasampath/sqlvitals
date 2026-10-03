@@ -36,7 +36,8 @@ internal static class SettingsActivity
             new("Processes view", store.ProcessesView.ToString()),
             new("Processes group by login", OnOff(store.ProcessesGroupByLogin)),
             new("Query Store charts", string.Join(", ", store.QueryStoreChartMetrics)),
-            // Not the collapsed sidebar groups (#124): a layout preference, which would flood the log.
+            // Not the page last open (#141), or the sidebar pinned, collapsed or hidden (#142): layout
+            // preferences, which would flood the log.
         };
         settings.AddRange(Thresholds("Health threshold", store.HealthThresholds));
 
