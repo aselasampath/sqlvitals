@@ -54,8 +54,6 @@ public partial class MainWindow : Window
     // either has happened belongs to a previous database, so its result is discarded.
     private int _loadVersion;
 
-    // Set while the selector is repopulated in code, so it doesn't trigger a switch.
-    private bool _isUpdatingSelector;
 
     // Background live-metrics collection for the active and every monitored connection.
     internal readonly MonitoringManager Monitoring = new();
@@ -94,6 +92,7 @@ public partial class MainWindow : Window
         Bar.RefreshRequested  += async () => await RefreshPageAsync();
         Bar.PauseRequested    += PausePage;
         Bar.CrumbRequested    += async route => await OpenAsync(route, settingsMessage: null, _history.Visit);
+        Bar.ServerRequested   += async id => await SwitchServerAsync(id);
         Bar.DatabaseRequested += async () =>
         {
             if (_activeConnectionId is { } id)
@@ -103,15 +102,19 @@ public partial class MainWindow : Window
         SettingsService = new ConnectionSettingsService();
         var store  = SettingsService.Load();
         var active = store.Active;
-        BuildSidebar(store.NavCollapsedGroups);
+        BuildSidebar();
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
 
         _tray = new TrayIcon(SettingsService);
         _tray.OpenRequested   += ShowFromTray;
+        // The tray menu's Alerts opens every server's; a notification opens its server's workspace (#141).
         _tray.AlertsRequested += async connectionId =>
         {
             ShowFromTray();
-            await NavigateTo("Alerts", alertsConnectionId: connectionId);
+            if (connectionId is { } id && Item(id) is not null)
+                await NavigateTo("ServerDetail", serverId: id);
+            else
+                await NavigateTo("Alerts", alertsConnectionId: connectionId);
         };
         _tray.ExitRequested   += ExitApp;
         _tray.StartAllRequested += () => Monitoring.StartAll(ActivitySources.TrayMenu);
@@ -152,7 +155,7 @@ public partial class MainWindow : Window
                 // instead of letting every page fail against an empty connection string.
                 await NavigateTo("Settings", store.Connections.Count == 0
                     ? "Welcome to SqlVitals! Click + New connection to add your SQL Server, then Save & make active."
-                    : "No connection is active. Choose a saved connection in the sidebar selector, or add a new one.",
+                    : "No server is open. Open one from All servers, or add a new connection.",
                     new SettingsLocation(SettingsCategory.Connections));
                 return;
             }
@@ -165,30 +168,80 @@ public partial class MainWindow : Window
             }
 
             await DisablePagesAzureSqlLacksAsync();
-            // With more than one server, Home shows them all at a glance (#130).
-            await NavigateTo(store.Connections.Count >= 2 ? "Home" : "LiveMetrics");
+            await OpenAsync(StartRoute(store), settingsMessage: null, _history.Visit);
         };
     }
 
-    // ── Sidebar (#124) ────────────────────────────────────────────────────────
+    /// <summary>
+    /// Where SqlVitals opens (#141): the page open when it last closed, inside the server it was
+    /// inside. A server's page made its server the active connection, so it opens on that. Before
+    /// anything was saved, Home with more than one server (#130), Live Metrics with one.
+    /// </summary>
+    private Route StartRoute(ConnectionStore store)
+    {
+        if (store.LastPage is not { } tag)
+            return RouteFor(store.Connections.Count >= 2 ? "Home" : "LiveMetrics");
+        if (tag == "ServerDetail")
+            return store.LastServerId is { } id && store.Connections.Any(c => c.Id == id) ? Workspace.Overview(id) : RouteFor("Home");
+        return RouteFor(tag);
+    }
+
+    // ── Sidebar and the server workspace (#124, #141) ─────────────────────────
 
     // Built from NavMenu in the constructor, before anything can update a button.
     private NavSidebar _sidebar = null!;
 
-    private Button NavButton(string tag) => _sidebar.Button(tag);
-
-    private void BuildSidebar(IReadOnlyList<string> collapsed)
+    private void BuildSidebar()
     {
-        _sidebar = new NavSidebar(NavPanel, collapsed);
-        _sidebar.PageRequested += async tag => await NavigateTo(tag);
+        _sidebar = new NavSidebar(NavPanel, NavFooter);
+        // A server's page opens on the server whose pages are shown, switching to it if need be.
+        _sidebar.PageRequested          += async tag => await NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar);
+        _sidebar.ScoreRequested         += ShowWorkspaceScore;
+        _sidebar.MonitorToggleRequested += ToggleWorkspaceMonitoring;
+    }
 
-        // Remembered for the next run, but not in the activity log. Opening a page in a collapsed
-        // group expands it, and that is saved too, so the sidebar comes back as it was left.
-        _sidebar.GroupToggled += (id, isCollapsed) =>
-        {
-            try { SettingsService.SetNavGroupCollapsed(id, isCollapsed); }
-            catch (Exception ex) { AppLog.Error("Sidebar: could not save which groups are collapsed", ex); }
-        };
+    /// <summary>
+    /// The server whose workspace is open: the one the page on screen is inside. Null on a page
+    /// about every server (Home, Alerts, Settings).
+    /// </summary>
+    private Guid? WorkspaceServer => _history.Current is { } route ? Workspace.ServerOf(route) : null;
+
+    private ConnectionSelectorItem? Item(Guid? id) => id is null ? null : _selectorItems.FirstOrDefault(i => i.Settings.Id == id);
+
+    // The sidebar's server part follows the page: its server's header and pages, or how to open one.
+    private void ShowWorkspace()
+    {
+        _sidebar.ShowServer(Item(WorkspaceServer));
+        ApplyPagesAzureSqlLacks();
+    }
+
+    // Start or Stop in the server header: the same as ▶ / ■ on its Home tile.
+    private void ToggleWorkspaceMonitoring()
+    {
+        if (WorkspaceServer is not { } id)
+            return;
+        if (Monitoring.IsMonitoring(id))
+            Monitoring.Stop(id, ActivitySources.Sidebar);
+        else
+            Monitoring.Start(id, ActivitySources.Sidebar);
+    }
+
+    // Another server from the breadcrumb's menu: the same page there, or its Overview if it
+    // hasn't got it (see OpenAsync). Settings is opened to ask for a password that isn't saved.
+    private async System.Threading.Tasks.Task SwitchServerAsync(Guid server)
+    {
+        if (_history.Current is { } current)
+            await OpenAsync(Workspace.OnServer(current, server), settingsMessage: null, _history.Visit, ActivitySources.ServerMenu);
+    }
+
+    // The page on screen and its server, opened again at the next start. Not in the activity log.
+    // Settings isn't: it is visited, not worked in, and a first run starts there.
+    private void RememberPage(Route shown)
+    {
+        if (shown.Tag == "Settings")
+            return;
+        try { SettingsService.SetLastPage(shown.Tag, Workspace.ServerOf(shown)); }
+        catch (Exception ex) { AppLog.Error("Sidebar: could not save the page on screen", ex); }
     }
 
     private static string PasswordPrompt(ConnectionSettings conn) =>
@@ -210,7 +263,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Re-reads the saved connections after Settings changed them. Swaps in a new repository
-    /// when the active connection changed, refreshes the selector, and optionally opens the
+    /// when the active connection changed, refreshes the server header, and optionally opens the
     /// dashboard — so connection changes apply without restarting the app.
     /// </summary>
     internal async System.Threading.Tasks.Task ApplySavedConnectionsAsync(bool navigateToDashboard)
@@ -245,54 +298,31 @@ public partial class MainWindow : Window
             try { await previous.StopTraceAsync(); } catch { /* old server may be unreachable */ }
         });
 
-        foreach (var page in PagesAzureSqlLacks)
-        {
-            page.Button.IsEnabled = true;
-            page.Button.ToolTip   = page.ToolTip;
-        }
         await DisablePagesAzureSqlLacksAsync();
 
         // Back to a page this server doesn't have is skipped (#139).
         UpdateHistoryButtons();
     }
 
-    // ── Connection selector ───────────────────────────────────────────────────
+    // ── Saved servers ─────────────────────────────────────────────────────────
 
-    // Brings monitoring and the selector in line with the saved connections. The source says
-    // why, for the activity log rows of any connection that starts or stops.
+    // Brings monitoring, the server header and the breadcrumb's menu in line with the saved
+    // connections. The source says why, for the activity log rows of any connection that starts or stops.
     private void SyncConnections(ConnectionStore store, string source)
     {
         Monitoring.Sync(store, source);
-        RefreshConnectionSelector(store);
+        RefreshServers(store);
     }
 
-    private void RefreshConnectionSelector(ConnectionStore store)
+    private void RefreshServers(ConnectionStore store)
     {
-        _isUpdatingSelector = true;
-        try
-        {
-            _selectorItems = store.Connections
-                .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-                .Select(c => new ConnectionSelectorItem(c))
-                .ToList();
-            foreach (var item in _selectorItems)
-                item.UpdateHealth(Monitoring);
-
-            var activeItem = _selectorItems.FirstOrDefault(i => i.Settings.Id == store.ActiveConnectionId);
-            CmbConnection.ItemsSource  = _selectorItems;
-            CmbConnection.SelectedItem = activeItem;
-            CmbConnection.IsEnabled    = _selectorItems.Count > 0;
-            CmbConnection.ToolTip      = activeItem?.ToolTipText;
-
-            TxtNoActiveConnection.Text = _selectorItems.Count == 0
-                ? "No saved connections. Click Manage to add one."
-                : "No active connection. Choose one above.";
-            TxtNoActiveConnection.Visibility = store.Active is null ? Visibility.Visible : Visibility.Collapsed;
-        }
-        finally
-        {
-            _isUpdatingSelector = false;
-        }
+        _selectorItems = store.Connections
+            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .Select(c => new ConnectionSelectorItem(c))
+            .ToList();
+        foreach (var item in _selectorItems)
+            item.UpdateHealth(Monitoring);
+        ShowWorkspace();
     }
 
     private void OnAlertsChanged(Guid connectionId, IReadOnlyList<AlertChange> changes)
@@ -312,21 +342,17 @@ public partial class MainWindow : Window
             _tray.Notify(notification);
     }
 
-    // "🔔  Alerts (2)" while any monitored connection has an active alert; the tray icon says the same.
+    // Alerts with a count while any monitored connection has an active alert; the tray icon says the same.
     private void UpdateAlertsButton()
     {
         var active = Monitoring.ActiveAlerts;
         _tray.ShowActiveAlerts(active);
-        var alerts = NavButton("Alerts");
-        alerts.Content = active.Count == 0 ? "🔔  Alerts" : $"🔔  Alerts ({active.Count})";
-        System.Windows.Automation.AutomationProperties.SetName(alerts,
-            active.Count == 0 ? "Alerts" : $"Alerts ({active.Count} active)");
-        alerts.ToolTip = active.Count switch
+        _sidebar.SetCount("Alerts", active.Count, active.Count switch
         {
             0     => NavMenu.AlertsToolTip,
             1     => "1 active alert",
             var n => $"{n} active alerts",
-        };
+        });
     }
 
     // Monitoring started or stopped somewhere: the tray says whether anything is monitored.
@@ -336,20 +362,6 @@ public partial class MainWindow : Window
         UpdateAlertsButton();
     }
 
-    // ▶ / ■ in a selector row (#115): starts or stops that connection without switching to it.
-    // The button takes the click, so the row isn't selected.
-    private void MonitorToggle_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: ConnectionSelectorItem item })
-            return;
-
-        e.Handled = true;
-        if (Monitoring.IsMonitoring(item.Settings.Id))
-            Monitoring.Stop(item.Settings.Id, ActivitySources.ConnectionSelector);
-        else
-            Monitoring.Start(item.Settings.Id, ActivitySources.ConnectionSelector);
-    }
-
     private void OnMonitoringStateChanged(Guid connectionId)
     {
         var item = _selectorItems.FirstOrDefault(i => i.Settings.Id == connectionId);
@@ -357,10 +369,10 @@ public partial class MainWindow : Window
             return;
 
         item.UpdateHealth(Monitoring);
-        if (ReferenceEquals(CmbConnection.SelectedItem, item))
-            CmbConnection.ToolTip = item.ToolTipText;
-        // The breadcrumb's server part shows its health dot and score (#140).
-        if (_history.Current is { } current && connectionId == (current.ConnectionId ?? current.ServerId ?? current.AlertsConnectionId))
+        // The server header (#141) and the breadcrumb's server part (#140) show its health and score.
+        if (connectionId == WorkspaceServer)
+            _sidebar.ShowServer(item);
+        if (_history.Current is { } current && (connectionId == WorkspaceServer || connectionId == current.AlertsConnectionId))
             UpdateBreadcrumb();
         if (_scorePopupConnectionId == connectionId)
             ShowScoreBreakdown(item);
@@ -371,23 +383,16 @@ public partial class MainWindow : Window
     // The connection whose breakdown is open beside the sidebar; kept current as samples arrive.
     private Guid? _scorePopupConnectionId;
 
-    // A click on a score in the drop-down opens its breakdown instead of switching connection:
-    // the button takes the click, so the item isn't selected.
-    private void HealthScore_Click(object sender, RoutedEventArgs e)
+    // The score in the server header opens its breakdown beside it.
+    private void ShowWorkspaceScore()
     {
-        if (sender is not FrameworkElement { DataContext: ConnectionSelectorItem item })
+        if (Item(WorkspaceServer) is not { } item)
             return;
 
-        e.Handled = true;
-        CmbConnection.IsDropDownOpen = false;
-
-        // After the drop-down has closed and let go of the mouse, or the popup closes at once.
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
-        {
-            _scorePopupConnectionId = item.Settings.Id;
-            ShowScoreBreakdown(item);
-            ScorePopup.IsOpen = true;
-        });
+        _scorePopupConnectionId    = item.Settings.Id;
+        ShowScoreBreakdown(item);
+        ScorePopup.PlacementTarget = _sidebar.ScoreButton;
+        ScorePopup.IsOpen          = true;
     }
 
     private void ShowScoreBreakdown(ConnectionSelectorItem item)
@@ -400,37 +405,9 @@ public partial class MainWindow : Window
 
     private void ScorePopup_Closed(object? sender, EventArgs e) => _scorePopupConnectionId = null;
 
-    private async void CmbConnection_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isUpdatingSelector || CmbConnection.SelectedItem is not ConnectionSelectorItem { Settings: var target })
-            return;
-        if (target.Id == _activeConnectionId)
-            return;
-
-        if (!await SwitchToAsync(target.Id, ActivitySources.ConnectionSelector))
-        {
-            // Keep the selector on the connection that is still active.
-            RefreshConnectionSelector(SettingsService.Load());
-            return;
-        }
-
-        // Settings follows the change itself (#131), and a connection's page may hold unsaved changes.
-        if (MainFrame.Content is SettingsPage settings)
-        {
-            settings.ShowMessage($"Switched to \"{target.DisplayName}\".");
-            return;
-        }
-
-        // Reopen the current page as a fresh instance so nothing from the previous database
-        // stays on screen. A server's page is a new route, so Back returns to the previous
-        // server's; a page about every server is the same route again (#139).
-        var current = _history.Current;
-        await NavigateTo(current?.Tag ?? "LiveMetrics", alertsConnectionId: current?.AlertsConnectionId,
-                         serverId: current?.ServerId);
-    }
-
     /// <summary>
-    /// Makes a saved connection the active one, as the selector does: every page then queries it.
+    /// Makes a saved connection the active one: every server page then queries it. Opening one of
+    /// a server's pages does this (#141).
     /// False when it couldn't: its password isn't saved (Settings is opened to ask for it), or the
     /// change couldn't be saved (the status bar says why).
     /// </summary>
@@ -468,49 +445,56 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private async void ManageConnections_Click(object sender, RoutedEventArgs e) =>
-        await NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Connections));
-
     // Pages Azure SQL Database has nothing for (see the wiki's Server Impact and Permissions →
-    // Compatibility), with their own tooltip, captured on first use, to restore on another server.
-    private (Button Button, string Tag, object? ToolTip, string Reason)[]? _pagesAzureSqlLacks;
-    private (Button Button, string Tag, object? ToolTip, string Reason)[] PagesAzureSqlLacks => _pagesAzureSqlLacks ??=
+    // Compatibility), with the reason shown on their button.
+    private static readonly (string Tag, string Reason)[] PagesAzureSqlLacks =
     [
         // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database doesn't expose.
-        AzureSqlLacks("TempDb",    "Not available on Azure SQL Database (sys.master_files is not accessible)"),
+        ("TempDb",    "Not available on Azure SQL Database (sys.master_files is not accessible)"),
         // There is no SQL Server Agent, so msdb has no jobs (#39).
-        AzureSqlLacks("AgentJobs", "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
+        ("AgentJobs", "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
         // Azure takes the backups itself and records none in msdb (#40).
-        AzureSqlLacks("Backups",   "Not available on Azure SQL Database, which backs up every database itself; the Azure portal shows its restore points."),
+        ("Backups",   "Not available on Azure SQL Database, which backs up every database itself; the Azure portal shows its restore points."),
         // No sysadmin role, sa login or TRUSTWORTHY setting, and the logins are in the logical server's master (#43).
-        AzureSqlLacks("SecurityAudit", "Not available on Azure SQL Database, which has no sysadmin role, sa login or TRUSTWORTHY setting; its logins are in the logical server's master database."),
+        ("SecurityAudit", "Not available on Azure SQL Database, which has no sysadmin role, sa login or TRUSTWORTHY setting; its logins are in the logical server's master database."),
     ];
 
-    private (Button Button, string Tag, object? ToolTip, string Reason) AzureSqlLacks(string tag, string reason) =>
-        (NavButton(tag), tag, NavButton(tag).ToolTip, reason);
+    // Their buttons' own tooltips, to put back on a server that has them.
+    private readonly Dictionary<string, object?> _ownToolTips = new();
+
+    // The active connection is Azure SQL Database: checked after every switch.
+    private bool _activeIsAzureSql;
+
+    private bool IsDisabled(string tag) => _activeIsAzureSql && PagesAzureSqlLacks.Any(p => p.Tag == tag);
+
+    // The sidebar shows them disabled while the open server is the active one. Another server's
+    // edition is only known once it is switched to, by opening one of its pages; one it lacks then
+    // opens its Overview instead (see OpenAsync).
+    private void ApplyPagesAzureSqlLacks()
+    {
+        var known = WorkspaceServer is null || WorkspaceServer == _activeConnectionId;
+        foreach (var (tag, reason) in PagesAzureSqlLacks)
+        {
+            var button = _sidebar.Button(tag);
+            if (!_ownToolTips.ContainsKey(tag))
+                _ownToolTips[tag] = button.ToolTip;
+            var disabled = known && IsDisabled(tag);
+            button.IsEnabled = !disabled;
+            button.ToolTip   = disabled ? reason : _ownToolTips[tag];
+            ToolTipService.SetShowOnDisabled(button, true);
+        }
+    }
 
     // Disable those pages up front instead of letting the user hit a query error after navigating to one.
     private async System.Threading.Tasks.Task DisablePagesAzureSqlLacksAsync()
     {
-        if (!_isConnectionConfigured)
-            return;
-
-        try
+        _activeIsAzureSql = false;
+        if (_isConnectionConfigured)
         {
-            if (!await Repo.IsAzureSqlDatabaseAsync())
-                return;
-
-            foreach (var page in PagesAzureSqlLacks)
-            {
-                page.Button.IsEnabled = false;
-                page.Button.ToolTip   = page.Reason;
-                ToolTipService.SetShowOnDisabled(page.Button, true);
-            }
+            try { _activeIsAzureSql = await Repo.IsAzureSqlDatabaseAsync(); }
+            catch { /* Edition check failed (e.g. server unreachable): leave the pages enabled. */ }
         }
-        catch
-        {
-            // Edition check failed (e.g. server unreachable) — leave the pages enabled.
-        }
+        ApplyPagesAzureSqlLacks();
     }
 
     // ── Notification area (#35) ───────────────────────────────────────────────
@@ -689,6 +673,7 @@ public partial class MainWindow : Window
         var page = new HomePage(Monitoring, SettingsService);
         page.OpenRequested          += async id => await NavigateTo("ServerDetail", serverId: id);
         page.AddConnectionRequested += async () => await NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage);
+        page.EditRequested          += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
         return page;
     }
 
@@ -799,26 +784,30 @@ public partial class MainWindow : Window
         _                 => new(PageKind.None),
     };
 
-    // The active connection's database, as the selector shows it, on a page that reads it; null
+    // The active connection's database, as Settings has it, on a page that reads it; null
     // for a connection from appsettings.json only, whose database isn't known here.
     private string? DatabaseOf(IPageContext page) =>
         page.UsesDatabase ? _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DatabaseLabel : null;
 
     // ── Navigation (#139) ─────────────────────────────────────────────────────
 
-    /// <summary>Opens a page as a new visit: the sidebar, a link, the tray, the selector.</summary>
+    /// <summary>Opens a page as a new visit: the sidebar, a link, the tray, a Home tile.</summary>
     /// <param name="settingsMessage">Shown at the top of Settings.</param>
     /// <param name="settingsLocation">Where Settings opens (#131); the category last used when null.</param>
-    /// <param name="serverId">The connection a server detail page (#130) shows.</param>
+    /// <param name="serverId">The server a page is about (#141): a server detail page's, or the
+    /// connection a server's page queries; null for the active connection.</param>
+    /// <param name="switchSource">Why, in the activity log, if opening it switches the active connection.</param>
     private System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, SettingsLocation? settingsLocation = null,
-                                                   Guid? alertsConnectionId = null, Guid? serverId = null) =>
-        OpenAsync(RouteFor(tag, settingsLocation, alertsConnectionId, serverId), settingsMessage, _history.Visit);
+                                                   Guid? alertsConnectionId = null, Guid? serverId = null,
+                                                   string switchSource = ActivitySources.Sidebar) =>
+        OpenAsync(RouteFor(tag, settingsLocation, alertsConnectionId, serverId), settingsMessage, _history.Visit, switchSource);
 
-    // A page queries the active connection unless it is about every connection, or one by id.
+    // A server's page queries the server it's opened on, the active connection by default; a page
+    // about every connection, or one by id, queries none.
     private Route RouteFor(string tag, SettingsLocation? settingsLocation = null, Guid? alertsConnectionId = null, Guid? serverId = null) =>
         new(tag,
-            ConnectionId:       Route.IsGlobal(tag) ? null : _activeConnectionId,
-            ServerId:           tag == "ServerDetail" ? serverId : null,
+            ConnectionId:       Route.IsGlobal(tag) ? null : serverId ?? _activeConnectionId,
+            ServerId:           tag == "ServerDetail" ? serverId ?? _activeConnectionId : null,
             AlertsConnectionId: tag == "Alerts" ? alertsConnectionId : null,
             Settings:           tag == "Settings" ? settingsLocation : null);
 
@@ -895,7 +884,9 @@ public partial class MainWindow : Window
     /// <paramref name="record"/>, loads it, and puts back how it was being looked at.
     /// </summary>
     /// <param name="record">Records the route actually shown in the history, before the page loads.</param>
-    private async System.Threading.Tasks.Task OpenAsync(Route route, string? settingsMessage, Action<Route> record)
+    /// <param name="switchSource">Why, in the activity log, if the route's connection becomes the active one.</param>
+    private async System.Threading.Tasks.Task OpenAsync(Route route, string? settingsMessage, Action<Route> record,
+                                                        string switchSource = ActivitySources.BackOrForward)
     {
         // A connection's page, or the default thresholds, may hold unsaved changes: ask first, and
         // stay when the user says so (#131). The page navigated to, as the Frame shows it a moment later.
@@ -904,10 +895,10 @@ public partial class MainWindow : Window
 
         SaveViewState();
 
-        // Back or Forward to another server's page: that server becomes the active one again, as
-        // the selector would make it. Without its saved password, Settings opens to ask for it.
+        // Another server's page (from its workspace, the server menu, or Back): that server becomes
+        // the active one. Without its saved password, Settings opens to ask for it.
         if (route.ConnectionId is { } connectionId && connectionId != _activeConnectionId &&
-            !await SwitchToAsync(connectionId, ActivitySources.BackOrForward))
+            !await SwitchToAsync(connectionId, switchSource))
             return;
 
         var version = ++_loadVersion;
@@ -926,23 +917,22 @@ public partial class MainWindow : Window
             tag = "Settings";
             settingsMessage ??= SettingsService.Load().Connections.Count == 0
                 ? "No SQL Server connection is configured yet. Click + New connection to add one, then Save & make active."
-                : "No connection is active. Choose a saved connection in the sidebar selector, or add a new one.";
+                : "No server is open. Open one from All servers, or add a new connection.";
             settingsLocation ??= new SettingsLocation(SettingsCategory.Connections);
         }
 
-        // A page Azure SQL Database doesn't have, e.g. on a server just switched to: Live Metrics.
-        if (IsDisabled(tag))
-            tag = "LiveMetrics";
-
-        var shown = tag == route.Tag ? route : RouteFor(tag, settingsLocation);
+        // A page this server doesn't have, e.g. Agent Jobs on an Azure SQL Database just switched
+        // to: its Overview instead (#141).
+        var shown = Workspace.Available(tag == route.Tag ? route : RouteFor(tag, settingsLocation), IsDisabled, _activeConnectionId);
+        tag = shown.Tag;
         record(shown);
         UpdateHistoryButtons();
+        ShowWorkspace();
+        RememberPage(shown);
 
-        // Highlight the page's button, and show it if its group is collapsed. A server's details
-        // are under Home.
-        var button = tag == "ServerDetail" ? "Home" : tag;
-        System.Diagnostics.Debug.Assert(_sidebar.HasPage(button), $"No sidebar button for \"{tag}\": add it to NavMenu.");
-        _sidebar.Highlight(_sidebar.HasPage(button) ? button : "LiveMetrics");
+        // Highlight the page's button, and open its group.
+        System.Diagnostics.Debug.Assert(_sidebar.HasPage(tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
+        _sidebar.Highlight(tag);
 
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
@@ -1078,11 +1068,9 @@ public partial class MainWindow : Window
         catch (Exception ex) { AppLog.Error($"{_history.Current?.Tag}: could not put back the view state", ex); }
     }
 
-    private bool IsDisabled(string tag) => PagesAzureSqlLacks.Any(p => p.Tag == tag && !p.Button.IsEnabled);
-
     // Which routes Back and Forward can still open: no connection they name has been removed,
     // and the active server has the page. Another server's Azure pages are only known once
-    // switched to, and then Live Metrics opens instead. The saved connections are the selector's,
+    // switched to, and then its Overview opens instead. The saved connections are the ones held here,
     // kept current as they change, rather than the settings file read again.
     private Func<Route, bool> Availability()
     {
@@ -1108,8 +1096,7 @@ public partial class MainWindow : Window
     {
         if (_history.Current is not { } current)
             return;
-        ConnectionSelectorItem? Item(Guid id) => _selectorItems.FirstOrDefault(i => i.Settings.Id == id);
-        Bar.ShowBreadcrumb(Breadcrumb.For(current, id => Item(id)?.DisplayName), Item);
+        Bar.ShowBreadcrumb(Breadcrumb.For(current, id => Item(id)?.DisplayName), id => Item(id), _selectorItems);
     }
 
     // "Processes · PROD-SQL01", "PROD-SQL01" for its details, "Alerts" for a page about every server.

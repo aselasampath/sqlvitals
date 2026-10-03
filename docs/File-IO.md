@@ -113,7 +113,7 @@ The page only measures while it's open. SqlVitals also saves each file's reads, 
 | Message | Why | What to do |
 |---|---|---|
 | *This login can't read file I/O statistics* | The login lacks `VIEW SERVER STATE` (`VIEW SERVER PERFORMANCE STATE` on SQL Server 2022; `VIEW DATABASE STATE` on Azure SQL Database). Reading pauses | Grant it (see [Server Impact and Permissions](Server-Impact-and-Permissions.md)), then press **↺ Start over** |
-| An error in the sidebar status | The server couldn't be reached for one reading | The readings so far are kept; the next one that works is compared with the last that did |
+| An error in the top bar | The server couldn't be reached for one reading | The readings so far are kept; the next one that works is compared with the last that did |
 
 ---
 

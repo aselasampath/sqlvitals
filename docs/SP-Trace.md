@@ -60,7 +60,7 @@ GRANT ALTER ANY DATABASE EVENT SESSION TO [your_user];
 
 ## Impact on the server
 
-**Nothing else runs beside it unless you asked for it.** With **Start monitoring automatically** off (the default for a new installation, from 0.46.0), opening SqlVitals to trace sends no Live Metrics queries, history snapshots or Process Map polling to the server: only the checks every connection makes (such as the Azure SQL Database edition check) and the trace itself. If monitoring is on for the connection, its Live Metrics query keeps running every 10 s beside the trace; stop it with **■** in the sidebar selector if you want the trace on its own. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
+**Nothing else runs beside it unless you asked for it.** With **Start monitoring automatically** off (the default for a new installation, from 0.46.0), opening SqlVitals to trace sends no Live Metrics queries, history snapshots or Process Map polling to the server: only the checks every connection makes (such as the Azure SQL Database edition check) and the trace itself. If monitoring is on for the connection, its Live Metrics query keeps running every 10 s beside the trace; stop it with **■** in the sidebar's server header if you want the trace on its own. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
 
 Tracing a busy server isn't free, so SP Trace:
 

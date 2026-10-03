@@ -26,7 +26,7 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 
 - `settings.dat` is encrypted with the Windows **Data Protection API** in *CurrentUser* scope. Only your Windows account on this PC can decrypt it. Copying the file to another PC or user doesn't reveal it.
 - **It isn't lost to a bad read.** If another program (a sync or antivirus tool) has `settings.dat` open, SqlVitals tries again, and until it can read the file it won't save over it: a change you make says so, and you can try again. If the file can't be read at all (damaged, or copied from another Windows user or PC, so it can't be decrypted), a copy is kept as `settings.unreadable-<date>-<time>.dat` beside it before anything replaces it; settings that aren't encrypted are still read. Saves go to a temporary file first and then replace `settings.dat`, so a crash mid-save can't leave half a file. Added in 0.44.1 (#109).
-- Credentials never appear in the connection list, the connection selector or error messages.
+- Credentials never appear in the connection list, the sidebar, the server menu or error messages.
 - The *Additional parameters* field rejects `Password` and `User ID`, so a secret can't be stored outside the encrypted fields.
 - **Entra MFA** uses the interactive Microsoft sign-in. SqlVitals never sees your Microsoft password.
 - **Windows Authentication** stores no secret.

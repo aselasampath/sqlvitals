@@ -24,6 +24,7 @@ public sealed class TopBarTests
     public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };
 
     private static readonly Guid Prod = Guid.NewGuid();
+    private static readonly Guid Uat  = Guid.NewGuid();
     private static readonly DateTimeOffset Now = new(2026, 10, 3, 14, 2, 36, TimeSpan.Zero);
 
     private const double Width = 1130;   // the content area beside the 190 px sidebar, at the default 1320
@@ -173,27 +174,43 @@ public sealed class TopBarTests
     });
 
     [Theory, MemberData(nameof(Themes))]
-    public void TheBreadcrumb_OpensEachPart_AndShowsTheServersHealth(string theme) => OnSta(theme, (bar, host, _) =>
+    public void TheBreadcrumb_OpensEachPart_AndTheServerPartIsAMenuOfServers(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        var opened = new List<Route>();
-        bar.CrumbRequested += opened.Add;
+        var opened   = new List<Route>();
+        var switched = new List<Guid>();
+        bar.CrumbRequested  += opened.Add;
+        bar.ServerRequested += switched.Add;
         bar.ShowPage(null, Live(paused: false), canPause: true, database: null);
         Layout(host);
 
         var parts = UiThread.Find<Button>(bar.Crumbs).ToList();
-        Assert.Equal(["All servers", "PROD-SQL01", "Activity now"], parts.Select(AutomationProperties.GetName));
+        Assert.Equal(["All servers", "PROD-SQL01. Switch server", "Activity now"], parts.Select(AutomationProperties.GetName));
         Assert.Equal("All servers › PROD-SQL01 › Activity now › Deadlocks", bar.BreadcrumbText);
         // The server's health dot.
         Assert.Single(UiThread.Find<System.Windows.Shapes.Ellipse>(bar.Crumbs));
 
-        foreach (var part in parts)
-            Click(part);
-        Assert.Equal([new Route("Home"), new Route("ServerDetail", ServerId: Prod), new Route("Processes", ConnectionId: Prod)], opened);
+        Click(parts[0]);
+        Click(parts[2]);
+        Assert.Equal([new Route("Home"), new Route("Processes", ConnectionId: Prod)], opened);
+
+        // The server part: every saved server, the open one ticked, then All servers.
+        Click(parts[1]);
+        var menu = bar.ServerMenu!;
+        var items = menu.Items.OfType<MenuItem>().ToList();
+        Assert.Equal(["PROD-SQL01", "UAT", "All servers"], items.Select(i => AutomationProperties.GetName(i) is { Length: > 0 } n ? n : (string)i.Header));
+        Assert.True(items[0].IsChecked);
+        Assert.False(items[1].IsChecked);
+        items[0].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));   // the open one: nothing to do
+        items[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        items[2].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Equal([Uat], switched);
+        Assert.Equal(new Route("Home"), opened[^1]);
+        menu.IsOpen = false;
 
         // A new sample for the server updates its part in place: a part with the keyboard focus keeps it.
-        var server = new ConnectionSelectorItem(new ConnectionSettings { Server = "prod", Name = "PROD-SQL01" });
+        var server = new ConnectionSelectorItem(new ConnectionSettings { Id = Prod, Server = "prod", Name = "PROD-SQL01" });
         bar.ShowBreadcrumb(Breadcrumb.For(new Route("Deadlocks", ConnectionId: Prod), id => id == Prod ? "PROD-SQL01" : null),
-                           id => id == Prod ? server : null);
+                           id => id == Prod ? server : null, [server]);
         Assert.Equal(parts, UiThread.Find<Button>(bar.Crumbs));
 
         Render(host, theme, "breadcrumb");
@@ -218,7 +235,7 @@ public sealed class TopBarTests
         Assert.Same(tools, bar.ToolsRow.Content);
         Assert.True(host.ActualHeight > 52);
         // The server's name is shown in full.
-        var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b) == "PROD-SQL01");
+        var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b).StartsWith("PROD-SQL01"));
         Assert.True(server.RenderSize.Width >= server.DesiredSize.Width - 0.5);
         Assert.True(bar.Crumbs.Spare >= 0, $"{bar.Crumbs.Spare} px short");
         Assert.Empty(bar.Crumbs.Dropped.Where(d => !CrumbPanel.GetCanDrop(d)));
@@ -246,7 +263,7 @@ public sealed class TopBarTests
         {
             Layout(host, width);
             var state = (bar.ToolsWrapped, bar.TxtDetail.Visibility, bar.BtnAskAi.Visibility, Dropped: string.Join("|", bar.Crumbs.Dropped.Select(AutomationProperties.GetName)));
-            var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b) == "PROD-SQL01");
+            var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b).StartsWith("PROD-SQL01"));
             Assert.True(server.RenderSize.Width >= server.DesiredSize.Width - 0.5, $"At {width} px the server is cut");
             Assert.DoesNotContain("PROD-SQL01", state.Dropped);
 
@@ -303,9 +320,10 @@ public sealed class TopBarTests
                 var bar  = new TopBar { Clock = clock };
                 var host = new Border { Resources = resources, Child = bar, Background = (Brush)resources["BgDeep"] };
 
-                var server = new ConnectionSelectorItem(new ConnectionSettings { Server = "prod", Name = "PROD-SQL01" });
+                var server = new ConnectionSelectorItem(new ConnectionSettings { Id = Prod, Server = "prod", Name = "PROD-SQL01" });
                 var route  = new Route("Deadlocks", ConnectionId: Prod);
-                bar.ShowBreadcrumb(Breadcrumb.For(route, id => id == Prod ? "PROD-SQL01" : null), id => id == Prod ? server : null);
+                var uat    = new ConnectionSelectorItem(new ConnectionSettings { Id = Uat, Server = "uat", Name = "UAT" });
+                bar.ShowBreadcrumb(Breadcrumb.For(route, id => id == Prod ? "PROD-SQL01" : null), id => id == Prod ? server : null, [server, uat]);
                 bar.ShowHistory("Live Metrics · PROD-SQL01", null);
 
                 test(bar, host, clock);

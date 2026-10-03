@@ -71,7 +71,12 @@ public static class ActivityEvents
 public static class ActivitySources
 {
     public const string LiveMetrics         = "user: Live Metrics";
+    /// <summary>The sidebar's combo box, until 0.57.0 (#141): kept for the rows it wrote.</summary>
     public const string ConnectionSelector  = "user: connection selector";
+    /// <summary>The open server's Start/Stop in the sidebar, or one of its pages opened there (#141).</summary>
+    public const string Sidebar             = "user: sidebar";
+    /// <summary>Another server picked from the breadcrumb's server menu (#141).</summary>
+    public const string ServerMenu          = "user: server menu";
     public const string TrayMenu            = "user: tray menu";
     public const string Settings            = "user: Settings";
     public const string Home                = "user: Home";

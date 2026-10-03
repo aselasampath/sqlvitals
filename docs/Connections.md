@@ -2,7 +2,7 @@
 
 A **connection** is a saved server and database that SqlVitals monitors. You can save as many as you like (for example *Production*, *UAT* and *Dev*) and switch between them from the sidebar.
 
-> **Where:** ⚙️ Settings → *Connections* (a card per connection, and a page per connection with tabs, from 0.54.0) · **Switch:** the *Active connection* selector at the top of the sidebar
+> **Where:** ⚙️ Settings → *Connections* (a card per connection, and a page per connection with tabs, from 0.54.0) · **Switch:** open a server from **All servers**, or pick one in the breadcrumb's server menu (from 0.57.0)
 
 ## Add or edit a connection
 
@@ -11,7 +11,7 @@ A **connection** is a saved server and database that SqlVitals monitors. You can
 
 | Field | Tab | What to enter |
 |---|---|---|
-| **Connection name** | Connection | The name shown in the sidebar. Blank uses *server / database*. |
+| **Connection name** | Connection | The name shown on its tile, in the sidebar and in the breadcrumb. Blank uses *server / database*. |
 | **Server name** | Connection | `myserver.database.windows.net`, `localhost\SQLEXPRESS`, `10.0.0.5`, or `host,1433` for a custom port. |
 | **Authentication** | Connection | See [Authentication types](#authentication-types). |
 | **Login / Password** | Connection | For SQL Server Authentication. For Entra MFA, *Login* is optional and only pre-fills the sign-in window. |
@@ -19,7 +19,7 @@ A **connection** is a saved server and database that SqlVitals monitors. You can
 | **Database name** | Connection | Blank for the login's default database. Open the list to browse the databases on the server. |
 | **Encrypt** | Connection | *Mandatory* (default and recommended), *Optional*, or *Strict* (SQL Server 2022 and Azure SQL only). |
 | **Trust server certificate** | Connection | Tick for servers with a self-signed certificate, which is common on-premises. Leave it unticked for Azure SQL. |
-| **Monitor in background** | Monitoring & alerts | With **Start monitoring automatically** on, keep monitoring this connection while another one is active. **Off** for a new connection from 0.46.0; saved connections keep their value. Any connection can also be started by hand with ▶ in the sidebar selector. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). |
+| **Monitor in background** | Monitoring & alerts | With **Start monitoring automatically** on, keep monitoring this connection while another one is active. **Off** for a new connection from 0.46.0; saved connections keep their value. Any connection can also be started by hand with ▶ in the sidebar's server header, or on its tile on All servers. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). |
 | **Windows notifications** | Monitoring & alerts | Off mutes this connection's Windows notifications; its alerts are still listed and posted to its chat channels. Saved without contacting the server, so a server that's down can be muted. The same tab lists the chat channels that post its alerts. |
 | **Use its own health thresholds** | Health thresholds | Grade this connection's health dot on its own limits, with a preview of its latest sample. See [Settings → A connection's own thresholds](Settings.md#a-connections-own-thresholds). |
 | **Connection timeout (s)** | Advanced | How long to wait when opening a connection. |
@@ -47,7 +47,7 @@ To delete a connection, open it and choose **⋯ → Remove connection…**. Its
 
 ## Switching connections
 
-Pick another connection in the sidebar's **Active connection** selector. The current screen reopens against the new server. Anything still loading from the previous server is thrown away, so you never see one server's data under another's name.
+Open another server from its tile on **All servers**, or pick it in the breadcrumb's server menu (*Production ▾*): the screen you're on opens against the new server, or its Overview if it hasn't got that screen. Anything still loading from the previous server is thrown away, so you never see one server's data under another's name. Before 0.57.0 this was the *Active connection* selector at the top of the sidebar. See [The server workspace](Getting-Started.md#the-server-workspace).
 
 ## Common connection settings
 
@@ -63,7 +63,7 @@ Pick another connection in the sidebar's **Active connection** selector. The cur
 ### Under the hood
 
 - Connections are saved per Windows user in `%AppData%\SqlVitals\settings.dat`, encrypted with **Windows DPAPI**. Only your Windows account on this PC can decrypt them. See [Security and Privacy](Security-and-Privacy.md).
-- Credentials never appear in the connection list, the selector or error messages. The *Additional parameters* field rejects `Password` and `User ID` so a password can't slip into it unencrypted.
+- Credentials never appear in the connection list, the sidebar, the server menu or error messages. The *Additional parameters* field rejects `Password` and `User ID` so a password can't slip into it unencrypted.
 - Without *Remember password*, the password is held in memory for the current session only.
 - The saved connection string overrides the fallback `ConnectionStrings:SqlServer` in `appsettings.json`, which is only used when no connection is saved.
 - **Command timeout** (Settings → Monitoring & history, default 30 s) limits how long any single diagnostic query may run. Raise it for very large servers where screens like Index Health time out.

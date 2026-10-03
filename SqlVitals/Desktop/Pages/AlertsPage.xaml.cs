@@ -176,7 +176,7 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
     {
         var off = _monitoring.NotMonitoredNames();
         TxtMonitoringOff.Text = _monitoring.MonitoredCount == 0
-            ? "No alerts are being raised: monitoring is off. Start it on Live Metrics, with ▶ in the sidebar selector, or turn on Start monitoring automatically in Settings."
+            ? "No alerts are being raised: monitoring is off. Start it on Live Metrics, from a server's tile on All servers or its header in the sidebar, or turn on Start monitoring automatically in Settings."
             : $"No alerts are being raised for some connections: monitoring is off for {string.Join(", ", off)}.";
         MonitoringOffBanner.Visibility = _monitoring.MonitoredCount == 0 || off.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }

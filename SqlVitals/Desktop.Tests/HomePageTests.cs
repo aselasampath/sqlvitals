@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
@@ -119,6 +120,51 @@ public sealed class HomePageTests : IDisposable
         Click(ButtonOn(page, "Open", "Hot"));
 
         Assert.Equal([_hot.Id], opened);
+    });
+
+    [Fact]
+    public void TheTileMenu_Opens_StartsOrStopsMonitoring_ShowsTheScore_AndEdits() => UiThread.Run(() =>
+    {
+        // What the sidebar's connection selector did for each server (#141).
+        var (monitoring, settings) = Setup();
+        var page = new HomePage(monitoring, settings);
+        UiThread.Layout(page, 1100, 900);
+        var opened = new List<Guid>();
+        var edited = new List<Guid>();
+        page.OpenRequested += opened.Add;
+        page.EditRequested += edited.Add;
+
+        MenuItem Item(string tile, string header)
+        {
+            page.TileMenu?.SetCurrentValue(ContextMenu.IsOpenProperty, false);
+            Click(ButtonOn(page, "\uE712", tile));
+            return page.TileMenu!.Items.OfType<MenuItem>().Single(i => (string)i.Header == header);
+        }
+        void Choose(MenuItem item) => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+
+        Assert.Equal("More for Hot", AutomationProperties.GetName(ButtonOn(page, "\uE712", "Hot")));
+
+        // Hot is monitored and has a score: its breakdown, then Stop.
+        Choose(Item("Hot", "Why this score…"));
+        page.TileMenu!.IsOpen = false;
+        page.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+        // Off screen a popup can't hold the mouse, so it closes at once: what it would show is checked.
+        Assert.StartsWith("Hot · latest sample at", page.Breakdown.TxtSubtitle.Text);
+        Assert.Same(ButtonOn(page, "", "Hot"), page.BreakdownPopup.PlacementTarget);
+        page.BreakdownPopup.IsOpen = false;
+        Choose(Item("Hot", "Stop monitoring"));
+        Assert.False(monitoring.IsMonitoring(_hot.Id));
+
+        // Quiet isn't: no score to explain, and Start.
+        Assert.False(Item("Quiet", "Why this score…").IsEnabled);
+        Choose(Item("Quiet", "Start monitoring"));
+        Assert.True(monitoring.IsMonitoring(_quiet.Id));
+
+        Choose(Item("Down", "Open"));
+        Choose(Item("Down", "Edit connection…"));
+        page.TileMenu!.IsOpen = false;
+        Assert.Equal([_down.Id], opened);
+        Assert.Equal([_down.Id], edited);
     });
 
     [Fact]

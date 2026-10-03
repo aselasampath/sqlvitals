@@ -94,6 +94,9 @@ public partial class HomePage : Page, IRefreshable, IPageContext
     /// <summary>"+ Add a connection" was pressed.</summary>
     public event Action? AddConnectionRequested;
 
+    /// <summary>Edit connection… in a tile's menu (#141).</summary>
+    public event Action<Guid>? EditRequested;
+
     /// <summary>The width of a tile's slot, gap included, so the tiles fill the row.</summary>
     public double TileWidth
     {
@@ -189,6 +192,8 @@ public partial class HomePage : Page, IRefreshable, IPageContext
         }
 
         tile.Update(ServerTile.From(InputFor(conn, _store), DateTime.Now), _monitoring.Get(connectionId)?.Score);
+        if (_breakdownFor == connectionId)
+            ShowBreakdown(connectionId, tile.Tile.Name);
         Reorder();
         UpdateSummary(_store.Connections.Count);
         MainWindow.ReportBackgroundSuccess(this);
@@ -236,8 +241,8 @@ public partial class HomePage : Page, IRefreshable, IPageContext
         TxtNote.Text = connections == 0
             ? "No saved connections yet. Add one to see its health here."
             : summary.Monitored == 0
-                ? "Nothing is monitored, so no scores are being taken. Start a connection here or with ▶ in the sidebar " +
-                  "selector, or turn on Start monitoring automatically in Settings."
+                ? "Nothing is monitored, so no scores are being taken. Start a connection from its tile's ⋯ menu or " +
+                  "Start button, or turn on Start monitoring automatically in Settings."
                 : string.Empty;
         TxtNote.Visibility = TxtNote.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
@@ -274,6 +279,71 @@ public partial class HomePage : Page, IRefreshable, IPageContext
                 break;
         }
     }
+
+    // ── The tile's menu (#141) ────────────────────────────────────────────────
+
+    // The connection whose breakdown is open; kept current as its samples arrive.
+    private Guid? _breakdownFor;
+
+    /// <summary>The menu last opened on a tile; for tests.</summary>
+    internal ContextMenu? TileMenu { get; private set; }
+
+    // Open, Start or Stop monitoring, Why this score, Edit connection: what the sidebar's
+    // connection selector offered for each server, now that the sidebar shows only the open one.
+    private void TileMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: HomeTile { Tile: var tile } } button)
+            return;
+
+        var id         = tile.Id;
+        var monitoring = _monitoring.IsMonitoring(id);
+        var menu = new ContextMenu { PlacementTarget = button, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+
+        menu.Items.Add(Item("Open", () => OpenRequested?.Invoke(id)));
+        var toggle = Item(monitoring ? "Stop monitoring" : "Start monitoring", () =>
+        {
+            if (monitoring) _monitoring.Stop(id, ActivitySources.Home);
+            else            _monitoring.Start(id, ActivitySources.Home);
+        });
+        toggle.IsEnabled = monitoring || _monitoring.CanStart(id);
+        toggle.ToolTip   = monitoring ? "Stop monitoring this connection until SqlVitals exits. Its active alerts end."
+                                      : "Start monitoring this connection until SqlVitals exits, without switching to it.";
+        menu.Items.Add(toggle);
+        // After the menu has closed and let go of the mouse, or the popup closes at once.
+        var why = Item("Why this score…", () => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
+        {
+            _breakdownFor = id;
+            ShowBreakdown(id, tile.Name);
+            BreakdownPopup.PlacementTarget = button;
+            BreakdownPopup.IsOpen = true;
+        }));
+        why.IsEnabled = _monitoring.Get(id) is { Score: not null };
+        menu.Items.Add(why);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Edit connection…", () => EditRequested?.Invoke(id)));
+        ToolTipService.SetShowOnDisabled(toggle, true);
+
+        menu.Closed += (_, _) => TileMenu = null;
+        TileMenu = menu;
+        menu.IsOpen = true;
+
+        static MenuItem Item(string header, Action click)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => click();
+            return item;
+        }
+    }
+
+    private void ShowBreakdown(Guid id, string name)
+    {
+        var session = _monitoring.Get(id);
+        Breakdown.Show(name, session?.Score,
+                       session is null ? _monitoring.NotMonitoredReason(id) : session.HealthText,
+                       paused: session is { IsRunning: false });
+    }
+
+    private void BreakdownPopup_Closed(object? sender, EventArgs e) => _breakdownFor = null;
 
     // A failure is already in the session's state, which the tile and detail page show.
     internal static async Task RetryAsync(MonitoringSession session)
@@ -314,6 +384,9 @@ public sealed class HomeTile : INotifyPropertyChanged
     public Visibility OffVisibility    => Tile.Status == TileStatus.Off ? Visibility.Visible : Visibility.Collapsed;
 
     public string? ReasonToolTip => Tile.ReasonToolTip ?? Tile.Reason;
+
+    /// <summary>"More for UAT": the tile's menu.</summary>
+    public string MenuName => $"More for {Tile.Name}";
 
     /// <summary>"Open UAT", "Retry DR replica", "Start monitoring localhost".</summary>
     public string ActionName => Tile.Action switch

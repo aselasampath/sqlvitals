@@ -77,6 +77,12 @@
             <TextBlock x:Name="TxtNote" Foreground="{StaticResource TextMuted}" FontSize="12" TextWrapping="Wrap"
                        Margin="0,0,14,12" Visibility="Collapsed"/>
 
+            <!-- A tile's score breakdown (#36), beside its menu button -->
+            <Popup x:Name="BreakdownPopup" Placement="Bottom" VerticalOffset="4" StaysOpen="False"
+                   AllowsTransparency="True" PopupAnimation="Fade" Closed="BreakdownPopup_Closed">
+                <controls:HealthScoreBreakdown x:Name="Breakdown"/>
+            </Popup>
+
             <!-- One tile per saved connection, then "+ Add a connection" -->
             <ItemsControl x:Name="Tiles" Focusable="False" MouseLeave="Tiles_MouseLeave"
                           AutomationProperties.Name="Saved connections">
@@ -102,8 +108,14 @@
                                 </Style>
                             </Border.Style>
                             <DockPanel>
-                                <!-- Name, status and "Active" -->
+                                <!-- Name, status, "Active", and the tile's menu -->
                                 <DockPanel DockPanel.Dock="Top">
+                                    <!-- Open, Start or Stop monitoring, the score's breakdown, Edit (#141):
+                                         what the sidebar's connection selector did before 0.57.0 -->
+                                    <Button DockPanel.Dock="Right" Content="&#xE712;" Click="TileMenu_Click"
+                                            Style="{StaticResource NavArrowButton}" Width="26" Height="26" Margin="6,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" BorderBrush="Transparent"
+                                            AutomationProperties.Name="{Binding MenuName}" ToolTip="More: monitoring, the score's breakdown, edit"/>
                                     <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Background="{Binding StatusTint}">
                                         <TextBlock Text="{Binding Tile.StatusLabel}" Style="{StaticResource ChipText}"/>
                                     </Border>

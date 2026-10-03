@@ -8,29 +8,34 @@
         Background="{DynamicResource BgDeep}"
         PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseDown="Window_PreviewMouseDown">
     <Window.Resources>
-        <!-- A connection's health score in the selector (#36): plain text that opens its breakdown. -->
+        <!-- The open server's health score in the sidebar (#36, #141): plain text that opens its breakdown.
+             Reachable with Tab, outlined in the accent while focused. -->
         <Style x:Key="ScoreButton" TargetType="Button">
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Focusable" Value="False" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="3" Padding="3,0">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="3" Padding="3,0"
+                                BorderBrush="Transparent" BorderThickness="1">
                             <ContentPresenter VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#33808080" />
                             </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <!-- Start / stop monitoring a connection from its row in the selector (#115). -->
+        <!-- Start / stop monitoring the open server from the sidebar's server header (#115, #141). -->
         <Style x:Key="MonitorToggleButton" TargetType="Button">
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Focusable" Value="False" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -43,6 +48,10 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#33808080" />
                                 <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
@@ -65,89 +74,29 @@
                 BorderBrush="{DynamicResource Border}" BorderThickness="0,0,1,0">
             <DockPanel>
                 <!-- Logo -->
-                <StackPanel DockPanel.Dock="Top" Margin="16,20,16,16">
+                <StackPanel DockPanel.Dock="Top" Margin="16,18,16,4">
                     <TextBlock Text="SqlVitals" Foreground="{DynamicResource Accent}"
                                FontFamily="Segoe UI" FontSize="18" FontWeight="Bold" />
                     <TextBlock x:Name="AppVersionText" Text="" Foreground="{DynamicResource TextMuted}"
                                FontFamily="Segoe UI" FontSize="10" Margin="0,2,0,0" />
-                    <Separator Background="{DynamicResource Border}" Margin="0,10,0,8" />
-
-                    <!-- Active connection selector -->
-                    <DockPanel Margin="0,0,0,4">
-                        <TextBlock DockPanel.Dock="Right" FontFamily="Segoe UI" FontSize="10">
-                            <Hyperlink Click="ManageConnections_Click" Foreground="{DynamicResource AccentLight}"
-                                       ToolTip="Add, edit or remove saved connections">Manage</Hyperlink>
-                        </TextBlock>
-                        <TextBlock Text="ACTIVE CONNECTION" Foreground="{DynamicResource TextMuted}"
-                                   FontFamily="Segoe UI" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    </DockPanel>
-                    <ComboBox x:Name="CmbConnection"
-                              FontFamily="Segoe UI" FontSize="11"
-                              Background="{DynamicResource BgCard}"
-                              Foreground="{DynamicResource TextPrimary}"
-                              BorderBrush="{DynamicResource Accent}"
-                              ItemContainerStyle="{DynamicResource DarkComboItem}"
-                              AutomationProperties.Name="Active connection"
-                              SelectionChanged="CmbConnection_SelectionChanged">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <DockPanel Margin="0,1" ToolTip="{Binding ToolTipText}">
-                                    <!-- Background monitoring health: green / amber / red; outline = not monitored or paused -->
-                                    <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,4,6,0"
-                                             VerticalAlignment="Top" StrokeThickness="1.5"
-                                             Fill="{Binding HealthFill}" Stroke="{Binding HealthStroke}" />
-                                    <!-- ▶ starts monitoring this connection, ■ stops it, without switching to it -->
-                                    <Button DockPanel.Dock="Right" Style="{StaticResource MonitorToggleButton}"
-                                            VerticalAlignment="Top" Margin="4,1,0,0" MinWidth="20"
-                                            IsEnabled="{Binding CanToggle}"
-                                            ToolTip="{Binding ToggleToolTip}" ToolTipService.ShowOnDisabled="True"
-                                            Click="MonitorToggle_Click"
-                                            AutomationProperties.Name="{Binding ToggleName}">
-                                        <TextBlock Text="{Binding ToggleGlyph}" FontSize="9" />
-                                    </Button>
-                                    <!-- Health score 0–100; clicking it shows which checks lowered it -->
-                                    <Button DockPanel.Dock="Right" Style="{StaticResource ScoreButton}"
-                                            VerticalAlignment="Top" Margin="4,0,0,0"
-                                            Visibility="{Binding ScoreVisibility}" Opacity="{Binding ScoreOpacity}"
-                                            Click="HealthScore_Click"
-                                            AutomationProperties.Name="Health score">
-                                        <TextBlock Text="{Binding ScoreText}" Foreground="{Binding ScoreBrush}"
-                                                   FontWeight="Bold" FontSize="12" />
-                                    </Button>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <TextBlock FontSize="10" Opacity="0.75" TextTrimming="CharacterEllipsis">
-                                            <Run Text="{Binding Server, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding DatabaseLabel, Mode=OneWay}" />
-                                        </TextBlock>
-                                    </StackPanel>
-                                </DockPanel>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <!-- A connection's health score breakdown, beside the sidebar -->
-                    <Popup x:Name="ScorePopup" PlacementTarget="{Binding ElementName=CmbConnection}"
-                           Placement="Right" HorizontalOffset="8" StaysOpen="False"
-                           AllowsTransparency="True" PopupAnimation="Fade"
-                           Closed="ScorePopup_Closed">
-                        <controls:HealthScoreBreakdown x:Name="ScoreBreakdown" />
-                    </Popup>
-                    <TextBlock x:Name="TxtNoActiveConnection"
-                               Foreground="{DynamicResource Warning}"
-                               FontFamily="Segoe UI" FontSize="10" TextWrapping="Wrap"
-                               Margin="0,4,0,0" Visibility="Collapsed" />
                 </StackPanel>
 
-                <!-- Nav: the groups and pages in Services/NavMenu.cs, built by BuildSidebar (#124) -->
-                <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled"
+                <!-- Settings, at the foot -->
+                <StackPanel x:Name="NavFooter" DockPanel.Dock="Bottom" Margin="0,4,0,10" />
+
+                <!-- The global pages, then the open server's (#141): built by NavSidebar from Services/NavMenu.cs -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                               Background="Transparent">
                     <StackPanel x:Name="NavPanel" />
                 </ScrollViewer>
-
-                <FrameworkElement /> <!-- spacer -->
             </DockPanel>
         </Border>
+
+        <!-- An open server's health score breakdown (#36), beside the sidebar's server header -->
+        <Popup x:Name="ScorePopup" Placement="Right" HorizontalOffset="8" StaysOpen="False"
+               AllowsTransparency="True" PopupAnimation="Fade" Closed="ScorePopup_Closed">
+            <controls:HealthScoreBreakdown x:Name="ScoreBreakdown" />
+        </Popup>
 
         <!-- ── Content area ─────────────────────────────────────────── -->
         <DockPanel Grid.Column="1">

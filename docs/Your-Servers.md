@@ -1,10 +1,10 @@
-# Your Servers (Home)
+# Your Servers (All servers)
 
-**🏠 Home** shows every saved connection as a tile with its [health score](Health-Dot-and-Background-Monitoring.md#health-score), the servers that need attention first. **Open** a tile to see why a server's score is what it is: its score over time, the checks that lowered it with a link to the page that explains each one, what's blocking it right now, and its alerts.
+**All servers** (🏠 Home before 0.57.0) shows every saved connection as a tile with its [health score](Health-Dot-and-Background-Monitoring.md#health-score), the servers that need attention first. **Open** a tile to see why a server's score is what it is: its score over time, the checks that lowered it with a link to the page that explains each one, what's blocking it right now, and its alerts.
 
-> **Where:** 🏠 Home, at the top of the sidebar · **Since:** 0.53.0
+> **Where:** **All servers**, at the top of the sidebar, or the first part of the breadcrumb · **Since:** 0.53.0
 
-SqlVitals opens on Home when you have **two or more** saved connections. With one, it opens on 💓 Live Metrics as before.
+From 0.57.0 SqlVitals opens on the screen you were on when you last closed it. Before that has happened, it opens on All servers when you have **two or more** saved connections, and on Live Metrics with one.
 
 Home and a server's details only use what monitoring has already collected and the local [history](Monitoring-History-Database.md). Opening Home sends **no query to any server**, and it never contacts a server that isn't monitored. See [Load on the server](#load-on-the-server).
 
@@ -19,12 +19,13 @@ Each tile shows:
 | | |
 |---|---|
 | **Name and status** | The health dot, the connection's name, and its status in words: **CRITICAL**, **WARNING**, **HEALTHY**, **UNREACHABLE**, **WAITING** or **OFF**. The active connection also says **ACTIVE** and has an accent border. |
-| **Server / database** | As in the connection selector |
+| **Server / database** | The connection's server and database |
 | **Score** | 0 to 100, in the dot's colour, with a sparkline of the **last hour**. |
 | **Why** | What lowered it, in the words of the score's breakdown: *Lowered by Page life expectancy −8.* |
 | **Six bars** | One per check (CPU, Blocking, PLE, Grants, Log, TempDB), each in its own colour. Point at a bar for its figure and thresholds. |
 | **Footer** | When the last sample was taken, and whether it's the active connection or monitored in the background |
 | **Button** | **Open** its details, **Retry** a server that can't be reached, or **▶ Start monitoring** one that isn't monitored |
+| **⋯ menu** | From 0.57.0: **Open**, **Start monitoring** or **Stop monitoring**, **Why this score…** (the score's breakdown, beside the tile) and **Edit connection…**: what the sidebar's connection selector did for each server before |
 
 The last tile, **+ Add a connection**, opens Settings on a new connection.
 
@@ -35,7 +36,7 @@ The last tile, **+ Add a connection**, opens Settings on a new connection.
 | **Critical**, **Warning**, **Healthy** | Monitored; the dot's colour on the latest sample | The latest score | **Open** |
 | **Unreachable** | Monitored, but the last collection failed: the server couldn't be reached, the login failed, a permission is missing… | **0**. The tile says since when, and the error is in the tooltip. The bars are grey. | **Retry**: tries straight away, and opens its details |
 | **Waiting** | Monitored, before its first sample | — | **Open** |
-| **Off** | Not monitored: *Not monitored, so there's no score yet*, and why (for example, the password isn't saved) | — | **▶ Start monitoring**, as ▶ in the selector does. It's greyed out while it can't start, and its tooltip says why. |
+| **Off** | Not monitored: *Not monitored, so there's no score yet*, and why (for example, the password isn't saved) | — | **▶ Start monitoring**, as **⋯ → Start monitoring** does. It's greyed out while it can't start, and its tooltip says why. |
 
 ### Order
 
@@ -47,12 +48,12 @@ The tiles update with every sample. A tile whose status changes moves to its new
 
 ## A server's details
 
-**Open** on a tile opens that server's page. **← Your servers** goes back.
+**Open** on a tile opens that server's page, its **Overview → Summary**, and with it the server's workspace: its screens in the sidebar, under its name (see [The server workspace](Getting-Started.md#the-server-workspace)). **← Your servers** goes back.
 
 At the top are the server's name, status, server / database, sign-in and whether it's monitored, and three buttons:
 
-- **Make active**: switches every page to this connection, as the sidebar selector does. It's hidden when the connection is already active.
-- **Pause monitoring** or **Start monitoring**: stops or starts it until SqlVitals exits, as ▶ / ■ in the selector does.
+- **Make active**: makes this the connection the server's screens query, as opening one of them does. It's hidden when the connection is already active.
+- **Pause monitoring** or **Start monitoring**: stops or starts it until SqlVitals exits, as ▶ / ■ in the sidebar's server header does.
 - **Edit connection**: opens its page in ⚙️ Settings → Connections.
 
 ### Health score
@@ -124,7 +125,7 @@ The score chart stays below, with the time it couldn't be reached shaded.
 | A server's details | **None**, except **Blocking right now**: one read of the sessions (the same query as 🔗 Processes) per sample, only while the page is open and blocking is past its warning threshold |
 | **Retry**, **Retry now** | One Live Metrics collection, as the next scheduled sample would be |
 | **Test connection** | Opens and closes a connection |
-| **▶ Start monitoring** | Monitoring starts, as ▶ in the selector does: see [Server Impact and Permissions](Server-Impact-and-Permissions.md) |
+| **▶ Start monitoring** | Monitoring starts, as ▶ in the sidebar's server header does: see [Server Impact and Permissions](Server-Impact-and-Permissions.md) |
 
 ## Good to know
 

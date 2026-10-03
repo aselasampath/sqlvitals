@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -45,6 +46,9 @@ public partial class TopBar : UserControl
     /// <summary>A breadcrumb part was clicked: open its route.</summary>
     public event Action<Route>? CrumbRequested;
 
+    /// <summary>Another server was picked from the breadcrumb's server menu (#141).</summary>
+    public event Action<Guid>? ServerRequested;
+
     // ── Back and Forward ─────────────────────────────────────────────────────
 
     /// <summary>The buttons say where they go: "Back to Processes · PROD-SQL01".</summary>
@@ -69,9 +73,15 @@ public partial class TopBar : UserControl
     private IReadOnlyList<Crumb> _crumbs = [];
     private (Ellipse Dot, TextBlock Score, FrameworkElement Part, Crumb Crumb)? _serverPart;
 
+    // The saved servers, for the server part's menu: the latest list, read when the menu opens.
+    private IReadOnlyList<ConnectionSelectorItem> _servers = [];
+
     /// <param name="server">A server's selector row, for its health dot and score.</param>
-    public void ShowBreadcrumb(IReadOnlyList<Crumb> crumbs, Func<Guid, ConnectionSelectorItem?> server)
+    /// <param name="servers">Every saved server, in the order the server menu lists them.</param>
+    public void ShowBreadcrumb(IReadOnlyList<Crumb> crumbs, Func<Guid, ConnectionSelectorItem?> server,
+                               IReadOnlyList<ConnectionSelectorItem>? servers = null)
     {
+        _servers = servers ?? [];
         if (crumbs.SequenceEqual(_crumbs) && _serverPart is { Crumb.ServerId: { } shownId } shown && server(shownId) is { } item)
         {
             ShowHealth(shown.Dot, shown.Score, shown.Part, shown.Crumb, item);
@@ -119,7 +129,18 @@ public partial class TopBar : UserControl
         }
 
         FrameworkElement part;
-        if (crumb.Target is not { } target)
+        if (server is not null)
+        {
+            // The server: a menu of the saved servers, to switch to another (#141).
+            var chevron = new TextBlock { Text = "\uE70D", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 8, Margin = new Thickness(6, 1, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(chevron, Dock.Right);
+            var row = (DockPanel)content;
+            row.Children.Insert(0, chevron);
+            var button = new Button { Content = content, Style = (Style)FindResource("CrumbButton") };
+            button.Click += (_, _) => OpenServerMenu(button, crumb.ServerId!.Value);
+            part = button;
+        }
+        else if (crumb.Target is not { } target)
         {
             // The page on screen.
             if (server is null)
@@ -157,8 +178,43 @@ public partial class TopBar : UserControl
         AutomationProperties.SetName(part, server.Score is { } s ? $"{crumb.Text}, health score {s.Value}"
                                          : server.HealthText.Length > 0 ? $"{crumb.Text}, {server.HealthText}"
                                          : crumb.Text);
-        if (part is Button)
-            part.ToolTip = server.ToolTipText;
+        AutomationProperties.SetName(part, AutomationProperties.GetName(part) + ". Switch server");
+        part.ToolTip = $"{server.ToolTipText}\nClick to switch to another server.";
+    }
+
+    /// <summary>The server menu, while it is open; for tests.</summary>
+    internal ContextMenu? ServerMenu { get; private set; }
+
+    // Every saved server with its health, the open one ticked, then All servers.
+    private void OpenServerMenu(FrameworkElement anchor, Guid current)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
+        foreach (var server in _servers)
+        {
+            var id   = server.Settings.Id;
+            var dot  = new Ellipse { Width = 8, Height = 8, StrokeThickness = 1.5, Fill = server.HealthFill, Stroke = server.HealthStroke, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+            var name = new TextBlock { Text = server.DisplayName, VerticalAlignment = VerticalAlignment.Center };
+            var score = new TextBlock { Text = server.ScoreText, Foreground = server.ScoreBrush, FontWeight = FontWeights.Bold, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            var header = new DockPanel();
+            DockPanel.SetDock(dot, Dock.Left);
+            DockPanel.SetDock(score, Dock.Right);
+            header.Children.Add(dot);
+            header.Children.Add(score);
+            header.Children.Add(name);
+
+            var item = new MenuItem { Header = header, IsCheckable = false, IsChecked = id == current, ToolTip = server.ToolTipText };
+            AutomationProperties.SetName(item, server.Score is { } s ? $"{server.DisplayName}, health score {s.Value}" : server.DisplayName);
+            item.Click += (_, _) => { if (id != current) ServerRequested?.Invoke(id); };
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new Separator());
+        var all = new MenuItem { Header = Breadcrumb.AllServers };
+        all.Click += (_, _) => CrumbRequested?.Invoke(new Route("Home"));
+        menu.Items.Add(all);
+
+        menu.Closed += (_, _) => ServerMenu = null;
+        ServerMenu = menu;
+        menu.IsOpen = true;
     }
 
     // ── Page context ─────────────────────────────────────────────────────────
@@ -373,7 +429,7 @@ public partial class TopBar : UserControl
             return;
 
         var paused = f!.Paused;
-        BtnPause.Content = paused ? "" : "";
+        BtnPause.Content = paused ? "\uE768" : "\uE769";
         var name = paused ? "Resume live updates" : "Pause live updates";
         BtnPause.ToolTip = paused ? name : $"{name}: the page stops moving so you can read it. F5 still refreshes it once.";
         AutomationProperties.SetName(BtnPause, name);
