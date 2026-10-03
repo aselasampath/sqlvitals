@@ -61,7 +61,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     private readonly BaselineTracker<MetricHistoryPoint>? _baseline;
     private readonly ObservableCollection<DateTimePoint>[] _baselineValues;   // parallel to _plotted
     private readonly ObservableCollection<DateTimePoint>   _baselineWaits = [];
-    private readonly bool[]               _waitsShown = [true, true, true, true, true, true];
+    // Other starts unticked: the catch-all band would dwarf the categories that point at a cause.
+    private static readonly bool[]        WaitsShownByDefault = [true, true, true, true, true, false];
+    private readonly bool[]               _waitsShown = [.. WaitsShownByDefault];
     private string                        _baselineNote = "";
 
     // Each chart's own series, and its baseline series shown beside them while the baseline is on.
@@ -1119,9 +1121,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         var filters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,10,0) };
         var checkBoxes = new List<CheckBox>();
 
-        // Initial set: every category. The baseline is one line against the top of the stack:
-        // last week's total of the categories shown.
-        Array.Fill(_waitsShown, true);
+        // Initial set: every category but Other. The baseline is one line against the top of the
+        // stack: last week's total of the categories shown.
+        WaitsShownByDefault.CopyTo(_waitsShown, 0);
         PlotBaseline();
         SetSeries("Waits",
             () => definitions.Where((_, i) => _waitsShown[i]).Select(x => x.Series).ToArray(),
@@ -1139,12 +1141,13 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
                 chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
         }
 
-        foreach (var def in definitions)
+        for (int i = 0; i < definitions.Length; i++)
         {
+            var def = definitions[i];
             var cb = new CheckBox
             {
                 Content = def.Label,
-                IsChecked = true,
+                IsChecked = _waitsShown[i],
                 Margin = new Thickness(6,0,0,0),
                 Foreground = new SolidColorBrush(Color.FromRgb(0xAA,0xBB,0xCC)),
                 FontSize = 11,

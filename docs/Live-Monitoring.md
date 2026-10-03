@@ -37,7 +37,7 @@ From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Se
 
 | Chart | Shows | What to look for |
 |---|---|---|
-| **Waits – Stack Area** | Wait time per second, stacked by category: CPU, I/O, Locks, Memory, Network, Other | Which colour dominates. A tall *Locks* band means blocking; tall *I/O* means slow storage or big scans. See [Wait Statistics](Wait-Statistics.md#wait-categories). |
+| **Waits – Stack Area** | Wait time per second, stacked by category: CPU, I/O, Locks, Memory, Network, Other. *Other* starts unticked (from 0.54.1), so the catch-all band doesn't dwarf the rest; tick it to add it. | Which colour dominates. A tall *Locks* band means blocking; tall *I/O* means slow storage or big scans. See [Wait Statistics](Wait-Statistics.md#wait-categories). |
 | **CPU Usage** | SQL Server's CPU % | Sustained high CPU. Check [Resource Queries](Query-Performance.md#resource-queries) for the cause. |
 | **SQL Throughput** | Batch requests, compilations and transactions per second | Sudden drops (a stall) or spikes. Compilations close to batch requests suggests queries aren't being reused. |
 | **Physical R/W** | Physical reads and writes per second | Read spikes mean data isn't in memory. |
