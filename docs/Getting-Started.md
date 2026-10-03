@@ -18,8 +18,8 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 
 ```
 ┌──────────────────────┬──────────────────────────────────────────────┐
-│ SqlVitals            │                                              │
-│ ACTIVE CONNECTION    │                                              │
+│ SqlVitals            │ ← →  Processes · Production                  │
+│ ACTIVE CONNECTION    │──────────────────────────────────────────────│
 │ 🟢 Production     ▾  │        The screen you picked appears here    │
 │──────────────────────│                                              │
 │ 🏠 Home              │                                              │
@@ -43,6 +43,7 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
 | **Sidebar groups** | The screens, grouped by the question you're asking (see the table below). Click a group's name, or Tab to it and press Enter or Space, to collapse or expand it; hover it for the question it answers. SqlVitals remembers which groups you collapsed. Opening a screen in a collapsed group, from a notification or a link say, expands it; a collapsed group holding the screen you're on is shown in the accent colour with a **●**. |
 | **Sidebar buttons** | One per screen. A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. **🏠 Home** is above the groups, **📤 Export / AI** and **⚙️ Settings** below them. |
+| **← Back / → Forward** | From 0.55.0, above the screen: back to the screens you came from, and forward again, as in a browser. Also **Alt+←** / **Alt+→** and the mouse's back and forward buttons. Hover a button to see where it goes. Going back to another server's screen switches to that server. Next to them is where you are, e.g. *Processes · Production*. |
 | **🏠 Home** | Every saved connection as a tile with its health score, the ones that need attention first. With two or more connections, SqlVitals opens here. See [Your Servers](Your-Servers.md). |
 | **↻ Refresh** | Reloads the current screen. Most screens load once when you open them and again when you press Refresh. |
 | **Status bar** | Shows what's loading, and errors. If a screen's automatic refresh fails, the error appears here instead of a pop-up. |
@@ -77,6 +78,7 @@ To have SqlVitals monitor your servers every time it starts, turn on **⚙️ Se
 ## Tips
 
 - **Right-click any grid** to copy rows or export them to CSV. See [Working with Grids](Working-with-Grids.md).
+- **Go back where you were.** From 0.55.0 a screen you return to opens on the tab, sort, filter, selected row and scroll position you left it with, by the sidebar or by **Back**, and with fresh data.
 - **Hover** column headers, buttons and dots. Most have a tooltip explaining them.
 - Prefer a dark screen? **Settings → Appearance → Theme**.
 - Something not working? See [Troubleshooting and FAQ](Troubleshooting-and-FAQ.md). **Settings → Activity log & diagnostics → Open log folder** shows the app's log.

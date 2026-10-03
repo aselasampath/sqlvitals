@@ -4,7 +4,7 @@ Most SqlVitals screens show results in grids (tables). They all work the same wa
 
 ## Sort
 
-Click a column header to sort, and click again to reverse. **Refresh keeps your sort**, so you can sort by *Avg CPU*, press Refresh, and still see the worst query at the top. The sort is kept while you stay on the page. Opening the page again starts from its default order.
+Click a column header to sort, and click again to reverse. **Refresh keeps your sort**, so you can sort by *Avg CPU*, press Refresh, and still see the worst query at the top. From 0.55.0 it is also kept when you leave the page and come back to it (see [below](#coming-back-to-a-page)).
 
 ## Filter
 
@@ -21,7 +21,23 @@ Click a column header to sort, and click again to reverse. **Refresh keeps your 
 - Matching ignores upper and lower case.
 - While a filter is on, the box shows **N of M rows**.
 - **Esc** or **✕** clears it.
-- **Refresh keeps the filter.**
+- **Refresh keeps the filter**, and from 0.55.0 so does leaving the page and coming back.
+
+## Coming back to a page
+
+From 0.55.0, a screen you return to, from the sidebar or with **← Back** (**Alt+←**), opens as you left it, with fresh data:
+
+- the **tab** you were on;
+- each grid's **sort**, **filter** and **selected row**;
+- how far the grid and the screen were **scrolled**.
+
+Good to know:
+
+- **Per server and per way in:** *Processes* on one server and on another remember their own; *Alerts* opened from a notification has its own, separate from *Alerts* opened from the sidebar.
+- **The selected row** is found again by its text (database, table, statement, login…). If that text changed, no row is selected rather than the wrong one.
+- **What you do while it loads wins:** if you sort, filter or select before the rows arrive, SqlVitals doesn't put back the old ones.
+- **Choices that start something aren't brought back:** a trace, auto-refresh or *Start* stays as the screen sets it up when it opens. A tab and a selected row *are* brought back, so a screen that reads more when you open a tab or select a row (Query Store's tabs, Agent Jobs' and Backups' history) reads it again.
+- The last 50 screens are remembered, until SqlVitals closes.
 
 ## Copy and export
 

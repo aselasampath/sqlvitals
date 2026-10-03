@@ -67,9 +67,10 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 ### 1. Showing a screen
 
 1. A sidebar button's `Tag` (e.g. `"IndexHealth"`) goes to `MainWindow.NavigateTo(tag)`. The sidebar is built from `Services/NavMenu` (the groups, their pages and order) by `Controls/NavSidebar`: one collapsible `Expander` per group (style `NavGroupExpander`), a `NavButton` per page. `NavigateTo` calls `NavSidebar.Highlight(tag)`, which highlights the button and expands its group; which groups are collapsed is saved in `settings.dat` (`NavCollapsedGroups`).
-2. `NavigateTo` creates the page **fresh**, passing it the repository for the active connection, and navigates the `Frame`.
+2. `NavigateTo` makes a `Route` (page tag, the active connection for a server's page, and what it was opened with) and opens it: it asks Settings first if it has unsaved changes, keeps the leaving page's `ViewState`, creates the page **fresh**, passing it the repository for the active connection, and navigates the `Frame`. The move is recorded in `Services/NavigationHistory` for **Back** and **Forward** (#139); Back to another server's route switches to it first (`SwitchToAsync`), and routes whose server was removed are skipped. The `Frame`'s own journal is kept empty, so nothing old can come back.
 3. It calls the page's `IRefreshable.RefreshAsync()`. The sidebar **↻ Refresh** calls it again.
 4. The page calls repository methods; results are records from `Engine/Models`, bound to `DataGrid`s and LiveCharts.
+5. `Helpers/ViewState` puts back how the route was last looked at (#139): the tabs as the page is built, each grid's filter, sort, selection and scroll position once that grid gets rows, and the page's own scrolling after it has loaded. Elements are matched by `x:Name`, or by order among unnamed ones of a type; anything the user changed meanwhile is left alone. Pages are rebuilt rather than kept because they drop their timers, sessions and traces when they leave the screen; combo boxes and toggles aren't restored, since they can start work. `RouteStates` keeps the last 50 routes' states.
 5. Exceptions are caught in `NavigateTo`. Auto-refresh failures go to the status bar and the [log](Settings.md#diagnostics), not to a dialog on every tick.
 
 ```csharp
