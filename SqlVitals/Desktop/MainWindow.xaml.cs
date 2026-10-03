@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
@@ -7,6 +8,7 @@ using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 
@@ -25,10 +27,21 @@ public partial class MainWindow : Window
     private Guid? _activeConnectionId;
     private string _activeFingerprint = string.Empty;
 
-    // Page the user is on, reopened against the new database after a switch; and the server a
-    // server detail page shows (#130).
-    private string _currentTag = "LiveMetrics";
-    private Guid?  _currentServerId;
+    // The pages visited, for Back and Forward; its current route is the page on screen, reopened
+    // against the new database after a switch (#139).
+    private readonly NavigationHistory _history = new();
+
+    // How each recent route's page was being looked at, put back when it's opened again (#139).
+    private readonly RouteStates<ViewState> _viewStates = new();
+
+    // Set from Back or Forward until the move is recorded, so a second press doesn't pick the
+    // same target from a history that hasn't moved yet.
+    private bool _historyMovePending;
+
+    // The page shown for the current route, and whether it has finished loading: one left
+    // before then hasn't had its saved view state put back yet, so that state is kept.
+    private Page? _page;
+    private bool  _pageLoaded;
 
     // The Settings category last opened, so Settings opens on it again this session (#131).
     private SettingsCategory _settingsCategory = SettingsCategory.Connections;
@@ -193,6 +206,9 @@ public partial class MainWindow : Window
         if (Fingerprint(store.Active, store.CommandTimeoutSeconds) != _activeFingerprint)
             await SwapRepositoryAsync(store);
 
+        // A connection renamed or removed: the location and Back and Forward follow (#139).
+        UpdateHistoryButtons();
+
         if (navigateToDashboard)
             await NavigateTo("LiveMetrics");
     }
@@ -218,6 +234,9 @@ public partial class MainWindow : Window
             page.Button.ToolTip   = page.ToolTip;
         }
         await DisablePagesAzureSqlLacksAsync();
+
+        // Back to a page this server doesn't have is skipped (#139).
+        UpdateHistoryButtons();
     }
 
     // ── Connection selector ───────────────────────────────────────────────────
@@ -383,9 +402,11 @@ public partial class MainWindow : Window
         }
 
         // Reopen the current page as a fresh instance so nothing from the previous database
-        // stays on screen. The page may have just been disabled for an Azure SQL database.
-        var tag = PagesAzureSqlLacks.Any(p => p.Tag == _currentTag && !p.Button.IsEnabled) ? "LiveMetrics" : _currentTag;
-        await NavigateTo(tag, serverId: _currentServerId);
+        // stays on screen. A server's page is a new route, so Back returns to the previous
+        // server's; a page about every server is the same route again (#139).
+        var current = _history.Current;
+        await NavigateTo(current?.Tag ?? "LiveMetrics", alertsConnectionId: current?.AlertsConnectionId,
+                         serverId: current?.ServerId);
     }
 
     /// <summary>
@@ -652,8 +673,7 @@ public partial class MainWindow : Window
         {
             if (!await SwitchToAsync(id, ActivitySources.Home))
                 return;
-            var disabled = PagesAzureSqlLacks.Any(p => p.Tag == tag && !p.Button.IsEnabled);
-            await NavigateTo(disabled ? "LiveMetrics" : tag);
+            await NavigateTo(tag);
         };
         return page;
     }
@@ -687,7 +707,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                AppLog.Error($"{_currentTag}: refresh failed", ex);
+                AppLog.Error($"{_history.Current?.Tag}: refresh failed", ex);
                 if (version == _loadVersion)
                     TxtStatus.Text = FormatErrorStatus(ex);
             }
@@ -699,27 +719,119 @@ public partial class MainWindow : Window
         }
     }
 
+    // ── Navigation (#139) ─────────────────────────────────────────────────────
+
+    /// <summary>Opens a page as a new visit: the sidebar, a link, the tray, the selector.</summary>
     /// <param name="settingsMessage">Shown at the top of Settings.</param>
     /// <param name="settingsLocation">Where Settings opens (#131); the category last used when null.</param>
     /// <param name="serverId">The connection a server detail page (#130) shows.</param>
-    private async System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, SettingsLocation? settingsLocation = null,
-                                                         Guid? alertsConnectionId = null, Guid? serverId = null)
+    private System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, SettingsLocation? settingsLocation = null,
+                                                   Guid? alertsConnectionId = null, Guid? serverId = null) =>
+        OpenAsync(RouteFor(tag, settingsLocation, alertsConnectionId, serverId), settingsMessage, _history.Visit);
+
+    // A page queries the active connection unless it is about every connection, or one by id.
+    private Route RouteFor(string tag, SettingsLocation? settingsLocation = null, Guid? alertsConnectionId = null, Guid? serverId = null) =>
+        new(tag,
+            ConnectionId:       Route.IsGlobal(tag) ? null : _activeConnectionId,
+            ServerId:           tag == "ServerDetail" ? serverId : null,
+            AlertsConnectionId: tag == "Alerts" ? alertsConnectionId : null,
+            Settings:           tag == "Settings" ? settingsLocation : null);
+
+    private async void BtnBack_Click(object sender, RoutedEventArgs e)    => await GoAsync(back: true);
+    private async void BtnForward_Click(object sender, RoutedEventArgs e) => await GoAsync(back: false);
+
+    // Alt+← / Alt+→ and the keyboard's own Back and Forward keys, before the Frame's built-in
+    // journal commands see them (its journal is kept empty).
+    private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        bool? back = e.Key switch
+        {
+            Key.BrowserBack    => true,
+            Key.BrowserForward => false,
+            Key.System when Keyboard.Modifiers == ModifierKeys.Alt && e.SystemKey == Key.Left  => true,
+            Key.System when Keyboard.Modifiers == ModifierKeys.Alt && e.SystemKey == Key.Right => false,
+            _ => null,
+        };
+        if (back is null)
+            return;
+        e.Handled = true;
+        await GoAsync(back.Value);
+    }
+
+    // The mouse's back and forward buttons.
+    private async void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2))
+            return;
+        e.Handled = true;
+        await GoAsync(back: e.ChangedButton == MouseButton.XButton1);
+    }
+
+    /// <summary>
+    /// Back or Forward to the nearest route still available, switching to its connection first
+    /// when it's another server's page. Routes skipped on the way are dropped from the history.
+    /// </summary>
+    private async System.Threading.Tasks.Task GoAsync(bool back)
+    {
+        if (_historyMovePending)
+            return;
+
+        var isAvailable = Availability();
+        var target = back ? _history.PeekBack(isAvailable) : _history.PeekForward(isAvailable);
+        if (target is null)
+            return;
+
+        _historyMovePending = true;
+        try
+        {
+            await OpenAsync(target, settingsMessage: null, shown =>
+            {
+                if (back) _history.CommitBack(target, shown);
+                else      _history.CommitForward(target, shown);
+                _historyMovePending = false;
+            });
+        }
+        finally
+        {
+            // Also when the move was refused: Settings kept the user, or the switch failed.
+            _historyMovePending = false;
+            UpdateHistoryButtons();
+        }
+    }
+
+    /// <summary>
+    /// Shows a route: asks Settings first if it has unsaved changes, switches to the route's
+    /// connection if it's another one's, builds the page, records the move with
+    /// <paramref name="record"/>, loads it, and puts back how it was being looked at.
+    /// </summary>
+    /// <param name="record">Records the route actually shown in the history, before the page loads.</param>
+    private async System.Threading.Tasks.Task OpenAsync(Route route, string? settingsMessage, Action<Route> record)
     {
         // A connection's page, or the default thresholds, may hold unsaved changes: ask first, and
-        // stay when the user says so (#131).
-        if (MainFrame.Content is SettingsPage leaving && !await leaving.TryLeaveAsync())
+        // stay when the user says so (#131). The page navigated to, as the Frame shows it a moment later.
+        if (_page is SettingsPage leaving && !await leaving.TryLeaveAsync())
+            return;
+
+        SaveViewState();
+
+        // Back or Forward to another server's page: that server becomes the active one again, as
+        // the selector would make it. Without its saved password, Settings opens to ask for it.
+        if (route.ConnectionId is { } connectionId && connectionId != _activeConnectionId &&
+            !await SwitchToAsync(connectionId, ActivitySources.BackOrForward))
             return;
 
         var version = ++_loadVersion;
+        var tag = route.Tag;
+        var settingsLocation = route.Settings;
 
         // A server detail page needs its server; without one, Home lists them all.
-        if (tag == "ServerDetail" && serverId is null)
+        if (tag == "ServerDetail" && route.ServerId is null)
             tag = "Home";
 
         // Without a connection every data page would just fail — point the user at Settings.
         // Alerts only reads the local history, and a notification can lead there with none active.
         // Home and a server's details only read the sessions and the history too (#130).
-        if (!_isConnectionConfigured && tag is not ("Settings" or "Alerts" or "Home" or "ServerDetail"))
+        if (!_isConnectionConfigured && !Route.IsGlobal(tag))
         {
             tag = "Settings";
             settingsMessage ??= SettingsService.Load().Connections.Count == 0
@@ -728,8 +840,13 @@ public partial class MainWindow : Window
             settingsLocation ??= new SettingsLocation(SettingsCategory.Connections);
         }
 
-        _currentTag      = tag;
-        _currentServerId = tag == "ServerDetail" ? serverId : null;
+        // A page Azure SQL Database doesn't have, e.g. on a server just switched to: Live Metrics.
+        if (IsDisabled(tag))
+            tag = "LiveMetrics";
+
+        var shown = tag == route.Tag ? route : RouteFor(tag, settingsLocation);
+        record(shown);
+        UpdateHistoryButtons();
 
         // Highlight the page's button, and show it if its group is collapsed. A server's details
         // are under Home.
@@ -740,7 +857,9 @@ public partial class MainWindow : Window
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
-            MainFrame.Navigate(CreateSettingsPage(settingsLocation, settingsMessage));
+            var settings = CreateSettingsPage(settingsLocation, settingsMessage);
+            MainFrame.Navigate(settings);
+            _page = settings;
             BtnRefresh.IsEnabled = false;
             TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
             return;
@@ -750,9 +869,9 @@ public partial class MainWindow : Window
         IRefreshable page = tag switch
         {
             "Home"            => CreateHomePage(),
-            "ServerDetail"    => CreateServerDetailPage(serverId!.Value),
+            "ServerDetail"    => CreateServerDetailPage(shown.ServerId!.Value),
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
-            "Alerts"          => new AlertsPage(Monitoring, SettingsService, alertsConnectionId),
+            "Alerts"          => new AlertsPage(Monitoring, SettingsService, shown.AlertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "Processes"       => new ProcessesPage(Repo, SettingsService),
@@ -781,6 +900,14 @@ public partial class MainWindow : Window
         };
 
         MainFrame.Navigate(page);
+        _page       = page as Page;
+        _pageLoaded = false;
+
+        // How the page was left last time: its tab now, each grid's sort, filter and selection
+        // as its rows arrive, so the page loads straight into it (#139).
+        var viewState = _viewStates.Get(shown);
+        if (viewState is not null && page is Page opened)
+            RestoreViewState(() => viewState.Restore(opened));
 
         BtnRefresh.IsEnabled = false;
         TxtStatus.Text = "Loading…";
@@ -807,7 +934,79 @@ public partial class MainWindow : Window
         finally
         {
             if (version == _loadVersion)
+            {
                 BtnRefresh.IsEnabled = true;
+
+                // Loaded or not, the page is as long as it will be: scroll it back.
+                _pageLoaded = true;
+                if (viewState is not null && page is Page loaded)
+                    RestoreViewState(() => viewState.RestoreScrolling(loaded));
+            }
         }
+    }
+
+    // Keeps how the page on screen is being looked at, for when its route is opened again.
+    // Settings keeps its own place (#131); a page left before it loaded keeps what it had.
+    private void SaveViewState()
+    {
+        if (_history.Current is not { } current || _page is null or SettingsPage || !_pageLoaded)
+            return;
+
+        try
+        {
+            _viewStates.Save(current, ViewState.Capture(_page, _viewStates.Get(current)));
+        }
+        catch (Exception ex)
+        {
+            // Losing a page's sort or scroll position isn't worth stopping the navigation for.
+            AppLog.Error($"{current.Tag}: could not keep the view state", ex);
+        }
+    }
+
+    private void RestoreViewState(Action restore)
+    {
+        try { restore(); }
+        catch (Exception ex) { AppLog.Error($"{_history.Current?.Tag}: could not put back the view state", ex); }
+    }
+
+    private bool IsDisabled(string tag) => PagesAzureSqlLacks.Any(p => p.Tag == tag && !p.Button.IsEnabled);
+
+    // Which routes Back and Forward can still open: no connection they name has been removed,
+    // and the active server has the page. Another server's Azure pages are only known once
+    // switched to, and then Live Metrics opens instead. The saved connections are the selector's,
+    // kept current as they change, rather than the settings file read again.
+    private Func<Route, bool> Availability()
+    {
+        var ids = _selectorItems.Select(i => i.Settings.Id).ToHashSet();
+        bool Exists(Guid? id) => id is not { } value || ids.Contains(value);
+        return route => Exists(route.ConnectionId) && Exists(route.ServerId) && Exists(route.AlertsConnectionId)
+                     && Exists(route.Settings?.ConnectionId)
+                     && !(route.ConnectionId == _activeConnectionId && IsDisabled(route.Tag));
+    }
+
+    // The buttons say where they go, and the strip says where you are.
+    private void UpdateHistoryButtons()
+    {
+        var isAvailable = Availability();
+        var back    = _history.PeekBack(isAvailable);
+        var forward = _history.PeekForward(isAvailable);
+
+        BtnBack.IsEnabled    = back is not null;
+        BtnForward.IsEnabled = forward is not null;
+        BtnBack.ToolTip      = back    is null ? "Back (Alt+Left)"     : $"Back to {Describe(back)} (Alt+Left)";
+        BtnForward.ToolTip   = forward is null ? "Forward (Alt+Right)" : $"Forward to {Describe(forward)} (Alt+Right)";
+        TxtLocation.Text     = _history.Current is { } current ? Describe(current) : string.Empty;
+    }
+
+    // "Processes · PROD-SQL01", "PROD-SQL01" for its details, "Alerts" for a page about every server.
+    private string Describe(Route route)
+    {
+        string? Name(Guid? id) => id is null ? null : _selectorItems.FirstOrDefault(i => i.Settings.Id == id)?.DisplayName;
+
+        if (route.Tag == "ServerDetail")
+            return Name(route.ServerId) ?? "Server";
+
+        var label = NavMenu.AllPages.FirstOrDefault(p => p.Tag == route.Tag)?.Label ?? route.Tag;
+        return Name(route.ConnectionId ?? route.AlertsConnectionId) is { } server ? $"{label} · {server}" : label;
     }
 }

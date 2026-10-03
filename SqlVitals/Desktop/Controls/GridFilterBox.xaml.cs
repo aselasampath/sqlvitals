@@ -108,6 +108,20 @@ public partial class GridFilterBox : UserControl
         Apply();
     }
 
+    /// <summary>
+    /// The words typed. Setting it filters at once, without the typing delay: a page opened
+    /// again gets its filter back this way (#139).
+    /// </summary>
+    public string Text
+    {
+        get => TxtFilter.Text;
+        set
+        {
+            TxtFilter.Text = value;
+            Apply();
+        }
+    }
+
     /// <summary>Whether a row passes the filter as typed now; true for every row when there is none.</summary>
     public bool Accepts(object item) => Matches(item);
 
