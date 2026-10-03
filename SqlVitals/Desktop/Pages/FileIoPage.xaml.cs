@@ -19,8 +19,14 @@ namespace SqlVitals.Desktop.Pages;
 /// Files over the threshold for their type are highlighted, and the files on each volume are
 /// added up to show whether the storage itself is slow.
 /// </summary>
-public partial class FileIoPage : Page, IRefreshable
+public partial class FileIoPage : Page, IRefreshable, IPageContext
 {
+    // Live: read every few seconds; the bar's Pause and Resume are the page's own (#140).
+    public PageKind Kind => PageKind.Live;
+    public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
+    public bool CanPause => true;
+    public bool IsPaused => _paused;
+
     private static readonly (string Label, Func<FileLatency, bool> Keep, string Empty)[] Filters =
     [
         ("All files",              _ => true,
@@ -92,7 +98,7 @@ public partial class FileIoPage : Page, IRefreshable
 
     /// <summary>
     /// Takes a reading and shows the latency since the one it's compared with. Called on
-    /// navigate, by the sidebar Refresh, and by the timer.
+    /// navigate, by the top bar's Refresh, and by the timer.
     /// </summary>
     public async Task RefreshAsync()
     {
@@ -208,7 +214,7 @@ public partial class FileIoPage : Page, IRefreshable
         if (!list.Available)
             return string.Empty;
 
-        var paused = _paused ? " Paused: the sidebar Refresh takes a reading." : "";
+        var paused = _paused ? " Paused: the top bar's Refresh takes a reading." : "";
         if (list.Measuring)
             return $"First reading taken at {list.To:HH:mm:ss} (server time). Latency needs a second: it's the change " +
                    $"between two readings, not the totals since startup.{paused}";
@@ -313,11 +319,12 @@ public partial class FileIoPage : Page, IRefreshable
         _remainingSec = sec;
         UpdateCountdown();
         if (_ready) SaveSettings();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnPause_Click(object sender, RoutedEventArgs e) => SetPaused(!_paused);
 
-    private void SetPaused(bool paused)
+    public void SetPaused(bool paused)
     {
         _paused = paused;
         BtnPause.Content = paused ? "▶ Resume" : "⏸ Pause";
@@ -333,6 +340,7 @@ public partial class FileIoPage : Page, IRefreshable
             if (IsLoaded) _timer.Start();
         }
         if (_list is not null) TxtStatus.Text = StatusText(_list);
+        MainWindow.ReportContextChanged(this);
     }
 
     private async void BtnStartOver_Click(object sender, RoutedEventArgs e)
@@ -364,12 +372,13 @@ public partial class FileIoPage : Page, IRefreshable
         }
     }
 
-    // Start over reports its own errors; the sidebar Refresh reports through MainWindow.
+    // Start over reports its own errors; the top bar's Refresh reports through MainWindow.
     private async Task ReadNowAsync()
     {
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {

@@ -7,6 +7,7 @@ using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -15,8 +16,16 @@ namespace SqlVitals.Desktop.Pages;
 /// when the login can create one, and falls back to per-procedure DMV aggregates when it
 /// cannot — see <see cref="ISpTraceRepository"/>.
 /// </summary>
-public partial class SpTracePage : Page, IRefreshable
+public partial class SpTracePage : Page, IRefreshable, IPageContext
 {
+    // The trace's events as they arrive, once started (#140); Start and Stop stay on the page.
+    public PageKind Kind => PageKind.Live;
+
+    // Polled every few seconds while the trace runs; stopped, nothing moves.
+    public TimeSpan? LiveInterval => _timer.IsEnabled ? TimeSpan.FromSeconds(_intervalSec) : null;
+
+    public bool IsPaused => !_timer.IsEnabled;
+
     /// <summary>Cap on retained call rows. Oldest are dropped first.</summary>
     private const int MaxRowsRetained = 5000;
 
@@ -165,12 +174,14 @@ public partial class SpTracePage : Page, IRefreshable
         _remainingSec = _intervalSec;
         UpdateCountdown();
         _timer.Start();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void StopTimer()
     {
         _timer.Stop();
         TxtCountdown.Text = "--";
+        MainWindow.ReportContextChanged(this);
     }
 
     private async void Timer_Tick(object? sender, EventArgs e)
@@ -184,6 +195,7 @@ public partial class SpTracePage : Page, IRefreshable
         try
         {
             await PollOnceAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch
         {
@@ -386,6 +398,7 @@ public partial class SpTracePage : Page, IRefreshable
         _intervalSec  = sec;
         _remainingSec = sec;
         UpdateCountdown();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnClear_Click(object sender, RoutedEventArgs e)

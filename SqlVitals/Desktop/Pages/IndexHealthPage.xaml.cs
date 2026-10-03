@@ -8,17 +8,22 @@ using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshable
+public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh, from the connection's database (#140).
+    public PageKind Kind => PageKind.Snapshot;
+    public bool UsesDatabase => true;
+
     private const double DefaultMinFragPct   = 10;
     private const long   DefaultMinPageCount = 1000;
 
     private readonly IWaitStatsRepository _repo;
 
-    // Bumped on every fragmentation load so a slower, older load (e.g. the sidebar Refresh
+    // Bumped on every fragmentation load so a slower, older load (e.g. the top bar's Refresh
     // overlapping the in-page one) cannot overwrite the grid with results for stale criteria.
     private int _fragLoadVersion;
 
@@ -34,7 +39,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        // The sidebar Refresh has nowhere to report a validation problem, so it keeps the
+        // The top bar's Refresh has nowhere to report a validation problem, so it keeps the
         // old behaviour of falling back to defaults — and writes them back into the boxes
         // so the criteria on screen always match the rows in the grid.
         if (!TryReadFragCriteria(out double minFrag, out long minPages, out _, out _))
@@ -312,7 +317,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     /// <summary>
     /// Reloads only the fragmentation grid — the other tabs don't depend on these criteria,
     /// so they keep their rows, sort and scroll position. Reports progress and failure inline;
-    /// rethrows so the sidebar Refresh can report it in the status bar too.
+    /// rethrows so the top bar's Refresh can report it in the top bar too.
     /// </summary>
     private async System.Threading.Tasks.Task LoadFragmentationAsync(double minFrag, long minPages)
     {

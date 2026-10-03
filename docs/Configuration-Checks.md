@@ -12,7 +12,7 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a warn
 
 1. Open **✅ Config Checks**. Warnings come first, tinted amber, then the checks that pass, in the order of the table below.
 2. The line under the toolbar counts them: *3 warnings · 9 passed · 1 not checked*. An amber line under it says when something couldn't be checked in full (a missing permission, or Azure SQL Database).
-3. **Show** narrows the list: *Warnings*, *Server settings*, *Database settings* or *Not checked*. **↻ Check again** (or the sidebar **Refresh**) reads the settings again, after you've changed one, say.
+3. **Show** narrows the list: *Warnings*, *Server settings*, *Database settings* or *Not checked*. **↻ Check again** (or **Refresh** in the top bar, **F5**) reads the settings again, after you've changed one, say.
 4. Each row is one check:
 
    | Column | Meaning |

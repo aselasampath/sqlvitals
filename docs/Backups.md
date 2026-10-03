@@ -13,7 +13,7 @@ Everything is read from `msdb.dbo.backupset`, where SQL Server records each back
 1. Open **💾 Backups**. The databases that need you come first: the **red** ones (nothing, or no log, to restore), then the **amber** ones (a backup older than the ages you set), then the rest by name.
 2. The line under the toolbar counts them: *31 databases · 1 without a full backup · 2 full overdue · 3 log backups missing or overdue · 1 not online*.
 3. **Set your RPO** in the two boxes: *Warn when the last full backup is older than* **7 d**, *or the last log backup older than* **1 h**. Type a number (days in the first box, minutes in the second) or a number with a unit: `26h`, `1d 12h`, `90 min`, `2h`. Press **✓ Apply** or **Enter**. The ages are saved and apply to every server.
-4. **Show** narrows the list: *Needs attention: missing or overdue*, *FULL or BULK_LOGGED recovery*, *SIMPLE recovery*, or *Not online*. **↻ Read again** (or the sidebar **Refresh**) reads msdb again.
+4. **Show** narrows the list: *Needs attention: missing or overdue*, *FULL or BULK_LOGGED recovery*, *SIMPLE recovery*, or *Not online*. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads msdb again.
 5. Each row is one database:
 
    | Column | Meaning |

@@ -21,8 +21,18 @@ namespace SqlVitals.Desktop.Pages;
 /// past its threshold, and its alerts. While the server can't be reached: why, what to check, and
 /// what happened. Only "Blocking right now" queries the server, and only while it's shown.
 /// </summary>
-public partial class ServerDetailPage : Page, IRefreshable
+public partial class ServerDetailPage : Page, IRefreshable, IPageContext
 {
+    // The server's health as its samples arrive (#140), at its monitoring interval.
+    public PageKind Kind => PageKind.Live;
+
+    // The server's monitoring interval while it is monitored; no interval to show while it isn't.
+    public TimeSpan? LiveInterval => _monitoring.Get(_id) is { IsRunning: true }
+        ? TimeSpan.FromSeconds(_monitoring.IntervalFor(_id))
+        : null;
+
+    public bool IsPaused => _monitoring.Get(_id) is not { IsRunning: true };
+
     private const int MaxAlerts = 8;
 
     private readonly Guid                      _id;
@@ -188,11 +198,19 @@ public partial class ServerDetailPage : Page, IRefreshable
 
         var newSample = TakeLiveScore();
         Render();
+        MainWindow.ReportContextChanged(this);
         if (newSample)
+        {
+            MainWindow.ReportBackgroundSuccess(this);
             _ = RefreshBlockingAsync();
+        }
     }
 
-    private void OnMonitoringChanged() => Render();
+    private void OnMonitoringChanged()
+    {
+        Render();
+        MainWindow.ReportContextChanged(this);
+    }
 
     private void OnAlertsChanged(Guid connectionId, IReadOnlyList<AlertChange> changes)
     {

@@ -17,8 +17,11 @@ namespace SqlVitals.Desktop.Pages;
 /// Each finding is a Risk, something to Review, or a Pass, with the risk explained; a risk comes
 /// with the T-SQL to remove it, which is never run here.
 /// </summary>
-public partial class SecurityAuditPage : Page, IRefreshable
+public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh (#140).
+    public PageKind Kind => PageKind.Snapshot;
+
     private static readonly (string Label, Func<SecurityFinding, bool> Keep, string Empty)[] Filters =
     [
         ("All findings",       _ => true,
@@ -71,7 +74,7 @@ public partial class SecurityAuditPage : Page, IRefreshable
         _ready = true;
     }
 
-    /// <summary>Reads and audits. Called on navigate, by the sidebar Refresh and Audit again.</summary>
+    /// <summary>Reads and audits. Called on navigate, by the top bar's Refresh and Audit again.</summary>
     public async Task RefreshAsync()
     {
         if (_refreshing) return;
@@ -165,12 +168,13 @@ public partial class SecurityAuditPage : Page, IRefreshable
         if (_ready) Show();
     }
 
-    // The sidebar Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {

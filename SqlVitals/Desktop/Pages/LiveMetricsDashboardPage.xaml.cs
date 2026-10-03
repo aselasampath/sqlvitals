@@ -23,8 +23,38 @@ using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class LiveMetricsDashboardPage : Page, IRefreshable
+public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
 {
+    // ── Top bar (#140) ───────────────────────────────────────────────────
+    // Live, or History while a past range is picked. The range picker and the sample interval
+    // are in the top bar; the interval box says how often, so the badge doesn't repeat it. Not
+    // monitored, nothing moves: it reads as paused, and Start monitoring is what resumes it.
+    public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
+    public bool CanPause => _range.IsLive && IsMonitoring;
+    public bool IsPaused => _paused || !IsMonitoring;
+    public DateTime? DataTo => _range.IsLive ? null : PageBar.DataTo(_historyLoad, p => p.TimeUtc);
+
+    // Paused, the charts stop moving so they can be read; the session keeps collecting and
+    // recording, and Resume plots what arrived meanwhile.
+    private bool _paused;
+
+    public void SetPaused(bool paused)
+    {
+        _paused = paused;
+        if (!paused && _range.IsLive)
+            ShowNewSamples();
+        MainWindow.ReportContextChanged(this);
+    }
+
+    public FrameworkElement? TakeBarTools()
+    {
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        tools.Children.Add(PageBar.Detach(RangePicker));
+        tools.Children.Add(PageBar.Detach(CmbInterval));
+        RangePicker.Margin = new Thickness(0, 0, 8, 0);
+        return tools;
+    }
+
     // ?? Constants ??????????????????????????????????????????????????????
     private const int MaxPoints = MonitoringSession.MaxPoints;   // rolling window length
 
@@ -71,8 +101,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
 
     private static readonly int[] Intervals =
         Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
+    // "every 10s", in the top bar beside the Live badge (#140).
     private static string IntervalLabel(int s) =>
-        s < 60 ? $"{s}s" : $"{s / 60}m {s % 60:00}s";
+        s < 60 ? $"every {s}s" : $"every {s / 60}m {s % 60:00}s";
 
     // ?? Previous snapshot for delta-wait calculation ???????????????????
 
@@ -274,27 +305,45 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
     // nothing while monitoring is off, so Refresh sends nothing to the server. A past range:
     // reads it again, so "last hour" moves up to now. A failure propagates so MainWindow can
     // report it.
-    public System.Threading.Tasks.Task RefreshAsync() =>
-        !_range.IsLive ? LoadHistoryAsync()
-        : IsMonitoring ? _session!.CollectNowAsync()
-        : System.Threading.Tasks.Task.CompletedTask;
+    // Paused, Refresh still shows the sample it took, once.
+    public async System.Threading.Tasks.Task RefreshAsync()
+    {
+        if (!_range.IsLive)
+            await LoadHistoryAsync();
+        else if (IsMonitoring)
+        {
+            await _session!.CollectNowAsync();
+            if (_paused)
+                ShowNewSamples();
+        }
+    }
 
     private void Session_SampleAdded(MonitoringSession session, LiveMetricSample sample)
     {
+        if (_paused)
+            return;
+
         if (_range.IsLive)
         {
-            PlotNewSamples();
-            PlotBaseline();
-            ForceChartUpdate();
-            _ = LoadBaselineAsync();
+            ShowNewSamples();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         _ = RefreshProcessMapAsync();
+    }
+
+    private void ShowNewSamples()
+    {
+        PlotNewSamples();
+        PlotBaseline();
+        ForceChartUpdate();
+        _ = LoadBaselineAsync();
     }
 
     // Time range
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range = range;
+        MainWindow.ReportContextChanged(this);
 
         // A baseline belongs to the range it was read for.
         _baseline?.Clear();
@@ -369,6 +418,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         ShowStatus(load.Items.Count == 0
             ? load.NoData("Live Metrics samples are recorded while SqlVitals monitors this connection.")
             : load.Describe(load.Items.Select(p => p.TimeUtc).ToList(), "the server's clock"));
+        MainWindow.ReportContextChanged(this);
 
         PlotBaseline();
         ApplyXAxisLimits();
@@ -511,6 +561,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable
         SyncRunButton();
         UpdateCountdown();
         UpdateHealthScore();
+        MainWindow.ReportContextChanged(this);
     }
 
     // Why nothing is collected, for the banner and the health score while not monitored.

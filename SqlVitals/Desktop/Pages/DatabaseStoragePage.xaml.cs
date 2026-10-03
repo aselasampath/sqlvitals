@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -42,8 +43,12 @@ public sealed class ServerConfigVm
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-public partial class DatabaseStoragePage : Page, IRefreshable
+public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh, from the connection's database (#140).
+    public PageKind Kind => PageKind.Snapshot;
+    public bool UsesDatabase => true;
+
     private readonly IWaitStatsRepository _repo;
 
     public DatabaseStoragePage(IWaitStatsRepository repo)

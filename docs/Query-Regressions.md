@@ -61,7 +61,7 @@ Figures that crossed the threshold are shown **in red**.
 
 - **Noise is ignored.** A metric whose recent average is under **1 ms** is never flagged: 0.1 → 0.3 ms is +200 %, but not worth acting on. A zero baseline gives no percentage.
 - Checks run **on demand** against the active connection only, never in the background. Reading a week of Query Store data can take a while on a large database, so the check may run for up to 2 minutes.
-- The sidebar **↻ Refresh** re-runs the check.
+- **Refresh** in the top bar (or **F5**) re-runs the check. The top bar shows the window and baseline of the last check, and when it ran.
 
 ---
 

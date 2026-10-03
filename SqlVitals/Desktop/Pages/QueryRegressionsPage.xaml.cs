@@ -16,8 +16,17 @@ namespace SqlVitals.Desktop.Pages;
 /// Queries whose average duration or CPU rose past a threshold, recent period against a baseline
 /// (#32). Reads Query Store when the database has it on, the monitoring history otherwise.
 /// </summary>
-public partial class QueryRegressionsPage : Page, IRefreshable
+public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext
 {
+    // A recent window against a baseline (#140), as last checked; both boxes stay on the page.
+    // Query Store reads the connection's database, the monitoring history the whole server.
+    public PageKind Kind => PageKind.History;
+    public bool UsesDatabase => _shownFromQueryStore;
+    public string? HistoryWindow => _checked?.RecentLabel;
+    public string? CompareWith => _checked?.BaselineLabel;
+    public DateTime? DataTo { get; private set; }
+    private RegressionWindows? _checked;
+
     private enum Source { Auto, QueryStore, History }
 
     /// <summary>What one check found, and what to say about it.</summary>
@@ -84,6 +93,8 @@ public partial class QueryRegressionsPage : Page, IRefreshable
                 return;
 
             _shownFromQueryStore = result.FromQueryStore;
+            (_checked, DataTo) = (windows, DateTime.Now);
+            MainWindow.ReportContextChanged(this);
             DataGridRefresh.SetItemsSource(RegressionsGrid, result.Rows);
             TxtStatus.Text = result.Status;
             TxtCount.Text  = result.Rows.Count switch
@@ -244,12 +255,13 @@ public partial class QueryRegressionsPage : Page, IRefreshable
 
     private async void BtnCheck_Click(object sender, RoutedEventArgs e) => await CheckFromToolbarAsync();
 
-    // The sidebar Refresh reports errors through MainWindow; a check started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a check started here reports its own.
     private async Task CheckFromToolbarAsync()
     {
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {

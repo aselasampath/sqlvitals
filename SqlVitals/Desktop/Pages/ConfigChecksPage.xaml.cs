@@ -17,8 +17,11 @@ namespace SqlVitals.Desktop.Pages;
 /// verify and compatibility level. Each check shows Pass or Warn, the value now, the value
 /// recommended and why; a warning comes with the T-SQL to fix it, which is never run here.
 /// </summary>
-public partial class ConfigChecksPage : Page, IRefreshable
+public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh (#140).
+    public PageKind Kind => PageKind.Snapshot;
+
     private static readonly (string Label, Func<ConfigCheck, bool> Keep, string Empty)[] Filters =
     [
         ("All checks",         _ => true,
@@ -65,7 +68,7 @@ public partial class ConfigChecksPage : Page, IRefreshable
         _ready = true;
     }
 
-    /// <summary>Reads the settings and checks them. Called on navigate, by the sidebar Refresh and Check again.</summary>
+    /// <summary>Reads the settings and checks them. Called on navigate, by the top bar's Refresh and Check again.</summary>
     public async Task RefreshAsync()
     {
         if (_refreshing) return;
@@ -147,12 +150,13 @@ public partial class ConfigChecksPage : Page, IRefreshable
         if (_ready) Show();
     }
 
-    // The sidebar Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {

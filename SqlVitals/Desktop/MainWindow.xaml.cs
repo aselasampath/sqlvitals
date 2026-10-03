@@ -43,6 +43,10 @@ public partial class MainWindow : Window
     private Page? _page;
     private bool  _pageLoaded;
 
+    // When the page on screen last loaded, refreshed or reported an update: a snapshot's "Taken",
+    // a live page's "As of" (#140). Null until its first load finishes.
+    private DateTime? _updatedAt;
+
     // The Settings category last opened, so Settings opens on it again this session (#131).
     private SettingsCategory _settingsCategory = SettingsCategory.Connections;
 
@@ -83,6 +87,17 @@ public partial class MainWindow : Window
         {
             while (MainFrame.CanGoBack)
                 MainFrame.RemoveBackEntry();
+        };
+
+        Bar.BackRequested     += async () => await GoAsync(back: true);
+        Bar.ForwardRequested  += async () => await GoAsync(back: false);
+        Bar.RefreshRequested  += async () => await RefreshPageAsync();
+        Bar.PauseRequested    += PausePage;
+        Bar.CrumbRequested    += async route => await OpenAsync(route, settingsMessage: null, _history.Visit);
+        Bar.DatabaseRequested += async () =>
+        {
+            if (_activeConnectionId is { } id)
+                await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
         };
 
         SettingsService = new ConnectionSettingsService();
@@ -206,8 +221,10 @@ public partial class MainWindow : Window
         if (Fingerprint(store.Active, store.CommandTimeoutSeconds) != _activeFingerprint)
             await SwapRepositoryAsync(store);
 
-        // A connection renamed or removed: the location and Back and Forward follow (#139).
+        // A connection renamed or removed: the breadcrumb and Back and Forward follow (#139), and
+        // the database the page reads (#140).
         UpdateHistoryButtons();
+        ShowPageContext();
 
         if (navigateToDashboard)
             await NavigateTo("LiveMetrics");
@@ -342,6 +359,9 @@ public partial class MainWindow : Window
         item.UpdateHealth(Monitoring);
         if (ReferenceEquals(CmbConnection.SelectedItem, item))
             CmbConnection.ToolTip = item.ToolTipText;
+        // The breadcrumb's server part shows its health dot and score (#140).
+        if (_history.Current is { } current && connectionId == (current.ConnectionId ?? current.ServerId ?? current.AlertsConnectionId))
+            UpdateBreadcrumb();
         if (_scorePopupConnectionId == connectionId)
             ShowScoreBreakdown(item);
     }
@@ -438,7 +458,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = $"Could not switch: {ConnectionSettingsService.RedactSecrets(ex.Message)}";
+            Bar.ShowMessage($"Could not switch: {ConnectionSettingsService.RedactSecrets(ex.Message)}", isError: true);
             return false;
         }
 
@@ -617,21 +637,38 @@ public partial class MainWindow : Window
 
     // Timer-driven page refreshes report here rather than through a MessageBox, which would
     // pop up again on every tick while the server stays unreachable. The details go to the
-    // log; the status bar shows the one-line error. A page the user has navigated away from
-    // no longer owns the status bar, so only its log entry is kept.
+    // log; the top bar shows the one-line error (#140). A page the user has navigated away from
+    // no longer owns the bar, so only its log entry is kept.
     internal static void ReportBackgroundError(Page page, string source, Exception ex)
     {
         AppLog.Error($"{source}: collection failed", ex);
-        if (Window.GetWindow(page) is MainWindow main && ReferenceEquals(main.MainFrame.Content, page))
-            main.TxtStatus.Text = FormatErrorStatus(ex);
+        if (OwnerOf(page) is { } main)
+            main.Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
     }
 
-    // Replaces an earlier background error once the page collects successfully again.
+    // The page updated on its own: a live page's "As of", a snapshot's "Taken" (#140). Replaces an
+    // earlier background error once the page collects successfully again.
     internal static void ReportBackgroundSuccess(Page page)
     {
-        if (Window.GetWindow(page) is MainWindow main && ReferenceEquals(main.MainFrame.Content, page))
-            main.TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
+        if (OwnerOf(page) is not { } main)
+            return;
+        main._updatedAt = DateTime.Now;
+        if (main.Bar.MessageIsError)
+            main.Bar.ShowMessage(null);
+        main.ShowPageContext();
     }
+
+    /// <summary>
+    /// A page's <see cref="IPageContext"/> changed: it paused or resumed, picked another time
+    /// range, or read a new window. The top bar follows (#140).
+    /// </summary>
+    internal static void ReportContextChanged(Page page) => OwnerOf(page)?.ShowPageContext();
+
+    // The window showing this page, while it is the page on screen.
+    private static MainWindow? OwnerOf(Page page) =>
+        Window.GetWindow(page) is MainWindow main && ReferenceEquals(main._page, page) ? main
+        : Application.Current?.MainWindow is MainWindow app && ReferenceEquals(app._page, page) ? app
+        : null;
 
     // Returns the full message for the MessageBox, with the searchable tag on its own line.
     private static string FormatErrorDetail(Exception ex)
@@ -665,7 +702,7 @@ public partial class MainWindow : Window
         page.MakeActiveRequested += async id =>
         {
             if (await SwitchToAsync(id, ActivitySources.Home))
-                TxtStatus.Text = $"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".";
+                Bar.ShowMessage($"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".");
         };
         // A page about the server, e.g. Processes for its blocking chain. It queries the active
         // connection, so this one is made active first.
@@ -692,32 +729,80 @@ public partial class MainWindow : Window
     /// <summary>Opens another page, as its sidebar button would; for links between pages.</summary>
     internal System.Threading.Tasks.Task OpenPageAsync(string tag) => NavigateTo(tag);
 
-    private async void BtnRefresh_Click(object sender, RoutedEventArgs e)
+    // ── Top bar (#140) ────────────────────────────────────────────────────────
+
+    // Refresh in the top bar, or F5: the page on screen reads again.
+    private async System.Threading.Tasks.Task RefreshPageAsync()
     {
-        if (MainFrame.Content is IRefreshable page)
+        if (_page is not IRefreshable page || !Bar.CanRefresh)
+            return;
+
+        var version = _loadVersion;
+        Bar.CanRefresh = false;
+        Bar.ShowMessage("Refreshing…");
+        try
         {
-            var version = _loadVersion;
-            BtnRefresh.IsEnabled = false;
-            TxtStatus.Text = "Refreshing…";
-            try
+            await page.RefreshAsync();
+            if (version == _loadVersion)
             {
-                await page.RefreshAsync();
-                if (version == _loadVersion)
-                    TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
-            }
-            catch (Exception ex)
-            {
-                AppLog.Error($"{_history.Current?.Tag}: refresh failed", ex);
-                if (version == _loadVersion)
-                    TxtStatus.Text = FormatErrorStatus(ex);
-            }
-            finally
-            {
-                if (version == _loadVersion)
-                    BtnRefresh.IsEnabled = true;
+                _updatedAt = DateTime.Now;
+                Bar.ShowMessage(null);
+                ShowPageContext();
             }
         }
+        catch (Exception ex)
+        {
+            AppLog.Error($"{_history.Current?.Tag}: refresh failed", ex);
+            if (version == _loadVersion)
+                Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
+        }
+        finally
+        {
+            if (version == _loadVersion)
+                Bar.CanRefresh = true;
+        }
     }
+
+    // Pause or Resume in the top bar, for a live page that can.
+    private void PausePage(bool pause)
+    {
+        if (_page is not IPageContext { CanPause: true } context)
+            return;
+        try
+        {
+            context.SetPaused(pause);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error($"{_history.Current?.Tag}: could not {(pause ? "pause" : "resume")}", ex);
+        }
+        ShowPageContext();
+    }
+
+    // What the top bar says about the page on screen: its kind and freshness, Pause, and the
+    // database it reads. Nothing before the first page.
+    private void ShowPageContext()
+    {
+        if (_page is not IPageContext context)
+        {
+            Bar.ShowContext(null, canPause: false, database: null);
+            return;
+        }
+        Bar.ShowContext(Freshness(context), context.CanPause, DatabaseOf(context));
+    }
+
+    private PageFreshness Freshness(IPageContext page) => page.Kind switch
+    {
+        PageKind.Live     => new(PageKind.Live, page.LiveInterval, page.IsPaused, AsOf: _updatedAt),
+        PageKind.Snapshot => new(PageKind.Snapshot, Taken: _updatedAt),
+        PageKind.History  => new(PageKind.History, Window: page.HistoryWindow, CompareWith: page.CompareWith, DataTo: page.DataTo),
+        _                 => new(PageKind.None),
+    };
+
+    // The active connection's database, as the selector shows it, on a page that reads it; null
+    // for a connection from appsettings.json only, whose database isn't known here.
+    private string? DatabaseOf(IPageContext page) =>
+        page.UsesDatabase ? _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DatabaseLabel : null;
 
     // ── Navigation (#139) ─────────────────────────────────────────────────────
 
@@ -737,13 +822,18 @@ public partial class MainWindow : Window
             AlertsConnectionId: tag == "Alerts" ? alertsConnectionId : null,
             Settings:           tag == "Settings" ? settingsLocation : null);
 
-    private async void BtnBack_Click(object sender, RoutedEventArgs e)    => await GoAsync(back: true);
-    private async void BtnForward_Click(object sender, RoutedEventArgs e) => await GoAsync(back: false);
-
     // Alt+← / Alt+→ and the keyboard's own Back and Forward keys, before the Frame's built-in
-    // journal commands see them (its journal is kept empty).
+    // journal commands see them (its journal is kept empty). F5 refreshes the page (#140), rather
+    // than the Frame reloading it.
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            await RefreshPageAsync();
+            return;
+        }
+
         bool? back = e.Key switch
         {
             Key.BrowserBack    => true,
@@ -859,9 +949,12 @@ public partial class MainWindow : Window
         {
             var settings = CreateSettingsPage(settingsLocation, settingsMessage);
             MainFrame.Navigate(settings);
-            _page = settings;
-            BtnRefresh.IsEnabled = false;
-            TxtStatus.Text = _isConnectionConfigured ? "Settings" : "Not connected";
+            _page      = settings;
+            _updatedAt = null;
+            Bar.ShowPage(tools: null, Freshness(settings), canPause: false, database: null);
+            Bar.CanRefresh = false;
+            if (!_isConnectionConfigured)
+                Bar.ShowMessage("Not connected");
             return;
         }
 
@@ -899,9 +992,21 @@ public partial class MainWindow : Window
             _                 => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
         };
 
+        System.Diagnostics.Debug.Assert(PageCatalog.Types.GetValueOrDefault(tag) == page.GetType() || !PageCatalog.Types.ContainsKey(tag),
+                                        $"PageCatalog says \"{tag}\" opens another type than {page.GetType().Name}.");
+
+        // The page's own controls (a time range picker) go into the top bar before it loads, with
+        // its kind; the previous page's go (#140).
+        var context = (IPageContext)page;
+        FrameworkElement? tools = null;
+        try { tools = context.TakeBarTools(); }
+        catch (Exception ex) { AppLog.Error($"{tag}: could not move its controls to the top bar", ex); }
+
         MainFrame.Navigate(page);
         _page       = page as Page;
         _pageLoaded = false;
+        _updatedAt  = null;
+        Bar.ShowPage(tools, Freshness(context), context.CanPause, DatabaseOf(context));
 
         // How the page was left last time: its tab now, each grid's sort, filter and selection
         // as its rows arrive, so the page loads straight into it (#139).
@@ -909,13 +1014,17 @@ public partial class MainWindow : Window
         if (viewState is not null && page is Page opened)
             RestoreViewState(() => viewState.Restore(opened));
 
-        BtnRefresh.IsEnabled = false;
-        TxtStatus.Text = "Loading…";
+        Bar.CanRefresh = false;
+        Bar.ShowMessage("Loading…");
         try
         {
             await page.RefreshAsync();
             if (version == _loadVersion)
-                TxtStatus.Text = $"Updated {DateTime.Now:HH:mm:ss}";
+            {
+                _updatedAt = DateTime.Now;
+                Bar.ShowMessage(null);
+                ShowPageContext();
+            }
         }
         catch (Exception ex)
         {
@@ -926,7 +1035,7 @@ public partial class MainWindow : Window
             if (version != _loadVersion)
                 return;
 
-            TxtStatus.Text = FormatErrorStatus(ex);
+            Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
             MessageBox.Show(
                 FormatErrorDetail(ex) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
                 "Data Error", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -935,7 +1044,7 @@ public partial class MainWindow : Window
         {
             if (version == _loadVersion)
             {
-                BtnRefresh.IsEnabled = true;
+                Bar.CanRefresh = true;
 
                 // Loaded or not, the page is as long as it will be: scroll it back.
                 _pageLoaded = true;
@@ -984,18 +1093,23 @@ public partial class MainWindow : Window
                      && !(route.ConnectionId == _activeConnectionId && IsDisabled(route.Tag));
     }
 
-    // The buttons say where they go, and the strip says where you are.
+    // Back and Forward say where they go, and the breadcrumb says where you are (#140).
     private void UpdateHistoryButtons()
     {
         var isAvailable = Availability();
         var back    = _history.PeekBack(isAvailable);
         var forward = _history.PeekForward(isAvailable);
+        Bar.ShowHistory(back is null ? null : Describe(back), forward is null ? null : Describe(forward));
+        UpdateBreadcrumb();
+    }
 
-        BtnBack.IsEnabled    = back is not null;
-        BtnForward.IsEnabled = forward is not null;
-        BtnBack.ToolTip      = back    is null ? "Back (Alt+Left)"     : $"Back to {Describe(back)} (Alt+Left)";
-        BtnForward.ToolTip   = forward is null ? "Forward (Alt+Right)" : $"Forward to {Describe(forward)} (Alt+Right)";
-        TxtLocation.Text     = _history.Current is { } current ? Describe(current) : string.Empty;
+    // All servers › PROD-SQL01 › Activity now › Processes, with the server's health.
+    private void UpdateBreadcrumb()
+    {
+        if (_history.Current is not { } current)
+            return;
+        ConnectionSelectorItem? Item(Guid id) => _selectorItems.FirstOrDefault(i => i.Settings.Id == id);
+        Bar.ShowBreadcrumb(Breadcrumb.For(current, id => Item(id)?.DisplayName), Item);
     }
 
     // "Processes · PROD-SQL01", "PROD-SQL01" for its details, "Alerts" for a page about every server.

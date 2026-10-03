@@ -36,8 +36,17 @@ public sealed class CounterItem : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
-public partial class PerfmonPage : Page, IRefreshable
+public partial class PerfmonPage : Page, IRefreshable, IPageContext
 {
+    // Live, or History while a past range is picked; the range picker is in the top bar (#140).
+    public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
+    public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
+    public bool CanPause => _range.IsLive;
+    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
+    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+    public DateTime? DataTo => _range.IsLive ? null : PageBar.DataTo(_historyLoad, b => b.TimeUtc);
+    public FrameworkElement? TakeBarTools() => PageBar.Detach(RangePicker);
+
     // ── Constants ────────────────────────────────────────────────────────────
     private const int MaxPoints  = 60;
     private const int MaxSeries  = 12;
@@ -307,6 +316,7 @@ public partial class PerfmonPage : Page, IRefreshable
             StopTimer();
         BtnAutoRefresh.IsEnabled = live;
         CmbInterval.IsEnabled    = live;
+        MainWindow.ReportContextChanged(this);
 
         // A baseline belongs to the range it was read for.
         _baseline?.Clear();
@@ -360,6 +370,7 @@ public partial class PerfmonPage : Page, IRefreshable
         RebuildSeries();
         UpdateChart();
         ShowStatus(load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList()));
+        MainWindow.ReportContextChanged(this);
 
         await LoadBaselineAsync();
     }
@@ -670,6 +681,7 @@ public partial class PerfmonPage : Page, IRefreshable
         _intervalSec  = Intervals[CmbInterval.SelectedIndex];
         _remainingSec = _intervalSec;
         UpdateCountdown();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
@@ -678,12 +690,14 @@ public partial class PerfmonPage : Page, IRefreshable
         _intervalSec = CmbInterval.SelectedIndex >= 0
             ? Intervals[CmbInterval.SelectedIndex] : 10;
         StartTimer();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
     {
         BtnAutoRefresh.Content = "Start";
         StopTimer();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void CmbGroup_SelectionChanged(object sender, SelectionChangedEventArgs e)

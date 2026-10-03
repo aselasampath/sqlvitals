@@ -5,11 +5,15 @@ using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Windows;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ResourceQueriesPage : Page, IRefreshable
+public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh (#140).
+    public PageKind Kind => PageKind.Snapshot;
+
     private readonly IWaitStatsRepository _repo;
     private int _topN = 20;
 

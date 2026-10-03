@@ -20,9 +20,10 @@ A dashboard of live charts, updated every 10 seconds by default.
 
 1. Open **💓 Live Metrics**. If the connection is already monitored, the charts show the last ~10 minutes.
 2. If it says **Monitoring is off**, press **▶ Start monitoring** (in the banner or the toolbar). The first sample is taken straight away. **■ Stop monitoring** stops it again. Both last until SqlVitals exits; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
-3. **Sample every**: how often the connection is sampled, 5 s to 2 min. It applies in the background too, and is kept while monitoring is stopped.
+3. **Sample every**, in the top bar: how often the connection is sampled, every 5 s to every 2 min. It applies in the background too, and is kept while monitoring is stopped.
 4. **Charts**: tick or untick the charts you want to see.
-5. **Range picker**: switch from **Live** to **1h**, **24h**, **7d** or **Custom…** to look back in time. **Compare to baseline** adds last week's line. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+5. **Range picker**, in the top bar: switch from **Live** to **1h**, **24h**, **7d** or **Custom…** to look back in time. **Compare to baseline** adds last week's line. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+6. **⏸ Pause** in the top bar freezes the charts so you can read them; monitoring and recording carry on, and **▶ Resume** catches the charts up. **F5** still takes one sample while paused.
 
 ### When monitoring is off
 

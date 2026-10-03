@@ -91,7 +91,7 @@ Connections grouped **by application** (program name): number of connections, ac
 
 1. Tick counters in **Select Counters** on the left (**Select All** / **Clear All**). Up to **12** are charted at once.
 2. Set **Auto-refresh** and press **Start**, or use the sidebar **Refresh** for one reading.
-3. Use the **range picker** (1h, 24h, 7d, Custom…) to chart recorded history, and **Compare to baseline** for last week. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+3. Use the **range picker** in the top bar (1h, 24h, 7d, Custom…) to chart recorded history, and **Compare to baseline** for last week. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
 
 Counters include batch requests, compilations, lock waits and timeouts, log flushes, memory grants, page life expectancy and more. Per-second counters are shown as rates.
 

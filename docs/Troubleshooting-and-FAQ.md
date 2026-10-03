@@ -104,8 +104,11 @@ Nothing was recorded at the same time last week. Keep history for at least 14 da
 **The Cardinality Misestimates or Skewed Parallelism tab is empty.**
 These *(live)* tabs only show queries running at that moment, and need lightweight query profiling (default from SQL Server 2019 and in Azure SQL). Refresh while the problem is happening.
 
-**A page stopped updating, and the status bar shows an error.**
-When automatic refresh fails, SqlVitals shows the error in the status bar instead of popping up a dialog every few seconds. Fix the cause (often connectivity), then press **↻ Refresh**.
+**A page stopped updating, and the top bar shows an error.**
+When automatic refresh fails, SqlVitals shows the error in red in the top bar (at the foot of the sidebar before 0.56.0) instead of popping up a dialog every few seconds. Fix the cause (often connectivity), then press **↻ Refresh** or **F5**.
+
+**The top bar says Paused.**
+The page is live but isn't updating: you paused it, its auto-refresh isn't started (Processes, Memory Grants, Wait Trend, Perfmon start stopped), or the server isn't monitored. Press **▶ Resume**, the page's own **Start**, or start monitoring.
 
 ## SP Trace
 

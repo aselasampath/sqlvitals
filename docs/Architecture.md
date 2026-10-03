@@ -9,7 +9,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 ```text
 ┌───────────────────────────── SqlVitals.Desktop (WPF, net8.0-windows) ─────────────────────────────┐
 │                                                                                                    │
-│  MainWindow ── sidebar nav ── Frame → Pages (IRefreshable)        Controls / Windows / Helpers    │
+│  MainWindow ── sidebar, TopBar ── Frame → Pages (IRefreshable, IPageContext)  Controls / Helpers  │
 │      │                              │                                                              │
 │      │ RepositoryFactory            │ RefreshAsync()                                               │
 │      ▼                              ▼                                                              │
@@ -58,7 +58,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 | `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
 | `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
 | `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
-| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar, laid out off screen in both themes, and Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`) |
+| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), and Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -68,10 +68,11 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 
 1. A sidebar button's `Tag` (e.g. `"IndexHealth"`) goes to `MainWindow.NavigateTo(tag)`. The sidebar is built from `Services/NavMenu` (the groups, their pages and order) by `Controls/NavSidebar`: one collapsible `Expander` per group (style `NavGroupExpander`), a `NavButton` per page. `NavigateTo` calls `NavSidebar.Highlight(tag)`, which highlights the button and expands its group; which groups are collapsed is saved in `settings.dat` (`NavCollapsedGroups`).
 2. `NavigateTo` makes a `Route` (page tag, the active connection for a server's page, and what it was opened with) and opens it: it asks Settings first if it has unsaved changes, keeps the leaving page's `ViewState`, creates the page **fresh**, passing it the repository for the active connection, and navigates the `Frame`. The move is recorded in `Services/NavigationHistory` for **Back** and **Forward** (#139); Back to another server's route switches to it first (`SwitchToAsync`), and routes whose server was removed are skipped. The `Frame`'s own journal is kept empty, so nothing old can come back.
-3. It calls the page's `IRefreshable.RefreshAsync()`. The sidebar **↻ Refresh** calls it again.
-4. The page calls repository methods; results are records from `Engine/Models`, bound to `DataGrid`s and LiveCharts.
-5. `Helpers/ViewState` puts back how the route was last looked at (#139): the tabs as the page is built, each grid's filter, sort, selection and scroll position once that grid gets rows, and the page's own scrolling after it has loaded. Elements are matched by `x:Name`, or by order among unnamed ones of a type; anything the user changed meanwhile is left alone. Pages are rebuilt rather than kept because they drop their timers, sessions and traces when they leave the screen; combo boxes and toggles aren't restored, since they can start work. `RouteStates` keeps the last 50 routes' states.
-5. Exceptions are caught in `NavigateTo`. Auto-refresh failures go to the status bar and the [log](Settings.md#diagnostics), not to a dialog on every tick.
+3. It calls the page's `IRefreshable.RefreshAsync()`. **Refresh** in the top bar, and **F5**, call it again.
+4. The top bar (`Controls/TopBar`, #140) shows the route as a breadcrumb (`Services/Breadcrumb`) and the page's context from its `IPageContext`: its `PageKind` (**Live**, **Snapshot** or **History**; `None` for Settings and Export), a live page's interval and whether it is paused (Pause calls `SetPaused`), a history page's window and where its data ends, and whether it reads the connection's database. A page hands the bar its own controls with `TakeBarTools()` (the three `TimeRangePicker`s, Live Metrics' interval) before it loads, and calls `MainWindow.ReportContextChanged`, `ReportBackgroundSuccess` (the *As of* / *Taken* time) or `ReportBackgroundError` as things change. `PageContextText` words it all, with the clock passed in. `Services/PageCatalog` maps each tag to its page type, and a test fails for a page that doesn't implement `IPageContext`. Short of room the bar leaves out *All servers* and the group, then its freshness text and the placeholder buttons, then moves the page's controls to a row of its own, so the server's name is never squeezed out.
+5. The page calls repository methods; results are records from `Engine/Models`, bound to `DataGrid`s and LiveCharts.
+6. `Helpers/ViewState` puts back how the route was last looked at (#139): the tabs as the page is built, each grid's filter, sort, selection and scroll position once that grid gets rows, and the page's own scrolling after it has loaded. Elements are matched by `x:Name`, or by order among unnamed ones of a type; anything the user changed meanwhile is left alone. Pages are rebuilt rather than kept because they drop their timers, sessions and traces when they leave the screen; combo boxes and toggles aren't restored, since they can start work. `RouteStates` keeps the last 50 routes' states.
+7. Exceptions are caught in `NavigateTo`. Auto-refresh failures go to the top bar and the [log](Settings.md#diagnostics), not to a dialog on every tick.
 
 ```csharp
 public interface IRefreshable

@@ -1,0 +1,181 @@
+<UserControl x:Class="SqlVitals.Desktop.Controls.TopBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+             AutomationProperties.Name="Navigation and page context"
+             FontFamily="Segoe UI" FontSize="12.5">
+    <!-- Everything here follows a theme change, so every colour is a DynamicResource. -->
+    <UserControl.Resources>
+        <!-- A 32 px icon button: Back, Forward, Pause, Refresh and the placeholders. -->
+        <Style x:Key="BarIconButton" TargetType="Button">
+            <Setter Property="Width"           Value="32" />
+            <Setter Property="Height"          Value="32" />
+            <Setter Property="Background"      Value="Transparent" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="Transparent" />
+            <Setter Property="FontFamily"      Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize"        Value="14" />
+            <Setter Property="Cursor"          Value="Hand" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BgCard}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A breadcrumb part that opens its page: plain text, underlined on hover. -->
+        <Style x:Key="CrumbButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="Cursor"     Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="4,3"
+                                BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BgCard}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The Database chip: a 30 px pill that opens the connection's settings. -->
+        <Style x:Key="ChipButton" TargetType="Button">
+            <Setter Property="Height"     Value="30" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Cursor"     Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{DynamicResource BgCard}" CornerRadius="6" Padding="10,0"
+                                BorderBrush="{DynamicResource Border}" BorderThickness="1">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentLight}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BarDivider" TargetType="Border">
+            <Setter Property="Width"      Value="1" />
+            <Setter Property="Height"     Value="24" />
+            <Setter Property="Margin"     Value="8,0" />
+            <Setter Property="Background" Value="{DynamicResource Border}" />
+        </Style>
+    </UserControl.Resources>
+
+    <Border x:Name="Root" Background="{DynamicResource BgSidebar}" Padding="10,0,12,0"
+            BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+        <DockPanel x:Name="Rows">
+            <!-- In a narrow window, the page's own controls wrap to a row of their own under the
+                 bar, rather than the server's name being squeezed out. -->
+            <ContentControl x:Name="ToolsRow" DockPanel.Dock="Bottom" Focusable="False" HorizontalAlignment="Right"
+                            Margin="0,0,0,10" Visibility="Collapsed" />
+
+            <!-- Left to right, as Tab goes. The breadcrumb's column gets what the others leave. -->
+            <Grid x:Name="BarRow" Height="52" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <!-- Sidebar toggle (a placeholder until #142), Back and Forward -->
+                <StackPanel x:Name="LeftButtons" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnSidebar" Style="{StaticResource BarIconButton}" Content="&#xE700;" IsEnabled="False"
+                            ToolTip="Pin, collapse or hide the sidebar (Ctrl+B): coming in a later version"
+                            AutomationProperties.Name="Sidebar" />
+                    <Button x:Name="BtnBack" Style="{StaticResource BarIconButton}" Content="&#xE72B;" Margin="2,0,0,0"
+                            Click="BtnBack_Click" IsEnabled="False" ToolTip="Back (Alt+Left)"
+                            AutomationProperties.Name="Back" />
+                    <Button x:Name="BtnForward" Style="{StaticResource BarIconButton}" Content="&#xE72A;" Margin="2,0,0,0"
+                            Click="BtnForward_Click" IsEnabled="False" ToolTip="Forward (Alt+Right)"
+                            AutomationProperties.Name="Forward" />
+                    <Border Style="{StaticResource BarDivider}" />
+                </StackPanel>
+
+                <!-- All servers › PROD-SQL01 › Activity now › Processes -->
+                <controls:CrumbPanel x:Name="Crumbs" Grid.Column="1" VerticalAlignment="Center" ClipToBounds="True"
+                                     SeparatorBrush="{DynamicResource TextMuted}"
+                                     AutomationProperties.Name="Breadcrumb" />
+
+                <!-- The page context: database, the page's own controls, the kind badge and its freshness -->
+                <StackPanel x:Name="ContextPanel" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Style="{StaticResource BarDivider}" />
+                    <Button x:Name="BtnDatabase" Style="{StaticResource ChipButton}" Margin="0,0,8,0" Visibility="Collapsed"
+                            Click="BtnDatabase_Click">
+                        <TextBlock>
+                            <Run Text="DB" Foreground="{DynamicResource TextMuted}" /><Run Text=" " /><Run x:Name="RunDatabase" />
+                        </TextBlock>
+                    </Button>
+                    <ContentControl x:Name="ToolsHost" Focusable="False" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <Border x:Name="Badge" CornerRadius="6" BorderThickness="1" Height="26" Padding="8,0"
+                            VerticalAlignment="Center" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse x:Name="BadgeDot" Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtBadge" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="TxtDetail" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12"
+                               Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis" MaxWidth="440" />
+                    <!-- Loading, a switch, or an error the page or a refresh ran into -->
+                    <TextBlock x:Name="TxtMessage" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="12"
+                               MaxWidth="300" TextTrimming="CharacterEllipsis" Visibility="Collapsed"
+                               Foreground="{DynamicResource TextMuted}" />
+                </StackPanel>
+
+                <!-- Jump to (a placeholder until #144), Pause or Refresh, and Ask AI (until the assistant, #93) -->
+                <StackPanel x:Name="RightButtons" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <Button x:Name="BtnJump" Style="{StaticResource BarIconButton}" Content="&#xE721;" IsEnabled="False"
+                            ToolTip="Jump to a server or page (Ctrl+K): coming in a later version"
+                            AutomationProperties.Name="Jump to a server or page" />
+                    <Button x:Name="BtnPause" Style="{StaticResource BarIconButton}" Content="&#xE769;" Margin="2,0,0,0"
+                            Click="BtnPause_Click" Visibility="Collapsed"
+                            ToolTip="Pause live updates" AutomationProperties.Name="Pause live updates" />
+                    <Button x:Name="BtnRefresh" Style="{StaticResource BarIconButton}" Content="&#xE72C;" Margin="2,0,0,0"
+                            Click="BtnRefresh_Click" IsEnabled="False"
+                            ToolTip="Refresh (F5)" AutomationProperties.Name="Refresh" />
+                    <Button x:Name="BtnAskAi" Style="{StaticResource BarIconButton}" Content="&#xE8BD;" Margin="2,0,0,0"
+                            IsEnabled="False" ToolTip="Ask AI about this page: coming with the assistant"
+                            AutomationProperties.Name="Ask AI" />
+                </StackPanel>
+            </Grid>
+        </DockPanel>
+    </Border>
+</UserControl>

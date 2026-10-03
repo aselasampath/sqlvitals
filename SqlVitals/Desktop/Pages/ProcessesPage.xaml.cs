@@ -6,8 +6,15 @@ using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ProcessesPage : Page, IRefreshable
+public partial class ProcessesPage : Page, IRefreshable, IPageContext
 {
+    // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140).
+    public PageKind Kind => PageKind.Live;
+    public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
+    public bool CanPause => true;
+    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
+    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+
     private readonly IWaitStatsRepository _repo;
     private readonly ConnectionSettingsService _settings;
 
@@ -158,6 +165,7 @@ public partial class ProcessesPage : Page, IRefreshable
             _remainingSec = sec;
             UpdateCountdown();
             SaveRefreshChoice();
+            MainWindow.ReportContextChanged(this);
         }
     }
 
@@ -166,6 +174,7 @@ public partial class ProcessesPage : Page, IRefreshable
         BtnAutoRefresh.Content = "Stop";
         StartTimer();
         SaveRefreshChoice();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
@@ -174,5 +183,6 @@ public partial class ProcessesPage : Page, IRefreshable
         _timer.Stop();
         TxtCountdown.Text = "--";
         SaveRefreshChoice();
+        MainWindow.ReportContextChanged(this);
     }
 }

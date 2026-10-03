@@ -4,11 +4,16 @@ using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefreshable
+public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh, from the connection's database (#140).
+    public PageKind Kind => PageKind.Snapshot;
+    public bool UsesDatabase => true;
+
     private readonly IWaitStatsRepository _repo;
 
     public StaleStatisticsPage(IWaitStatsRepository repo)

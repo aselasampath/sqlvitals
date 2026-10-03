@@ -2,7 +2,7 @@
 
 SqlVitals keeps a **local history** of every server it monitors, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
 
-> **Where:** the range picker in the toolbar of 💓 Live Metrics, 📈 Wait Trend and ⏱️ Perfmon · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
+> **Where:** the range picker in the [top bar](Getting-Started.md#live-snapshot-or-history) on 💓 Live Metrics, 📈 Wait Trend and ⏱️ Perfmon (in each page's toolbar before 0.56.0) · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
 
 ## Look back in time
 
@@ -24,7 +24,11 @@ What each page shows for past ranges:
 | **Wait Trend** | Waits per type, any of the four metrics | One point per snapshot (5 min by default) |
 | **Perfmon** | The counters you tick | One point per snapshot (recorded from version 0.30) |
 
-**Refresh** re-reads the range, so *1h* moves up to "now".
+**Refresh** (or **F5**) re-reads the range, so *1h* moves up to "now".
+
+From 0.56.0 the picker is in the top bar, beside the page's badge. On **Live** the badge says **Live** with how often the page updates and when it last did; pick a past range and it says **History**, with **Data to** the end of the newest data in the range, so a range that stops early because monitoring was off shows it. On Live Metrics, **Sample every** is beside the picker too. In a narrow window the picker moves to a row of its own under the bar, so the server's name stays in view.
+
+![The top bar on a history page: the database, the History badge, the window, what it is compared with, and where the data ends](images/top-bar/history.png)
 
 ### Reading history charts
 
@@ -34,7 +38,7 @@ What each page shows for past ranges:
 
 ## Compare to a baseline
 
-Tick **Compare to baseline** (next to the range picker) to overlay **the same time last week** as **dashed, faded lines**. It answers *"is this normal?"*: a CPU of 70 % is worrying if last Tuesday at the same hour was 20 %, and normal if it was 70 % too.
+Tick **Compare to baseline** (part of the range picker) to overlay **the same time last week** as **dashed, faded lines**. It answers *"is this normal?"*: a CPU of 70 % is worrying if last Tuesday at the same hour was 20 %, and normal if it was 70 % too.
 
 - Each line gets a dashed twin in the same colour, called *"… · last week"* in the legend.
 - On Live Metrics' stacked waits chart, the baseline is one dashed **Total waits · last week** line, counting only the wait categories that are ticked.

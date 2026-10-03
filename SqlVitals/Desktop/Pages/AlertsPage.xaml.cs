@@ -15,8 +15,11 @@ namespace SqlVitals.Desktop.Pages;
 /// monitoring history, with the ones active right now taken from the running sessions so they
 /// show straight away. Filtered by connection, status and period.
 /// </summary>
-public partial class AlertsPage : Page, IRefreshable
+public partial class AlertsPage : Page, IRefreshable, IPageContext
 {
+    // Alerts as they start and end, from every monitored connection (#140).
+    public PageKind Kind => PageKind.Live;
+
     private enum StatusFilter { All, Active, Past }
 
     private sealed record Period(string Label, TimeSpan? Span);
@@ -236,12 +239,13 @@ public partial class AlertsPage : Page, IRefreshable
             await RefreshQuietlyAsync();
     }
 
-    // The sidebar Refresh reports errors through MainWindow; a load started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a load started here reports its own.
     private async Task RefreshQuietlyAsync()
     {
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {

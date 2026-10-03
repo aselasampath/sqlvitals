@@ -145,40 +145,15 @@
                     <StackPanel x:Name="NavPanel" />
                 </ScrollViewer>
 
-                <!-- Refresh + status at bottom -->
-                <StackPanel DockPanel.Dock="Bottom" Margin="12,0,12,16">
-                    <Button Content="↻  Refresh" Style="{DynamicResource RefreshButton}"
-                            Click="BtnRefresh_Click" x:Name="BtnRefresh" />
-                    <TextBlock x:Name="TxtStatus" Text="Ready"
-                               Foreground="{DynamicResource TextMuted}"
-                               FontFamily="Segoe UI" FontSize="10"
-                               Margin="0,8,0,0" HorizontalAlignment="Center"
-                               TextWrapping="Wrap" TextAlignment="Center" />
-                </StackPanel>
-
                 <FrameworkElement /> <!-- spacer -->
             </DockPanel>
         </Border>
 
         <!-- ── Content area ─────────────────────────────────────────── -->
         <DockPanel Grid.Column="1">
-            <!-- Back and Forward through the pages visited (#139), and where you are. -->
-            <Border DockPanel.Dock="Top" Background="{DynamicResource BgDeep}"
-                    BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,6">
-                <StackPanel Orientation="Horizontal">
-                    <Button x:Name="BtnBack" Style="{DynamicResource NavArrowButton}" Content="&#xE72B;"
-                            Click="BtnBack_Click" IsEnabled="False"
-                            ToolTip="Back (Alt+Left)" ToolTipService.ShowOnDisabled="True"
-                            AutomationProperties.Name="Back" />
-                    <Button x:Name="BtnForward" Style="{DynamicResource NavArrowButton}" Content="&#xE72A;"
-                            Click="BtnForward_Click" IsEnabled="False" Margin="4,0,0,0"
-                            ToolTip="Forward (Alt+Right)" ToolTipService.ShowOnDisabled="True"
-                            AutomationProperties.Name="Forward" />
-                    <TextBlock x:Name="TxtLocation" Margin="12,0,0,0" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="12"
-                               TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-            </Border>
+            <!-- One bar (#140): Back and Forward (#139), where you are, and the page's server,
+                 database, freshness and time window, with Pause or Refresh. -->
+            <controls:TopBar x:Name="Bar" DockPanel.Dock="Top" />
             <Frame x:Name="MainFrame"
                    NavigationUIVisibility="Hidden"
                    Background="{DynamicResource BgDeep}" />

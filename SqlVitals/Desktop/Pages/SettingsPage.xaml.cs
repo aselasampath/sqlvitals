@@ -13,8 +13,11 @@ namespace SqlVitals.Desktop.Pages;
 /// is built the first time it's opened. Connections holds a card per saved connection and a page
 /// per connection; the categories for the whole app save as they change.
 /// </summary>
-public partial class SettingsPage : Page
+public partial class SettingsPage : Page, IPageContext
 {
+    // The app's own settings, not a view of a server's data: no badge in the top bar (#140).
+    public PageKind Kind => PageKind.None;
+
     private readonly SettingsContext _context;
     private readonly Dictionary<SettingsCategory, FrameworkElement> _built = new();
     private readonly Dictionary<SettingsCategory, RadioButton> _items = new();

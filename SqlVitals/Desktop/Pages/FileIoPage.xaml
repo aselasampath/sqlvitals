@@ -155,7 +155,7 @@
                               SelectionChanged="CmbInterval_SelectionChanged"
                               ToolTip="How often the file totals are read while this page is open. Longer intervals smooth out bursts; each reading is one light query."/>
                     <Button x:Name="BtnPause" Content="⏸ Pause" MinWidth="86" Style="{StaticResource RefreshButton}" Padding="10,4"
-                            ToolTip="Stop reading while you look at the figures. The sidebar Refresh still takes a reading."
+                            ToolTip="Stop reading while you look at the figures. Refresh (F5) in the top bar still takes a reading."
                             Click="BtnPause_Click"/>
                     <Border Margin="6,0,16,0" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}"
                             BorderThickness="1" CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center"

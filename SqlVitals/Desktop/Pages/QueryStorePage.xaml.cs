@@ -25,8 +25,23 @@ namespace SqlVitals.Desktop.Pages;
 /// SSMS's Query Store reports on five tabs. Opening the page reads the settings and the tab on
 /// screen; another tab is read the first time it's opened, and again after Refresh or a new period.
 /// </summary>
-public partial class QueryStorePage : Page, IRefreshable
+public partial class QueryStorePage : Page, IRefreshable, IPageContext
 {
+    // A period of the connection's database's Query Store (#140); the period box stays on the page.
+    public PageKind Kind => PageKind.History;
+    public bool UsesDatabase => true;
+    public string? HistoryWindow => _period.Label;
+    public DateTime? DataTo { get; private set; }
+
+    // The period's end as of this read, for the top bar: now, for a period up to now.
+    private void NoteDataTo()
+    {
+        var nowUtc = DateTime.UtcNow;
+        var toUtc  = _period.Resolve(nowUtc).ToUtc;
+        DataTo = (toUtc < nowUtc ? toUtc : nowUtc).ToLocalTime();
+        MainWindow.ReportContextChanged(this);
+    }
+
     private const int VariationTop   = 50;
     private const int WaitQueriesTop = 25;
 
@@ -112,6 +127,7 @@ public partial class QueryStorePage : Page, IRefreshable
     /// <summary>Reads the settings again, and the tab on screen; the others are read when next opened.</summary>
     public async Task RefreshAsync()
     {
+        NoteDataTo();
         var status = await _repo.GetQueryStoreStatusAsync();
         _status = status;
         ShowStatus(status);
@@ -362,6 +378,7 @@ public partial class QueryStorePage : Page, IRefreshable
     private async Task SetPeriodAsync(QueryStorePeriod period)
     {
         _period = period;
+        NoteDataTo();
         ShowDataFrom();
         foreach (var state in _tabs.Values)
             state.IsCurrent = false;
