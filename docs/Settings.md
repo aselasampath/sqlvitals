@@ -2,7 +2,7 @@
 
 **⚙️ Settings** holds everything you can configure. Changes apply straight away; no restart is needed.
 
-> **Where:** sidebar → ⚙️ Settings (opens automatically on first launch), or **Manage** above the connection selector · **Since:** categories and a page per connection from 0.54.0 ([#131](https://github.com/aselasampath/sqlvitals/issues/131))
+> **Where:** sidebar → **Settings**, at the foot (opens automatically on first launch); a server's **⋯ → Edit connection…** on All servers opens its page · **Since:** categories and a page per connection from 0.54.0 ([#131](https://github.com/aselasampath/sqlvitals/issues/131))
 
 Settings has its own side menu, next to the app's sidebar, with a category per kind of setting. It opens on **Connections**, or on the category you last used since SqlVitals started.
 
@@ -26,7 +26,7 @@ Categories for the whole app say *For every connection* under their title. A set
 
 ![Settings, Connections: a card per saved connection](images/settings/connections.png)
 
-A card per saved connection, in the same order as the sidebar's connection selector, two a row (one in a narrow window). Each card shows:
+A card per saved connection, by name as in the breadcrumb's server menu, two a row (one in a narrow window). Each card shows:
 
 - the **health dot** and name, and a label: **ACTIVE** (the connection every page queries), **BACKGROUND** (monitored while another one is active) or **OFF** (neither);
 - the server / database;
@@ -78,7 +78,7 @@ While you type, **Now** and **Points** grade the connection's latest sample on w
 | **Snapshot every** | 5 minutes (1, 5, 15, 30) | How often waits per type, file I/O, memory, top queries and Perfmon counters are saved. Shorter = more detail, more load on the server and more disk. Live Metrics samples are saved at their own interval regardless. |
 | **Keep history for** | 14 days (7, 14, 30, 90) | Older history is deleted automatically. **Shortening** it asks for confirmation, then deletes straight away. Use at least 14 days for week-over-week baselines. |
 
-Either way you can start and stop any connection with **▶ / ■** in the sidebar selector, on Home, on **💓 Live Metrics**, or from the notification-area icon's menu, until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). **Alerts are only raised for connections being monitored.** The category also shows the **history file's size** on disk, updated while it's open.
+Either way you can start and stop any connection with **▶ / ■** in the sidebar's server header, on All servers, on **💓 Live Metrics**, or from the notification-area icon's menu, until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). **Alerts are only raised for connections being monitored.** The category also shows the **history file's size** on disk, updated while it's open.
 
 **Clear history…**, in its own card, deletes all history, alerts included, for **every** connection, after a confirmation. Monitoring carries on, and new history is saved from the next sample. This can't be undone. The [activity log](#activity-log) is **kept**, and records that history was cleared, when and by whom.
 
@@ -136,7 +136,7 @@ A record of what was done, kept in the history file (`history.db`, table `activi
 
 | Event | Logged when |
 |---|---|
-| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, in the connection selector, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
+| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, in the sidebar or on All servers, in the connection selector before 0.57.0, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
 | **App started** / **App exited** | Each run. A run that was killed, crashed or lost power has no *App exited*; the next start says *The previous run didn't exit cleanly* |
 | **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. Not which sidebar groups you collapse or expand. |
 | **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |

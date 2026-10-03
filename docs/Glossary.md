@@ -32,7 +32,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Forced plan** | A plan Query Store makes a query use (`sp_query_store_force_plan`), by hand or by *automatic plan correction*. If forcing fails, e.g. because an index the plan uses was dropped (`NO_INDEX`), the query runs with whatever plan the optimizer picks. See [Query Store → Forced Plans](Query-Performance.md#forced-plans). |
 | **Fragmentation** | How out of order an index's pages are. High fragmentation on large indexes can slow scans. |
 | **FULLSCAN** | Updating statistics by reading every row: most accurate, most expensive |
-| **Health dot** | The coloured indicator per connection in the sidebar |
+| **Health dot** | The coloured indicator per connection: on its tile on All servers, in the sidebar's server header and in the breadcrumb |
 | **Health score** | A 0–100 number per connection: 100 minus the points lost by health checks past their thresholds. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
 | **Home** | The 🏠 page with a tile per saved connection: its health score and status, its last hour, a bar per check, the ones that need attention first. Each opens the server's details. See [Your Servers](Your-Servers.md). |
 | **Implicit conversion** | See *CONVERT_IMPLICIT* |
@@ -66,6 +66,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Resource wait** | The part of a wait spent waiting for the resource itself (disk, lock, memory) |
 | **RPO (recovery point objective)** | How much work, measured in time, you can afford to lose if a database has to be restored. Met by taking backups at least that often. See [Backups](Backups.md). |
 | **sa** | SQL Server's built-in administrator login: always sysadmin and known to every attacker, so it's best disabled. Found by its SID, `0x01`, even when renamed. |
+| **Server workspace** | From 0.57.0, a server you've opened: its name, health and Start/Stop at the top of the sidebar's server part, and its screens in groups under it. Opened from its tile on All servers, switched with the breadcrumb's server menu. See [The server workspace](Getting-Started.md#the-server-workspace). |
 | **SID** | *Security identifier*: the number that ties a database user to its login, and identifies a Windows account whatever its name. |
 | **Signal wait** | The part of a wait spent waiting for a CPU after the resource became available. A high share means CPU pressure. |
 | **Snapshot** | In the top bar, a screen read once, when it was opened or last refreshed, rather than one that updates on its own (**Live**) or shows a time window (**History**). Its age is shown, in amber after 15 minutes. See [Live, Snapshot or History](Getting-Started.md#live-snapshot-or-history). |

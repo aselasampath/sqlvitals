@@ -19,7 +19,8 @@ public sealed class BreadcrumbTests
 
         Assert.Equal(["All servers", "PROD-SQL01", "Activity now", "Deadlocks"], crumbs.Select(c => c.Text));
         Assert.Equal(new Route("Home"), crumbs[0].Target);
-        Assert.Equal(new Route("ServerDetail", ServerId: Prod), crumbs[1].Target);
+        // The server part opens the server menu (#141), not a page.
+        Assert.Null(crumbs[1].Target);
         Assert.Equal(Prod, crumbs[1].ServerId);
         // The group opens its first page, on the same server.
         Assert.Equal(new Route("Processes", ConnectionId: Prod), crumbs[2].Target);
@@ -47,12 +48,17 @@ public sealed class BreadcrumbTests
     }
 
     [Fact]
-    public void AServersDetails_AreUnderAllServers()
+    public void AServersSummary_IsItsOverview()
     {
         var crumbs = For(new Route("ServerDetail", ServerId: Prod));
-        Assert.Equal(["All servers", "PROD-SQL01"], crumbs.Select(c => c.Text));
-        Assert.Null(crumbs[1].Target);
+        Assert.Equal(["All servers", "PROD-SQL01", "Overview", "Summary"], crumbs.Select(c => c.Text));
         Assert.Equal(Prod, crumbs[1].ServerId);
+        Assert.Null(crumbs[2].Target);   // Summary is the group's first page
+
+        // From Live Metrics, Overview opens the server's Summary.
+        var live = For(new Route("LiveMetrics", ConnectionId: Prod));
+        Assert.Equal(["All servers", "PROD-SQL01", "Overview", "Live Metrics"], live.Select(c => c.Text));
+        Assert.Equal(new Route("ServerDetail", ServerId: Prod), live[2].Target);
     }
 
     [Fact]
@@ -74,7 +80,7 @@ public sealed class BreadcrumbTests
     {
         Assert.Equal(["All servers", "Activity now", "Processes"], For(new Route("Processes", ConnectionId: Gone)).Select(c => c.Text));
         Assert.Equal(["All servers", "Activity now", "Processes"], For(new Route("Processes")).Select(c => c.Text));
-        Assert.Equal(["All servers", "Server"], For(new Route("ServerDetail", ServerId: Gone)).Select(c => c.Text));
+        Assert.Equal(["All servers", "Overview", "Summary"], For(new Route("ServerDetail", ServerId: Gone)).Select(c => c.Text));
     }
 
     [Fact]

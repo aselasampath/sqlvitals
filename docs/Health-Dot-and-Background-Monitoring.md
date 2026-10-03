@@ -1,8 +1,8 @@
 # Health Dot and Background Monitoring
 
-Every saved connection has a **health dot** and a **health score** in the sidebar's connection selector. They tell you at a glance whether each of your servers is fine, and which one needs attention first, without opening them one by one.
+Every saved connection has a **health dot** and a **health score**, on its tile on **All servers**, in the sidebar's header for the server you've opened, and in the breadcrumb's server menu. They tell you at a glance whether each of your servers is fine, and which one needs attention first, without opening them one by one.
 
-> **Where:** sidebar → *Active connection* selector; the score is also at the top of 💓 Live Metrics · **Configure:** ⚙️ Settings → *Health thresholds* · **Score since:** 0.36.0
+> **Where:** **All servers** (a tile per server), the sidebar's server header, the breadcrumb; the score is also at the top of 💓 Live Metrics · **Configure:** ⚙️ Settings → *Health thresholds* · **Score since:** 0.36.0
 
 ## What the colours mean
 
@@ -32,9 +32,9 @@ These are the defaults. **off** means that level isn't checked.
 
 ## Health score
 
-The dot says *whether* a server has a problem. The **health score** says *how much*: a number from **0 to 100** beside each connection in the selector, at the top of the **💓 Live Metrics** dashboard, and on each connection's tile on **[🏠 Home](Your-Servers.md)**, which puts the servers that need attention first. With several servers, the lowest score is the one to look at first.
+The dot says *whether* a server has a problem. The **health score** says *how much*: a number from **0 to 100** beside the open server's name in the sidebar and the breadcrumb, at the top of the **💓 Live Metrics** dashboard, and on each connection's tile on **[All servers](Your-Servers.md)**, which puts the servers that need attention first. With several servers, the lowest score is the one to look at first.
 
-**Click the score** to see which checks lowered it. A panel lists every check with its current figure, its warning and critical thresholds, its weight and the points it cost. The checks that cost points are in bold. In the selector, clicking a score opens the panel for that connection without switching to it.
+**Click the score** to see which checks lowered it. A panel lists every check with its current figure, its warning and critical thresholds, its weight and the points it cost. The checks that cost points are in bold. On **All servers**, a tile's **⋯ → Why this score…** opens the panel for that server without opening it.
 
 ### How it's calculated
 
@@ -69,10 +69,10 @@ The score's **colour is the dot's colour**, not a banding of the number. A singl
 ### Good to know
 
 - The score is for the **latest sample**, like the dot, so it moves with every refresh. For how long a problem lasted, see [Alerts](Alerts.md).
-- From 0.53.0 every score is saved to the [history](Monitoring-History-Database.md) as it was graded, failed collections as 0, so a server's details on [🏠 Home](Your-Servers.md#score-over-time) chart it over the last hour, day or week.
+- From 0.53.0 every score is saved to the [history](Monitoring-History-Database.md) as it was graded, failed collections as 0, so a server's Summary on [All servers](Your-Servers.md#score-over-time) chart it over the last hour, day or week.
 - On Live Metrics it always shows the score **now**, also while the charts show a past range.
 - Change a threshold and the score updates straight away, without waiting for the next sample.
-- A connection that isn't monitored has no score, in the selector or on Live Metrics: an old score would read as the server's health now.
+- A connection that isn't monitored has no score, in the sidebar, on its tile or on Live Metrics: an old score would read as the server's health now.
 - The weights are fixed. To change what counts as a problem, change the [thresholds](#change-the-thresholds), for all connections or [just one](#per-connection-thresholds).
 
 ## Change the thresholds
@@ -117,14 +117,15 @@ Whatever the setting, you can start and stop monitoring whenever you like:
 | Where | What it does |
 |---|---|
 | **💓 Live Metrics** → **▶ Start monitoring** / **■ Stop monitoring** | The active connection. |
-| The sidebar's **connection selector**: **▶** / **■** on each row | That connection, without switching to it. |
+| The sidebar's server header: **▶** / **■** | The server you've opened. |
+| **All servers**: a tile's **▶ Start monitoring**, or **⋯ → Start monitoring** / **Stop monitoring** | That server, without opening it. |
 | The SqlVitals icon's menu in the notification area: **Start monitoring all** / **Stop monitoring all** | Start: the active connection and those with Monitor in background. Stop: every connection being monitored. |
 
 - **Start** takes the first sample straight away. **Stop** ends that connection's active [alerts](Alerts.md#when-monitoring-stops).
-- Every place shows the same state: press ■ in the selector and the Live Metrics button, the dot and the tray tooltip change at once.
+- Every place shows the same state: press ■ in the sidebar and the Live Metrics button, the dot, the tile and the tray tooltip change at once.
 - Start and Stop last **until SqlVitals exits**. The next start follows **Start monitoring automatically** again.
 - A connection you started keeps running when you switch to another one, like a background connection.
-- Hover a row in the selector for its state in words: *Monitoring*, *Stopped by you at 10:42*, *Not monitored: the password isn't saved…*
+- Hover the server's header in the sidebar, or its name in the breadcrumb, for its state in words: *Monitoring*, *Stopped by you at 10:42*, *Not monitored: the password isn't saved…*
 - **▶ is greyed out** for a connection that can't be monitored yet: a SQL login without a saved password, or an Entra MFA connection you haven't signed in to this session. Its tooltip says why. This avoids surprise password or sign-in prompts.
 
 Every start and stop, with who or what caused it, is written to the [activity log](Settings.md#activity-log), so a gap in the history can be explained later.

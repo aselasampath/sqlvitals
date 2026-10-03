@@ -7,7 +7,7 @@
 - [How-To Recipes](How-To-Recipes.md)
 
 **Monitoring**
-- [Your Servers (Home)](Your-Servers.md)
+- [Your Servers (All servers)](Your-Servers.md)
 - [Live Monitoring](Live-Monitoring.md)
 - [Deadlocks](Deadlocks.md)
 - [Agent Jobs](Agent-Jobs.md)

@@ -205,14 +205,21 @@ public class ConnectionSettingsService
         store.QueryStoreChartMetrics = QueryStoreMetrics.ParseChartMetrics(metrics.Select(m => m.ToString())));
 
     /// <summary>
-    /// Saves that a sidebar group was collapsed or expanded (#124). Not in the activity log (see
-    /// <see cref="SettingsActivity"/>), so the source is never shown.
+    /// Saves the page on screen and the server it is inside (#141), to open again at start-up. Only
+    /// written when it changed. Not in the activity log (see <see cref="SettingsActivity"/>), so the
+    /// source is never shown.
     /// </summary>
-    public void SetNavGroupCollapsed(string groupId, bool collapsed) => Update(ActivitySources.Page("Sidebar"), store =>
+    public void SetLastPage(string tag, Guid? serverId)
     {
-        var ids = store.NavCollapsedGroups.Where(id => id != groupId);
-        store.NavCollapsedGroups = NavMenu.NormalizeCollapsed(collapsed ? ids.Append(groupId) : ids);
-    });
+        var store = Load();
+        if (store.LastPage == tag && store.LastServerId == serverId)
+            return;
+        Update(ActivitySources.Page("Sidebar"), s =>
+        {
+            s.LastPage     = tag;
+            s.LastServerId = serverId;
+        });
+    }
 
     /// <summary>
     /// Adds a Slack or Teams channel (#120), or replaces the saved one with the same
@@ -317,7 +324,8 @@ public class ConnectionSettingsService
                 ProcessesView           = ConnectionStore.ParseProcessesView(raw.ProcessesView),
                 ProcessesGroupByLogin   = raw.ProcessesGroupByLogin,
                 QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
-                NavCollapsedGroups      = NavMenu.NormalizeCollapsed(raw.NavCollapsedGroups),
+                LastPage                = raw.LastPage is { } last && NavMenu.AllPages.Any(p => p.Tag == last) ? last : null,
+                LastServerId            = raw.LastServerId,
             };
 
             var migrated = false;
@@ -501,7 +509,8 @@ public class ConnectionSettingsService
             ProcessesView           = store.ProcessesView.ToString(),
             ProcessesGroupByLogin   = store.ProcessesGroupByLogin,
             QueryStoreChartMetrics  = store.QueryStoreChartMetrics.Select(m => m.ToString()).ToList(),
-            NavCollapsedGroups      = store.NavCollapsedGroups.Count > 0 ? store.NavCollapsedGroups.ToList() : null,
+            LastPage                = store.LastPage,
+            LastServerId            = store.LastServerId,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -562,7 +571,8 @@ public class ConnectionSettingsService
         public string? ProcessesView             { get; set; }
         public bool    ProcessesGroupByLogin     { get; set; } = true;
         public List<string>? QueryStoreChartMetrics { get; set; }
-        public List<string>? NavCollapsedGroups  { get; set; }
+        public string? LastPage                  { get; set; }
+        public Guid?   LastServerId              { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -677,8 +687,11 @@ public class ConnectionStore
     /// <summary>The Query Store page's Over Time charts, in order (#111).</summary>
     public IReadOnlyList<QueryStoreMetric> QueryStoreChartMetrics { get; set; } = QueryStoreMetrics.DefaultChartMetrics;
 
-    /// <summary>The ids of the sidebar groups the user collapsed (#124), in sidebar order; every group starts expanded.</summary>
-    public IReadOnlyList<string> NavCollapsedGroups { get; set; } = [];
+    /// <summary>The page on screen when SqlVitals last closed (#141), a tag in <see cref="NavMenu"/>; null for none.</summary>
+    public string? LastPage { get; set; }
+
+    /// <summary>The server <see cref="LastPage"/> was inside; null for a page about every server.</summary>
+    public Guid? LastServerId { get; set; }
 
     public static int NormalizeProcessesRefresh(int seconds) =>
         seconds is >= 5 and <= 120 && seconds % 5 == 0 ? seconds : DefaultProcessesRefreshSeconds;
