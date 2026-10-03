@@ -16,8 +16,12 @@ namespace SqlVitals.Desktop.Pages;
 /// its runs, and the steps and error messages of each. Not reachable on Azure SQL Database,
 /// which has no Agent: MainWindow disables the button, and the repository says so too.
 /// </summary>
-public partial class AgentJobsPage : Page, IRefreshable
+public partial class AgentJobsPage : Page, IRefreshable, IPageContext
 {
+    // A snapshot, or live while "Auto-refresh every 30 s" is ticked (#140).
+    public PageKind Kind => ChkAutoRefresh.IsChecked == true ? PageKind.Live : PageKind.Snapshot;
+    public TimeSpan? LiveInterval => _timer.Interval;
+
     private static readonly (string Label, Func<AgentJob, bool> Keep, string Empty)[] Filters =
     [
         ("All jobs",                                _ => true,
@@ -67,7 +71,7 @@ public partial class AgentJobsPage : Page, IRefreshable
         _ready = true;
     }
 
-    /// <summary>Reads the jobs from msdb. Called on navigate, by the sidebar Refresh and every 30 s when chosen.</summary>
+    /// <summary>Reads the jobs from msdb. Called on navigate, by the top bar's Refresh and every 30 s when chosen.</summary>
     public async Task RefreshAsync()
     {
         if (_refreshing) return;
@@ -180,7 +184,7 @@ public partial class AgentJobsPage : Page, IRefreshable
         if (_ready) Show();
     }
 
-    // The sidebar Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
 
     private async void Timer_Tick(object? sender, EventArgs e) => await ReadAgainAsync();
@@ -190,6 +194,7 @@ public partial class AgentJobsPage : Page, IRefreshable
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {
@@ -202,6 +207,7 @@ public partial class AgentJobsPage : Page, IRefreshable
     {
         if (ChkAutoRefresh.IsChecked == true) _timer.Start();
         else _timer.Stop();
+        MainWindow.ReportContextChanged(this);
     }
 
     // ── Selected job ──────────────────────────────────────────────────────────

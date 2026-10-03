@@ -7,11 +7,15 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ApplicationConnectionsPage : Page, IRefreshable
+public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh (#140).
+    public PageKind Kind => PageKind.Snapshot;
+
     private readonly IWaitStatsRepository _repo;
 
     public ApplicationConnectionsPage(IWaitStatsRepository repo)

@@ -29,6 +29,17 @@
     <SolidColorBrush x:Key="Success"       Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="Warning"       Color="{StaticResource WarningColor}" />
     <SolidColorBrush x:Key="Danger"        Color="{StaticResource DangerColor}" />
+    <!-- The top bar's Live / Snapshot / History badge, and a snapshot's age once it is old (#140). -->
+    <SolidColorBrush x:Key="LiveBadgeText" Color="#FF4ADE80" />
+    <SolidColorBrush x:Key="LiveBadgeFill" Color="#1422C55E" />
+    <SolidColorBrush x:Key="LiveBadgeBorder" Color="#6622C55E" />
+    <SolidColorBrush x:Key="SnapshotBadgeText" Color="#FF93C5FD" />
+    <SolidColorBrush x:Key="SnapshotBadgeFill" Color="#143B82F6" />
+    <SolidColorBrush x:Key="SnapshotBadgeBorder" Color="#663B82F6" />
+    <SolidColorBrush x:Key="HistoryBadgeText" Color="#FFFCD34D" />
+    <SolidColorBrush x:Key="HistoryBadgeFill" Color="#14FBBF24" />
+    <SolidColorBrush x:Key="HistoryBadgeBorder" Color="#66FBBF24" />
+    <SolidColorBrush x:Key="StaleText" Color="#FFFBBF24" />
     <SolidColorBrush x:Key="Transparent"   Color="Transparent" />
     <SolidColorBrush x:Key="NavSeparator"  Color="#33FFFFFF" />
 

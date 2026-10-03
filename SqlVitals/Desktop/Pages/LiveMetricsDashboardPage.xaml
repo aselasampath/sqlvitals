@@ -122,18 +122,17 @@
       </Popup>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                         VerticalAlignment="Center">
-        <!-- Range: live, or a past range from the monitoring history; and the baseline -->
+        <!-- Range: live, or a past range from the monitoring history; and the baseline. Moved
+             to the top bar when the page opens (#140), with the sample interval. -->
         <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0" RangeChanged="RangePicker_RangeChanged"
                                   BaselineChanged="RangePicker_BaselineChanged"/>
         <!-- Sample every: collection (and recording) continues while a past range is shown -->
-        <TextBlock Text="Sample every:" Foreground="{StaticResource TextMuted}"
-                           VerticalAlignment="Center" Margin="0,0,6,0"
-                           FontFamily="Segoe UI" FontSize="12"/>
-        <ComboBox x:Name="CmbInterval" Width="90" Height="26"
+        <ComboBox x:Name="CmbInterval" Width="110" Height="26"
                           Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                           BorderBrush="{StaticResource Border}"
                           FontFamily="Segoe UI" FontSize="12"
                           AutomationProperties.Name="Sample every"
+                          ToolTip="How often this connection is sampled. Collection and recording carry on in the background, also while a past range is shown."
                           SelectionChanged="CmbInterval_SelectionChanged">
           <ComboBox.ItemContainerStyle>
             <Style TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource DarkComboItem}"/>

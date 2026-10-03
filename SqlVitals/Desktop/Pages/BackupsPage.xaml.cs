@@ -16,8 +16,11 @@ namespace SqlVitals.Desktop.Pages;
 /// backups msdb keeps for it. Not reachable on Azure SQL Database, which takes its own backups:
 /// MainWindow disables the button, and the repository says so too.
 /// </summary>
-public partial class BackupsPage : Page, IRefreshable
+public partial class BackupsPage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh (#140).
+    public PageKind Kind => PageKind.Snapshot;
+
     private static readonly (string Label, Func<DatabaseBackup, bool> Keep, string Empty)[] Filters =
     [
         ("All databases",                        _ => true,
@@ -69,7 +72,7 @@ public partial class BackupsPage : Page, IRefreshable
 
     /// <summary>
     /// Reads the backups from msdb, checked against the ages in the boxes. Called on navigate, by
-    /// the sidebar Refresh, Read again and Apply.
+    /// the top bar's Refresh, Read again and Apply.
     /// </summary>
     public async Task RefreshAsync()
     {
@@ -223,7 +226,7 @@ public partial class BackupsPage : Page, IRefreshable
         if (_ready) Show();
     }
 
-    // The sidebar Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
 
     private async Task ReadAgainAsync()
@@ -231,6 +234,7 @@ public partial class BackupsPage : Page, IRefreshable
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {

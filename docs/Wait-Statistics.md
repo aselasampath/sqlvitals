@@ -46,7 +46,7 @@ The top 25 wait types, ranked, with a bar chart of the top 15.
    - **Resource Wait (ms/sec)**: time spent waiting for the resource itself: disk, lock, memory.
    - **Waiting Tasks/sec**: how often the wait happens.
 3. Choose an **Interval** (10s, 30s or 60s) and press **▶ Start**.
-4. To look back instead, use the **range picker**: **1h**, **24h**, **7d** or **Custom…**. Add **Compare to baseline** to overlay the same time last week. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+4. To look back instead, use the **range picker** in the top bar: **1h**, **24h**, **7d** or **Custom…**. Add **Compare to baseline** to overlay the same time last week. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
 
 ---
 

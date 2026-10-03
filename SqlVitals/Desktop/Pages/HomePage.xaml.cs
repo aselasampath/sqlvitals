@@ -19,8 +19,11 @@ namespace SqlVitals.Desktop.Pages;
 /// attention first. Everything comes from the monitoring sessions and the local history; Home
 /// never queries a server, and never contacts one that isn't monitored.
 /// </summary>
-public partial class HomePage : Page, IRefreshable
+public partial class HomePage : Page, IRefreshable, IPageContext
 {
+    // Every monitored server's health as its samples arrive (#140); each has its own interval.
+    public PageKind Kind => PageKind.Live;
+
     /// <summary>How far back a tile's sparkline goes.</summary>
     public static readonly TimeSpan TrendSpan = TimeSpan.FromHours(1);
 
@@ -188,6 +191,7 @@ public partial class HomePage : Page, IRefreshable
         tile.Update(ServerTile.From(InputFor(conn, _store), DateTime.Now), _monitoring.Get(connectionId)?.Score);
         Reorder();
         UpdateSummary(_store.Connections.Count);
+        MainWindow.ReportBackgroundSuccess(this);
     }
 
     // A connection added, removed, renamed or made active. After the save has been applied.

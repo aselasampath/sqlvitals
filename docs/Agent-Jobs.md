@@ -12,7 +12,7 @@ Everything is read from `msdb`, where Agent keeps its jobs and their history. Sq
 
 1. Open **🕒 Agent Jobs**. The jobs that need you come first: **running long** (amber), then **failed** (red), then running, then the rest by name.
 2. The line under the toolbar counts them: *42 jobs · 3 failed · 2 running, 1 longer than usual · 5 disabled*. An amber line above the list means **SQL Server Agent itself isn't running**, so no job starts on its schedule.
-3. **Show** narrows the list: *Needs attention: failed or running long*, *Running now*, *Last run failed* or *Enabled jobs*. **↻ Read again** (or the sidebar **Refresh**) reads msdb again. Tick **Every 30 s** to watch a long job while the page is open.
+3. **Show** narrows the list: *Needs attention: failed or running long*, *Running now*, *Last run failed* or *Enabled jobs*. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads msdb again. Tick **Every 30 s** to watch a long job while the page is open.
 4. Each row is one job:
 
    | Column | Meaning |

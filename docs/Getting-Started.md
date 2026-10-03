@@ -17,24 +17,25 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 ## 2. Find your way around
 
 ```
-┌──────────────────────┬──────────────────────────────────────────────┐
-│ SqlVitals            │ ← →  Processes · Production                  │
-│ ACTIVE CONNECTION    │──────────────────────────────────────────────│
-│ 🟢 Production     ▾  │        The screen you picked appears here    │
-│──────────────────────│                                              │
-│ 🏠 Home              │                                              │
-│ OVERVIEW           ⌄ │                                              │
-│ 💓 Live Metrics      │                                              │
-│ 🔔 Alerts            │                                              │
-│ ACTIVITY NOW       ⌄ │                                              │
-│ 🔗 Processes         │                                              │
-│ …                    │                                              │
-│ ⚙️ Settings          │                                              │
-│ ↻ Refresh            │                                              │
-├──────────────────────┴──────────────────────────────────────────────┤
-│ Ready                                   ← status bar: progress and errors │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────┬──────────────────────────────────────────────────────────┐
+│ SqlVitals            │ ← → All servers › 🟢 Production › Activity › Processes   │
+│ ACTIVE CONNECTION    │             ● Live  every 5 s · As of 14:02:36  ⏸        │
+│ 🟢 Production     ▾  │──────────────────────────────────────────────────────────│
+│──────────────────────│        The screen you picked appears here                │
+│ 🏠 Home              │                                                          │
+│ OVERVIEW           ⌄ │                                                          │
+│ 💓 Live Metrics      │                                                          │
+│ 🔔 Alerts            │                                                          │
+│ ACTIVITY NOW       ⌄ │                                                          │
+│ 🔗 Processes         │                                                          │
+│ …                    │                                                          │
+│ ⚙️ Settings          │                                                          │
+└──────────────────────┴──────────────────────────────────────────────────────────┘
 ```
+
+From 0.56.0 one **top bar** across the screen says which server, which database and what time you're looking at, and how fresh it is (in the window it is a single row; it's drawn on two lines here):
+
+![The top bar on Deadlocks: Back and Forward, the breadcrumb, the time range picker, and a Live badge with "every 5 s · As of 14:02:30" and Pause](images/top-bar/live.png)
 
 | Part | What it does |
 |---|---|
@@ -43,10 +44,14 @@ SqlVitals checks the connection before saving it. If the check fails, it tells y
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
 | **Sidebar groups** | The screens, grouped by the question you're asking (see the table below). Click a group's name, or Tab to it and press Enter or Space, to collapse or expand it; hover it for the question it answers. SqlVitals remembers which groups you collapsed. Opening a screen in a collapsed group, from a notification or a link say, expands it; a collapsed group holding the screen you're on is shown in the accent colour with a **●**. |
 | **Sidebar buttons** | One per screen. A dimmed button marked **N/A** is a screen the connected server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. **🏠 Home** is above the groups, **📤 Export / AI** and **⚙️ Settings** below them. |
-| **← Back / → Forward** | From 0.55.0, above the screen: back to the screens you came from, and forward again, as in a browser. Also **Alt+←** / **Alt+→** and the mouse's back and forward buttons. Hover a button to see where it goes. Going back to another server's screen switches to that server. Next to them is where you are, e.g. *Processes · Production*. |
+| **← Back / → Forward** | From 0.55.0, at the left of the top bar: back to the screens you came from, and forward again, as in a browser. Also **Alt+←** / **Alt+→** and the mouse's back and forward buttons. Hover a button to see where it goes. Going back to another server's screen switches to that server. |
+| **Breadcrumb** | From 0.56.0, where you are: *All servers › Production › Activity now › Processes*. The server's part has its health dot and score. Click a part to go there: **All servers** opens 🏠 Home, the server its details, the group its first screen. In a narrow window *All servers* and the group are left out first; the server's name always stays. |
+| **Live / Snapshot / History** | From 0.56.0, what the screen is showing, as a badge with its time beside it. **Live** updates on its own: how often, and *As of* the last update; **⏸ Pause** stops it moving so you can read it, and **▶ Resume** starts it again. **Snapshot** was read once: *Taken 14:01:10 · 2 min ago*, in amber once it's 15 minutes old. **History** is a time window: the window, what it's compared with, and *Data to* where the data ends. See [below](#live-snapshot-or-history). |
+| **Database** | From 0.56.0, on screens that read one database rather than the whole server (Query Store, Query Regressions, Index Health, Stale Stats, DB Storage): the connection's database. Click it to change it in the connection's settings. |
 | **🏠 Home** | Every saved connection as a tile with its health score, the ones that need attention first. With two or more connections, SqlVitals opens here. See [Your Servers](Your-Servers.md). |
-| **↻ Refresh** | Reloads the current screen. Most screens load once when you open them and again when you press Refresh. |
-| **Status bar** | Shows what's loading, and errors. If a screen's automatic refresh fails, the error appears here instead of a pop-up. |
+| **↻ Refresh** | At the right of the top bar (or **F5**): reloads the current screen. Most screens load once when you open them and again when you press Refresh. On a live screen it's beside **▶ Resume** while paused. |
+| **Messages** | What's loading, and errors, appear in the top bar, after the time (before 0.56.0 they were at the foot of the sidebar). If a screen's automatic refresh fails, the error appears here, in red, instead of a pop-up. |
+| **🔍, ✨ and ☰** | Placeholders for things coming next: jumping to a server or page (**Ctrl+K**), asking AI about the screen, and pinning, collapsing or hiding the sidebar (**Ctrl+B**). They are greyed out until then. |
 
 The sidebar groups (from 0.48.0):
 
@@ -59,6 +64,21 @@ The sidebar groups (from 0.48.0):
 | **Resources** | 🧠 Memory Grants, 🗄️ TempDB, 💽 File I/O, 📦 DB Storage, ⏱️ Perfmon | Is memory, TempDB, disk or storage the bottleneck? |
 | **Maintenance** | 🔍 Index Health, 📉 Stale Stats, 💾 Backups, 🕒 Agent Jobs | Are indexes, statistics, backups and jobs looked after? |
 | **Configuration** | ✅ Config Checks, 🔒 Security Audit | Is the server set up correctly and securely? |
+
+### Live, Snapshot or History
+
+Every screen says how its data relates to time, so you never act on old data without knowing:
+
+| Badge | The screen | Examples | Beside it |
+|---|---|---|---|
+| **Live** | Updates on its own | Live Metrics, Processes, Memory Grants, File I/O, Wait Trend, Perfmon, Home, Alerts | *every 5 s · As of 14:02:36*, and **⏸ Pause** |
+| **Paused** | A live screen that isn't updating right now: paused, auto-refresh not started, or the server not monitored | Processes before you press Start | The time of the last update, and **▶ Resume** |
+| **Snapshot** | Was read once, when you opened it or last pressed Refresh | Top Waits, Index Health, Backups, Config Checks, Security Audit | *Taken 14:01:10 · 2 min ago*, amber after 15 minutes |
+| **History** | Shows a time window | Query Store, Query Regressions, and Live Metrics, Wait Trend and Perfmon on a past range | The window, *compared with* where it compares, and *Data to 11:55* |
+
+![A snapshot taken 15 minutes ago, its age in amber](images/top-bar/snapshot-old.png)
+
+A screen reader reads the badge and its time out in words, *"Snapshot, taken at 13:48:36, 15 minutes ago, more than 15 minutes old"*, not only its colour. Settings and Export / AI have no badge: they aren't a view of a server's data.
 
 ## 3. Take a first look
 

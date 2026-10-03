@@ -43,8 +43,17 @@ public sealed class WaitTypeItem : INotifyPropertyChanged
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-public partial class WaitStatsTrendPage : Page, IRefreshable
+public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
 {
+    // Live, or History while a past range is picked; the range picker is in the top bar (#140).
+    public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
+    public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
+    public bool CanPause => _range.IsLive;
+    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
+    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+    public DateTime? DataTo => _range.IsLive ? null : PageBar.DataTo(_historyLoad, b => b.TimeUtc);
+    public FrameworkElement? TakeBarTools() => PageBar.Detach(RangePicker);
+
     // ── constants ────────────────────────────────────────────────────────────
     private const int MaxPoints = 60;
     private const int MaxSeries = 12;
@@ -167,6 +176,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             }
 
             StoreValues(data, now);
+            MainWindow.ReportBackgroundSuccess(this);
 
             // A read that finishes after a past range was picked only fills the live buffers.
             if (!_range.IsLive)
@@ -196,6 +206,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
             BtnAutoRefresh.IsChecked = false;
         BtnAutoRefresh.IsEnabled = live;
         CmbInterval.IsEnabled    = live;
+        MainWindow.ReportContextChanged(this);
 
         // A baseline belongs to the range it was read for.
         _baseline?.Clear();
@@ -248,6 +259,8 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
 
             RebuildSeries();
             ShowStatus(load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList()));
+            MainWindow.ReportBackgroundSuccess(this);
+            MainWindow.ReportContextChanged(this);
         }
         catch (Exception ex)
         {
@@ -594,6 +607,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         _countdown = _intervalSec;
         TxtCountdown.Text = $"{_countdown}s";
         _timer.Start();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
@@ -601,5 +615,6 @@ public partial class WaitStatsTrendPage : Page, IRefreshable
         BtnAutoRefresh.Content = "▶  Start";
         TxtCountdown.Text = "--";
         _timer.Stop();
+        MainWindow.ReportContextChanged(this);
     }
 }

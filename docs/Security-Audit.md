@@ -12,7 +12,7 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a risk
 
 1. Open **🔒 Security Audit**. Risks come first, in red, then what to review, what couldn't be checked, and what passes.
 2. The line under the toolbar counts them: *3 risks · 4 to review · 6 passed · 1 not checked*. An amber line under it says when the login can't see everything.
-3. **Show** narrows the list: *Risks*, *To review*, one check (*sysadmin members*, *sa login*, *TRUSTWORTHY*, *Orphaned users*) or *Not checked*. **↻ Audit again** (or the sidebar **Refresh**) reads everything again, after you've fixed something, say.
+3. **Show** narrows the list: *Risks*, *To review*, one check (*sysadmin members*, *sa login*, *TRUSTWORTHY*, *Orphaned users*) or *Not checked*. **↻ Audit again** (or **Refresh** in the top bar, **F5**) reads everything again, after you've fixed something, say.
 4. Each row is one finding:
 
    | Column | Meaning |

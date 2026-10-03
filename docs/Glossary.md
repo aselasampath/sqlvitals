@@ -68,6 +68,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **sa** | SQL Server's built-in administrator login: always sysadmin and known to every attacker, so it's best disabled. Found by its SID, `0x01`, even when renamed. |
 | **SID** | *Security identifier*: the number that ties a database user to its login, and identifies a Windows account whatever its name. |
 | **Signal wait** | The part of a wait spent waiting for a CPU after the resource became available. A high share means CPU pressure. |
+| **Snapshot** | In the top bar, a screen read once, when it was opened or last refreshed, rather than one that updates on its own (**Live**) or shows a time window (**History**). Its age is shown, in amber after 15 minutes. See [Live, Snapshot or History](Getting-Started.md#live-snapshot-or-history). |
 | **SPID / session ID** | The number identifying a connection on the server |
 | **SQL Server Agent** | The Windows service that runs scheduled **jobs** (backups, maintenance, ETL), each made of one or more **steps**. Not in Express or Azure SQL Database. See [Agent Jobs](Agent-Jobs.md). |
 | **SSMS** | SQL Server Management Studio, Microsoft's free management tool |
@@ -75,6 +76,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **sysadmin** | The fixed server role whose members can do anything on the server. See [Security Audit](Security-Audit.md#sysadmin-members). |
 | **system_health** | An Extended Events session every SQL Server runs from the start. Among other things it records every deadlock, which is where the [Deadlocks](Deadlocks.md) page reads them. |
 | **TempDB** | SQL Server's shared scratch database for temp tables, sorts, hashes and versioning |
+| **Top bar** | The bar across the top of the screen, from 0.56.0: Back and Forward, the breadcrumb (*All servers › server › group › screen*), the database, the time range, whether the screen is Live, a Snapshot or History and how fresh, and Pause or Refresh. See [Getting Started](Getting-Started.md#2-find-your-way-around). |
 | **TRUSTWORTHY** | A database setting that lets code in the database act outside it with its owner's permissions. With a sysadmin owner, db_owner in that database can become sysadmin. OFF except for msdb. |
 | **VIEW ANY DEFINITION** | A server permission to see the definitions of every login, user, role and object, but no data. The [Security Audit](Security-Audit.md) needs it to list sysadmin members and orphaned users. |
 | **VIEW SERVER STATE** | The permission needed to read server-level DMVs. On Azure SQL Database the equivalent is `VIEW DATABASE STATE`. |

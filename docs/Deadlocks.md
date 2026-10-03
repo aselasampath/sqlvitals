@@ -11,7 +11,7 @@ Every SQL Server already records each deadlock in **system_health**, an Extended
 ## How to use it
 
 1. Open **💥 Deadlocks**. It reads the reports system_health still holds, newest first. The line under the toolbar says where they came from and how far back they go.
-2. **Show** narrows the list to the last hour, 24 hours, 7 days or 30 days. *Everything system_health has* is the default. **↻ Read again** (or the sidebar **Refresh**) reads the server again for deadlocks since you opened the page.
+2. **Show** narrows the list to the last hour, 24 hours, 7 days or 30 days. *Everything system_health has* is the default. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads the server again for deadlocks since you opened the page.
 3. Each row is one deadlock:
 
    | Column | Meaning |

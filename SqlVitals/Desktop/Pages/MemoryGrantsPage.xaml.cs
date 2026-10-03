@@ -10,11 +10,19 @@ using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshable
+public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshable, IPageContext
 {
+    // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140).
+    public PageKind Kind => PageKind.Live;
+    public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
+    public bool CanPause => true;
+    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
+    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+
     // ── constants ────────────────────────────────────────────────────
     private const int MaxPoints = 60;
 
@@ -258,6 +266,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         _countdown = _intervalSec;
         TxtCountdown.Text = $"{_countdown}s";
         _timer.Start();
+        MainWindow.ReportContextChanged(this);
     }
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
@@ -265,6 +274,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         BtnAutoRefresh.Content = "▶  Start";
         TxtCountdown.Text = "--";
         _timer.Stop();
+        MainWindow.ReportContextChanged(this);
     }
 
     // ── helper ───────────────────────────────────────────────────────

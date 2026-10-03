@@ -16,8 +16,11 @@ namespace SqlVitals.Desktop.Pages;
 /// participants, the objects and statements involved, and which deadlocks keep coming back.
 /// Each one can be saved as an .xdl file to open as a graph in SSMS.
 /// </summary>
-public partial class DeadlocksPage : Page, IRefreshable
+public partial class DeadlocksPage : Page, IRefreshable, IPageContext
 {
+    // Read once, and again on Refresh (#140).
+    public PageKind Kind => PageKind.Snapshot;
+
     private static readonly (string Label, TimeSpan? Span)[] Ranges =
     [
         ("Last hour",                   TimeSpan.FromHours(1)),
@@ -50,7 +53,7 @@ public partial class DeadlocksPage : Page, IRefreshable
     private TimeSpan? SelectedSpan => Ranges[Math.Max(0, CmbRange.SelectedIndex)].Span;
 
     /// <summary>
-    /// Reads system_health. Called on navigate and by the sidebar Refresh; the read goes
+    /// Reads system_health. Called on navigate and by the top bar's Refresh; the read goes
     /// through every event file the session keeps, so it isn't repeated on a timer.
     /// </summary>
     public async Task RefreshAsync()
@@ -140,12 +143,13 @@ public partial class DeadlocksPage : Page, IRefreshable
         if (_ready) Show();
     }
 
-    // The sidebar Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             await RefreshAsync();
+            MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
         {
