@@ -222,6 +222,17 @@ public class ConnectionSettingsService
     }
 
     /// <summary>
+    /// Saves the sidebar's state (#142): pinned, collapsed or hidden. Only written when it changed.
+    /// A layout preference, so not in the activity log (see <see cref="SettingsActivity"/>).
+    /// </summary>
+    public void SetSidebarMode(SidebarMode mode)
+    {
+        if (Load().SidebarMode == mode)
+            return;
+        Update(ActivitySources.Page("Sidebar"), s => s.SidebarMode = mode);
+    }
+
+    /// <summary>
     /// Adds a Slack or Teams channel (#120), or replaces the saved one with the same
     /// <see cref="ChatChannel.Id"/>. The caller checks the URL first (see <see cref="WebhookUrl.Check"/>).
     /// </summary>
@@ -326,6 +337,7 @@ public class ConnectionSettingsService
                 QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
                 LastPage                = raw.LastPage is { } last && NavMenu.AllPages.Any(p => p.Tag == last) ? last : null,
                 LastServerId            = raw.LastServerId,
+                SidebarMode             = ConnectionStore.ParseSidebarMode(raw.SidebarMode),
             };
 
             var migrated = false;
@@ -511,6 +523,7 @@ public class ConnectionSettingsService
             QueryStoreChartMetrics  = store.QueryStoreChartMetrics.Select(m => m.ToString()).ToList(),
             LastPage                = store.LastPage,
             LastServerId            = store.LastServerId,
+            SidebarMode             = store.SidebarMode.ToString(),
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -573,6 +586,7 @@ public class ConnectionSettingsService
         public List<string>? QueryStoreChartMetrics { get; set; }
         public string? LastPage                  { get; set; }
         public Guid?   LastServerId              { get; set; }
+        public string? SidebarMode               { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -692,6 +706,13 @@ public class ConnectionStore
 
     /// <summary>The server <see cref="LastPage"/> was inside; null for a page about every server.</summary>
     public Guid? LastServerId { get; set; }
+
+    /// <summary>The sidebar pinned, collapsed or hidden (#142), as the user last chose it.</summary>
+    public SidebarMode SidebarMode { get; set; } = SidebarMode.Pinned;
+
+    /// <summary>A saved sidebar state; pinned for anything missing or unknown.</summary>
+    public static SidebarMode ParseSidebarMode(string? value) =>
+        Enum.TryParse<SidebarMode>(value, ignoreCase: true, out var mode) && Enum.IsDefined(mode) ? mode : SidebarMode.Pinned;
 
     public static int NormalizeProcessesRefresh(int seconds) =>
         seconds is >= 5 and <= 120 && seconds % 5 == 0 ? seconds : DefaultProcessesRefreshSeconds;

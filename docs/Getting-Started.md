@@ -45,13 +45,14 @@ From 0.56.0 one **top bar** across the screen says which server, which database 
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it, or Tab to it and press Enter, to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
 | **Groups** | The server's screens, grouped by the question you're asking (see the table below). One group is open at a time: the one holding the screen you're on. Click another group's name, or Tab to it and press Enter or Space, to open it instead; hover it for the question it answers. A closed group holding the screen you're on is shown in the accent colour with a **●**. |
 | **Buttons** | One per screen, with an icon in the global part. A dimmed button marked **N/A** is a screen the server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. |
+| **☰ Menu** | From 0.58.0, at the far left of the top bar: collapses the sidebar to icons, then hides it, and while it is hidden shows it over the screen. **Ctrl+B** does the same from anywhere. With the sidebar hidden, ☰ carries the number of active alerts. See [Pin, collapse or hide the sidebar](#pin-collapse-or-hide-the-sidebar). |
 | **← Back / → Forward** | From 0.55.0, at the left of the top bar: back to the screens you came from, and forward again, as in a browser. Also **Alt+←** / **Alt+→** and the mouse's back and forward buttons. Hover a button to see where it goes. Going back to another server's screen switches to that server. |
 | **Breadcrumb** | From 0.56.0, where you are: *All servers › Production › Activity now › Processes*. The server's part has its health dot and score. Click a part to go there: **All servers** opens the server tiles, the group its first screen. From 0.57.0 the server's part is a menu of your saved servers: pick one to see the same screen on it. In a narrow window *All servers* and the group are left out first; the server's name always stays. |
 | **Live / Snapshot / History** | From 0.56.0, what the screen is showing, as a badge with its time beside it. **Live** updates on its own: how often, and *As of* the last update; **⏸ Pause** stops it moving so you can read it, and **▶ Resume** starts it again. **Snapshot** was read once: *Taken 14:01:10 · 2 min ago*, in amber once it's 15 minutes old. **History** is a time window: the window, what it's compared with, and *Data to* where the data ends. See [below](#live-snapshot-or-history). |
 | **Database** | From 0.56.0, on screens that read one database rather than the whole server (Query Store, Query Regressions, Index Health, Stale Stats, DB Storage): the connection's database. Click it to change it in the connection's settings. |
 | **↻ Refresh** | At the right of the top bar (or **F5**): reloads the current screen. Most screens load once when you open them and again when you press Refresh. On a live screen it's beside **▶ Resume** while paused. |
 | **Messages** | What's loading, and errors, appear in the top bar, after the time (before 0.56.0 they were at the foot of the sidebar). If a screen's automatic refresh fails, the error appears here, in red, instead of a pop-up. |
-| **🔍, ✨ and ☰** | Placeholders for things coming next: jumping to a server or page (**Ctrl+K**), asking AI about the screen, and pinning, collapsing or hiding the sidebar (**Ctrl+B**). They are greyed out until then. |
+| **🔍 and ✨** | Placeholders for things coming next: jumping to a server or page (**Ctrl+K**) and asking AI about the screen. They are greyed out until then. |
 
 A server's groups (from 0.48.0; from 0.57.0 Alerts is in the global part, and Overview starts with the server's Summary):
 
@@ -76,6 +77,27 @@ From 0.57.0 you open a server and work inside it, instead of picking one in a bo
 - **Switch server** with the breadcrumb's server menu (*Production ▾*): the same screen opens on the other server, or its Overview if it hasn't got that screen (Azure SQL Database has no Agent Jobs, for one).
 - **Start or stop monitoring** with **▶ / ■** in the server's header, or in its tile's **⋯** menu on All servers, which also has **Why this score…** and **Edit connection…** for every server.
 - **Next time**, SqlVitals opens on the screen and server you were on when you closed it (not Settings). Until it has one, it opens on All servers with two or more connections, Live Metrics with one.
+
+### Pin, collapse or hide the sidebar
+
+From 0.58.0 the sidebar has three states, so a wide grid can have the screen and the menu is still one click away. **Ctrl+B**, or **☰** at the left of the top bar, goes from one to the next: *Pinned → Collapsed → Hidden → Pinned*.
+
+| State | Width | What you see |
+|---|---|---|
+| **Pinned** (the default) | 232 px | The sidebar as above: names, the server's header, and the open group's screens. **Unpin** (the pin beside *SqlVitals*) collapses it. |
+| **Collapsed** | 56 px | An icon for each global screen and each group, with its name as a tooltip, and the server's health dot and score. Point at a group's icon (for a moment) or click it to see its screens beside it, with the group's question and **Pin the menu open**. That closes on **Esc**, a click elsewhere, picking a screen, or, if pointing opened it, moving the pointer away. The pin at the foot pins it again. |
+| **Hidden** | 0 px | Nothing: the screen has the whole width. Click **☰**, or rest the pointer on the window's left edge, and the sidebar slides in over the screen; it goes again when you pick a screen, click elsewhere or press **Esc**. Its pin (**Pin the menu open**) pins it, as does **Ctrl+B**. |
+
+![Pinned: the sidebar with names and the open group's screens, beside Processes](images/sidebar/pinned.png)
+
+![Collapsed: icons only, the server's dot and score, and the Maintenance group's screens beside its icon](images/sidebar/collapsed.png)
+
+![Hidden: the screen takes the whole width, and ☰ shows 3 active alerts](images/sidebar/hidden.png) ![Hidden, slid in over the screen after clicking ☰](images/sidebar/slid-over.png)
+
+- **The alert count and the server's score** stay in sight: on the Alerts icon and under the server's dot when collapsed, on **☰** when hidden (the breadcrumb has the server's score).
+- **In a window narrower than 1280 px** a pinned sidebar shows collapsed, and widening the window pins it again; your choice isn't changed. Pin it in the narrow window and it stays pinned.
+- **The state is saved** and used at the next start. It isn't recorded in the [activity log](Settings.md#activity-log): it's a layout preference.
+- **With the keyboard alone:** **Ctrl+B** changes the state. Collapsed, **Tab** or **↑ / ↓** reach the icons; **Enter** or **→** on a group opens its screens with the first (or the one you're on) selected, **↑ / ↓** move between them, and **Esc** or **←** goes back to the icon. Hidden, **Tab** to **☰** and press **Enter**: the sidebar slides in with *All servers* selected, **Tab** stays inside it until it closes, and **Esc** closes it and goes back to **☰**.
 
 ### Live, Snapshot or History
 

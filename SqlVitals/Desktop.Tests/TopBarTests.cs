@@ -27,7 +27,7 @@ public sealed class TopBarTests
     private static readonly Guid Uat  = Guid.NewGuid();
     private static readonly DateTimeOffset Now = new(2026, 10, 3, 14, 2, 36, TimeSpan.Zero);
 
-    private const double Width = 1130;   // the content area beside the 190 px sidebar, at the default 1320
+    private const double Width = 1088;   // the content area beside the 232 px pinned sidebar (#142), at the default 1320
 
     [Theory, MemberData(nameof(Themes))]
     public void Live_ShowsTheBadge_TheInterval_AsOf_AndPause(string theme) => OnSta(theme, (bar, host, _) =>
@@ -166,11 +166,46 @@ public sealed class TopBarTests
         var buttons = UiThread.Find<Button>(bar).ToList();
         Assert.True(buttons.Count >= 10, $"{buttons.Count} buttons");
         Assert.All(buttons, b => Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(b)), $"{b.Name} has no name"));
-        // The placeholders say what they will be, and that they are not there yet.
-        Assert.False(bar.BtnSidebar.IsEnabled);
+        // The placeholders say what they will be, and that they are not there yet. ☰ works (#142).
+        Assert.True(bar.BtnSidebar.IsEnabled);
         Assert.False(bar.BtnJump.IsEnabled);
         Assert.False(bar.BtnAskAi.IsEnabled);
         Assert.Equal("Ask AI", AutomationProperties.GetName(bar.BtnAskAi));
+    });
+
+    [Theory, MemberData(nameof(Themes))]
+    public void TheSidebarButton_SaysWhatItDoesNext_AndCountsAlertsWhileTheSidebarIsHidden(string theme) => OnSta(theme, (bar, host, _) =>
+    {
+        var requested = 0;
+        bar.SidebarRequested += () => requested++;
+        bar.ShowPage(null, Live(paused: false), canPause: true, database: null);
+        Layout(host);
+
+        bar.ShowSidebar(SidebarMode.Pinned, slidOver: false, alerts: 2);
+        Assert.Equal("Collapse the menu", AutomationProperties.GetName(bar.BtnSidebar));
+        Assert.Equal("Collapse the menu to icons (Ctrl+B)", bar.BtnSidebar.ToolTip);
+        // The sidebar shows the count itself.
+        Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
+
+        bar.ShowSidebar(SidebarMode.Collapsed, slidOver: false, alerts: 2);
+        Assert.Equal("Hide the menu", AutomationProperties.GetName(bar.BtnSidebar));
+        Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
+
+        // Hidden: the count moves onto ☰, in words too.
+        bar.ShowSidebar(SidebarMode.Hidden, slidOver: false, alerts: 2);
+        Layout(host);
+        Assert.Equal(Visibility.Visible, bar.SidebarBadge.Visibility);
+        Assert.Equal("2", bar.TxtSidebarBadge.Text);
+        Assert.Equal("Show the menu (2 active alerts)", AutomationProperties.GetName(bar.BtnSidebar));
+        Assert.Equal("Show the menu over the page. Ctrl+B pins it open.\n2 active alerts", bar.BtnSidebar.ToolTip);
+        Render(host, theme, "hidden-sidebar-alerts");
+
+        bar.ShowSidebar(SidebarMode.Hidden, slidOver: true, alerts: 0);
+        Assert.Equal("Close the menu", AutomationProperties.GetName(bar.BtnSidebar));
+        Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
+
+        bar.BtnSidebar.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Assert.Equal(1, requested);
     });
 
     [Theory, MemberData(nameof(Themes))]
@@ -219,7 +254,7 @@ public sealed class TopBarTests
     [Fact]
     public void AShortBar_GivesUpTheExtras_ThenWrapsThePagesControls_ButKeepsTheServer() => OnSta("DarkTheme", (bar, host, _) =>
     {
-        // Live Metrics, with its range picker and interval, at a 1010 px window.
+        // Live Metrics, with its range picker and interval, in an 820 px bar.
         var tools = new StackPanel { Orientation = Orientation.Horizontal };
         tools.Children.Add(new TimeRangePicker());
         tools.Children.Add(new ComboBox { Width = 110, Height = 26 });
@@ -242,8 +277,9 @@ public sealed class TopBarTests
         // Still said: the badge's tooltip and spoken name carry the detail.
         Assert.Contains("as of 14:02:30", (string)bar.Badge.ToolTip);
 
-        // With room again, the controls come back into the bar, and the extras with them.
-        Layout(host, Width);
+        // With room again, the controls come back into the bar, and the extras with them: the
+        // sidebar collapsed (#142) at the default 1320 px window leaves 1264 px.
+        Layout(host, 1264);
         Assert.False(bar.ToolsWrapped);
         Assert.Same(tools, bar.ToolsHost.Content);
         Assert.Equal(52, bar.DesiredSize.Height, 1.5);

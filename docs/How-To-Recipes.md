@@ -27,6 +27,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Monitor my servers all the time](#monitor-my-servers-all-the-time)
 - [Get alerts in a Teams channel](#get-alerts-in-a-teams-channel)
 - [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
+- [Give a wide grid the whole screen](#give-a-wide-grid-the-whole-screen)
 
 ---
 
@@ -262,3 +263,9 @@ From then on, an alert that starts or turns critical is posted to the channel wi
 5. A *History cleared* row means the history before it was deleted on purpose.
 
 The same, as a query on the history file: [Monitoring History Database → Example queries](Monitoring-History-Database.md#example-queries).
+
+## Give a wide grid the whole screen
+
+1. Press **Ctrl+B** once to collapse the sidebar to icons (56 px), or twice to hide it: the grid gets the whole width, 1320 px in the default window instead of 1088.
+2. Still need a screen? Collapsed, point at a group's icon to see its screens. Hidden, click **☰** at the top left, or rest the pointer on the window's left edge.
+3. **Ctrl+B** again pins the sidebar back. Whichever state you leave it in is used next time. See [Pin, collapse or hide the sidebar](Getting-Started.md#pin-collapse-or-hide-the-sidebar).

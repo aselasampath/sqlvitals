@@ -49,6 +49,35 @@ public partial class TopBar : UserControl
     /// <summary>Another server was picked from the breadcrumb's server menu (#141).</summary>
     public event Action<Guid>? ServerRequested;
 
+    /// <summary>☰ was clicked: collapse or hide the sidebar, or show the hidden one over the page (#142).</summary>
+    public event Action? SidebarRequested;
+
+    // ── The sidebar's ☰ (#142) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// What ☰ does next, as its tooltip and spoken name, and, while the sidebar is hidden, the
+    /// active alerts' count on it, since the sidebar's own count is out of sight.
+    /// </summary>
+    public void ShowSidebar(SidebarMode shown, bool slidOver, int alerts)
+    {
+        var (name, tip) = shown switch
+        {
+            SidebarMode.Pinned    => ("Collapse the menu", "Collapse the menu to icons (Ctrl+B)"),
+            SidebarMode.Collapsed => ("Hide the menu", "Hide the menu (Ctrl+B)"),
+            _ when slidOver       => ("Close the menu", "Close the menu (Esc). Ctrl+B pins it open."),
+            _                     => ("Show the menu", "Show the menu over the page. Ctrl+B pins it open."),
+        };
+
+        var counted = shown == SidebarMode.Hidden && alerts > 0;
+        SidebarBadge.Visibility = counted ? Visibility.Visible : Visibility.Collapsed;
+        TxtSidebarBadge.Text    = alerts > 99 ? "99+" : alerts.ToString();
+        var count = alerts == 1 ? "1 active alert" : $"{alerts} active alerts";
+        BtnSidebar.ToolTip = counted ? $"{tip}\n{count}" : tip;
+        AutomationProperties.SetName(BtnSidebar, counted ? $"{name} ({count})" : name);
+    }
+
+    private void BtnSidebar_Click(object sender, RoutedEventArgs e) => SidebarRequested?.Invoke();
+
     // ── Back and Forward ─────────────────────────────────────────────────────
 
     /// <summary>The buttons say where they go: "Back to Processes · PROD-SQL01".</summary>
@@ -323,7 +352,7 @@ public partial class TopBar : UserControl
     private bool _detailWanted;
     private FrameworkElement? _tools;
 
-    private Button[] Placeholders => [BtnSidebar, BtnJump, BtnAskAi];
+    private Button[] Placeholders => [BtnJump, BtnAskAi];
 
     /// <summary>The page's controls are in the row under the bar, for want of room in it.</summary>
     internal bool ToolsWrapped => ToolsRow.Content is not null;
