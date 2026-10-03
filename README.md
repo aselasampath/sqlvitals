@@ -35,9 +35,11 @@ monitoring platform first.
 ## Features
 
 - 🩺 **Live health.** A 0–100 health score and a 🟢 🟠 🔴 dot for every server, on a Home page that puts the ones in
-  trouble first; live metrics, active waits and blocking chains with the head blocker named.
-- 🔔 **Watches in the background.** Alerts with start, end and worst value, and Windows notifications, even with the
-  window closed to the notification area.
+  trouble first and opens a detail page for each; live metrics, sessions grouped by login, active waits and blocking
+  chains with the head blocker named.
+- 🔔 **Watches in the background.** Start monitoring when you want it. Alerts with start, end and worst value, Windows
+  notifications even with the window closed to the notification area, and a message in your team's Slack or
+  Microsoft Teams channel when an alert starts, turns critical and ends.
 - 🕰️ **Remembers.** A local history of metrics, waits and top queries, compared with the same time last week.
 - 🧯 **The DBA checklist.** Deadlock history, failed and long-running SQL Agent jobs, backups against your RPO, file
   I/O latency, server settings checked against best practice, and a security audit of sysadmin, sa, TRUSTWORTHY and
@@ -65,8 +67,8 @@ See the [feature map](docs/Home.md#feature-map) in the wiki for every screen.
    That covers almost every screen. Agent Jobs and Backups also read msdb, the Security Audit needs
    `VIEW ANY DEFINITION` to list logins and users, and the SP Trace's per-call mode needs one more grant:
    see [Server Impact and Permissions](docs/Server-Impact-and-Permissions.md).
-3. Add the connection in **Settings** and click **Save & Connect**. [Getting Started](docs/Getting-Started.md)
-   walks through the first look.
+3. On first launch SqlVitals opens **⚙️ Settings → Connections**. Click **+ New connection**, fill it in and save.
+   [Getting Started](docs/Getting-Started.md) walks through the first look.
 
 ## Safe on production servers
 
@@ -83,7 +85,7 @@ See the [feature map](docs/Home.md#feature-map) in the wiki for every screen.
 | On-premises SQL Server and Azure SQL in one view | ✅ | ✅ | Azure SQL. On-premises needs Azure Arc |
 | Several servers watched continuously, with a health score each | ✅ | ❌ Activity Monitor: one server, while open | ⚠️ Per-resource metrics and alert rules you configure |
 | History, compared with last week | ✅ Local, retention you choose | ⚠️ Query Store reports, per database | ⚠️ Platform metrics; deeper data needs Log Analytics (billed per GB) |
-| Alerts and desktop notifications | ✅ Built in | ⚠️ SQL Agent alerts, set up per server | ✅ Alert rules and action groups, set up per resource |
+| Alerts, desktop notifications and Slack or Teams messages | ✅ Built in | ⚠️ SQL Agent alerts and Database Mail, set up per server | ✅ Alert rules and action groups, set up per resource |
 | Blocking chains, deadlocks, Agent jobs, backups, file I/O, configuration, security | ✅ One place | ⚠️ Separate reports and monitors, one server at a time | ⚠️ Partly, Azure SQL only |
 | Query regressions with before and after plans | ✅ Query Store or its own history | ⚠️ Regressed Queries report, Query Store only | ⚠️ Query Performance Insight, Azure SQL Database only |
 | Fix scripts for indexes, statistics, settings and security risks | ✅ Review, then run yourself | ⚠️ Missing-index hint in a plan | ⚠️ Automatic tuning, Azure SQL only |
