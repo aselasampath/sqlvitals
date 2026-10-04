@@ -7,7 +7,7 @@ namespace SqlVitals.Desktop.Services;
 public sealed record CheckLink(string Text, string PageTag);
 
 /// <summary>
-/// Where each health check is looked into (#130): the server detail page links a check that's
+/// Where each health check is looked into (#130): a server's Overview (#143) links a check that's
 /// costing points to the page that shows why.
 /// </summary>
 public static class CheckLinks

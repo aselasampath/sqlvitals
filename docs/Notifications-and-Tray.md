@@ -13,7 +13,7 @@ A notification appears when a monitored connection's alert:
 
 Alerts that start on the same sample share one notification, critical ones listed first: **2 alerts on Sales-Prod (1 critical)**. An alert getting worse or ending doesn't notify. The [Alerts page](Alerts.md#the-alerts-page) shows those.
 
-**Click the notification** to bring SqlVitals to the front on that server's **Summary**: its score, the checks that cost points and its alerts (from 0.57.0; before, the Alerts page filtered to it). The tray menu's **Alerts** still opens every server's. This works from the window being hidden, minimized or behind other windows.
+**Click the notification** to bring SqlVitals to the front on that server's **[Overview](Your-Servers.md#a-servers-overview)**: its alerts, with the evidence for each, and what is costing its score points (from 0.59.0; its Summary from 0.57.0; before, the Alerts page filtered to it). The tray menu's **Alerts** still opens every server's. This works from the window being hidden, minimized or behind other windows.
 
 Notifications follow the same rules as alerts: only for saved connections that are **monitored**, after the usual run of samples ([Settings → Alerts & chat](Settings.md#alerts--chat)). While monitoring is off there are no alerts, so there are no notifications; the icon's tooltip says *monitoring is off*.
 
@@ -72,7 +72,7 @@ Starting SqlVitals while it's already running brings the running copy to the fro
 ## Good to know
 
 - **No extra load on the server.** Notifications come from the samples SqlVitals already collects.
-- **An open page keeps working while hidden.** A page that refreshes by itself (Live Metrics, Processes, SP Trace) carries on in the background. Switch to another page, or **Stop** SP Trace, before hiding the window if you don't want that.
+- **An open page keeps working while hidden.** A page that refreshes by itself (the Overview, Live charts, Processes, SP Trace) carries on in the background. Switch to another page, or **Stop** SP Trace, before hiding the window if you don't want that.
 - **Updating or uninstalling** SqlVitals needs it closed. Setup asks you to exit it from the notification area if it's still running.
 
 ---

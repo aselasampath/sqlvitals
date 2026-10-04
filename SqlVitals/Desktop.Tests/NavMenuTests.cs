@@ -26,7 +26,7 @@ public sealed class NavMenuTests : IDisposable
         var layout = NavMenu.Groups.Select(g => $"{g.Name}: {string.Join(", ", g.Pages.Select(p => p.Label))}");
         Assert.Equal(
         [
-            "Overview: Summary, Live Metrics",
+            "Overview: Overview, Live charts",
             "Activity now: Processes, Active Waits, Deadlocks, App Connections",
             "Waits: Top Waits, Wait Trend",
             "Queries: Resource Queries, Query Store, Query Regressions, Plan Cache Health, Implicit Conv., SP Trace",
@@ -36,7 +36,7 @@ public sealed class NavMenuTests : IDisposable
         ], layout);
 
         Assert.Equal("Home", NavMenu.AllPages.First().Tag);
-        Assert.Equal("ServerDetail", NavMenu.Groups[0].Pages[0].Tag);   // the server's Overview first
+        Assert.Equal("Overview", NavMenu.Groups[0].Pages[0].Tag);   // the server's Overview first (#143)
         Assert.All(NavMenu.Global.Concat(NavMenu.Footer), p => Assert.False(NavMenu.IsServerPage(p.Tag)));
         Assert.All(NavMenu.Groups.SelectMany(g => g.Pages), p => Assert.True(NavMenu.IsServerPage(p.Tag)));
     }
@@ -51,7 +51,7 @@ public sealed class NavMenuTests : IDisposable
         Assert.Equal(
             new[]
             {
-                "Home", "ServerDetail", "LiveMetrics", "Alerts", "TopWaits", "ActiveWaits", "Processes", "Deadlocks", "AgentJobs",
+                "Home", "Overview", "LiveMetrics", "Alerts", "TopWaits", "ActiveWaits", "Processes", "Deadlocks", "AgentJobs",
                 "Backups", "FileIo", "ConfigChecks", "SecurityAudit", "WaitTrend", "TempDb", "Memory", "QueryStore",
                 "QueryRegressions", "IndexHealth", "ResourceQueries", "ImplicitConv", "PlanCacheHealth", "StaleStats",
                 "DbStorage", "AppConnections", "Perfmon", "SpTrace", "Export", "Settings",
@@ -78,7 +78,8 @@ public sealed class NavMenuTests : IDisposable
 
     [Theory]
     [InlineData("Processes", "Activity")]
-    [InlineData("ServerDetail", "Overview")]
+    [InlineData("Overview", "Overview")]
+    [InlineData("LiveMetrics", "Overview")]
     [InlineData("TempDb", "Resources")]
     [InlineData("SecurityAudit", "Configuration")]
     [InlineData("Alerts", null)]
@@ -120,6 +121,19 @@ public sealed class NavMenuTests : IDisposable
         File.WriteAllText(file, json.ToJsonString());
 
         Assert.Null(Create().Load().LastPage);
+    }
+
+    [Fact]
+    public void AServersSummary_SavedBeforeTheOverview_OpensItsOverview()
+    {
+        var server = Guid.NewGuid();
+        Create().SetLastPage("Processes", server);
+        var file = Path.Combine(_dir, "settings.dat");
+        var json = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+        json["LastPage"] = "ServerDetail";   // before 0.59.0 (#143)
+        File.WriteAllText(file, json.ToJsonString());
+
+        Assert.Equal(("Overview", server), (Create().Load().LastPage, Create().Load().LastServerId));
     }
 
     [Fact]

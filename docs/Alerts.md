@@ -48,7 +48,7 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 
 **⚙️ Settings → Alerts & chat → Raise an alert after**: **1, 2, 3 (default), 5 or 10 samples** in a row. The same number of normal samples ends an alert. It takes effect from the next sample, with no restart.
 
-- It's counted in **samples**, so the time depends on each connection's Live Metrics interval. At the default 10 seconds, 3 samples is 30 seconds; 10 samples is 100 seconds.
+- It's counted in **samples**, so the time depends on each connection's sample interval (set on Live charts). At the default 10 seconds, 3 samples is 30 seconds; 10 samples is 100 seconds.
 - **1** alerts on every single breach. Use it only with thresholds you're sure about.
 - To change **what** raises an alert, change the [health thresholds](Health-Dot-and-Background-Monitoring.md#change-the-thresholds), for every connection or [just one](Health-Dot-and-Background-Monitoring.md#per-connection-thresholds). A level left blank there raises no alerts either.
 
@@ -56,7 +56,7 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 
 An alert needs someone watching. When nothing is, active alerts end with **Ended because: Monitoring stopped**, dated at the **last sample taken**:
 
-- you stopped monitoring that connection: **■** on Live Metrics, in the sidebar's server header or a tile's **⋯** menu, or **Stop monitoring all** in the tray menu;
+- you stopped monitoring that connection: **Pause monitoring** on its Overview, **■** on Live charts, in the sidebar's server header or a tile's **⋯** menu, or **Stop monitoring all** in the tray menu;
 - you turned off **Settings → Monitoring & history → Start monitoring automatically** (every connection stops);
 - you edited or removed the connection;
 - you exited SqlVitals (**Exit** in its notification-area menu, or closing the window when [running in the notification area](Notifications-and-Tray.md#running-in-the-notification-area) is off). Just closing or minimizing the window, by default, keeps monitoring running;
@@ -73,7 +73,7 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 - **Which connections:** only saved connections that are **monitored**. From 0.46.0 nothing is monitored until you press Start or turn on **Start monitoring automatically**; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). While nothing is monitored the page says **No alerts are being raised: monitoring is off**, and while some connections aren't, it names them (*…monitoring is off for Sales-Prod, HR-DB*). Windows notifications say nothing then either, because there are no alerts. If you pick a connection that isn't monitored, the page says why.
 - **No extra load on the server:** alerts are worked out from the samples SqlVitals already collects.
 - **How long they're kept:** as long as the rest of the [history](Settings.md#monitoring--history), counted from when the alert ended. An active alert is never deleted. **Clear history** deletes alerts too.
-- **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opened this page filtered to that connection until 0.57.0, and opens the server's Summary, with its alerts, from 0.57.0. Mute a connection on its **Monitoring & alerts** tab in **Settings → Connections**, or every connection with **Settings → Alerts & chat → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
+- **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opened this page filtered to that connection until 0.57.0, and opens the server's Summary, with its alerts, from 0.57.0, and its [Overview](Your-Servers.md#active-alerts) from 0.59.0, where each active alert is in plain words with a button to its evidence. Mute a connection on its **Monitoring & alerts** tab in **Settings → Connections**, or every connection with **Settings → Alerts & chat → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
 - **Chat channels:** from 0.52.0 an alert that starts, turns critical or ends is also posted to the Slack and Microsoft Teams channels in **Settings → Alerts & chat → Chat channels**, so the whole team sees it, in the same words as this page. Each channel can take all monitored connections or chosen ones, warnings and critical or critical only, and whether to post ends. When monitoring stops with alerts active, a channel is told once that no more updates will come. See [Chat Notifications](Chat-Notifications.md).
 - **One SqlVitals at a time:** from 0.35.0, starting SqlVitals again brings the running copy to the front instead of opening a second one. (Before that, a second copy shared the history file and ended the first one's active alerts when it started.)
 

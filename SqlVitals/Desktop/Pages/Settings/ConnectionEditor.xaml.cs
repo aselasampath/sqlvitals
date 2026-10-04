@@ -357,7 +357,7 @@ internal partial class ConnectionEditor : UserControl
     /// against the server first, and nothing is saved when it can't sign in, so the list only
     /// ever holds working connections. True when it saved.
     /// </summary>
-    /// <param name="connect">Also make it the active connection, and open Live Metrics.</param>
+    /// <param name="connect">Also make it the active connection, and open its Overview.</param>
     public async Task<bool> SaveAsync(bool connect)
     {
         if (_busy)
@@ -425,7 +425,7 @@ internal partial class ConnectionEditor : UserControl
                 : $"Saved \"{settings.DisplayName}\". Switch to it from the sidebar selector.",
                 success: true);
 
-            // Not busy any more: making it active opens Live Metrics, which asks this page whether it can be left.
+            // Not busy any more: making it active opens its Overview, which asks this page whether it can be left.
             SetBusy(false);
             await _context.ApplyConnections(connect);
             return true;
@@ -474,7 +474,7 @@ internal partial class ConnectionEditor : UserControl
             Closed?.Invoke();
     }
 
-    // The leave prompt runs as the app leaves Settings for the detail page.
+    // The leave prompt runs as the app leaves Settings for the Overview.
     private void ViewOnHome_Click(object sender, RoutedEventArgs e)
     {
         if (_id is { } id)

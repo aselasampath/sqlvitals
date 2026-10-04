@@ -80,6 +80,8 @@ public static class ActivitySources
     public const string TrayMenu            = "user: tray menu";
     public const string Settings            = "user: Settings";
     public const string Home                = "user: Home";
+    /// <summary>Start or Pause on a server's Overview, or a page opened from it (#143).</summary>
+    public const string Overview            = "user: Overview";
     public const string BackOrForward       = "user: Back or Forward";
     public const string AutomaticAtStartup  = "automatic at startup";
     public const string SettingChanged      = "setting changed";

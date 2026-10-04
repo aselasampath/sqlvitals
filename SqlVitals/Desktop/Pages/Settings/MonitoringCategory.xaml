@@ -30,7 +30,7 @@
                                 <TextBlock Style="{StaticResource RowHelp}"
                                            Text="Collect live metrics, history and alerts as soon as SqlVitals starts or connects. Off: nothing is collected until you press Start." />
                                 <TextBlock Style="{StaticResource RowHelp}" Margin="0,6,24,0"
-                                           Text="On, the active connection and those with Monitor in background (on each connection's Monitoring &amp; alerts tab) are monitored from the start. Either way you can start and stop any connection with ▶ / ■ in the sidebar selector, on Home, on Live Metrics, or from the SqlVitals icon's menu in the notification area; that lasts until SqlVitals exits. Alerts are only raised for connections being monitored." />
+                                           Text="On, the active connection and those with Monitor in background (on each connection's Monitoring &amp; alerts tab) are monitored from the start. Either way you can start and stop any connection with ▶ / ■ in the sidebar selector, on Home, on a server's Overview or Live charts, or from the SqlVitals icon's menu in the notification area; that lasts until SqlVitals exits. Alerts are only raised for connections being monitored." />
                             </StackPanel>
                         </DockPanel>
                     </Border>
@@ -64,7 +64,7 @@
                             <StackPanel>
                                 <TextBlock Text="Snapshot every" Style="{StaticResource RowLabel}" />
                                 <TextBlock Style="{StaticResource RowHelp}"
-                                           Text="How often waits by type, file I/O, memory and the top queries are read from each monitored server and saved. Shorter intervals show more detail but add load and use more disk. Live Metrics figures are saved at every sample regardless." />
+                                           Text="How often waits by type, file I/O, memory and the top queries are read from each monitored server and saved. Shorter intervals show more detail but add load and use more disk. Live charts figures are saved at every sample regardless." />
                             </StackPanel>
                         </DockPanel>
                     </Border>

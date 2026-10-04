@@ -2,7 +2,7 @@
 
 SqlVitals keeps a **local history** of every server it monitors, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
 
-> **Where:** the range picker in the [top bar](Getting-Started.md#live-snapshot-or-history) on 💓 Live Metrics, 📈 Wait Trend and ⏱️ Perfmon (in each page's toolbar before 0.56.0) · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
+> **Where:** the range picker in the [top bar](Getting-Started.md#live-snapshot-or-history) on a server's [Overview](Your-Servers.md#charts) (from 0.59.0, without the baseline), 💓 Live charts, 📈 Wait Trend and ⏱️ Perfmon (in each page's toolbar before 0.56.0) · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
 
 ## Look back in time
 
@@ -20,7 +20,8 @@ What each page shows for past ranges:
 
 | Page | Shows | Detail |
 |---|---|---|
-| **Live Metrics** | Every chart | One point per sample (10 s by default) on 1h |
+| **Live charts** | Every chart | One point per sample (10 s by default) on 1h |
+| **Overview** | Every chart, and the health score | The same; the health score is the lowest in each slice of time |
 | **Wait Trend** | Waits per type, any of the four metrics | One point per snapshot (5 min by default) |
 | **Perfmon** | The counters you tick | One point per snapshot (recorded from version 0.30) |
 
@@ -34,14 +35,14 @@ From 0.56.0 the picker is in the top bar, beside the page's badge. On **Live** t
 
 - **Long ranges are averaged** so a chart has at most 600 points: about 10 s per point on 1h, 5 min on 24h and 30 min on 7d. The status line says how many points there are and how far apart.
 - **Gaps stay gaps.** When the app was closed or monitoring stopped, the line breaks instead of drawing a misleading straight line across.
-- **Live Metrics keeps collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Start**, to resume.
+- **Live charts and the Overview keep collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Start**, to resume.
 
 ## Compare to a baseline
 
 Tick **Compare to baseline** (part of the range picker) to overlay **the same time last week** as **dashed, faded lines**. It answers *"is this normal?"*: a CPU of 70 % is worrying if last Tuesday at the same hour was 20 %, and normal if it was 70 % too.
 
 - Each line gets a dashed twin in the same colour, called *"… · last week"* in the legend.
-- On Live Metrics' stacked waits chart, the baseline is one dashed **Total waits · last week** line, counting only the wait categories that are ticked.
+- On Live charts' stacked waits chart, the baseline is one dashed **Total waits · last week** line, counting only the wait categories that are ticked.
 - **Same wall-clock time:** 09:00 today is compared with 09:00 last week, even across a daylight-saving change.
 - Works with **Live** and with any past range.
 - Where nothing was recorded last week, there's no line, and the status line says so.

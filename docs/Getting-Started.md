@@ -54,11 +54,11 @@ From 0.56.0 one **top bar** across the screen says which server, which database 
 | **Messages** | What's loading, and errors, appear in the top bar, after the time (before 0.56.0 they were at the foot of the sidebar). If a screen's automatic refresh fails, the error appears here, in red, instead of a pop-up. |
 | **🔍 and ✨** | Placeholders for things coming next: jumping to a server or page (**Ctrl+K**) and asking AI about the screen. They are greyed out until then. |
 
-A server's groups (from 0.48.0; from 0.57.0 Alerts is in the global part, and Overview starts with the server's Summary):
+A server's groups (from 0.48.0; from 0.57.0 Alerts is in the global part; from 0.59.0 Overview starts with the server's Overview page):
 
 | Group | Screens | The question it answers |
 |---|---|---|
-| **Overview** | Summary, Live Metrics | Is the server healthy, and has anything gone wrong? |
+| **Overview** | Overview, Live charts | Is the server healthy, and if not, why? |
 | **Activity now** | Processes, Active Waits, Deadlocks, App Connections | Who is connected, what is running, and who is blocking whom? |
 | **Waits** | Top Waits, Wait Trend | What is the server waiting on, and how has that changed over time? |
 | **Queries** | Resource Queries, Query Store, Query Regressions, Plan Cache Health, Implicit Conv., SP Trace | Which queries cost the most, which got slower, and why? |
@@ -72,11 +72,11 @@ From 0.57.0 you open a server and work inside it, instead of picking one in a bo
 
 ![The sidebar with Production open: All servers, Alerts and Export / AI, the server's header with its health and Start, and its groups with Activity now open](images/sidebar/server.png) ![With no server open, the server part says how to open one](images/sidebar/no-server.png)
 
-- **Open a server** from its tile on **All servers** (**Open**, or **⋯ → Open**). It opens on its **Overview → Summary**: its health score over time, the checks that cost points, what's blocking it and its alerts. A Windows notification for an alert opens it too.
+- **Open a server** from its tile on **All servers** (**Open**, or **⋯ → Open**). It opens on its **[Overview](Your-Servers.md#a-servers-overview)**: its active alerts with the evidence for each, what is costing its score points, its headline numbers, what happened since you last looked, and its charts. A Windows notification for an alert opens it too.
 - **Its screens** are in the sidebar under its name. Opening one makes that server the one SqlVitals queries (the *active connection*); a server whose password isn't saved opens Settings to ask for it first.
 - **Switch server** with the breadcrumb's server menu (*Production ▾*): the same screen opens on the other server, or its Overview if it hasn't got that screen (Azure SQL Database has no Agent Jobs, for one).
 - **Start or stop monitoring** with **▶ / ■** in the server's header, or in its tile's **⋯** menu on All servers, which also has **Why this score…** and **Edit connection…** for every server.
-- **Next time**, SqlVitals opens on the screen and server you were on when you closed it (not Settings). Until it has one, it opens on All servers with two or more connections, Live Metrics with one.
+- **Next time**, SqlVitals opens on the screen and server you were on when you closed it (not Settings). Until it has one, it opens on All servers with two or more connections, the server's Overview with one.
 
 ### Pin, collapse or hide the sidebar
 
@@ -105,10 +105,10 @@ Every screen says how its data relates to time, so you never act on old data wit
 
 | Badge | The screen | Examples | Beside it |
 |---|---|---|---|
-| **Live** | Updates on its own | Live Metrics, Processes, Memory Grants, File I/O, Wait Trend, Perfmon, Home, Alerts | *every 5 s · As of 14:02:36*, and **⏸ Pause** |
+| **Live** | Updates on its own | A server's Overview, Live charts, Processes, Memory Grants, File I/O, Wait Trend, Perfmon, Home, Alerts | *every 5 s · As of 14:02:36*, and **⏸ Pause** |
 | **Paused** | A live screen that isn't updating right now: paused, auto-refresh not started, or the server not monitored | Processes before you press Start | The time of the last update, and **▶ Resume** |
 | **Snapshot** | Was read once, when you opened it or last pressed Refresh | Top Waits, Index Health, Backups, Config Checks, Security Audit | *Taken 14:01:10 · 2 min ago*, amber after 15 minutes |
-| **History** | Shows a time window | Query Store, Query Regressions, and Live Metrics, Wait Trend and Perfmon on a past range | The window, *compared with* where it compares, and *Data to 11:55* |
+| **History** | Shows a time window | Query Store, Query Regressions, and the Overview, Live charts, Wait Trend and Perfmon on a past range | The window, *compared with* where it compares, and *Data to 11:55* |
 
 ![A snapshot taken 15 minutes ago, its age in amber](images/top-bar/snapshot-old.png)
 
@@ -118,7 +118,7 @@ A screen reader reads the badge and its time out in words, *"Snapshot, taken at 
 
 A good first tour, in order:
 
-1. **💓 Live Metrics**: the live dashboard. It says *Monitoring is off* at first: nothing is collected from a server until you ask. Press **▶ Start monitoring**, then watch CPU, waits and throughput for a minute.
+1. **The server's Overview**: is it OK, and if not, why? It says the server isn't monitored at first: nothing is collected from a server until you ask. Press **Start monitoring**, then watch the score, the headline numbers and the charts for a minute. **💓 Live charts** has the charts full size.
 2. **📊 Top Waits**: what SQL Server has spent most of its time waiting on since it last started. This is the single best clue to *why* a server is slow. See [Wait Statistics](Wait-Statistics.md).
 3. **🔥 Resource Queries**: the queries using the most CPU and I/O.
 4. **🔍 Index Health**: missing and unused indexes.

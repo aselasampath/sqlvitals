@@ -141,6 +141,32 @@ public static class AlertText
             ? alert.Detail
             : null;
 
+    /// <summary>
+    /// What is happening, in plain words, for the Overview's active alerts (#143): "SQL Server's
+    /// CPU reached 97 % (critical at ≥ 90 %)." The figure is the worst seen during the alert.
+    /// </summary>
+    public static string Happening(Alert alert)
+    {
+        var value     = Value(alert.Indicator, alert.Value);
+        var threshold = Threshold(alert.Indicator, alert.Threshold);
+        var limit     = threshold.Length == 0 ? "" : $" ({Severity(alert.Severity).ToLowerInvariant()} at {threshold})";
+        return alert.Indicator switch
+        {
+            HealthIndicator.Cpu                 => $"SQL Server's CPU reached {value}{limit}.",
+            HealthIndicator.Blocking            => $"Requests are blocked: the longest has waited {value}{limit}." + Also(alert.Detail),
+            HealthIndicator.PageLifeExpectancy  => $"Pages leave the buffer pool after only {value}{limit}: memory pressure.",
+            HealthIndicator.MemoryGrantsPending => alert.Value == 1
+                                                       ? $"1 query is waiting for memory to start running{limit}."
+                                                       : $"{value} queries are waiting for memory to start running{limit}.",
+            HealthIndicator.LogSpace            => $"The fullest transaction log is {value} full{limit}." + Also(alert.Detail),
+            HealthIndicator.TempDbSpace         => $"TempDB's data files are {value} full{limit}.",
+            _                                   => Describe(alert),
+        };
+
+        // What the health dot said, when it names more: "Blocking 3.5 min (3 blocked)".
+        static string Also(string detail) => string.IsNullOrWhiteSpace(detail) ? "" : $" {detail}.";
+    }
+
     public static string EndReason(AlertEndReason? reason) => reason switch
     {
         AlertEndReason.Recovered         => "Back to normal",

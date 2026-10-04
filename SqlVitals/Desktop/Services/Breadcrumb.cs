@@ -35,15 +35,16 @@ public static class Breadcrumb
         };
     }
 
-    // The page's group, opening its first page on the same server; none for a page outside the groups.
+    // The page's group, opening its first page on the same server; none for a page outside the
+    // groups, or for a page named as its group (the Overview), which would only say it twice.
     private static Crumb? Group(Route route)
     {
-        if (NavMenu.GroupOf(route.Tag) is not { } group)
+        if (NavMenu.GroupOf(route.Tag) is not { } group || group.Pages.Any(p => p.Tag == route.Tag && p.Label == group.Name))
             return null;
         var first  = group.Pages[0].Tag;
         var server = Workspace.ServerOf(route);
         Route? target = first == route.Tag ? null
-                      : first == "ServerDetail" ? (server is { } id ? Workspace.Overview(id) : null)
+                      : first == "Overview" ? (server is { } id ? Workspace.Overview(id) : null)
                       : new Route(first, ConnectionId: server);
         return new Crumb(group.Name, target, CanDrop: true);
     }

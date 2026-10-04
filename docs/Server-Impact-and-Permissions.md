@@ -17,7 +17,7 @@
 
 | Workload | Trigger | Frequency | Scope |
 |---|---|---|---|
-| **Live Metrics query** | Every **monitored** connection: those started with ▶ / Start, plus, with *Start monitoring automatically* on, the active one and those with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests` |
+| **Live Metrics query** | Every **monitored** connection: those started with ▶ / Start, plus, with *Start monitoring automatically* on, the active one and those with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests`; from 0.59.0 a count of `sys.dm_os_waiting_tasks` joined to `sys.dm_exec_sessions` (user tasks waiting now) |
 | **History detail snapshot** | Same connections | Every **5 min** by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU), memory and performance counters |
 | **Screens** (Index Health, Query Store, Plan Cache, …) | A user opens the screen or presses Refresh | On demand | **Active connection only** |
 | **Query Regressions** | On demand | On demand | Query Store runtime stats, up to ~8 days; timeout raised to 2 min |
@@ -31,9 +31,10 @@
 | **DB Storage** | A user opens the page or presses Refresh | On demand, no timer | `sys.master_files`, `sys.databases`, `sys.configurations`; the used space of each database the login can open, read with one light `sys.database_files` query in that database (through its `sys.sp_executesql`) into a temporary table that is dropped at the end of the batch; **active connection only** |
 | **Deadlocks** | A user opens the page or presses Refresh | On demand, no timer | Reads the existing **system_health** session: its `.xel` files through `sys.fn_xe_file_target_read_file`, filtered to `xml_deadlock_report` on the server, or its ring buffer. Creates nothing; timeout raised to 2 min |
 | **SP Trace** | A user presses Start | Poll interval chosen by the user | Extended Events session, or `sys.dm_exec_procedure_stats` |
-| **Blocking right now** (a server's Summary) | The page is open, the connection is monitored, and its Blocking check is past its warning threshold | Once per Live Metrics sample, while all three hold | The Processes query (`sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`), through that connection's monitoring, so it may be a connection other than the active one |
+| **Blocking right now** (a server's Overview) | The page is open, the connection is monitored, and its Blocking check is past its warning threshold | Once per sample, while all three hold | The Processes query (`sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`), through that connection's monitoring, so it may be a connection other than the active one |
+| **Since you last looked** (a server's Overview, from 0.59.0) | A user opens the Overview or presses Refresh, while the connection is monitored and answering | Once per opening or Refresh | The Deadlocks query (system_health) and the Agent Jobs query (msdb), through that connection's monitoring; regressed queries come from the local history, not the server |
 
-Heavy screens **never run in the background**, and never against connections other than the active one. The one light exception is *Blocking right now*, above, which only runs while a user is looking at a server that's blocking.
+Heavy screens **never run in the background**, and never against connections other than the active one. The light exceptions are the Overview's *Blocking right now* and *Since you last looked*, above, which only run while a user is looking at a monitored server. *Since you last looked* reads the same system_health files as Deadlocks (see [Heaviest queries](#heaviest-queries)), once each time the Overview opens.
 
 ### What runs by default
 
@@ -41,7 +42,8 @@ Heavy screens **never run in the background**, and never against connections oth
 |---|---|---|
 | **When SqlVitals starts or connects** | Nothing, apart from the Azure SQL Database edition check (`SERVERPROPERTY('EngineEdition')`) on connecting | Live Metrics query and history snapshots for the active connection and each with *Monitor in background* |
 | **Opening a server's screen, or switching server** | Nothing new | It becomes the active connection, which is monitored too while Start monitoring automatically is on |
-| **Live Metrics page open** | Nothing: it shows *Monitoring is off* until **▶ Start monitoring**; no Process Map polling | The Live Metrics query, and the Process Map while that chart is shown |
+| **A server's Overview open** | Nothing: it says the server isn't monitored, until **Start monitoring** | *Since you last looked* (deadlocks and jobs) once, and *Blocking right now* while blocking is past its threshold |
+| **Live charts page open** | Nothing: it shows *Monitoring is off* until **▶ Start monitoring**; no Process Map polling | The live metrics query, and the Process Map while that chart is shown |
 | **Other pages** | Their own queries, while open, as in the table above | The same |
 
 A user can start and stop monitoring for any connection at any time; every start and stop, with who did it, is written to the [activity log](Settings.md#activity-log). With the setting off SqlVitals puts less load on a server than before 0.46.0: no new queries were added, and none run until asked for.

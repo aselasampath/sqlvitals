@@ -127,7 +127,7 @@ An alert needs someone watching. When SqlVitals stops monitoring a connection th
 > **⏹ Stopped monitoring Sales-Prod**
 > SqlVitals on DBA-PC01 stopped monitoring Sales-Prod with 2 alerts still active (CPU, Blocking). No further updates will be posted.
 
-- That's when you press **Stop** (Live Metrics, the sidebar's server header or a tile's **⋯** menu, or **Stop monitoring all** in the tray menu), turn off **Start monitoring automatically**, edit or remove the connection, or **Exit** SqlVitals.
+- That's when you press **Stop** (a server's Overview or Live charts, the sidebar's server header or a tile's **⋯** menu, or **Stop monitoring all** in the tray menu), turn off **Start monitoring automatically**, edit or remove the connection, or **Exit** SqlVitals.
 - It lists only the alerts that channel was told about, and isn't sent when there are none.
 - It's sent whether or not **Also post when an alert ends** is on, because it says no more updates are coming.
 - **Editing a connection** (its server, sign-in or timeout) restarts its monitoring: the channel gets *Stopped monitoring*, then new alerts after the usual run of samples if the problem is still there.

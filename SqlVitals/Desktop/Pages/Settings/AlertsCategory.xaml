@@ -31,7 +31,7 @@
                             <StackPanel>
                                 <TextBlock Text="Raise an alert after" Style="{StaticResource RowLabel}" />
                                 <TextBlock Style="{StaticResource RowHelp}"
-                                           Text="Samples in a row past a threshold before an alert starts. It ends after the same number back to normal, so a value hovering around a threshold raises one alert, not many. Samples follow each connection's Live Metrics interval: at the default 10 seconds, 3 samples is 30 seconds. Changes apply from the next sample." />
+                                           Text="Samples in a row past a threshold before an alert starts. It ends after the same number back to normal, so a value hovering around a threshold raises one alert, not many. Samples follow each connection's sample interval, set on Live charts: at the default 10 seconds, 3 samples is 30 seconds. Changes apply from the next sample." />
                             </StackPanel>
                         </DockPanel>
                     </Border>

@@ -28,7 +28,7 @@ public partial class SettingsPage : Page, IPageContext
     private SettingsCategory _category;
 
     /// <param name="applyConnections">
-    /// Tells the running app the saved connections changed; true asks it to open Live Metrics afterwards.
+    /// Tells the running app the saved connections changed; true asks it to open the active server's Overview afterwards.
     /// </param>
     /// <param name="location">Where it opens; Connections when null.</param>
     /// <param name="message">Shown above the category, e.g. "Switched to UAT." or a password prompt.</param>
@@ -56,7 +56,7 @@ public partial class SettingsPage : Page, IPageContext
         Unloaded += (_, _) => _context.Service.Changed -= OnSettingsChanged;
     }
 
-    /// <summary>"View on Home" on a connection's page: open that server's detail page (#130).</summary>
+    /// <summary>"View on Home" on a connection's page: open that server's Overview (#143).</summary>
     public event Action<Guid>? ServerRequested;
 
     /// <summary>The theme was switched: open Settings again on Appearance, in the new theme.</summary>

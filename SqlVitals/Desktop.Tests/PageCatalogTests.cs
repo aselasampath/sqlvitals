@@ -12,7 +12,7 @@ public sealed class PageCatalogTests
 {
     [Fact]
     public void EveryPageInTheMenu_HasAPageType() =>
-        Assert.All(NavMenu.AllPages.Select(p => p.Tag).Append("ServerDetail"),
+        Assert.All(NavMenu.AllPages.Select(p => p.Tag),
                    tag => Assert.True(PageCatalog.Types.ContainsKey(tag), $"\"{tag}\" is not in PageCatalog."));
 
     [Fact]

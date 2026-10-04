@@ -39,7 +39,7 @@ Before 0.36.0 CPU was read from records Azure SQL Database doesn't have. From 0.
 An alert needs the indicator past its threshold for **3 samples in a row** (30 seconds at the default interval), so a brief spike changes the dot without raising one. Lower **Settings → Alerts & chat → Raise an alert after** to alert sooner. Alerts are also raised only for monitored, saved connections: from 0.46.0 nothing is monitored until you press **Start** (Live Metrics, ▶ in the sidebar's server header, or on its tile on All servers) or turn on **Settings → Monitoring & history → Start monitoring automatically**. The Alerts page says when monitoring is off. See [Alerts](Alerts.md).
 
 **An alert ended with "Monitoring stopped".**
-Nothing was watching any more: collection was stopped on Live Metrics, the connection was edited or removed, or SqlVitals exited (or was killed). If the problem is still there, a new alert starts once monitoring resumes. See [Alerts → When monitoring stops](Alerts.md#when-monitoring-stops).
+Nothing was watching any more: collection was stopped (on a server's Overview, Live charts, the sidebar or a tile), the connection was edited or removed, or SqlVitals exited (or was killed). If the problem is still there, a new alert starts once monitoring resumes. See [Alerts → When monitoring stops](Alerts.md#when-monitoring-stops).
 
 ## Notifications and the notification area
 

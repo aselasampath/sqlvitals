@@ -4,7 +4,7 @@
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="SqlVitals.Desktop.Pages.LiveMetricsDashboardPage"
-      Title="Live Metrics"
+      Title="Live charts"
       Loaded="Page_Loaded" Unloaded="Page_Unloaded">
 
   <Page.Resources>
@@ -87,7 +87,7 @@
 
     <!-- ?? Toolbar ???????????????????????????????????????????????? -->
     <DockPanel Grid.Row="0" Margin="0,0,0,10">
-      <TextBlock Text="Live Metrics Dashboard" DockPanel.Dock="Left"
+      <TextBlock Text="Live charts" DockPanel.Dock="Left"
                        Style="{StaticResource SectionHeader}" FontSize="20"
                        VerticalAlignment="Center" Margin="0,0,0,0"/>
       <!-- Health score of the latest sample (#36); click for the checks that lowered it -->

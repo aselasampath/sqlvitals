@@ -35,12 +35,14 @@ public static class NavMenu
     /// <summary>The open server's pages, in groups. One group is open at a time.</summary>
     public static readonly IReadOnlyList<NavGroup> Groups =
     [
-        // Summary and Live Metrics become one Overview page in #143.
-        new("Overview", "Overview", "\uE80A", "Is the server healthy, and has anything gone wrong?",
+        // One Overview per server (#143): is it OK, and if not, why? Live charts has the full-size charts.
+        new("Overview", "Overview", "\uE80A", "Is the server healthy, and if not, why?",
         [
-            new("ServerDetail", "\uE95E", "Summary",
-                "The server's health score, its last day, which checks cost points, its alerts and what is blocking now"),
-            new("LiveMetrics",  "\uEC4A", "Live Metrics"),
+            new("Overview",    "\uE95E", "Overview",
+                "The server's active alerts, what is costing its health score points, its headline numbers and charts, " +
+                "and what happened since you last looked"),
+            new("LiveMetrics", "\uEC4A", "Live charts",
+                "Full-size live charts: waits, CPU, throughput, physical I/O, memory and the process map"),
         ]),
         new("Activity", "Activity now", "\uE9D9", "Who is connected, what is running, and who is blocking whom?",
         [

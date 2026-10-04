@@ -4,10 +4,10 @@ namespace SqlVitals.Desktop.Services;
 /// A place in the app (#139): a page, the connection it shows, and what it was opened with.
 /// Back and Forward return to routes, and a page's view state is kept per route.
 /// </summary>
-/// <param name="Tag">The page's tag in <see cref="NavMenu"/>, or "ServerDetail".</param>
+/// <param name="Tag">The page's tag in <see cref="NavMenu"/>.</param>
 /// <param name="ConnectionId">The connection a server's page queries; null for a page about every
 /// connection (Home, Alerts, Settings) or about one by <paramref name="ServerId"/>.</param>
-/// <param name="ServerId">The connection a server detail page (#130) shows.</param>
+/// <param name="ServerId">The connection an Overview (#143) shows.</param>
 /// <param name="AlertsConnectionId">The connection the Alerts page is filtered to, from a notification.</param>
 /// <param name="Settings">Where Settings opens (#131); null for the category last used.</param>
 public sealed record Route(string Tag, Guid? ConnectionId = null, Guid? ServerId = null,
@@ -17,7 +17,7 @@ public sealed record Route(string Tag, Guid? ConnectionId = null, Guid? ServerId
     /// Pages that read every connection, or a connection named in the route, rather than the
     /// active one: they need no active connection and never switch it.
     /// </summary>
-    public static bool IsGlobal(string tag) => tag is "Home" or "ServerDetail" or "Alerts" or "Settings";
+    public static bool IsGlobal(string tag) => tag is "Home" or "Overview" or "Alerts" or "Settings";
 
     /// <summary>
     /// The same page about the same server, opened with different details: Settings on another

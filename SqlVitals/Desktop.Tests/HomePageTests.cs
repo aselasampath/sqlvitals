@@ -15,7 +15,7 @@ using SqlVitals.Engine.Repositories;
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
-/// Home and the server detail page (#130) as WPF builds them, off screen, over three saved
+/// Home (#130) as WPF builds it, off screen, over three saved
 /// connections: "Hot" (the active one, CPU at 99 %, so critical), "Down" (monitored in the
 /// background, every collection fails) and "Quiet" (not monitored).
 /// </summary>
@@ -208,67 +208,6 @@ public sealed class HomePageTests : IDisposable
         UiThread.Wait(page.RefreshAsync());
 
         Assert.Equal(before, _calls.Count);
-    });
-
-    // ── Server detail ────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Detail_ShowsTheScoreAndChecks_WithALinkToThePageThatExplainsTheOneLosingPoints() => UiThread.Run(() =>
-    {
-        var (monitoring, settings) = Setup();
-        var page = new ServerDetailPage(_hot.Id, monitoring, settings);
-        UiThread.Layout(page, 1200, 1000);
-        UiThread.Wait(page.RefreshAsync());
-        UiThread.Layout(page, 1200, 1000);
-        var opened = new List<(Guid, string)>();
-        page.OpenPageRequested += (id, tag) => opened.Add((id, tag));
-
-        Assert.Equal("CRITICAL", page.TxtStatus.Text);
-        Assert.Equal("80", page.RunScore.Text);
-        Assert.Equal("Lowered by CPU −20.", page.TxtReason.Text);
-        Assert.Equal(Visibility.Collapsed, page.OutageRow.Visibility);
-        Assert.Equal(Visibility.Collapsed, page.BtnMakeActive.Visibility);   // it's already active
-        Assert.Equal(Visibility.Collapsed, page.BlockingCard.Visibility);    // nothing blocked
-
-        var links = UiThread.Find<TextBlock>(page.Breakdown).SelectMany(t => t.Inlines.OfType<Hyperlink>()).ToList();
-        var link  = Assert.Single(links);
-        Assert.Equal("Top CPU queries", System.Windows.Automation.AutomationProperties.GetName(link));
-        link.RaiseEvent(new RoutedEventArgs(Hyperlink.ClickEvent));
-        Assert.Equal([(_hot.Id, "ResourceQueries")], opened);
-    });
-
-    [Fact]
-    public void Detail_OfAServerThatCantBeReached_SaysWhy_WhatToCheck_AndOffersRetry() => UiThread.Run(() =>
-    {
-        var (monitoring, settings) = Setup();
-        var page = new ServerDetailPage(_down.Id, monitoring, settings);
-        UiThread.Wait(page.RefreshAsync());
-        UiThread.Layout(page, 1200, 1000);
-        var madeActive = new List<Guid>();
-        page.MakeActiveRequested += madeActive.Add;
-
-        Assert.Equal("UNREACHABLE", page.TxtStatus.Text);
-        Assert.Equal(Visibility.Visible, page.OutageRow.Visibility);
-        Assert.Equal(Visibility.Collapsed, page.ScoreCard.Visibility);
-        Assert.Equal("SqlVitals can't reach down", page.TxtOutageTitle.Text);
-        Assert.Equal("No server in tests.", page.TxtOutageError.Text);
-        Assert.StartsWith("Since ", page.TxtOutageSince.Text);
-        Assert.Contains("The SQL Server service on down is running.", (IEnumerable<string>)page.ThingsList.ItemsSource);
-        Assert.Equal("No sample has worked since monitoring started.", page.TxtBefore.Text);
-
-        Click(page.BtnMakeActive);
-        Assert.Equal([_down.Id], madeActive);
-    });
-
-    [Fact]
-    public void Detail_OfARemovedConnection_SaysSo() => UiThread.Run(() =>
-    {
-        var (monitoring, settings) = Setup();
-        var page = new ServerDetailPage(Guid.NewGuid(), monitoring, settings);
-        UiThread.Layout(page, 1200, 1000);
-
-        Assert.Equal(Visibility.Visible, page.TxtMissing.Visibility);
-        Assert.Equal(Visibility.Collapsed, page.Main.Visibility);
     });
 
     public void Dispose()
