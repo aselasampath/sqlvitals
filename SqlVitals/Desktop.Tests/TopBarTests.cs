@@ -166,9 +166,15 @@ public sealed class TopBarTests
         var buttons = UiThread.Find<Button>(bar).ToList();
         Assert.True(buttons.Count >= 10, $"{buttons.Count} buttons");
         Assert.All(buttons, b => Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(b)), $"{b.Name} has no name"));
-        // The placeholders say what they will be, and that they are not there yet. ☰ works (#142).
+        // The placeholder says what it will be, and that it is not there yet. ☰ (#142) and Jump (#144) work.
         Assert.True(bar.BtnSidebar.IsEnabled);
-        Assert.False(bar.BtnJump.IsEnabled);
+        Assert.True(bar.BtnJump.IsEnabled);
+        Assert.Equal("Jump to a server, page or setting", AutomationProperties.GetName(bar.BtnJump));
+        Assert.Equal("Jump to a server, page or setting (Ctrl+K)", bar.BtnJump.ToolTip);
+        var jumps = 0;
+        bar.JumpRequested += () => jumps++;
+        Click(bar.BtnJump);
+        Assert.Equal(1, jumps);
         Assert.False(bar.BtnAskAi.IsEnabled);
         Assert.Equal("Ask AI", AutomationProperties.GetName(bar.BtnAskAi));
     });

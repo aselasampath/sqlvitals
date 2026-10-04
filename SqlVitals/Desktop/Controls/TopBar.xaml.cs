@@ -52,6 +52,9 @@ public partial class TopBar : UserControl
     /// <summary>☰ was clicked: collapse or hide the sidebar, or show the hidden one over the page (#142).</summary>
     public event Action? SidebarRequested;
 
+    /// <summary>The search button was clicked: open the quick switcher (#144).</summary>
+    public event Action? JumpRequested;
+
     // ── The sidebar's ☰ (#142) ───────────────────────────────────────────────
 
     /// <summary>
@@ -77,6 +80,8 @@ public partial class TopBar : UserControl
     }
 
     private void BtnSidebar_Click(object sender, RoutedEventArgs e) => SidebarRequested?.Invoke();
+
+    private void BtnJump_Click(object sender, RoutedEventArgs e) => JumpRequested?.Invoke();
 
     // ── Back and Forward ─────────────────────────────────────────────────────
 
@@ -345,9 +350,9 @@ public partial class TopBar : UserControl
     }
 
     // Short of room, the bar gives things up before the breadcrumb's server's or page's name
-    // trims: first the freshness text (the badge's tooltip and spoken name still say it), then the
-    // buttons that do nothing yet; if that isn't enough, the page's own controls move to a row
-    // below instead, and the rest comes back if it fits. All of it is worked out from the widths
+    // trims: first the freshness text (the badge's tooltip and spoken name still say it), then Jump
+    // (Ctrl+K still opens it) and Ask AI, which does nothing yet; if that isn't enough, the page's
+    // own controls move to a row below instead, and the rest comes back if it fits. All of it is worked out from the widths
     // at once, so another layout pass at the same width changes nothing.
     private bool _detailWanted;
     private FrameworkElement? _tools;

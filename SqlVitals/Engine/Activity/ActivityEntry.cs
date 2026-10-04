@@ -83,6 +83,8 @@ public static class ActivitySources
     /// <summary>Start or Pause on a server's Overview, or a page opened from it (#143).</summary>
     public const string Overview            = "user: Overview";
     public const string BackOrForward       = "user: Back or Forward";
+    /// <summary>A server's page opened from the Ctrl+K quick switcher (#144).</summary>
+    public const string QuickSwitcher       = "user: quick switcher";
     public const string AutomaticAtStartup  = "automatic at startup";
     public const string SettingChanged      = "setting changed";
     public const string ConnectionEdited    = "connection edited";

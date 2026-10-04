@@ -34,6 +34,9 @@ public partial class MainWindow : Window
     // How each recent route's page was being looked at, put back when it's opened again (#139).
     private readonly RouteStates<ViewState> _viewStates = new();
 
+    // The routes opened this session, most recent first, for the quick switcher (#144).
+    private readonly RecentRoutes _recent = new();
+
     // Set from Back or Forward until the move is recorded, so a second press doesn't pick the
     // same target from a history that hasn't moved yet.
     private bool _historyMovePending;
@@ -97,6 +100,18 @@ public partial class MainWindow : Window
         {
             if (_activeConnectionId is { } id)
                 await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
+        };
+
+        // Ctrl+K, or the bar's search button (#144). What it opens goes through the navigator, so
+        // Back returns; the keyboard goes into the new page if it was in the one replaced, unless
+        // something else has taken it while the page loaded.
+        Bar.JumpRequested += OpenSwitcher;
+        Switcher.PageHost = MainFrame;
+        Switcher.OpenRequested += async (route, intoPage) =>
+        {
+            await OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.QuickSwitcher);
+            if (intoPage && (Keyboard.FocusedElement is not DependencyObject focused || ReferenceEquals(focused, this) || Switcher.IsAncestorOf(focused)))
+                MainFrame.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
         };
 
         SettingsService = new ConnectionSettingsService();
@@ -735,6 +750,37 @@ public partial class MainWindow : Window
     /// <summary>Opens another page, as its sidebar button would; for links between pages.</summary>
     internal System.Threading.Tasks.Task OpenPageAsync(string tag) => NavigateTo(tag);
 
+    // ── Quick switcher (#144) ─────────────────────────────────────────────────
+
+    // Over everything else: a menu the sidebar has open closes first.
+    private void OpenSwitcher()
+    {
+        Shell.CloseFlyout(focusIcon: false);
+        Shell.CloseSlideOver(returnFocus: false);
+        ScorePopup.IsOpen = false;
+
+        var scope = SwitcherScope();
+        Switcher.Open(text => QuickSwitcher.Search(text, scope), id => Item(id),
+                      keepsPage: WorkspaceServer is not null && _selectorItems.Count > 1);
+    }
+
+    // What the switcher searches: the open server's pages (the active one's on a page about every
+    // server, as the sidebar would open them), the saved servers, and the recent routes still available.
+    private SwitcherScope SwitcherScope()
+    {
+        var isAvailable = Availability();
+        return new SwitcherScope(
+            _history.Current,
+            WorkspaceServer ?? _activeConnectionId,
+            _selectorItems.Select(i => new SwitcherServer(i.Settings.Id, i.DisplayName, i.Server)).ToList(),
+            _recent.Items.Where(isAvailable).ToList())
+        {
+            // Only the active server's edition is known; another's pages it lacks open its Overview.
+            Unavailable = (tag, server) =>
+                server == _activeConnectionId && IsDisabled(tag) ? PagesAzureSqlLacks.First(p => p.Tag == tag).Reason : null,
+        };
+    }
+
     // ── Top bar (#140) ────────────────────────────────────────────────────────
 
     // Refresh in the top bar, or F5: the page on screen reads again.
@@ -834,9 +880,22 @@ public partial class MainWindow : Window
 
     // Alt+← / Alt+→ and the keyboard's own Back and Forward keys, before the Frame's built-in
     // journal commands see them (its journal is kept empty). F5 refreshes the page (#140), rather
-    // than the Frame reloading it. Ctrl+B pins, collapses or hides the sidebar (#142).
+    // than the Frame reloading it. Ctrl+B pins, collapses or hides the sidebar (#142). Ctrl+K opens
+    // or closes the quick switcher (#144); while it is open, the other keys are its own.
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            if (Switcher.IsOpen)
+                Switcher.Close(restoreFocus: true);
+            else
+                OpenSwitcher();
+            return;
+        }
+        if (Switcher.IsOpen)
+            return;
+
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;
@@ -868,7 +927,7 @@ public partial class MainWindow : Window
     // The mouse's back and forward buttons.
     private async void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2))
+        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2) || Switcher.IsOpen)
             return;
         e.Handled = true;
         await GoAsync(back: e.ChangedButton == MouseButton.XButton1);
@@ -921,6 +980,9 @@ public partial class MainWindow : Window
         if (_page is SettingsPage leaving && !await leaving.TryLeaveAsync())
             return;
 
+        // A notification opening a page while the quick switcher is open: the page it was opened over goes.
+        Switcher.Close(restoreFocus: false);
+
         SaveViewState();
 
         // Another server's page (from its workspace, the server menu, or Back): that server becomes
@@ -954,6 +1016,7 @@ public partial class MainWindow : Window
         var shown = Workspace.Available(tag == route.Tag ? route : RouteFor(tag, settingsLocation), IsDisabled, _activeConnectionId);
         tag = shown.Tag;
         record(shown);
+        _recent.Add(shown);
         UpdateHistoryButtons();
         ShowWorkspace();
         RememberPage(shown);
@@ -1128,14 +1191,5 @@ public partial class MainWindow : Window
     }
 
     // "Processes · PROD-SQL01", "Overview · PROD-SQL01", "Alerts" for a page about every server.
-    private string Describe(Route route)
-    {
-        string? Name(Guid? id) => id is null ? null : _selectorItems.FirstOrDefault(i => i.Settings.Id == id)?.DisplayName;
-
-        if (route.Tag == "Overview")
-            return Name(route.ServerId) is { } name ? $"Overview · {name}" : "Overview";
-
-        var label = NavMenu.AllPages.FirstOrDefault(p => p.Tag == route.Tag)?.Label ?? route.Tag;
-        return Name(route.ConnectionId ?? route.AlertsConnectionId) is { } server ? $"{label} · {server}" : label;
-    }
+    private string Describe(Route route) => Breadcrumb.Describe(route, id => Item(id)?.DisplayName);
 }

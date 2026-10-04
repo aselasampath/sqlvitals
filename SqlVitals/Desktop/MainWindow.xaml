@@ -25,5 +25,8 @@
                    NavigationUIVisibility="Hidden"
                    Background="{DynamicResource BgDeep}" />
         </DockPanel>
+
+        <!-- Ctrl+K, or the bar's search button (#144): any server, page or setting, over the whole window. -->
+        <controls:QuickSwitcherOverlay x:Name="Switcher" Grid.ColumnSpan="2" Panel.ZIndex="50" />
     </controls:WorkspaceShell>
 </Window>
