@@ -139,6 +139,7 @@ public static class SettingsNav
         ["Health threshold"]                      = SettingPlace.In(SettingsCategory.Thresholds),
         ["Alert samples"]                         = SettingPlace.In(SettingsCategory.Alerts),
         ["Keep running in the notification area"] = SettingPlace.In(SettingsCategory.NotificationArea),
+        ["Grid density"]                          = SettingPlace.In(SettingsCategory.Appearance),
         // Not in the settings file, so logged by Appearance itself.
         ["Theme"]                                 = SettingPlace.In(SettingsCategory.Appearance),
         // On the pages they apply to, not in Settings.

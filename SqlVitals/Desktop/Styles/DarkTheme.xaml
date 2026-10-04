@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers">
+                    xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- ── Colours ─────────────────────────────────────────────────── -->
     <Color x:Key="BgDeepColor">#FF0F0F1A</Color>
@@ -348,6 +349,12 @@
     </Style>
 
     <!-- ── DataGrid ────────────────────────────────────────────────── -->
+    <!-- Grid density (#148): the comfortable spacing; the application's own resources override these
+         for Compact (Services/GridDensity.cs), so every grid changes at once, in either theme. -->
+    <Thickness x:Key="GridCellPadding">8,5</Thickness>
+    <Thickness x:Key="GridHeaderPadding">8,6</Thickness>
+    <sys:Double x:Key="GridFontSize">12</sys:Double>
+
     <Style TargetType="DataGrid">
         <Setter Property="Background"               Value="{StaticResource BgCard}" />
         <Setter Property="Foreground"               Value="{StaticResource TextPrimary}" />
@@ -357,7 +364,7 @@
         <Setter Property="RowBackground"            Value="Transparent" />
         <Setter Property="AlternatingRowBackground" Value="#0DFFFFFF" />
         <Setter Property="FontFamily"               Value="Segoe UI" />
-        <Setter Property="FontSize"                 Value="12" />
+        <Setter Property="FontSize"                 Value="{DynamicResource GridFontSize}" />
         <Setter Property="AutoGenerateColumns"      Value="False" />
         <Setter Property="IsReadOnly"               Value="True" />
         <Setter Property="SelectionMode"            Value="Single" />
@@ -373,7 +380,7 @@
         <Setter Property="FontFamily"      Value="Segoe UI" />
         <Setter Property="FontSize"        Value="11" />
         <Setter Property="FontWeight"      Value="SemiBold" />
-        <Setter Property="Padding"         Value="8,6" />
+        <Setter Property="Padding"         Value="{DynamicResource GridHeaderPadding}" />
         <Setter Property="BorderThickness" Value="0" />
     </Style>
 
@@ -391,7 +398,7 @@
 
     <Style TargetType="DataGridCell">
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding"         Value="8,5" />
+        <Setter Property="Padding"         Value="{DynamicResource GridCellPadding}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridCell">

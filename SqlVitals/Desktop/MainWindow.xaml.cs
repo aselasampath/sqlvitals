@@ -127,11 +127,16 @@ public partial class MainWindow : Window
         _overviewVisits = new OverviewVisits(SettingsService);
         var store  = SettingsService.Load();
 
+        // Every grid's density, as chosen in Settings → Appearance (#148).
+        if (Application.Current is { } app)
+            GridDensityResources.Apply(app.Resources, store.GridDensity);
+
         // The details drawer (#147): pinned or floating and its width as last left; closed at start.
         Details.Layout = new DrawerLayout(store.DrawerPinned, store.DrawerWidth);
         Details.PreferencesChanged += SaveDrawer;
         Details.StateChanged       += () => Bar.ShowDetailsOpen(Details.State != DrawerState.Closed);
         Bar.DetailsRequested       += Details.Toggle;
+        Bar.FocusRequested         += ToggleFocus;
         var active = store.Active;
         BuildSidebar(store);
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
@@ -250,6 +255,45 @@ public partial class MainWindow : Window
     private void ShowSidebarState() =>
         Bar.ShowSidebar(Shell.Shown, Shell.IsSlidOver, Monitoring.ActiveAlerts.Count);
 
+    // ── Focus mode (#148) ─────────────────────────────────────────────────────
+
+    // The window as it was before focus mode; null when not in it.
+    private WindowPlacement? _beforeFocus;
+
+    internal bool InFocus => _beforeFocus is not null;
+
+    // F11, the Focus button, or Exit focus.
+    private void ToggleFocus()
+    {
+        if (InFocus) ExitFocus();
+        else         EnterFocus();
+    }
+
+    // Full screen without the sidebar; a floating drawer closes, a pinned one stays. The top bar stays,
+    // with Exit focus. Nothing is saved: the sidebar's chosen state is kept to come back to.
+    private void EnterFocus()
+    {
+        if (InFocus)
+            return;
+        _beforeFocus = WindowPlacement.Capture(this);
+        Shell.InFocus = true;
+        if (Details.State == DrawerState.Floating)
+            Details.Close();
+        _beforeFocus.FullScreen().ApplyTo(this);
+        Bar.ShowFocus(true);
+    }
+
+    // Back to the window and the sidebar as they were.
+    private void ExitFocus()
+    {
+        if (_beforeFocus is not { } before)
+            return;
+        _beforeFocus  = null;
+        Shell.InFocus = false;
+        before.ApplyTo(this);
+        Bar.ShowFocus(false);
+    }
+
     // Layout preferences: saved, but not in the activity log.
     private void SaveDrawer(bool pinned, double width)
     {
@@ -286,6 +330,8 @@ public partial class MainWindow : Window
     // A layout preference: saved, but not in the activity log (see SettingsActivity).
     private void SaveSidebarMode(SidebarMode mode)
     {
+        // Pinned from the menu slid in over a focus-mode page: the user wants it, so focus ends.
+        ExitFocus();
         try { SettingsService.SetSidebarMode(mode); }
         catch (Exception ex) { AppLog.Error("Sidebar: could not save whether it is pinned, collapsed or hidden", ex); }
     }
@@ -1061,6 +1107,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // F11: focus mode on or off (#148).
+        if (e.Key == Key.F11 && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            ToggleFocus();
+            return;
+        }
+
         // Ctrl+J opens or closes the details drawer (#147).
         if (e.Key == Key.J && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -1087,8 +1141,16 @@ public partial class MainWindow : Window
     // box clearing its text, a grid cancelling an edit, a pop-up closing come first.
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None && !Switcher.IsOpen && Details.Escape())
+        if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None || Switcher.IsOpen)
+            return;
+        // A floating drawer first, then focus mode (#148).
+        if (Details.Escape())
             e.Handled = true;
+        else if (InFocus)
+        {
+            ExitFocus();
+            e.Handled = true;
+        }
     }
 
     // The mouse's back and forward buttons.

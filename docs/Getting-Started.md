@@ -123,6 +123,17 @@ From 0.60.0, press **Ctrl+K** anywhere, or click **🔍** at the right of the to
 - **Screens a server doesn't have** (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit) are listed dimmed, with the reason, and can't be opened; **↑ / ↓** step over them.
 - **Back returns:** a screen opened from here is an ordinary visit, so **← Back** goes back to where you were. Another server's screen makes that server the active connection, as from the sidebar; the [activity log](Settings.md#activity-log) gives the source as *user: quick switcher*.
 
+### Focus mode
+
+For a small screen, or a screen you're sharing in a call (from 0.64.0): **F11**, or the **⛶ Focus** button in the top bar, makes the window full screen and hides the sidebar. A floating [details drawer](Working-with-Grids.md#details-beside-the-grid) closes; a pinned one stays.
+
+- The top bar stays, with **Exit focus (Esc)** at its right.
+- **Ctrl+B** (or ☰) still slides the menu in over the screen, to go to another page; it goes again when you pick one.
+- **Esc**, **F11** or **Exit focus** puts the window back exactly where and as big as it was, and the sidebar back as you had it: pinned, collapsed or hidden. Focus mode itself isn't saved.
+- Pinning the menu from the slid-in menu also leaves focus mode.
+
+Together with **Compact** [grid density](Working-with-Grids.md#grid-density) it shows the most rows a screen can.
+
 ### Keyboard shortcuts
 
 | Keys | What they do |
@@ -130,9 +141,10 @@ From 0.60.0, press **Ctrl+K** anywhere, or click **🔍** at the right of the to
 | **Ctrl+K** | Jump to a server, screen or setting (from 0.60.0); again to close |
 | **Ctrl+B** | Pin, collapse or hide the sidebar (from 0.58.0) |
 | **Ctrl+J** | Open or close the [details drawer](Working-with-Grids.md#details-beside-the-grid): the selected row's details beside the grid (from 0.63.0) |
+| **F11** | [Focus mode](#focus-mode) on or off: full screen, without the sidebar (from 0.64.0) |
 | **F5** | Refresh the screen |
 | **Alt+←** / **Alt+→** | Back and Forward; the mouse's back and forward buttons too |
-| **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, the sidebar slid in over the screen, or a floating details drawer |
+| **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, the sidebar slid in over the screen, or a floating details drawer; then leave focus mode |
 
 ### Verdict first, then the detail
 

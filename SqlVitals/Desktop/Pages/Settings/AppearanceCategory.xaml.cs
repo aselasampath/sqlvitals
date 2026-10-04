@@ -5,7 +5,7 @@ using SqlVitals.Engine.Activity;
 
 namespace SqlVitals.Desktop.Pages.Settings;
 
-/// <summary>Settings → Appearance (#131): the light or dark theme.</summary>
+/// <summary>Settings → Appearance (#131): the light or dark theme, and the grid density (#148).</summary>
 internal partial class AppearanceCategory : UserControl, ISettingsCategory
 {
     private readonly SettingsContext _context;
@@ -22,6 +22,32 @@ internal partial class AppearanceCategory : UserControl, ISettingsCategory
             ? "Dark at the moment. Switch every page to the light theme."
             : "Light at the moment. Switch every page to the dark theme.";
         System.Windows.Automation.AutomationProperties.SetName(BtnThemeToggle, dark ? "Switch to the light theme" : "Switch to the dark theme");
+
+        var density = context.Service.Load().GridDensity;
+        _showingDensity = true;
+        (density == GridDensity.Compact ? RbCompact : RbComfortable).IsChecked = true;
+        _showingDensity = false;
+        ShowDensity(density);
+    }
+
+    // While the saved density is put on the buttons, which isn't a change.
+    private bool _showingDensity;
+
+    private void ShowDensity(GridDensity density) =>
+        TxtDensity.Text = density == GridDensity.Compact
+            ? "Compact: tighter rows with the same 12 px text, for more rows on a small or shared screen. Every grid, at once."
+            : "Comfortable: rows with room around the text, the look grids have always had. Compact fits more rows.";
+
+    // Applies to every grid at once, and is saved for the next start.
+    private void Density_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_showingDensity || RbComfortable is null || RbCompact is null)
+            return;
+        var density = RbCompact.IsChecked == true ? GridDensity.Compact : GridDensity.Comfortable;
+        GridDensityResources.Apply(Application.Current.Resources, density);
+        ShowDensity(density);
+        try { _context.Service.SetGridDensity(density); }
+        catch (Exception ex) { AppLog.Error("Appearance: could not save the grid density", ex); }
     }
 
     /// <summary>The theme was switched: the settings page is opened again in it.</summary>

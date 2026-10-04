@@ -13,7 +13,7 @@ Settings has its own side menu, next to the app's sidebar, with a category per k
 | Monitoring | [Health thresholds](#health-thresholds) | The default thresholds: when the health dot turns 🟠 or 🔴, and so what lowers the health score | With **Save** |
 | Notifications | [Alerts & chat](#alerts--chat) | How long a breach lasts before it's an alert, Windows notifications, Slack and Teams channels | As you change them (a channel with its own **Save channel**) |
 | Notifications | [Notification area](#notification-area) | Whether minimizing or closing the window keeps SqlVitals running | As you change it |
-| App | [Appearance](#appearance) | Light or dark theme | As you change it |
+| App | [Appearance](#appearance) | Light or dark theme, grid density | As you change it |
 | App | [Activity log & diagnostics](#activity-log--diagnostics) | When monitoring started and stopped, every settings change, and the app's log files | — |
 
 Categories for the whole app say *For every connection* under their title. A setting for **one** connection is only ever on that connection's page, so it's always clear which a change affects.
@@ -127,6 +127,8 @@ See [Notifications and Tray](Notifications-and-Tray.md).
 ## Appearance
 
 **Theme**: switch between **Light** (default) and **Dark**. The choice isn't remembered yet, so the app starts in the light theme every time.
+
+**Grid density** (from 0.64.0): **Comfortable** (the default, the look grids have always had) or **Compact**, which keeps the same 12 px text with less room around it, so rows are about 19 px instead of 27 and a screen shows about 40 % more of them. It applies to every grid at once, on every screen, in both themes, with no restart, and is remembered (and logged in the [activity log](#activity-log)). See [Working with Grids](Working-with-Grids.md#grid-density).
 
 ## Activity log & diagnostics
 

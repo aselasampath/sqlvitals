@@ -440,6 +440,35 @@ public sealed class WorkspaceShellTests
     }
 
     // The shell with the top bar and a page standing in for a grid, as MainWindow lays them out.
+    // ── Focus mode (#148) ────────────────────────────────────────────────
+
+    [Theory, MemberData(nameof(Themes))]
+    public void Focus_HidesTheSidebar_CtrlBSlidesItIn_AndLeavingPutsBackWhatWasChosen(string theme) => OnSta(theme, (shell, host, _, page) =>
+    {
+        var chosen = new List<SidebarMode>();
+        shell.ModeChosen += chosen.Add;
+        shell.Choose(SidebarMode.Collapsed);
+        chosen.Clear();
+
+        shell.InFocus = true;
+        Layout(host);
+        Assert.Equal(SidebarMode.Hidden, shell.Shown);
+        Assert.Equal(SidebarMode.Collapsed, shell.Saved);
+        Assert.Equal(WindowWidth, page.ActualWidth, 1);
+
+        // Ctrl+B slides the menu in over the page, and out, without choosing a state.
+        shell.Cycle();
+        Assert.True(shell.IsSlidOver);
+        shell.Cycle();
+        Assert.False(shell.IsSlidOver);
+        Assert.Empty(chosen);
+
+        shell.InFocus = false;
+        Layout(host);
+        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
+        Assert.Equal(WindowWidth - SidebarLayout.CollapsedWidth, page.ActualWidth, 1);
+    });
+
     private static void OnSta(string theme, Action<WorkspaceShell, FrameworkElement, TopBar, FrameworkElement> test)
     {
         Exception? error = null;

@@ -43,9 +43,15 @@ public sealed class SidebarLayout
     /// <summary>The window is narrower than <see cref="NarrowBelow"/>.</summary>
     public bool IsNarrow { get; private set; }
 
+    /// <summary>
+    /// Focus mode (#148): the sidebar is hidden whatever was chosen, which is kept to come back to.
+    /// </summary>
+    public bool InFocus { get; set; }
+
     /// <summary>The state on screen.</summary>
     public SidebarMode Shown =>
-        Saved == SidebarMode.Pinned && IsNarrow && !_pinnedWhileNarrow ? SidebarMode.Collapsed : Saved;
+        InFocus ? SidebarMode.Hidden
+        : Saved == SidebarMode.Pinned && IsNarrow && !_pinnedWhileNarrow ? SidebarMode.Collapsed : Saved;
 
     /// <summary>The sidebar's column: 232, 56 or 0 px.</summary>
     public double Width => WidthOf(Shown);

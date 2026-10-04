@@ -182,6 +182,23 @@
                     <Button x:Name="BtnRefresh" Style="{StaticResource BarIconButton}" Content="&#xE72C;" Margin="2,0,0,0"
                             Click="BtnRefresh_Click" IsEnabled="False"
                             ToolTip="Refresh (F5)" AutomationProperties.Name="Refresh" />
+                    <!-- Focus mode (#148): full screen, no sidebar; in it, the way out -->
+                    <Button x:Name="BtnFocus" Style="{StaticResource BarIconButton}" Content="&#xE740;" Margin="2,0,0,0"
+                            Click="BtnFocus_Click" ToolTip="Focus: full screen, without the sidebar (F11)"
+                            AutomationProperties.Name="Focus mode"
+                            AutomationProperties.AcceleratorKey="F11" />
+                    <Button x:Name="BtnExitFocus" Style="{DynamicResource SecondaryButton}" Margin="6,0,0,0" Padding="10,4"
+                            Click="BtnFocus_Click" Visibility="Collapsed" VerticalAlignment="Center"
+                            ToolTip="Back to the window and the sidebar as they were (Esc or F11)"
+                            AutomationProperties.Name="Exit focus" AutomationProperties.AcceleratorKey="Escape">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Exit focus" VerticalAlignment="Center"/>
+                            <Border Margin="8,0,0,0" Padding="5,0" CornerRadius="3" BorderThickness="1"
+                                    BorderBrush="{DynamicResource Border}" VerticalAlignment="Center">
+                                <TextBlock Text="Esc" FontSize="10.5" Foreground="{DynamicResource TextMuted}"/>
+                            </Border>
+                        </StackPanel>
+                    </Button>
                     <!-- The details drawer (#147): the selected row's details beside the grid -->
                     <Button x:Name="BtnDetails" Style="{StaticResource BarIconButton}" Content="&#xE8A0;" Margin="2,0,0,0"
                             Click="BtnDetails_Click" ToolTip="Show the selected row's details (Ctrl+J)"

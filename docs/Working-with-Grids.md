@@ -16,6 +16,16 @@ From 0.63.0 a row's details open in a **details drawer** at the right of the scr
 
 ![Processes with the drawer pinned beside the map: session 87's status, what it blocks, how long its transaction has been open, its last statement, its plan and its KILL script](images/details-drawer/processes-pinned.png)
 
+## Grid density
+
+**⚙️ Settings → Appearance → Grid density** (from 0.64.0): **Comfortable** or **Compact**. Compact keeps the 12 px text and takes the room from around it: every grid, at once, without a restart. The cells stay one line of text each, with the same names for screen readers and the same focus outline.
+
+| Comfortable | Compact |
+|---|---|
+| ![Active Waits with comfortable rows: 20 rows on screen](images/grid-density/comfortable.png) | ![The same page with compact rows: 28 rows on screen](images/grid-density/compact.png) |
+
+For the most rows of all, add [focus mode](Getting-Started.md#focus-mode) (**F11**): full screen, without the sidebar.
+
 ## Sort
 
 Click a column header to sort, and click again to reverse. **Refresh keeps your sort**, so you can sort by *Avg CPU*, press Refresh, and still see the worst query at the top. From 0.55.0 it is also kept when you leave the page and come back to it (see [below](#coming-back-to-a-page)).

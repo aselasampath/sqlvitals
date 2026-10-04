@@ -55,7 +55,6 @@
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
                             <DataGrid x:Name="ReadsGrid" MaxHeight="520" CanUserAddRows="False"
-                                      RowHeight="35"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       RowBackground="{StaticResource BgDeep}"
@@ -128,7 +127,6 @@
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
                             <DataGrid x:Name="CpuGrid" MaxHeight="520" CanUserAddRows="False"
-                                      RowHeight="35"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       RowBackground="{StaticResource BgDeep}"
@@ -185,7 +183,6 @@
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
                             <DataGrid x:Name="HighestReadsGrid" MaxHeight="520" CanUserAddRows="False"
-                                      RowHeight="35"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       RowBackground="{StaticResource BgDeep}"

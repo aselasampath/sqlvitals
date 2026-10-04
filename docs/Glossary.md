@@ -31,6 +31,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Evidence route** | Where an alert or health check is looked into: its page, filtered to the problem (e.g. the head blocker's chain) and set to the alert's time, with an *Opened from alert* banner and Show all. See [From an alert to its evidence](Alerts.md#from-an-alert-to-its-evidence). |
 | **Execution plan** | The steps SQL Server chose to run a query: which indexes, joins and order. SqlVitals draws it graphically ([Execution Plans](Execution-Plans.md)); it can also be saved as `.sqlplan` for SSMS. |
 | **Extended Events (XE)** | SQL Server's lightweight tracing system, used by SP Trace; the Deadlocks page reads the built-in *system_health* session |
+| **Focus mode** | Full screen without the sidebar, for a small or shared screen (from 0.64.0): **F11** or the top bar's Focus button; **Esc** to leave. See [Getting Started](Getting-Started.md#focus-mode). |
 | **Forced plan** | A plan Query Store makes a query use (`sp_query_store_force_plan`), by hand or by *automatic plan correction*. If forcing fails, e.g. because an index the plan uses was dropped (`NO_INDEX`), the query runs with whatever plan the optimizer picks. See [Query Store → Forced Plans](Query-Performance.md#forced-plans). |
 | **Fragmentation** | How out of order an index's pages are. High fragmentation on large indexes can slow scans. |
 | **FULLSCAN** | Updating statistics by reading every row: most accurate, most expensive |

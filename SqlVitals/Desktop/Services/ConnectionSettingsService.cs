@@ -258,6 +258,14 @@ public class ConnectionSettingsService : ISectionFolds
         });
     }
 
+    /// <summary>Saves the grid density chosen in Settings → Appearance (#148); in the activity log, as settings are.</summary>
+    public void SetGridDensity(GridDensity density)
+    {
+        if (Load().GridDensity == density)
+            return;
+        Update(ActivitySources.Settings, s => s.GridDensity = density);
+    }
+
     /// <summary>
     /// Saves whether the details drawer opens pinned, and its width (#147). Only written when one
     /// changed. Layout preferences, so not in the activity log (see <see cref="SettingsActivity"/>).
@@ -395,6 +403,7 @@ public class ConnectionSettingsService : ISectionFolds
                 OverviewOpenedUtc       = raw.OverviewOpenedUtc?.ToDictionary(p => p.Key, p => DateTime.SpecifyKind(p.Value, DateTimeKind.Utc)) ?? [],
                 FoldedSections          = raw.FoldedSections?.Where(k => !string.IsNullOrWhiteSpace(k)).ToHashSet(StringComparer.Ordinal) ?? [],
                 DrawerPinned            = raw.DrawerPinned,
+                GridDensity             = GridDensityResources.Parse(raw.GridDensity),
                 DrawerWidth             = DrawerLayout.Clamp(raw.DrawerWidth ?? DrawerLayout.DefaultWidth),
             };
 
@@ -592,6 +601,7 @@ public class ConnectionSettingsService : ISectionFolds
             OverviewOpenedUtc       = store.OverviewOpenedUtc.Count > 0 ? new Dictionary<Guid, DateTime>(store.OverviewOpenedUtc) : null,
             FoldedSections          = store.FoldedSections.Count > 0 ? store.FoldedSections.Order(StringComparer.Ordinal).ToList() : null,
             DrawerPinned            = store.DrawerPinned,
+            GridDensity             = store.GridDensity == GridDensity.Comfortable ? null : store.GridDensity.ToString(),
             DrawerWidth             = store.DrawerWidth,
         };
 
@@ -659,6 +669,7 @@ public class ConnectionSettingsService : ISectionFolds
         public Dictionary<Guid, DateTime>? OverviewOpenedUtc { get; set; }
         public List<string>? FoldedSections      { get; set; }
         public bool    DrawerPinned              { get; set; }
+        public string? GridDensity               { get; set; }
         public double? DrawerWidth               { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
@@ -788,6 +799,9 @@ public class ConnectionStore
 
     /// <summary>The page sections folded to their header (#146), as "Page/section" keys.</summary>
     public HashSet<string> FoldedSections { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>How tightly every grid's rows are laid out (#148): Settings → Appearance.</summary>
+    public GridDensity GridDensity { get; set; } = GridDensity.Comfortable;
 
     /// <summary>The details drawer opens pinned beside the page rather than floating over it (#147).</summary>
     public bool DrawerPinned { get; set; }
