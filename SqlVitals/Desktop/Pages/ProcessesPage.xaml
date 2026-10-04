@@ -36,17 +36,11 @@
             </Setter>
         </Style>
     </Page.Resources>
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <!-- Header -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Processes" Style="{StaticResource SectionHeader}" Margin="0"
-                       FontSize="20" DockPanel.Dock="Left" VerticalAlignment="Center"/>
-            <Border DockPanel.Dock="Left" Margin="16,0,0,0" VerticalAlignment="Center"
+    <!-- The page template (#146): the verdict on blocking first, then the map or the grid. -->
+    <controls:PageShell x:Name="Shell" Margin="16" Title="Processes" PageKey="Processes">
+        <controls:PageShell.Actions>
+        <StackPanel Orientation="Horizontal">
+            <Border Margin="0,0,16,0" VerticalAlignment="Center"
                     Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
                     BorderThickness="1" CornerRadius="4" Padding="2">
                 <StackPanel Orientation="Horizontal">
@@ -56,7 +50,7 @@
                                  Checked="View_Checked" ToolTip="One row per session, grouped by login, to sort and compare"/>
                 </StackPanel>
             </Border>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
 
                 <!-- Auto-refresh interval -->
                 <TextBlock Text="Auto-refresh:" Foreground="{DynamicResource TextMuted}"
@@ -87,9 +81,10 @@
                                MinWidth="28" TextAlignment="Center"/>
                 </Border>
             </StackPanel>
-        </DockPanel>
+        </StackPanel>
+        </controls:PageShell.Actions>
 
         <!-- Shared process map: zoom, search, legend, themed canvas, details panel; and the grid (#116) -->
-        <controls:ProcessMapControl x:Name="ProcessMap" Grid.Row="1"/>
-    </Grid>
+        <controls:ProcessMapControl x:Name="ProcessMap"/>
+    </controls:PageShell>
 </Page>

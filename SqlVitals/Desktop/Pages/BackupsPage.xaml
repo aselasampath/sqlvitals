@@ -124,31 +124,20 @@
         </Style>
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="140"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="160"/>
-        </Grid.RowDefinitions>
+    <!-- The page template (#146): the verdict first, the RPO and counts folding to one line, then the databases. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Backups" PageKey="Backups">
+        <controls:PageShell.Actions>
+            <Button x:Name="BtnReload" Content="↻ Read again" Style="{StaticResource RefreshButton}" Padding="12,4"
+                    ToolTip="Read the backup history from msdb again."
+                    Click="BtnReload_Click"/>
+        </controls:PageShell.Actions>
 
-        <TextBlock Grid.Row="0" Text="Backups — last full, differential and log backup, from msdb" Style="{StaticResource SectionHeader}"
-                   FontSize="20" Margin="0,0,0,14"/>
-
-        <!-- Filter, the RPO checked against, counts, and anything that stopped the backups being read -->
-        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,12">
+        <!-- The RPO checked against, counts, and anything that stopped the backups being read -->
+        <controls:PageShell.Sections>
+        <controls:FoldSection x:Name="SummarySection" Key="summary" Header="RPO and counts">
+        <Border Style="{StaticResource KpiCard}" Margin="0">
             <StackPanel>
                 <WrapPanel>
-                    <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
-                    <ComboBox x:Name="CmbFilter" Width="250" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="CmbFilter_SelectionChanged"/>
-                    <Button x:Name="BtnReload" Content="↻ Read again" Style="{StaticResource RefreshButton}" Padding="12,4"
-                            ToolTip="Read the backup history from msdb again."
-                            Click="BtnReload_Click"/>
-                </WrapPanel>
-
-                <WrapPanel Margin="0,10,0,0">
                     <TextBlock Text="Warn when the last full backup is older than" Style="{StaticResource ToolbarLabel}"/>
                     <TextBox x:Name="TxtFullAge" Width="70" Style="{StaticResource ToolbarBox}" KeyDown="Rpo_KeyDown"
                              ToolTip="A number of days (7), or with a unit: 26h, 1d 12h. Every online database except tempdb is checked."/>
@@ -171,12 +160,23 @@
                            TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
+        </controls:FoldSection>
+        </controls:PageShell.Sections>
+
+        <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" MinHeight="140"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="160"/>
+        </Grid.RowDefinitions>
 
         <!-- ── Every database, the ones to act on first ──────────────── -->
-        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+        <Border Grid.Row="0" Style="{StaticResource KpiCard}">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=DatabasesGrid}"/>
+                    <ComboBox DockPanel.Dock="Right" x:Name="CmbFilter" Width="250" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
+                              SelectionChanged="CmbFilter_SelectionChanged" ToolTip="Which databases to list"/>
                     <TextBlock x:Name="TxtCount" Text="Databases" Style="{StaticResource SectionHeader}"
                                Margin="0" VerticalAlignment="Center"/>
                 </DockPanel>
@@ -214,11 +214,11 @@
             </DockPanel>
         </Border>
 
-        <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch"
+        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
                       Background="{StaticResource Border}" Margin="0,4"/>
 
         <!-- ── The selected database's backups ───────────────────────── -->
-        <Border Grid.Row="4" Style="{StaticResource KpiCard}">
+        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
             <Grid x:Name="DetailPanel" IsEnabled="False">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -257,4 +257,5 @@
             </Grid>
         </Border>
     </Grid>
+    </controls:PageShell>
 </Page>

@@ -95,6 +95,15 @@ namespace SqlVitals.Desktop.Controls
         /// <summary>Every session in the last snapshot.</summary>
         public int SessionCount => _allNodes.Count;
 
+        /// <summary>The last snapshot, classified, for the page's verdict (#146).</summary>
+        public IReadOnlyList<ProcessNode> Snapshot => _allNodes;
+
+        /// <summary>Selects a session and shows its details, as its head blocker chip does: the verdict's "Go to session".</summary>
+        public void ShowSession(int sessionId) => GoToSession(sessionId);
+
+        /// <summary>Ticks Blocking chains only: the verdict's action.</summary>
+        public void ShowChainsOnly() => ChkChainsOnly.IsChecked = true;
+
         public ProcessMapControl()
         {
             InitializeComponent();

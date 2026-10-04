@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
@@ -35,6 +37,12 @@ public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPag
     private readonly IWaitStatsRepository _repo;
     private readonly ConnectionSettingsService _settings;
 
+    // The page template's verdict (#146): the head blockers and how long they have blocked.
+    internal ProcessesViewModel ViewModel { get; }
+
+    // The active connection's blocking threshold, which colours the verdict as it does the health dot.
+    private readonly HealthThreshold _blocking;
+
     // ?? Auto-refresh ??????????????????????????????????????????????????
     private readonly DispatcherTimer _timer = new();
     private int _intervalSec   = ConnectionStore.DefaultProcessesRefreshSeconds;
@@ -61,6 +69,11 @@ public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPag
 
         // The interval and the Start/Stop choice are remembered (#37).
         var store = settings.Load();
+
+        _blocking = (store.Active is { } active ? store.ThresholdsFor(active) : store.HealthThresholds).Get(HealthIndicator.Blocking);
+        ViewModel = new ProcessesViewModel(goToSession: ProcessMap.ShowSession, chainsOnly: ProcessMap.ShowChainsOnly);
+        ViewModel.Attach(Shell);
+        Shell.Folds = settings;
         CmbInterval.SelectedIndex = Math.Max(0, Array.IndexOf(Intervals, store.ProcessesRefreshSeconds));
 
         // So is the view, and the grid's grouping (#116).
@@ -128,7 +141,16 @@ public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPag
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        ProcessMap.UpdateNodes(await _repo.GetProcessesAsync());
+        try
+        {
+            ProcessMap.UpdateNodes(await _repo.GetProcessesAsync());
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the sessions", ex);
+            throw;
+        }
+        ViewModel.Show(ProcessMap.Snapshot, _blocking);
     }
 
     // ?? Timer logic ???????????????????????????????????????????????????

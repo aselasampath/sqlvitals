@@ -57,9 +57,13 @@ What SSMS's Query Store reports show, for the **connected database**, in one pag
 | Query Wait Statistics | **Waits** tab |
 | Tracked Queries | **Query details** window |
 
+**The verdict** (from 0.62.0) says first whether any query got slower in the period than in the 7 days before it, as [Query Regressions](Query-Regressions.md) finds them with its saved threshold and minimum executions: *No query got slower*, or *1 query got slower: query 4183 runs 4.1× slower since it got a new plan* (the one costing the most extra time first). **Open query 4183** opens its details; **Query Regressions** opens that page. A custom period isn't compared (*Not compared with a baseline*), and with Query Store off it says so. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Query Store: the verdict says query 4183 runs 4.1× slower since it got a new plan, above the health cards and the Top Queries tab](images/page-template/query-store.png)
+
 ### Health and settings
 
-The cards show Query Store's **State**, **Storage used** and **Storage %**, the number of **Queries**, **Plans** and **Forced plans** (click it for the Forced Plans tab), the **Capture mode**, **Size cleanup**, **Stale after** (days), **Interval** (minutes), **Wait stats capture** (SQL Server 2017+) and a **Status**: the worst of the checks below them.
+**Health and settings** folds to one line, *READ_WRITE · 41.0 % of storage · settings OK*, when you click its header; the page remembers it. The cards show Query Store's **State**, **Storage used** and **Storage %**, the number of **Queries**, **Plans** and **Forced plans** (click it for the Forced Plans tab), the **Capture mode**, **Size cleanup**, **Stale after** (days), **Interval** (minutes), **Wait stats capture** (SQL Server 2017+) and a **Status**: the worst of the checks below them.
 
 Each check gives a one-line reason and, with **⧉ Copy fix**, the `ALTER DATABASE … SET QUERY_STORE (…)` statement that fixes it. SqlVitals never changes a setting itself.
 
