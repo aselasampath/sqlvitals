@@ -114,6 +114,15 @@ public partial class MainWindow : Window
                 MainFrame.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
         };
 
+        // A page opened as an alert's evidence (#145): Show all clears its filter where it is, and the
+        // banner's history link opens the page that charts the alert's window.
+        FocusBar.ShowAllRequested += ShowAllEvidence;
+        FocusBar.HistoryRequested += async () =>
+        {
+            if (_history.Current is { } current && EvidenceRoutes.History(current) is { } history)
+                await OpenAsync(history, settingsMessage: null, _history.Visit, ActivitySources.Sidebar);
+        };
+
         SettingsService = new ConnectionSettingsService();
         _overviewVisits = new OverviewVisits(SettingsService);
         var store  = SettingsService.Load();
@@ -131,6 +140,12 @@ public partial class MainWindow : Window
                 await NavigateTo("Overview", serverId: id);
             else
                 await NavigateTo("Alerts", alertsConnectionId: connectionId);
+        };
+        // A notification about one alert opens its evidence (#145).
+        _tray.EvidenceRequested += async alert =>
+        {
+            ShowFromTray();
+            await OpenEvidenceAsync(alert, ActivitySources.Notification);
         };
         _tray.ExitRequested   += ExitApp;
         _tray.StartAllRequested += () => Monitoring.StartAll(ActivitySources.TrayMenu);
@@ -714,6 +729,7 @@ public partial class MainWindow : Window
     {
         var page = new HomePage(Monitoring, SettingsService);
         page.OpenRequested          += async id => await NavigateTo("Overview", serverId: id);
+        page.InvestigateRequested   += async alert => await OpenEvidenceAsync(alert, ActivitySources.Home);
         page.AddConnectionRequested += async () => await NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage);
         page.EditRequested          += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
         return page;
@@ -730,11 +746,104 @@ public partial class MainWindow : Window
             if (await SwitchToAsync(id, ActivitySources.Overview))
                 Bar.ShowMessage($"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".");
         };
-        // A page about the server: an alert's evidence, the page explaining a check, Deadlocks, Live
-        // charts… It queries the active connection, so opening it makes this one active (see OpenAsync).
+        // A page about the server: Deadlocks, Live charts, the rest of "Since you last looked"… It
+        // queries the active connection, so opening it makes this one active (see OpenAsync).
         page.OpenPageRequested += async (id, tag) => await NavigateTo(tag, serverId: id, switchSource: ActivitySources.Overview);
+        // An alert's or a check's evidence, filtered and set to its time (#145).
+        page.EvidenceRequested += async route => await OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.Overview);
         return page;
     }
+
+    private AlertsPage CreateAlertsPage(Guid? connectionId)
+    {
+        var page = new AlertsPage(Monitoring, SettingsService, connectionId);
+        page.InvestigateRequested += async alert => await OpenEvidenceAsync(alert, ActivitySources.AlertsPage);
+        return page;
+    }
+
+    // ── An alert's evidence (#145) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Opens an alert's evidence: its page on its server, filtered to the problem and set to its
+    /// time, through the navigator so Back returns. The alert as it stands now: one a notification
+    /// was about may have ended since. A deleted connection's alert has no server: Alerts instead.
+    /// </summary>
+    private async System.Threading.Tasks.Task OpenEvidenceAsync(Alert alert, string source)
+    {
+        if (Item(alert.ConnectionId) is null)
+        {
+            await NavigateTo("Alerts");
+            Bar.ShowMessage("That alert's connection has been removed, so there is no server to look at.");
+            return;
+        }
+        await OpenAsync(EvidenceRoutes.ForAlert(await LatestAsync(alert)), settingsMessage: null, _history.Visit, source);
+    }
+
+    private async System.Threading.Tasks.Task<Alert> LatestAsync(Alert alert)
+    {
+        if (Monitoring.ActiveAlerts.FirstOrDefault(a => a.Id == alert.Id) is { } active)
+            return active;
+        if (!alert.IsActive)
+            return alert;
+
+        // Not active any more: the history has its end.
+        try
+        {
+            var reader = Monitoring.HistoryReader;
+            var stored = await System.Threading.Tasks.Task.Run(() =>
+                reader.ReadAlerts(alert.ConnectionId, alert.StartedUtc.AddMinutes(-1), DateTime.UtcNow.AddMinutes(1)));
+            return stored.Select(s => s.Alert).FirstOrDefault(a => a.Id == alert.Id) ?? alert;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Evidence: could not read the alert's end from the history", ex);
+            return alert;
+        }
+    }
+
+    // Show all: the page clears its filter where it is, and the history keeps it unfiltered, so
+    // Back and Forward return to it as it is now.
+    private void ShowAllEvidence()
+    {
+        if (_history.Current is not { Focus: not null } current)
+            return;
+        if (_page is IFocusPage page)
+        {
+            try { page.ClearFocus(); }
+            catch (Exception ex) { AppLog.Error($"{current.Tag}: could not clear its filter", ex); }
+        }
+        _history.ReplaceCurrent(EvidenceRoutes.Unfocused(current));
+        UpdateHistoryButtons();
+        ShowFocusBanner();
+    }
+
+    // "Opened from alert" over a page opened as evidence; nothing over any other.
+    private void ShowFocusBanner()
+    {
+        var focus = _history.Current?.Focus;
+        var page  = _page as IFocusPage;
+        var text  = focus is null ? null
+            : FocusBanner.For(focus, page?.FocusNote, page?.ShowsWindow == true, PageName(focus.HistoryTag), DateTime.Today);
+        FocusBar.Show(text, page?.ShowAllText);
+    }
+
+    // The server's clock from UTC, from its latest sample; null when it isn't being sampled (see ServerClock).
+    private TimeSpan? ServerOffset(Guid? connectionId) =>
+        connectionId is { } id && Monitoring.Get(id) is { Samples.Count: > 0, LastSuccess: { } last } session
+            ? SqlVitals.Engine.Home.ServerClock.Offset(session.Samples[^1].Time, last.ToUniversalTime())
+            : null;
+
+    private static string? PageName(string? tag) =>
+        tag is null ? null : NavMenu.AllPages.FirstOrDefault(p => p.Tag == tag)?.Label;
+
+    /// <summary>
+    /// Opens another page of the same server with a filter, for links between pages that carry it
+    /// (#145): a session from Processes on Active Waits, a query on Query Store.
+    /// </summary>
+    /// <param name="fromPage">The page the link is on, as its banner names it.</param>
+    internal System.Threading.Tasks.Task OpenLinkAsync(string tag, FocusFilter filter, string fromPage) =>
+        OpenAsync(EvidenceRoutes.Link(tag, _history.Current?.ConnectionId ?? _activeConnectionId, filter, fromPage),
+                  settingsMessage: null, _history.Visit, ActivitySources.Page(fromPage));
 
     // Settings (#131): links out of it come back here, and switching theme opens it again.
     private SettingsPage CreateSettingsPage(SettingsLocation? location, string? message)
@@ -838,9 +947,12 @@ public partial class MainWindow : Window
         if (_page is not IPageContext context)
         {
             Bar.ShowContext(null, canPause: false, database: null);
+            ShowFocusBanner();
             return;
         }
         Bar.ShowContext(Freshness(context), context.CanPause, DatabaseOf(context));
+        // What a page opened as evidence shows changes as it reads (#145).
+        ShowFocusBanner();
     }
 
     private PageFreshness Freshness(IPageContext page) => page.Kind switch
@@ -1025,6 +1137,9 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.Assert(_sidebar.HasPage(tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
         Shell.Highlight(tag);
 
+        // A banner hidden on the page left shows again on the next page opened as evidence.
+        FocusBar.NewPage();
+
         // Settings page does not implement IRefreshable — handle separately
         if (tag == "Settings")
         {
@@ -1032,6 +1147,7 @@ public partial class MainWindow : Window
             MainFrame.Navigate(settings);
             _page      = settings;
             _updatedAt = null;
+            ShowFocusBanner();
             Bar.ShowPage(tools: null, Freshness(settings), canPause: false, database: null);
             Bar.CanRefresh = false;
             if (!_isConnectionConfigured)
@@ -1045,7 +1161,7 @@ public partial class MainWindow : Window
             "Home"            => CreateHomePage(),
             "Overview"        => CreateOverviewPage(shown.ServerId!.Value),
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
-            "Alerts"          => new AlertsPage(Monitoring, SettingsService, shown.AlertsConnectionId),
+            "Alerts"          => CreateAlertsPage(shown.AlertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
             "ActiveWaits"     => new ActiveWaitsPage(Repo),
             "Processes"       => new ProcessesPage(Repo, SettingsService),
@@ -1061,7 +1177,7 @@ public partial class MainWindow : Window
             "QueryStore"      => new QueryStorePage(Repo, SettingsService),
             "QueryRegressions" => new QueryRegressionsPage(Repo, Monitoring.HistoryFor(_activeConnectionId), SettingsService),
             "IndexHealth"     => new IndexHealthPage(Repo),
-            "ResourceQueries" => new ResourceQueriesPage(Repo),
+            "ResourceQueries" => new ResourceQueriesPage(Repo, ServerOffset(_activeConnectionId)),
             "ImplicitConv"    => new ImplicitConversionsPage(Repo),
             "PlanCacheHealth" => new PlanCacheHealthPage(Repo),
             "StaleStats"      => new StaleStatisticsPage(Repo),
@@ -1083,11 +1199,20 @@ public partial class MainWindow : Window
         try { tools = context.TakeBarTools(); }
         catch (Exception ex) { AppLog.Error($"{tag}: could not move its controls to the top bar", ex); }
 
+        // Opened as evidence (#145): filtered to the problem, or set to the alert's window, from its
+        // first load on.
+        if (shown.Focus is { } focus && page is IFocusPage focusPage)
+        {
+            try { focusPage.ShowFocus(focus); }
+            catch (Exception ex) { AppLog.Error($"{tag}: could not apply its filter", ex); }
+        }
+
         MainFrame.Navigate(page);
         _page       = page as Page;
         _pageLoaded = false;
         _updatedAt  = null;
         Bar.ShowPage(tools, Freshness(context), context.CanPause, DatabaseOf(context));
+        ShowFocusBanner();
 
         // How the page was left last time: its tab now, each grid's sort, filter and selection
         // as its rows arrive, so the page loads straight into it (#139).

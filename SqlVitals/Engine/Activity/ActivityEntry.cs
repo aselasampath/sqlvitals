@@ -85,6 +85,10 @@ public static class ActivitySources
     public const string BackOrForward       = "user: Back or Forward";
     /// <summary>A server's page opened from the Ctrl+K quick switcher (#144).</summary>
     public const string QuickSwitcher       = "user: quick switcher";
+    /// <summary>A server's page opened as an alert's evidence from its Windows notification (#145).</summary>
+    public const string Notification        = "user: notification";
+    /// <summary>A server's page opened as an alert's evidence from the Alerts page (#145).</summary>
+    public const string AlertsPage          = "user: Alerts";
     public const string AutomaticAtStartup  = "automatic at startup";
     public const string SettingChanged      = "setting changed";
     public const string ConnectionEdited    = "connection edited";

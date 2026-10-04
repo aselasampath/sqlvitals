@@ -138,6 +138,11 @@
                                             Style="{StaticResource SecondaryButton}" Padding="14,5"
                                             AutomationProperties.Name="{Binding ActionName}" ToolTip="{Binding ActionToolTip}"
                                             ToolTipService.ShowOnDisabled="True"/>
+                                    <!-- An active alert's evidence (#145) -->
+                                    <Button DockPanel.Dock="Right" Content="Investigate" Click="Investigate_Click" Margin="0,0,8,0"
+                                            Visibility="{Binding InvestigateVisibility}"
+                                            Style="{StaticResource SecondaryButton}" Padding="12,5"
+                                            AutomationProperties.Name="{Binding InvestigateName}" ToolTip="{Binding InvestigateToolTip}"/>
                                     <TextBlock Text="{Binding Tile.Footer}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                                ToolTip="{Binding Tile.Footer}"/>
                                 </DockPanel>

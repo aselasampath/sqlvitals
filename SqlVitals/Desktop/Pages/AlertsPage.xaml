@@ -34,6 +34,13 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <!-- Investigate (#145): an underlined link, one TextBlock per cell; the grid handles the click. -->
+        <Style x:Key="InvestigateText" TargetType="TextBlock" BasedOn="{StaticResource SingleLineText}">
+            <Setter Property="Foreground" Value="{StaticResource AccentLight}"/>
+            <Setter Property="TextDecorations" Value="Underline"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip" Value="{Binding InvestigateToolTip}"/>
+        </Style>
         <Style x:Key="ToolbarLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
             <Setter Property="FontSize" Value="12"/>
@@ -124,6 +131,10 @@
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Connection" Binding="{Binding ConnectionName}" Width="140" ElementStyle="{StaticResource SingleLineText}" />
                             <DataGridTextColumn Header="Indicator" Binding="{Binding IndicatorName}" Width="150" ElementStyle="{StaticResource SingleLineText}" />
+                            <DataGridTextColumn x:Name="InvestigateColumn" Header="Evidence" Binding="{Binding InvestigateText}" Width="95"
+                                                ElementStyle="{StaticResource InvestigateText}" CanUserSort="False">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The page that shows why, filtered to the problem and set to the alert's time. Double-click a row, or press Enter on it, to open it too."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Started" Binding="{Binding Started, StringFormat='{}{0:d MMM HH:mm:ss}'}" Width="120" ElementStyle="{StaticResource SingleLineText}">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The first sample past the threshold, on this PC's clock. The alert is raised a few samples later (Settings → Alerts &amp; chat)."/></Style></DataGridTextColumn.HeaderStyle>
                             </DataGridTextColumn>

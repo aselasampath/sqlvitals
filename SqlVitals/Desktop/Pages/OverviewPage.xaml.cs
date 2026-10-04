@@ -126,8 +126,11 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
         };
     }
 
-    /// <summary>A page about this server: an alert's evidence, a check's explanation, Deadlocks, Live charts…</summary>
+    /// <summary>A page about this server: Deadlocks, Live charts, the page with the rest of "Since you last looked"…</summary>
     public event Action<Guid, string>? OpenPageRequested;
+
+    /// <summary>An alert's or a check's evidence (#145): its page, filtered to the problem and set to its time.</summary>
+    public event Action<Route>? EvidenceRequested;
 
     /// <summary>Make active: every server page then queries this connection.</summary>
     public event Action<Guid>? MakeActiveRequested;
@@ -489,16 +492,15 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
             .ThenBy(a => a.StartedUtc)
             .Select(a =>
             {
-                var link = CheckLinks.For(a.Indicator);
+                var evidence = EvidenceRoutes.For(a.Indicator);
                 return new OverviewAlert(
                     HealthBrushes.For(a.Severity),
                     $"{HealthThresholds.Info(a.Indicator).Name} · {AlertText.Severity(a.Severity)}",
                     $"· since {Clock(a.StartedUtc)} · {AlertText.Duration(a.Duration(nowUtc))} so far",
                     AlertText.Happening(a),
-                    $"{link.Text} →",
-                    $"Open {link.Text} for this server",
-                    a.Indicator,
-                    a.Severity);
+                    "Investigate →",
+                    $"Open {evidence.Text} for this server, filtered to this alert",
+                    a);
             })
             .ToList();
         var endedToday = byId.Values.Count(a => a.EndedUtc >= todayUtc);
@@ -541,9 +543,10 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
         var costs  = graded is null ? [] : ScoreCosts.Lowering(graded);
         Show(CostsList, costs.Select(c =>
         {
-            var link = CheckLinks.For(c.Indicator);
-            return new CostRow(HealthBrushes.For(c.Level), c.Name, $"−{c.Points}", c.Why, $"{link.Text} →",
-                               $"Open {link.Text} for this server", c.Indicator);
+            var evidence = EvidenceRoutes.For(c.Indicator);
+            var detail   = graded!.Checks.FirstOrDefault(check => check.Indicator == c.Indicator)?.Reading.Reason;
+            return new CostRow(HealthBrushes.For(c.Level), c.Name, $"−{c.Points}", c.Why, $"{evidence.Text} →",
+                               $"Open {evidence.Text} for this server", c.Indicator, detail);
         }).ToList());
         TxtNoCosts.Text = graded is null
             ? (tile.Status == TileStatus.Off ? "Nothing to show: it isn't monitored." : "The checks show after the first sample.")
@@ -917,19 +920,21 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
 
     private void LiveCharts_Click(object sender, RoutedEventArgs e) => OpenPageRequested?.Invoke(_id, "LiveMetrics");
 
-    private void BlockingChain_Click(object sender, RoutedEventArgs e) => Open(HealthIndicator.Blocking);
+    private void BlockingChain_Click(object sender, RoutedEventArgs e) =>
+        EvidenceRequested?.Invoke(EvidenceRoutes.ForCheck(HealthIndicator.Blocking, _id, detail: null));
 
-    // An alert's evidence: until alerts lead to their evidence (#145), the page that explains the check.
+    // An alert's evidence (#145): its page, filtered to the problem and set to the alert's time.
     private void Evidence_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: OverviewAlert alert })
-            Open(alert.Indicator);
+        if (sender is FrameworkElement { DataContext: OverviewAlert row })
+            EvidenceRequested?.Invoke(EvidenceRoutes.ForAlert(row.Alert));
     }
 
+    // A check costing points: its page, filtered as an alert's would be, as the server is now.
     private void CostLink_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkContentElement { DataContext: CostRow cost })
-            Open(cost.Indicator);
+            EvidenceRequested?.Invoke(EvidenceRoutes.ForCheck(cost.Indicator, _id, cost.Detail));
     }
 
     private void SinceLink_Click(object sender, RoutedEventArgs e)
@@ -937,8 +942,6 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
         if (sender is FrameworkContentElement { DataContext: SinceRow row })
             OpenPageRequested?.Invoke(_id, row.PageTag);
     }
-
-    private void Open(HealthIndicator indicator) => OpenPageRequested?.Invoke(_id, CheckLinks.For(indicator).PageTag);
 
     // ── Times ─────────────────────────────────────────────────────────────────
 
@@ -961,12 +964,18 @@ internal sealed record LastGood(DateTime TimeUtc, int Score, string? LoweredBy);
 /// <summary>A line of "What happened": its time, and what.</summary>
 public sealed record DetailLine(string When, string Text);
 
-/// <summary>An active alert at the top of the Overview: what, since when, in plain words, and its evidence.</summary>
+/// <summary>An active alert at the top of the Overview: what, since when, in plain words, and Investigate.</summary>
 public sealed record OverviewAlert(Brush Dot, string Title, string When, string Happening, string EvidenceText, string EvidenceToolTip,
-                                   HealthIndicator Indicator, HealthLevel Severity);
+                                   Alert Alert)
+{
+    public HealthIndicator Indicator => Alert.Indicator;
+    public HealthLevel     Severity  => Alert.Severity;
+}
 
 /// <summary>A check costing points: its name, "−20", why, and the page that explains it.</summary>
-public sealed record CostRow(Brush Dot, string Name, string Points, string Why, string LinkText, string LinkToolTip, HealthIndicator Indicator);
+/// <param name="Detail">What the check said, e.g. "Log 93% full (Sales)": its evidence's filter.</param>
+public sealed record CostRow(Brush Dot, string Name, string Points, string Why, string LinkText, string LinkToolTip, HealthIndicator Indicator,
+                             string? Detail = null);
 
 /// <summary>A headline number with its sparkline.</summary>
 public sealed record HeadlineTile(string Label, string Value, Brush ValueBrush, Brush? LineBrush, IReadOnlyList<double> Trend,

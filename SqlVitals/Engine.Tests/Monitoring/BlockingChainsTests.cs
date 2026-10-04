@@ -212,4 +212,36 @@ public class BlockingChainsTests
         // A system session at the head of a chain is not a user process.
         Assert.Contains("OR s.session_id IN (SELECT blocking_session_id", sql);
     }
+
+    // ── A blocking alert's evidence (#145) ───────────────────────────
+
+    [Fact]
+    public void EvidenceHead_IsTheChainWaitingLongest_WhatTheAlertMeasures()
+    {
+        // 10 blocks two sessions briefly; 20 blocks one for a minute.
+        var chains = BlockingChains.Find(BlockingChains.Classify(
+        [
+            Node(10), Node(11, blockedBy: 10, waitMs: 2_000), Node(12, blockedBy: 10, waitMs: 3_000),
+            Node(20), Node(21, blockedBy: 20, waitMs: 60_000),
+        ]));
+
+        Assert.Equal(20, BlockingChains.EvidenceHead(chains, pinned: null));
+    }
+
+    [Fact]
+    public void EvidenceHead_StaysOnItsChain_WhileItLasts_ThenMovesOn()
+    {
+        var both = BlockingChains.Find(BlockingChains.Classify(
+        [
+            Node(10), Node(11, blockedBy: 10, waitMs: 90_000),
+            Node(20), Node(21, blockedBy: 20, waitMs: 1_000),
+        ]));
+        var onlyTwenty = BlockingChains.Find(BlockingChains.Classify([Node(20), Node(21, blockedBy: 20, waitMs: 2_000)]));
+
+        // Pinned on 20 after the first look: 10 waiting longer later doesn't move it.
+        Assert.Equal(20, BlockingChains.EvidenceHead(both, pinned: 20));
+        // 10's chain has ended: the one left.
+        Assert.Equal(20, BlockingChains.EvidenceHead(onlyTwenty, pinned: 10));
+        Assert.Null(BlockingChains.EvidenceHead([], pinned: 10));
+    }
 }

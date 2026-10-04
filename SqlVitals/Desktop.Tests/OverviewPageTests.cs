@@ -179,8 +179,8 @@ public sealed class OverviewPageTests : IDisposable
     {
         Setup();
         var page = Open(_hot);
-        var opened = new List<(Guid, string)>();
-        page.OpenPageRequested += (id, tag) => opened.Add((id, tag));
+        var opened = new List<Route>();
+        page.EvidenceRequested += opened.Add;
 
         Assert.Equal("CRITICAL", page.TxtStatus.Text);
         Assert.Equal("1 active alert", page.TxtAlertsTitle.Text);
@@ -188,11 +188,17 @@ public sealed class OverviewPageTests : IDisposable
         Assert.Equal("CPU · Critical", alert.Title);
         Assert.Matches(@"^· since \d\d:\d\d · \d+ s so far$", alert.When);
         Assert.Contains("SQL Server's CPU reached 99", alert.Happening);
-        Assert.Equal("Top CPU queries →", alert.EvidenceText);
+        Assert.Equal("Investigate →", alert.EvidenceText);
+        Assert.Equal("Open Top CPU queries for this server, filtered to this alert", alert.EvidenceToolTip);
 
+        // Investigate (#145): Resource Queries by CPU, from 15 minutes before the alert started.
         var evidence = UiThread.Find<Button>(page.AlertsList).Single();
         evidence.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-        Assert.Equal([(_hot.Id, "ResourceQueries")], opened);
+        var route = Assert.Single(opened);
+        Assert.Equal(("ResourceQueries", _hot.Id, FocusKind.TopCpu), (route.Tag, route.ConnectionId, route.Focus!.Filter.Kind));
+        Assert.Equal(alert.Alert.StartedUtc - EvidenceRoutes.Margin, route.Focus.FromUtc);
+        Assert.Null(route.Focus.ToUtc);
+        Assert.Equal(FocusSource.Alert, route.Focus.Origin.Source);
     });
 
     [Fact]
@@ -200,8 +206,8 @@ public sealed class OverviewPageTests : IDisposable
     {
         Setup();
         var page = Open(_hot);
-        var opened = new List<(Guid, string)>();
-        page.OpenPageRequested += (id, tag) => opened.Add((id, tag));
+        var opened = new List<Route>();
+        page.EvidenceRequested += opened.Add;
 
         Assert.Equal("80", page.RunScore.Text);
         var cost = Assert.Single(Rows<CostRow>(page.CostsList));
@@ -210,8 +216,11 @@ public sealed class OverviewPageTests : IDisposable
         Assert.EndsWith("all 20 of its points.", cost.Why);
         Assert.Equal(5, Rows<string>(page.PassingList).Count);
 
+        // As the server is now, without a window (#145).
         Click(Assert.Single(Links(page.CostsList)));
-        Assert.Equal([(_hot.Id, "ResourceQueries")], opened);
+        var route = Assert.Single(opened);
+        Assert.Equal(("ResourceQueries", _hot.Id, FocusSource.HealthCheck), (route.Tag, route.ConnectionId, route.Focus!.Origin.Source));
+        Assert.Null(route.Focus.FromUtc);
 
         // CPU at 99 %: past critical.
         Assert.Equal(Helpers.HealthBrushes.Red, Rows<HeadlineTile>(page.HeadlinesList)[0].ValueBrush);

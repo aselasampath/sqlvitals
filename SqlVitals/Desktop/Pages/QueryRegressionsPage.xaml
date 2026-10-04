@@ -11,6 +11,21 @@
             <!-- Statements keep their line breaks; show only the first line. -->
             <Setter Property="MaxHeight" Value="18"/>
         </Style>
+        <!-- A Query Store query_id opens Query Store on that query (#145); a query_hash has nowhere to go. -->
+        <Style x:Key="QueryLink" TargetType="TextBlock" BasedOn="{StaticResource SingleLineText}">
+            <Setter Property="Foreground" Value="{StaticResource AccentLight}"/>
+            <Setter Property="TextDecorations" Value="Underline"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip" Value="Open Query Store on this query"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding QueryStoreId}" Value="{x:Null}">
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                    <Setter Property="TextDecorations" Value="{x:Null}"/>
+                    <Setter Property="Cursor" Value="{x:Null}"/>
+                    <Setter Property="ToolTip" Value="{x:Null}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="Number" TargetType="TextBlock">
             <Setter Property="HorizontalAlignment" Value="Right"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -143,7 +158,7 @@
                 <Grid>
                     <DataGrid x:Name="RegressionsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Query" Binding="{Binding QueryKey}" Width="75" ElementStyle="{StaticResource SingleLineText}">
+                            <DataGridTextColumn x:Name="QueryColumn" Header="Query" Binding="{Binding QueryKey}" Width="75" ElementStyle="{StaticResource QueryLink}">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query Store query_id, or the query_hash (0x…) when the monitoring history is the source."/></Style></DataGridTextColumn.HeaderStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="90" ElementStyle="{StaticResource SingleLineText}">

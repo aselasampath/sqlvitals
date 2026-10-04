@@ -74,6 +74,26 @@ public partial class TimeRangePicker : UserControl
 
     private ButtonBase[] HistoryButtons => [BtnHour, BtnDay, BtnWeek, BtnCustom, BtnBaseline];
 
+    /// <summary>
+    /// Picks a range from code, as if clicked: an alert's window (#145), or Live again on Show all.
+    /// A past range while the history can't be read is ignored. Raises <see cref="RangeChanged"/>
+    /// unless <paramref name="notify"/> is false, for a page that hasn't loaded yet and reads it then.
+    /// </summary>
+    public void Pick(HistoryRange range, bool notify = true)
+    {
+        if (!range.IsLive && !BtnCustom.IsEnabled)
+            return;
+        if (notify)
+        {
+            CustomPopup.IsOpen = false;
+            Select(range);
+            return;
+        }
+        _range = range;
+        SyncButtons();
+        BtnCustom.Content = range.Kind == HistoryRangeKind.Custom ? range.Label : "Custom…";
+    }
+
     private void Baseline_Changed(object sender, RoutedEventArgs e) =>
         BaselineChanged?.Invoke(this, CompareToBaseline);
 

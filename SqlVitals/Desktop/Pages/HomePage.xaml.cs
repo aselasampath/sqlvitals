@@ -8,6 +8,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Home;
 using SqlVitals.Engine.Monitoring;
@@ -91,6 +92,9 @@ public partial class HomePage : Page, IRefreshable, IPageContext
     /// <summary>Open was pressed on a tile, or Retry (which has already asked for a new sample).</summary>
     public event Action<Guid>? OpenRequested;
 
+    /// <summary>A tile's Investigate: its worst active alert's evidence (#145).</summary>
+    public event Action<Alert>? InvestigateRequested;
+
     /// <summary>"+ Add a connection" was pressed.</summary>
     public event Action? AddConnectionRequested;
 
@@ -153,9 +157,9 @@ public partial class HomePage : Page, IRefreshable, IPageContext
         foreach (var tile in built)
         {
             if (byId.TryGetValue(tile.Id, out var existing))
-                existing.Update(tile, _monitoring.Get(tile.Id)?.Score);
+                existing.Update(tile, _monitoring.Get(tile.Id)?.Score, WorstAlert(tile.Id));
             else
-                _tiles.Add(new HomeTile(tile, _monitoring.Get(tile.Id)?.Score));
+                _tiles.Add(new HomeTile(tile, _monitoring.Get(tile.Id)?.Score, WorstAlert(tile.Id)));
         }
 
         Reorder();
@@ -191,7 +195,7 @@ public partial class HomePage : Page, IRefreshable, IPageContext
             return;
         }
 
-        tile.Update(ServerTile.From(InputFor(conn, _store), DateTime.Now), _monitoring.Get(connectionId)?.Score);
+        tile.Update(ServerTile.From(InputFor(conn, _store), DateTime.Now), _monitoring.Get(connectionId)?.Score, WorstAlert(connectionId));
         if (_breakdownFor == connectionId)
             ShowBreakdown(connectionId, tile.Tile.Name);
         Reorder();
@@ -255,7 +259,20 @@ public partial class HomePage : Page, IRefreshable, IPageContext
         TileWidth   = Math.Floor(width / columns);
     }
 
+    // The alert a tile's Investigate opens (#145): the worst active one, the oldest first.
+    private Alert? WorstAlert(Guid connectionId) =>
+        (_monitoring.Get(connectionId)?.ActiveAlerts ?? [])
+            .OrderByDescending(a => a.Severity)
+            .ThenBy(a => a.StartedUtc)
+            .FirstOrDefault();
+
     // ── Buttons ───────────────────────────────────────────────────────────────
+
+    private void Investigate_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: HomeTile { Alert: { } alert } })
+            InvestigateRequested?.Invoke(alert);
+    }
 
     private void TileAction_Click(object sender, RoutedEventArgs e)
     {
@@ -368,13 +385,27 @@ public sealed class HomeTile : INotifyPropertyChanged
     private IReadOnlyList<ScorePoint> _history = [];
     private readonly List<ScorePoint> _live = new();
 
-    public HomeTile(ServerTile tile, HealthScore? score)
+    public HomeTile(ServerTile tile, HealthScore? score, Alert? alert = null)
     {
-        Tile = tile;
+        Tile  = tile;
+        Alert = alert;
         AddLive(score);
     }
 
     public ServerTile Tile { get; private set; }
+
+    /// <summary>The server's worst active alert, whose evidence Investigate opens (#145); null when none.</summary>
+    public Alert? Alert { get; private set; }
+
+    public Visibility InvestigateVisibility => Alert is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public string InvestigateToolTip => Alert is { } alert
+        ? $"{HealthThresholds.Info(alert.Indicator).Name} · {AlertText.Severity(alert.Severity).ToLowerInvariant()}: open {EvidenceRoutes.For(alert.Indicator).Text}, filtered to the alert"
+        : string.Empty;
+
+    public string InvestigateName => Alert is { } alert
+        ? $"Investigate the {HealthThresholds.Info(alert.Indicator).Name} alert on {Tile.Name}"
+        : string.Empty;
 
     public Brush StatusBrush => HealthBrushes.For(Tile.Status);
     public Brush StatusTint  => HealthBrushes.Tint(Tile.Status);
@@ -422,9 +453,10 @@ public sealed class HomeTile : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void Update(ServerTile tile, HealthScore? score)
+    public void Update(ServerTile tile, HealthScore? score, Alert? alert = null)
     {
-        Tile = tile;
+        Tile  = tile;
+        Alert = alert;
         AddLive(score);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }

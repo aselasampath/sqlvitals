@@ -62,6 +62,10 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext
             });
         CmbRecent.SelectedIndex = RegressionWindows.RecentChoices.ToList().IndexOf(RegressionWindows.Default.Recent);
 
+        // A query_id opens Query Store on that query (#145). The grid handles the mouse itself, so
+        // the link needs the clicks it has handled too.
+        RegressionsGrid.AddHandler(MouseLeftButtonUpEvent, new System.Windows.Input.MouseButtonEventHandler(RegressionsGrid_MouseLeftButtonUp), handledEventsToo: true);
+
         _criteria = settings.Load().RegressionCriteria;
         TxtThreshold.Text     = _criteria.ThresholdPct.ToString("0.##", CultureInfo.CurrentCulture);
         TxtMinExecutions.Text = _criteria.MinExecutions.ToString("N0", CultureInfo.CurrentCulture);
@@ -236,6 +240,18 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext
         text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 
     private static long QueryId(QueryRegression r) => long.Parse(r.QueryKey, CultureInfo.InvariantCulture);
+
+    private async void RegressionsGrid_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not TextBlock { DataContext: QueryRegression { QueryStoreId: { } id } } text)
+            return;
+        DependencyObject? cell = text;
+        while (cell is not null and not DataGridCell)
+            cell = System.Windows.Media.VisualTreeHelper.GetParent(cell);
+        if ((cell as DataGridCell)?.Column != QueryColumn || Window.GetWindow(this) is not MainWindow main)
+            return;
+        await main.OpenLinkAsync("QueryStore", new FocusFilter(FocusKind.Query, id), "Query Regressions");
+    }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
 

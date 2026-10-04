@@ -79,4 +79,28 @@ public class AlertTextTests
     [InlineData(500, 10)]
     public void Settings_NormalizePicksTheClosestChoice(int saved, int expected) =>
         Assert.Equal(expected, AlertSettings.NormalizeSamples(saved));
+
+    // The database a log space alert's evidence is filtered to (#145), from what the check said.
+    [Theory]
+    [InlineData("Log 93% full (Sales)",      "Sales")]
+    [InlineData("Log 93% full (Sales (EU))", "Sales (EU)")]
+    [InlineData("Log 100% full (a b)",       "a b")]
+    [InlineData("Log 93% full",              null)]
+    [InlineData("Log 93% full ( )",          null)]
+    [InlineData("CPU 97 %",                  null)]
+    [InlineData("",                          null)]
+    [InlineData(null,                        null)]
+    public void LogDatabase_IsTheDatabaseTheCheckNamed(string? detail, string? expected) =>
+        Assert.Equal(expected, AlertText.LogDatabase(detail));
+
+    [Fact]
+    public void LogDatabase_ReadsWhatTheHealthCheckWrites()
+    {
+        var sample   = new LiveMetricSample(DateTime.Now, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5_000, 0, 99,
+                                            LogUsedPct: 95, LogUsedDatabase: "Sales");
+        var readings = Invariant(() => HealthRules.Grade(sample, HealthThresholds.Default));
+        var log      = readings.Single(r => r.Indicator == HealthIndicator.LogSpace);
+
+        Assert.Equal("Sales", AlertText.LogDatabase(log.Reason));
+    }
 }

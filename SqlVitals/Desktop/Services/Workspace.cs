@@ -18,14 +18,14 @@ public static class Workspace
     /// <summary>
     /// The same page on another server, as picked from the breadcrumb's server menu: a server's
     /// page, its Overview, or Alerts filtered to it. From a page about every server, the server's
-    /// Overview.
+    /// Overview. One server's evidence isn't another's: the page opens unfiltered there (#145).
     /// </summary>
     public static Route OnServer(Route route, Guid server) => route.Tag switch
     {
-        "Overview"                    => route with { ServerId = server },
-        "Alerts"                      => route with { AlertsConnectionId = server },
+        "Overview"                    => route with { ServerId = server, Focus = null },
+        "Alerts"                      => route with { AlertsConnectionId = server, Focus = null },
         var tag when Route.IsGlobal(tag) => Overview(server),
-        _                             => route with { ConnectionId = server },
+        _                             => route with { ConnectionId = server, Focus = null },
     };
 
     /// <summary>

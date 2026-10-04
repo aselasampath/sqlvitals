@@ -21,6 +21,8 @@
             <!-- One bar (#140): Back and Forward (#139), where you are, and the page's server,
                  database, freshness and time window, with Pause or Refresh. -->
             <controls:TopBar x:Name="Bar" DockPanel.Dock="Top" />
+            <!-- A page opened as an alert's evidence (#145): what it shows, and Show all. -->
+            <controls:FocusBannerView x:Name="FocusBar" DockPanel.Dock="Top" />
             <Frame x:Name="MainFrame"
                    NavigationUIVisibility="Hidden"
                    Background="{DynamicResource BgDeep}" />

@@ -23,8 +23,43 @@ using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
+public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext, IFocusPage
 {
+    // ── An alert's window (#145) ──────────────────────────────────────────
+    // An alert that has ended opens the charts on its window, read from the monitoring history,
+    // until Show all (or another range) goes back to live.
+    private HistoryRange? _focusRange;
+
+    public void ShowFocus(PageFocus focus)
+    {
+        if (focus.FromUtc is not { } from || _history is null)
+            return;
+        var to = focus.ToUtc ?? DateTime.UtcNow;
+        if (to <= from)
+            return;
+        // Before the page loads: its first load reads the window instead of plotting live samples.
+        var range = HistoryRange.Custom(from, to);
+        RangePicker.Pick(range, notify: false);
+        if (RangePicker.Range == range)
+            _range = _focusRange = range;
+    }
+
+    public void ClearFocus()
+    {
+        if (_focusRange is null)
+            return;
+        _focusRange = null;
+        RangePicker.Pick(HistoryRange.Live);
+    }
+
+    public bool ShowsWindow => _focusRange is not null;
+
+    public string? FocusNote => _focusRange is { } range && _range == range
+        ? $"showing {range.Label} from the monitoring history"
+        : null;
+
+    public string? ShowAllText => _focusRange is { } range && _range == range ? "Show live" : null;
+
     // ── Top bar (#140) ───────────────────────────────────────────────────
     // Live, or History while a past range is picked. The range picker and the sample interval
     // are in the top bar; the interval box says how often, so the badge doesn't repeat it. Not
@@ -267,8 +302,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
         BuildAllPanels();
 
         // Plot the history collected while this page wasn't open. The new charts draw it when
-        // they load, so no forced update here.
-        PlotNewSamples();
+        // they load, so no forced update here. Not over a past range picked before it loaded (#145).
+        if (_range.IsLive)
+            PlotNewSamples();
 
         // Shared sessions are started by MonitoringManager. The ad-hoc one follows Start
         // monitoring automatically like them, and otherwise waits for Start.

@@ -36,6 +36,10 @@ public sealed record QueryRegression(
     /// <summary>Filled in after detection; the history is server-wide, Query Store one database.</summary>
     public string? DatabaseName { get; init; }
 
+    /// <summary>The Query Store query_id; null for a query_hash from the monitoring history.</summary>
+    public long? QueryStoreId =>
+        long.TryParse(QueryKey, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : null;
+
     /// <summary>"Duration", "CPU" or "Duration, CPU".</summary>
     public string RegressedOn => (DurationRegressed, CpuRegressed) switch
     {

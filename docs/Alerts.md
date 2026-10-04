@@ -32,6 +32,7 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 | **Status** | **● Active**: still past its threshold. **Ended**: finished. |
 | **Severity** | 🟠 **Warning** or 🔴 **Critical**: the worst level it held for long enough |
 | **Connection**, **Indicator** | Which server, and which of the six health indicators |
+| **Evidence** | **Investigate →**: the page that shows why, filtered and set to the alert's time (see [below](#from-an-alert-to-its-evidence)). Double-click a row or press **Enter** on it to do the same. |
 | **Started**, **Ended**, **Duration** | On this PC's clock. Duration keeps counting while it's active. |
 | **Worst value** | The highest figure seen, or the **lowest** for page life expectancy |
 | **Threshold** | The threshold it crossed, e.g. `≥ 90 %` or `< 300 s` |
@@ -43,6 +44,49 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 - The page **updates by itself** when an alert starts, changes or ends, so you can leave it open.
 - The sidebar button shows how many alerts are active, e.g. **🔔 Alerts (2)**.
 - Alerts of a **deleted connection** stay in the history and show under *All connections* with the name it had.
+
+## From an alert to its evidence
+
+From 0.61.0 every alert has an **evidence route**: the page that shows why, already **filtered to the problem** and **set to the alert's time**, so the first minutes go on fixing it rather than looking for it.
+
+| Alert or check | Opens | Filtered to | A past alert's history |
+|---|---|---|---|
+| Blocking | 🔗 Processes | the head blocker's chain: the one whose blocked session has waited longest | Live charts (lock waits) |
+| CPU | 🔥 Resource Queries, **By CPU** tab | the queries last run since 15 min before the alert started | Live charts (CPU) |
+| Page life expectancy | 🧠 Memory Grants | (the whole page: memory clerks and grants) | Live charts (memory) |
+| Memory grants pending | 🧠 Memory Grants | the grants still waiting for memory | Live charts (memory) |
+| Log space used | 📦 DB Storage | the files of the database whose log was fullest | none kept |
+| TempDB space used | 🗄️ TempDB | (the whole page) | none kept |
+
+**Where to start from:**
+
+- **Investigate** on an active alert on the server's [Overview](Your-Servers.md#active-alerts), and on a tile of **All servers** whose server has an active alert (the worst one);
+- **Investigate →** in the **Evidence** column of the Alerts page, or double-click the row, or press **Enter** on it;
+- a click on the **Windows notification** about one alert. A notification about several opens the server's Overview, which lists them all.
+
+The links under *What is costing points* on the Overview open the same pages filtered the same way, as the server is now.
+
+### The "Opened from alert" banner
+
+The page opens with a banner above it naming the alert and its time, and what the page is showing: *Opened from alert · Blocking · critical · since 13:58 — showing the blocking chain of session 87 only*.
+
+- **Show all** (*Show all 214 sessions*) clears the filter and shows the page as the sidebar opens it. **×** hides the banner and leaves the filter.
+- **← Back** returns to where you clicked: the Overview, Alerts, All servers.
+- While the alert is active, a refresh keeps the same chain on screen; when it ends, the page moves to the chain waiting longest, or says *nothing is blocked now*.
+
+### An alert that has ended
+
+Its window is **15 minutes before it started to 15 minutes after it ended**.
+
+- Processes, Memory Grants, Resource Queries, DB Storage and TempDB only show the server **now**. The banner says so (*It ended at 14:05; this page shows the server now.*) and offers **Open Live charts for 13:43–14:20**, which charts that window from the monitoring history. A filter that only means something while the alert lasts (a blocking chain, a waiting grant) isn't applied.
+- SqlVitals keeps no history of log space or TempDB space, so for those the banner says so.
+
+### Links that carry their filter
+
+- **Processes** → a session's *Session Details* → **Active waits for this session →** opens Active Waits filtered to that session and the sessions it blocks.
+- **Query Regressions** → a query ID (when Query Store is the source) opens **Query Store** on that query: the Top queries tab shows only it, and its details open in their own window.
+
+Both show the same banner, *Opened from Processes · session 87*, with Show all, and Back returns to the page the link was on.
 
 ## Change when alerts fire
 
@@ -73,7 +117,7 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 - **Which connections:** only saved connections that are **monitored**. From 0.46.0 nothing is monitored until you press Start or turn on **Start monitoring automatically**; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). While nothing is monitored the page says **No alerts are being raised: monitoring is off**, and while some connections aren't, it names them (*…monitoring is off for Sales-Prod, HR-DB*). Windows notifications say nothing then either, because there are no alerts. If you pick a connection that isn't monitored, the page says why.
 - **No extra load on the server:** alerts are worked out from the samples SqlVitals already collects.
 - **How long they're kept:** as long as the rest of the [history](Settings.md#monitoring--history), counted from when the alert ended. An active alert is never deleted. **Clear history** deletes alerts too.
-- **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opened this page filtered to that connection until 0.57.0, and opens the server's Summary, with its alerts, from 0.57.0, and its [Overview](Your-Servers.md#active-alerts) from 0.59.0, where each active alert is in plain words with a button to its evidence. Mute a connection on its **Monitoring & alerts** tab in **Settings → Connections**, or every connection with **Settings → Alerts & chat → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
+- **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opened this page filtered to that connection until 0.57.0, the server's Summary from 0.57.0, and its [Overview](Your-Servers.md#active-alerts) from 0.59.0. From 0.61.0 a notification about one alert opens [its evidence](#from-an-alert-to-its-evidence); one about several still opens the Overview. Mute a connection on its **Monitoring & alerts** tab in **Settings → Connections**, or every connection with **Settings → Alerts & chat → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
 - **Chat channels:** from 0.52.0 an alert that starts, turns critical or ends is also posted to the Slack and Microsoft Teams channels in **Settings → Alerts & chat → Chat channels**, so the whole team sees it, in the same words as this page. Each channel can take all monitored connections or chosen ones, warnings and critical or critical only, and whether to post ends. When monitoring stops with alerts active, a channel is told once that no more updates will come. See [Chat Notifications](Chat-Notifications.md).
 - **One SqlVitals at a time:** from 0.35.0, starting SqlVitals again brings the running copy to the front instead of opening a second one. (Before that, a second copy shared the history file and ended the first one's active alerts when it started.)
 
