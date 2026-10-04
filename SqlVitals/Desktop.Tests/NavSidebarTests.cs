@@ -186,7 +186,8 @@ public sealed class NavSidebarTests
         Assert.Equal("Who is connected, what is running, and who is blocking whom?",
                      Part<ToggleButton>(group, "HeaderToggle").ToolTip);
         Assert.Null(group.ToolTip);
-        Assert.Null(sidebar.Button("Processes").ToolTip);
+        // A page's own tooltip says what it shows; the quick switcher finds it by those words (#144).
+        Assert.Equal(NavMenu.AllPages.Single(p => p.Tag == "Processes").ToolTip, sidebar.Button("Processes").ToolTip);
     });
 
     [Theory, MemberData(nameof(Themes))]

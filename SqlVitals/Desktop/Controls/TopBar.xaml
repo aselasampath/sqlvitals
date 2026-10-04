@@ -170,11 +170,12 @@
                                Foreground="{DynamicResource TextMuted}" />
                 </StackPanel>
 
-                <!-- Jump to (a placeholder until #144), Pause or Refresh, and Ask AI (until the assistant, #93) -->
+                <!-- Jump to (the quick switcher, #144), Pause or Refresh, and Ask AI (until the assistant, #93) -->
                 <StackPanel x:Name="RightButtons" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <Button x:Name="BtnJump" Style="{StaticResource BarIconButton}" Content="&#xE721;" IsEnabled="False"
-                            ToolTip="Jump to a server or page (Ctrl+K): coming in a later version"
-                            AutomationProperties.Name="Jump to a server or page" />
+                    <Button x:Name="BtnJump" Style="{StaticResource BarIconButton}" Content="&#xE721;"
+                            Click="BtnJump_Click" ToolTip="Jump to a server, page or setting (Ctrl+K)"
+                            AutomationProperties.Name="Jump to a server, page or setting"
+                            AutomationProperties.AcceleratorKey="Ctrl+K" />
                     <Button x:Name="BtnPause" Style="{StaticResource BarIconButton}" Content="&#xE769;" Margin="2,0,0,0"
                             Click="BtnPause_Click" Visibility="Collapsed"
                             ToolTip="Pause live updates" AutomationProperties.Name="Pause live updates" />

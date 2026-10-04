@@ -29,6 +29,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Get alerts in a Teams channel](#get-alerts-in-a-teams-channel)
 - [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
 - [Give a wide grid the whole screen](#give-a-wide-grid-the-whole-screen)
+- [Go straight to a screen, server or setting](#go-straight-to-a-screen-server-or-setting)
 
 ---
 
@@ -280,3 +281,11 @@ The same, as a query on the history file: [Monitoring History Database → Examp
 1. Press **Ctrl+B** once to collapse the sidebar to icons (56 px), or twice to hide it: the grid gets the whole width, 1320 px in the default window instead of 1088.
 2. Still need a screen? Collapsed, point at a group's icon to see its screens. Hidden, click **☰** at the top left, or rest the pointer on the window's left edge.
 3. **Ctrl+B** again pins the sidebar back. Whichever state you leave it in is used next time. See [Pin, collapse or hide the sidebar](Getting-Started.md#pin-collapse-or-hide-the-sidebar).
+
+## Go straight to a screen, server or setting
+
+1. Press **Ctrl+K**, from any screen.
+2. Type a few letters of what you want: a screen (*temp*), a server (*prod*), a setting (*rpo*), or what you're after (*blocking* finds Processes).
+3. Press **Enter** to open the first result, or **↑ / ↓** to pick another first.
+4. **The same screen on another server:** on Processes, type the other server's name and press **Enter**: its Processes opens.
+5. **← Back** returns to where you were. Before you type, the list is the screens you opened last. See [Jump to a server, screen or setting](Getting-Started.md#jump-to-a-server-screen-or-setting).

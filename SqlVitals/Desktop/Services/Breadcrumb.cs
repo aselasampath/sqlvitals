@@ -49,5 +49,21 @@ public static class Breadcrumb
         return new Crumb(group.Name, target, CanDrop: true);
     }
 
+    /// <summary>
+    /// A route in a few words, for Back and Forward's tooltips and the quick switcher's recent routes
+    /// (#144): "Processes · PROD-SQL01", "Overview · PROD-SQL01", "Alerts" for a page about every server.
+    /// </summary>
+    /// <param name="serverName">A saved connection's name; null for one that has gone.</param>
+    public static string Describe(Route route, Func<Guid, string?> serverName)
+    {
+        string? Name(Guid? id) => id is { } value ? serverName(value) : null;
+
+        if (route.Tag == "Overview")
+            return Name(route.ServerId) is { } name ? $"Overview · {name}" : "Overview";
+
+        var label = NavMenu.AllPages.FirstOrDefault(p => p.Tag == route.Tag)?.Label ?? route.Tag;
+        return Name(route.ConnectionId ?? route.AlertsConnectionId) is { } server ? $"{label} · {server}" : label;
+    }
+
     private static Crumb[] Parts(params Crumb?[] parts) => parts.OfType<Crumb>().ToArray();
 }

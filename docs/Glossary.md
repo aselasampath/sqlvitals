@@ -62,6 +62,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Query hash** | A fingerprint that groups queries differing only in literal values |
 | **Query Store** | A per-database feature (SQL Server 2016+, Azure SQL) that keeps query history and plans across restarts |
 | **Query Store interval** | The time Query Store sums a plan's runtime statistics over (`INTERVAL_LENGTH_MINUTES`, 60 by default): one row per plan, interval and execution type. A period on the Query Store page counts whole intervals. |
+| **Quick switcher** | From 0.60.0, **Ctrl+K** (or 🔍 in the top bar): type to go to any server, screen or setting; before you type, the screens opened last. See [Getting Started](Getting-Started.md#jump-to-a-server-screen-or-setting). |
 | **Recovery model** | How a database keeps its transaction log. **SIMPLE**: the log is reused after each checkpoint, so the database can only be restored to its last full or differential backup. **FULL** (and **BULK_LOGGED**): the log is kept until a **log backup**, which allows a restore to any point in time; without log backups the log keeps growing. |
 | **REORGANIZE / REBUILD** | Index maintenance. Reorganize is light and always online. Rebuild recreates the index and is thorough but heavier. |
 | **Resource wait** | The part of a wait spent waiting for the resource itself (disk, lock, memory) |

@@ -136,7 +136,7 @@ A record of what was done, kept in the history file (`history.db`, table `activi
 
 | Event | Logged when |
 |---|---|
-| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, on a server's Overview from 0.59.0, in the sidebar or on All servers, in the connection selector before 0.57.0, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
+| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, on a server's Overview from 0.59.0, in the sidebar or on All servers, in the connection selector before 0.57.0, in the quick switcher from 0.60.0, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
 | **App started** / **App exited** | Each run. A run that was killed, crashed or lost power has no *App exited*; the next start says *The previous run didn't exit cleanly* |
 | **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. Not which sidebar groups you collapse or expand. |
 | **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |

@@ -52,7 +52,8 @@ From 0.56.0 one **top bar** across the screen says which server, which database 
 | **Database** | From 0.56.0, on screens that read one database rather than the whole server (Query Store, Query Regressions, Index Health, Stale Stats, DB Storage): the connection's database. Click it to change it in the connection's settings. |
 | **↻ Refresh** | At the right of the top bar (or **F5**): reloads the current screen. Most screens load once when you open them and again when you press Refresh. On a live screen it's beside **▶ Resume** while paused. |
 | **Messages** | What's loading, and errors, appear in the top bar, after the time (before 0.56.0 they were at the foot of the sidebar). If a screen's automatic refresh fails, the error appears here, in red, instead of a pop-up. |
-| **🔍 and ✨** | Placeholders for things coming next: jumping to a server or page (**Ctrl+K**) and asking AI about the screen. They are greyed out until then. |
+| **🔍 Jump to** | From 0.60.0, at the right of the top bar, or **Ctrl+K** from anywhere: type a few letters to go to any server, screen or setting. See [Jump to a server, screen or setting](#jump-to-a-server-screen-or-setting). In a narrow window the button gives way to the breadcrumb; Ctrl+K still works. |
+| **✨ Ask AI** | A placeholder for asking AI about the screen. It is greyed out until the assistant comes. |
 
 A server's groups (from 0.48.0; from 0.57.0 Alerts is in the global part; from 0.59.0 Overview starts with the server's Overview page):
 
@@ -98,6 +99,39 @@ From 0.58.0 the sidebar has three states, so a wide grid can have the screen and
 - **In a window narrower than 1280 px** a pinned sidebar shows collapsed, and widening the window pins it again; your choice isn't changed. Pin it in the narrow window and it stays pinned.
 - **The state is saved** and used at the next start. It isn't recorded in the [activity log](Settings.md#activity-log): it's a layout preference.
 - **With the keyboard alone:** **Ctrl+B** changes the state. Collapsed, **Tab** or **↑ / ↓** reach the icons; **Enter** or **→** on a group opens its screens with the first (or the one you're on) selected, **↑ / ↓** move between them, and **Esc** or **←** goes back to the icon. Hidden, **Tab** to **☰** and press **Enter**: the sidebar slides in with *All servers* selected, **Tab** stays inside it until it closes, and **Esc** closes it and goes back to **☰**.
+
+### Jump to a server, screen or setting
+
+From 0.60.0, press **Ctrl+K** anywhere, or click **🔍** at the right of the top bar, and type. You don't need the sidebar, so it works with the sidebar hidden too.
+
+![The quick switcher over the screen: "temp" typed, TempDB on the open server selected, then Config Checks, and TempDB on two other servers with their health dots and scores](images/quick-switcher/temp.png)
+
+- **What it finds:** screens by their name or by the words of their tooltip (*blocking* finds Processes, *lookups* finds Plan Cache Health), servers by their name or their server's name, and settings: Settings' categories, the open server's connection tabs, and each setting by name (*command timeout*, *encrypt*, *backup rpo*). Capitals don't matter. The letters you typed are in bold.
+- **In groups:**
+
+  | Group | What's in it |
+  |---|---|
+  | **On *server*** | The open server's screens, with their group. On All servers, Alerts or Settings, the active server's. |
+  | **Same page on another server** | The best screen found, on each of your other servers. Type another server's name and it's the screen you're on, on that server. Each has the server's health dot and score. |
+  | **Servers** | Your saved servers: opens the server's Overview. |
+  | **Pages** | All servers, Alerts, Export / AI and Settings. |
+  | **Settings** | Where each setting is changed: a category of Settings, the server's connection, or the screen it's on. |
+
+  The group with the best match comes first, and its first result is selected, so typing and **Enter** is usually enough. On a tie, what you opened most recently comes first.
+- **Before you type:** the last 8 screens you opened this session, most recent first (not the one you're on).
+- **Keys:** **↑ / ↓** move (round from the last to the first), **Enter** opens, **Esc** (or **Ctrl+K** again) closes and puts the keyboard back where it was. **Tab** stays in the box. You can also click a result, or click outside the box to close it.
+- **Screens a server doesn't have** (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit) are listed dimmed, with the reason, and can't be opened; **↑ / ↓** step over them.
+- **Back returns:** a screen opened from here is an ordinary visit, so **← Back** goes back to where you were. Another server's screen makes that server the active connection, as from the sidebar; the [activity log](Settings.md#activity-log) gives the source as *user: quick switcher*.
+
+### Keyboard shortcuts
+
+| Keys | What they do |
+|---|---|
+| **Ctrl+K** | Jump to a server, screen or setting (from 0.60.0); again to close |
+| **Ctrl+B** | Pin, collapse or hide the sidebar (from 0.58.0) |
+| **F5** | Refresh the screen |
+| **Alt+←** / **Alt+→** | Back and Forward; the mouse's back and forward buttons too |
+| **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, or the sidebar slid in over the screen |
 
 ### Live, Snapshot or History
 
