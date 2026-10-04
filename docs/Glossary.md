@@ -27,6 +27,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **DMV** | *Dynamic Management View*: SQL Server's built-in diagnostic views (`sys.dm_*`), which SqlVitals reads |
 | **DPAPI** | Windows' data-protection API. SqlVitals uses it to encrypt saved connections so only your Windows account can read them. |
 | **Estimated vs. actual plan** | An *estimated* plan (plan cache, Query Store) has SQL Server's guesses only. An *actual* plan was captured while the query ran and adds the real row counts and times. |
+| **Evidence route** | Where an alert or health check is looked into: its page, filtered to the problem (e.g. the head blocker's chain) and set to the alert's time, with an *Opened from alert* banner and Show all. See [From an alert to its evidence](Alerts.md#from-an-alert-to-its-evidence). |
 | **Execution plan** | The steps SQL Server chose to run a query: which indexes, joins and order. SqlVitals draws it graphically ([Execution Plans](Execution-Plans.md)); it can also be saved as `.sqlplan` for SSMS. |
 | **Extended Events (XE)** | SQL Server's lightweight tracing system, used by SP Trace; the Deadlocks page reads the built-in *system_health* session |
 | **Forced plan** | A plan Query Store makes a query use (`sp_query_store_force_plan`), by hand or by *automatic plan correction*. If forcing fails, e.g. because an index the plan uses was dropped (`NO_INDEX`), the query runs with whatever plan the optimizer picks. See [Query Store → Forced Plans](Query-Performance.md#forced-plans). |

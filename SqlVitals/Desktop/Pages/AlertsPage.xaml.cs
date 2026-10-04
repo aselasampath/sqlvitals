@@ -65,6 +65,12 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
             CmbPeriod.Items.Add(new ComboBoxItem { Content = period.Label, Tag = period });
         CmbPeriod.SelectedIndex = 1;
 
+        // Investigate (#145): the link in the Evidence column, a double-click on the row, or Enter.
+        // The grid handles the mouse itself, so the link needs the clicks it has handled too.
+        AlertsGrid.AddHandler(MouseLeftButtonUpEvent, new System.Windows.Input.MouseButtonEventHandler(AlertsGrid_MouseLeftButtonUp), handledEventsToo: true);
+        AlertsGrid.MouseDoubleClick += AlertsGrid_MouseDoubleClick;
+        AlertsGrid.PreviewKeyDown   += AlertsGrid_PreviewKeyDown;
+
         _reloadSoon.Tick += async (_, _) => { _reloadSoon.Stop(); await RefreshQuietlyAsync(); };
         _tick.Tick       += async (_, _) => await RefreshQuietlyAsync();
 
@@ -83,6 +89,37 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
         };
 
         _ready = true;
+    }
+
+    /// <summary>An alert's Investigate: its evidence, filtered to the problem and set to its time (#145).</summary>
+    public event Action<Alert>? InvestigateRequested;
+
+    private void AlertsGrid_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is TextBlock { DataContext: AlertRow row } text && CellOf(text)?.Column == InvestigateColumn)
+            InvestigateRequested?.Invoke(row.Alert);
+    }
+
+    private void AlertsGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        // Only a row: not the header or the scroll bar.
+        if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(AlertsGrid, source) is DataGridRow { Item: AlertRow row })
+            InvestigateRequested?.Invoke(row.Alert);
+    }
+
+    private void AlertsGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Enter || AlertsGrid.SelectedItem is not AlertRow row)
+            return;
+        e.Handled = true;
+        InvestigateRequested?.Invoke(row.Alert);
+    }
+
+    private static DataGridCell? CellOf(DependencyObject? element)
+    {
+        while (element is not null and not DataGridCell)
+            element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+        return element as DataGridCell;
     }
 
     private Guid? SelectedConnection => (CmbConnection.SelectedItem as ComboBoxItem)?.Tag as Guid?;
@@ -274,5 +311,8 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
         public string    ThresholdText  => AlertText.Threshold(Alert.Indicator, Alert.Threshold);
         public string    EndReasonText  => AlertText.EndReason(Alert.EndReason);
         public string    Detail         => Alert.Detail;
+        public string    InvestigateText => "Investigate →";
+        public string    InvestigateToolTip => $"Open {EvidenceRoutes.For(Alert.Indicator).Text} on {ConnectionName}, " +
+                                               (IsActive ? "filtered to this alert" : "set to this alert's time");
     }
 }

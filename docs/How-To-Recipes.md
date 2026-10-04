@@ -2,6 +2,7 @@
 
 Step-by-step guides for common situations. You don't need to know which screen to open. Start from the problem.
 
+- [Respond to an alert](#respond-to-an-alert)
 - [Is this server OK?](#is-this-server-ok)
 - [The server is slow right now](#the-server-is-slow-right-now)
 - [Users say the application is hanging](#users-say-the-application-is-hanging)
@@ -33,10 +34,20 @@ Step-by-step guides for common situations. You don't need to know which screen t
 
 ---
 
+## Respond to an alert
+
+1. Click the **Windows notification**, or press **Investigate** on the alert: on the server's Overview, on its tile in **All servers**, or in the **Evidence** column of 🔔 Alerts.
+2. The page that shows why opens **already filtered**: the head blocker's chain on Processes, the queries that used the most CPU since the alert began, the database whose log is filling up. The banner at the top says what you're looking at: *Opened from alert · Blocking · critical · since 13:58 — showing the blocking chain of session 87 only*.
+3. Look closer from there: on Processes, a session's **Active waits for this session →** shows what it and the sessions it blocks are waiting on.
+4. **Show all** clears the filter; **← Back** returns to where you clicked.
+5. **The alert has already ended?** The banner says the page shows the server now, and offers **Open Live charts for** the alert's window (15 minutes either side), read from the monitoring history.
+
+See [From an alert to its evidence](Alerts.md#from-an-alert-to-its-evidence) for the page each alert opens.
+
 ## Is this server OK?
 
 1. Open the server: **All servers → Open** on its tile. It opens on its **Overview**.
-2. **Active alerts**, at the top: each says what is happening in plain words and since when. Press its button (*Top CPU queries →*, *Blocking chain →*…) for the evidence.
+2. **Active alerts**, at the top: each says what is happening in plain words and since when. Press **Investigate →** for its evidence, already filtered to the problem (see [Respond to an alert](#respond-to-an-alert)).
 3. **What is costing points**: each check lowering the score, its points and why, with a link to the page that explains it. No alert yet doesn't mean nothing is wrong: a check can cost points before it has lasted long enough to alert.
 4. **Since you last looked**: deadlocks, failed Agent jobs and regressed queries since you last opened this Overview. Each row links to its page.
 5. The **charts** show when it started: pick **1h**, **24h** or **7d** in the top bar; dashed lines mark where alerts started.

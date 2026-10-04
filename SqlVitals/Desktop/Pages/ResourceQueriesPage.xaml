@@ -36,7 +36,7 @@
                 </ComboBox>
             </StackPanel>
 
-            <TabControl Background="{StaticResource BgDeep}"
+            <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}"
                         BorderBrush="{StaticResource Border}"
                         Foreground="{StaticResource TextPrimary}">
 
@@ -114,7 +114,7 @@
                 </TabItem>
 
                 <!-- Tab 2: By CPU -->
-                <TabItem Header="By CPU">
+                <TabItem x:Name="TabCpu" Header="By CPU">
                     <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
                         <StackPanel>
                             <DockPanel Margin="0,0,0,8">

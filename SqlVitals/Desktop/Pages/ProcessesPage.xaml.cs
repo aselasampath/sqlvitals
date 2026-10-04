@@ -6,8 +6,25 @@ using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ProcessesPage : Page, IRefreshable, IPageContext
+public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPage
 {
+    // ── A blocking alert's evidence (#145): one chain, until Show all ─────
+    public void ShowFocus(PageFocus focus)
+    {
+        if (focus.Filter.Kind == FocusKind.BlockingChain)
+            ProcessMap.FocusChain((int?)focus.Filter.Id);
+    }
+
+    public void ClearFocus() => ProcessMap.ClearChainFocus();
+
+    public string? FocusNote => !ProcessMap.IsChainFocused || !ProcessMap.HasSnapshot ? null
+        : ProcessMap.FocusedHead is { } head ? $"showing the blocking chain of session {head} only"
+        : "nothing is blocked now";
+
+    public string? ShowAllText => !ProcessMap.IsChainFocused ? null
+        : ProcessMap.HasSnapshot ? $"Show all {ProcessMap.SessionCount:N0} sessions"
+        : "Show all sessions";
+
     // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140).
     public PageKind Kind => PageKind.Live;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
@@ -50,6 +67,12 @@ public partial class ProcessesPage : Page, IRefreshable, IPageContext
         ProcessMap.GroupByLogin = store.ProcessesGroupByLogin;
         if (store.ProcessesView == ProcessesView.Grid) BtnGrid.IsChecked = true;
         ProcessMap.GroupByLoginChanged += (_, _) => SaveViewChoice();
+        ProcessMap.FocusChanged        += (_, _) => MainWindow.ReportContextChanged(this);
+        ProcessMap.SessionRequested    += async id =>
+        {
+            if (Window.GetWindow(this) is MainWindow main)
+                await main.OpenLinkAsync("ActiveWaits", new FocusFilter(FocusKind.Session, id), "Processes");
+        };
 
         // Wire timer (ticks every second for the countdown display)
         _timer.Interval = TimeSpan.FromSeconds(1);

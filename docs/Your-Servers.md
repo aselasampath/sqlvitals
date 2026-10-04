@@ -64,7 +64,7 @@ First, the server's alerts that are active now, the critical ones first. Each sa
 
 - **what and how bad**: *CPU · Critical*, and **since when**: *since 14:02 · 25 min so far*;
 - **what is happening, in plain words**, with the worst figure and the threshold it crossed: *SQL Server's CPU reached 97 % (critical at ≥ 90 %).*, *Requests are blocked: the longest has waited 3.5 min (critical at ≥ 2 min).*, *Pages leave the buffer pool after only 120 s (warning at < 300 s): memory pressure.*;
-- a button to its **evidence**: for now the page that explains the check (the same pages as [the checks' links](#what-is-costing-points)); a later version opens it at the alert's time.
+- **Investigate →**: its evidence, from 0.61.0 filtered to the problem and set to the alert's time, e.g. Processes showing only the head blocker's chain (see [From an alert to its evidence](Alerts.md#from-an-alert-to-its-evidence)).
 
 With none: *None: no check has stayed past its threshold long enough to alert*, with how many ended earlier today. **All alerts** opens 🔔 Alerts filtered to this connection.
 
@@ -89,7 +89,7 @@ Each check that lowers the score, the costliest first, with:
 | Log space used | Log space | 📦 DB Storage |
 | TempDB space used | TempDB | 🗄️ TempDB |
 
-Those pages show the active connection, so a link **makes this connection active first**. The checks that pass are listed below in one compact line each: *✓ Blocking · Nothing blocked*. A line says whether the connection uses the default thresholds or its own, with **Change**, which opens the connection's **Health thresholds** tab in Settings.
+From 0.61.0 each link opens its page filtered as an alert's evidence would be (the head blocker's chain, the database whose log is fullest…), with Show all in the banner. Those pages show the active connection, so a link **makes this connection active first**. The checks that pass are listed below in one compact line each: *✓ Blocking · Nothing blocked*. A line says whether the connection uses the default thresholds or its own, with **Change**, which opens the connection's **Health thresholds** tab in Settings.
 
 ### Headline numbers
 

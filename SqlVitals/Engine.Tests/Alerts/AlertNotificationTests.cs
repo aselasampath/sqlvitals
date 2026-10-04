@@ -35,7 +35,8 @@ public class AlertNotificationTests
         Assert.Equal(Connection, n.ConnectionId);
         Assert.Equal(HealthLevel.Critical, n.Severity);
         Assert.Equal("Critical: CPU on Sales-Prod", n.Title);
-        Assert.Equal("CPU 95% (threshold ≥ 90 %).\n" + AlertNotification.ClickHint, n.Text);
+        Assert.Equal("CPU 95% (threshold ≥ 90 %).\n" + AlertNotification.EvidenceHint, n.Text);
+        Assert.Equal(HealthIndicator.Cpu, n.Alert?.Indicator);
     }
 
     [Fact]
@@ -67,7 +68,9 @@ public class AlertNotificationTests
 
         Assert.Equal(HealthLevel.Critical, n!.Severity);
         Assert.Equal("2 alerts on Sales-Prod (1 critical)", n.Title);
-        Assert.Equal("Critical: CPU 95%\nWarning: Log 82% full (Sales)\n" + AlertNotification.ClickHint, n.Text);
+        Assert.Equal("Critical: CPU 95%\nWarning: Log 82% full (Sales)\n" + AlertNotification.OverviewHint, n.Text);
+        // A click opens the server's Overview, which lists them; one alert's opens its evidence (#145).
+        Assert.Null(n.Alert);
     }
 
     [Fact]
@@ -84,7 +87,7 @@ public class AlertNotificationTests
     {
         var n = From(Change(AlertOf(HealthIndicator.Cpu, HealthLevel.Warning, threshold: null), AlertChangeKind.Started));
 
-        Assert.Equal("CPU 95%.\n" + AlertNotification.ClickHint, n!.Text);
+        Assert.Equal("CPU 95%.\n" + AlertNotification.EvidenceHint, n!.Text);
     }
 
     [Fact]
@@ -101,7 +104,7 @@ public class AlertNotificationTests
         Assert.EndsWith("…", n.Title);
         Assert.True(n.Text.Length <= AlertNotification.MaxTextLength);
         Assert.Contains("more", n.Text);
-        Assert.EndsWith(AlertNotification.ClickHint, n.Text);
+        Assert.EndsWith(AlertNotification.OverviewHint, n.Text);
     }
 
     [Fact]

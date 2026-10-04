@@ -14,8 +14,45 @@ using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshable, IPageContext
+public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshable, IPageContext, IFocusPage
 {
+    // ── A memory grants alert's evidence (#145): the grants still waiting, until Show all ──
+    private bool _pendingOnly;
+    private IReadOnlyList<MemoryGrant>? _grants;
+
+    public void ShowFocus(PageFocus focus)
+    {
+        _pendingOnly = focus.Filter.Kind == FocusKind.PendingGrants;
+        ShowGrants();
+    }
+
+    public void ClearFocus()
+    {
+        _pendingOnly = false;
+        ShowGrants();
+    }
+
+    public string? FocusNote => !_pendingOnly || _grants is null ? null
+        : PendingCount switch
+        {
+            0     => "no query is waiting for memory now",
+            1     => "showing the 1 grant waiting for memory only",
+            var n => $"showing the {n} grants waiting for memory only",
+        };
+
+    public string? ShowAllText => !_pendingOnly ? null : _grants is null ? "Show all" : $"Show all {_grants.Count} grants";
+
+    private int PendingCount => _grants?.Count(g => g.IsPending) ?? 0;
+
+    private void ShowGrants()
+    {
+        if (_grants is null)
+            return;
+        GrantsGrid.ItemsSource = (_pendingOnly ? _grants.Where(g => g.IsPending) : _grants)
+            .OrderByDescending(g => g.GrantedMemoryKB).ToList();
+        MainWindow.ReportContextChanged(this);
+    }
+
     // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140).
     public PageKind Kind => PageKind.Live;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
@@ -77,7 +114,8 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         BuildClerksChart(clerkList);
 
         // ── Grants DataGrid ───────────────────────────────────────────
-        GrantsGrid.ItemsSource = grants.OrderByDescending(g => g.GrantedMemoryKB).ToList();
+        _grants = grants.ToList();
+        ShowGrants();
     }
 
     // ── KPI strip update ─────────────────────────────────────────────

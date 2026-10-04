@@ -154,6 +154,23 @@ public static class BlockingChains
             .ToList();
     }
 
+    /// <summary>
+    /// The chain a blocking alert's evidence shows (#145): <paramref name="pinned"/> while it still
+    /// heads a chain, otherwise the chain whose blocked session has waited longest, which is what
+    /// the alert measures. Null when nothing is blocked.
+    /// </summary>
+    public static int? EvidenceHead(IReadOnlyList<BlockingChain> chains, int? pinned)
+    {
+        if (pinned is { } head && chains.Any(c => c.HeadSessionId == head))
+            return head;
+        return chains
+            .OrderByDescending(c => c.LongestWaitMs)
+            .ThenByDescending(c => c.BlockedCount)
+            .ThenBy(c => c.HeadSessionId)
+            .Select(c => (int?)c.HeadSessionId)
+            .FirstOrDefault();
+    }
+
     /// <summary>Sessions that block, or are blocked by, anything.</summary>
     public static IReadOnlySet<int> InChains(IReadOnlyList<ProcessNode> nodes)
     {

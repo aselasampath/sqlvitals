@@ -167,6 +167,24 @@ public static class AlertText
         static string Also(string detail) => string.IsNullOrWhiteSpace(detail) ? "" : $" {detail}.";
     }
 
+    /// <summary>
+    /// The database a log space alert or check names: "Sales" from "Log 93% full (Sales)", as
+    /// <see cref="HealthRules"/> words it (#145). Null when it names none.
+    /// </summary>
+    public static string? LogDatabase(string? detail)
+    {
+        const string Full = "% full (";
+        if (string.IsNullOrEmpty(detail) || !detail.StartsWith("Log ", StringComparison.Ordinal) || !detail.EndsWith(')'))
+            return null;
+        var start = detail.IndexOf(Full, StringComparison.Ordinal);
+        if (start < 0)
+            return null;
+        start += Full.Length;
+        // A database's own name can hold brackets: everything up to the last one.
+        var name = detail[start..^1];
+        return name.Trim().Length == 0 ? null : name;
+    }
+
     public static string EndReason(AlertEndReason? reason) => reason switch
     {
         AlertEndReason.Recovered         => "Back to normal",

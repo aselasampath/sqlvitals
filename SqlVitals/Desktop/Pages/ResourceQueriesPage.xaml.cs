@@ -9,7 +9,7 @@ using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext
+public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFocusPage
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;
@@ -17,9 +17,19 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext
     private readonly IWaitStatsRepository _repo;
     private int _topN = 20;
 
-    public ResourceQueriesPage(IWaitStatsRepository repo)
+    // A CPU alert's evidence (#145): the By CPU tab, with only the queries last run since the
+    // window's start, on the server's clock like the plan cache's times.
+    private readonly TimeSpan _serverOffset;
+    private bool _focused;
+    private DateTime? _cpuSinceUtc;
+    private IReadOnlyList<ResourceIntensiveQuery>? _byCpu;
+
+    /// <param name="serverOffset">The server's clock from UTC, to compare the plan cache's last
+    /// execution times with an alert's; this PC's when not known.</param>
+    public ResourceQueriesPage(IWaitStatsRepository repo, TimeSpan? serverOffset = null)
     {
-        _repo = repo;
+        _repo         = repo;
+        _serverOffset = serverOffset ?? TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
         InitializeComponent();
     }
 
@@ -28,8 +38,46 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext
         var (byReads, byCpu, byHighestReads) = await _repo.GetResourceIntensiveQueriesAsync(_topN);
 
         DataGridRefresh.SetItemsSource(ReadsGrid,        byReads.ToList());
-        DataGridRefresh.SetItemsSource(CpuGrid,          byCpu.ToList());
         DataGridRefresh.SetItemsSource(HighestReadsGrid, byHighestReads.ToList());
+        _byCpu = byCpu.ToList();
+        ShowCpu();
+    }
+
+    public void ShowFocus(PageFocus focus)
+    {
+        if (focus.Filter.Kind != FocusKind.TopCpu)
+            return;
+        _focused          = true;
+        _cpuSinceUtc      = focus.FromUtc;
+        Tabs.SelectedItem = TabCpu;
+        ShowCpu();
+    }
+
+    public void ClearFocus()
+    {
+        _cpuSinceUtc = null;
+        ShowCpu();
+    }
+
+    public string? FocusNote => !_focused || _byCpu is null ? null
+        : _cpuSinceUtc is { } since
+            ? $"showing the {CpuShown.Count} of the top {_byCpu.Count} queries by CPU last run since {since.ToLocalTime():HH:mm}"
+            : "showing the queries that used the most CPU";
+
+    public string? ShowAllText => _cpuSinceUtc is null ? null : _byCpu is null ? "Show all" : $"Show all {_byCpu.Count} queries";
+
+    // The By CPU tab's queries: those last run since the window's start, while it is set.
+    private List<ResourceIntensiveQuery> CpuShown =>
+        _cpuSinceUtc is { } sinceUtc
+            ? (_byCpu ?? []).Where(q => q.LastExecutionTime >= DateTime.SpecifyKind(sinceUtc + _serverOffset, DateTimeKind.Unspecified)).ToList()
+            : (_byCpu ?? []).ToList();
+
+    private void ShowCpu()
+    {
+        if (_byCpu is null)
+            return;
+        DataGridRefresh.SetItemsSource(CpuGrid, CpuShown);
+        MainWindow.ReportContextChanged(this);
     }
 
     private async void CmbTopN_SelectionChanged(object sender, SelectionChangedEventArgs e)

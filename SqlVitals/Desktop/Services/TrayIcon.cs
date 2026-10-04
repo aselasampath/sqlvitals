@@ -21,15 +21,19 @@ internal sealed class TrayIcon : IDisposable
     private readonly Forms.ToolStripMenuItem   _alertsItem;
     private readonly Forms.ToolStripMenuItem   _notificationsItem;
 
-    // What clicking the last notification opens: the Alerts page for its connection, or, for a
-    // notification that isn't about an alert, just the window.
-    private Guid? _notifiedConnection;
+    // What clicking the last notification opens: one alert's evidence (#145), the Overview of the
+    // connection with several, or, for a notification that isn't about an alert, just the window.
+    private Guid?  _notifiedConnection;
+    private Alert? _notifiedAlert;
 
     /// <summary>The icon was clicked, or Open was chosen: show the window.</summary>
     public event Action? OpenRequested;
 
     /// <summary>Show the Alerts page, filtered to a connection when not null.</summary>
     public event Action<Guid?>? AlertsRequested;
+
+    /// <summary>A notification about one alert was clicked: show its evidence (#145).</summary>
+    public event Action<Alert>? EvidenceRequested;
 
     /// <summary>Exit was chosen: quit SqlVitals for real.</summary>
     public event Action? ExitRequested;
@@ -102,7 +106,9 @@ internal sealed class TrayIcon : IDisposable
         };
         _icon.BalloonTipClicked += (_, _) =>
         {
-            if (_notifiedConnection is { } id)
+            if (_notifiedAlert is { } alert)
+                EvidenceRequested?.Invoke(alert);
+            else if (_notifiedConnection is { } id)
                 AlertsRequested?.Invoke(id);
             else
                 OpenRequested?.Invoke();
@@ -114,6 +120,7 @@ internal sealed class TrayIcon : IDisposable
     public void Notify(AlertNotification notification)
     {
         _notifiedConnection = notification.ConnectionId;
+        _notifiedAlert      = notification.Alert;
         _icon.ShowBalloonTip(
             (int)TimeSpan.FromSeconds(10).TotalMilliseconds, notification.Title, notification.Text,
             notification.Severity == HealthLevel.Critical ? Forms.ToolTipIcon.Error : Forms.ToolTipIcon.Warning);
@@ -127,6 +134,7 @@ internal sealed class TrayIcon : IDisposable
     public void Inform(string title, string text, bool warning = false)
     {
         _notifiedConnection = null;
+        _notifiedAlert      = null;
         _icon.ShowBalloonTip((int)TimeSpan.FromSeconds(10).TotalMilliseconds, title, text,
                              warning ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info);
     }

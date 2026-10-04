@@ -31,7 +31,7 @@ public partial class HealthScoreBreakdown : UserControl
 
     /// <summary>
     /// Opens the page that explains a check (#130). When set, each check that cost points gets a
-    /// link under its name, worded as <see cref="Services.CheckLinks"/> says.
+    /// link under its name, worded as <see cref="Services.EvidenceRoutes"/> says.
     /// </summary>
     public Action<HealthIndicator>? OpenCheck { get; set; }
 
@@ -101,7 +101,7 @@ public partial class HealthScoreBreakdown : UserControl
     // explains the figure; the link's says where it goes.
     private static void AddLink(TextBlock nameCell, HealthIndicator indicator, Action<HealthIndicator> open)
     {
-        var link = Services.CheckLinks.For(indicator);
+        var link = Services.EvidenceRoutes.For(indicator);
         var hyperlink = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run($"{link.Text} →"))
         {
             FontWeight = FontWeights.SemiBold,

@@ -326,6 +326,8 @@ public sealed class RecentRoutes
 
     public void Add(Route route)
     {
+        // The page, not the alert it was opened for (#145): its banner would be out of date.
+        route = route with { Focus = null };
         _routes.RemoveAll(r => r.IsSamePlace(route));
         _routes.Insert(0, route);
         if (_routes.Count > Capacity)

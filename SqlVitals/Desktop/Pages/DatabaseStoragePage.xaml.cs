@@ -43,11 +43,48 @@ public sealed class ServerConfigVm
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext
+public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFocusPage
 {
     // Read once, and again on Refresh, from the connection's database (#140).
     public PageKind Kind => PageKind.Snapshot;
     public bool UsesDatabase => true;
+
+    // ── A log space alert's evidence (#145): the database's files, until Show all ──
+    private string? _database;
+    private List<DatabaseFileVm>? _files;
+
+    public void ShowFocus(PageFocus focus)
+    {
+        if (focus.Filter is not { Kind: FocusKind.Database, Name: { } name })
+            return;
+        _database = name;
+        ShowFiles();
+    }
+
+    public void ClearFocus()
+    {
+        _database = null;
+        ShowFiles();
+    }
+
+    public string? FocusNote => _database is not { } db || _files is null ? null
+        : FilesShown.Count == 0 ? $"{db} has no files on this server now"
+        : $"showing the files of {db} only";
+
+    public string? ShowAllText => _database is null ? null : _files is null ? "Show all" : $"Show all {_files.Count} files";
+
+    private List<DatabaseFileVm> FilesShown =>
+        _database is { } db
+            ? (_files ?? []).Where(f => string.Equals(f.DatabaseName, db, StringComparison.OrdinalIgnoreCase)).ToList()
+            : _files ?? [];
+
+    private void ShowFiles()
+    {
+        if (_files is null)
+            return;
+        GridFiles.ItemsSource = FilesShown;
+        MainWindow.ReportContextChanged(this);
+    }
 
     private readonly IWaitStatsRepository _repo;
 
@@ -83,7 +120,8 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext
         KpiCostThreshold.Text = costThr != null ? costThr.CurrentValue.ToString() : "—";
 
         // Grids
-        GridFiles.ItemsSource  = fileList.Select(f => new DatabaseFileVm(f)).ToList();
+        _files = fileList.Select(f => new DatabaseFileVm(f)).ToList();
+        ShowFiles();
         GridTempDb.ItemsSource = tempList;
         GridConfig.ItemsSource = configList.Select(c => new ServerConfigVm(c)).ToList();
         GridTables.ItemsSource = tableList;

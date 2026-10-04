@@ -43,6 +43,58 @@ namespace SqlVitals.Desktop.Controls
         /// <summary>Raised when the user ticks or unticks Group by login, so the page can remember it.</summary>
         public event EventHandler? GroupByLoginChanged;
 
+        // ── A blocking alert's evidence (#145) ────────────────────────────
+        // While on, only one chain is shown: its head pinned once found, so a refresh doesn't jump
+        // to another chain while this one lasts.
+        private bool _chainFocus;
+        private int? _focusHead;
+        private bool _hasSnapshot;
+        private int? _detailsSession;
+
+        /// <summary>The chain shown changed, or the snapshot did: the page's banner says what is shown.</summary>
+        public event EventHandler? FocusChanged;
+
+        /// <summary>Active waits for a session, from its Session Details (#145).</summary>
+        public event Action<int>? SessionRequested;
+
+        /// <summary>
+        /// Shows only one blocking chain: the one <paramref name="head"/> heads, or with null the
+        /// chain whose blocked session has waited longest. Applies to the snapshot shown, if any,
+        /// and to every one after it.
+        /// </summary>
+        public void FocusChain(int? head)
+        {
+            _chainFocus = true;
+            _focusHead  = head;
+            if (_hasSnapshot)
+            {
+                _focusHead = BlockingChains.EvidenceHead(_chains, _focusHead);
+                Render();
+            }
+            FocusChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>Every session again: Show all.</summary>
+        public void ClearChainFocus()
+        {
+            if (!_chainFocus) return;
+            _chainFocus = false;
+            _focusHead  = null;
+            Render();
+            FocusChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public bool IsChainFocused => _chainFocus;
+
+        /// <summary>The head of the chain shown, while focused; null when nothing is blocked or before the first snapshot.</summary>
+        public int? FocusedHead => _chainFocus ? _focusHead : null;
+
+        /// <summary>A snapshot has been drawn.</summary>
+        public bool HasSnapshot => _hasSnapshot;
+
+        /// <summary>Every session in the last snapshot.</summary>
+        public int SessionCount => _allNodes.Count;
+
         public ProcessMapControl()
         {
             InitializeComponent();
@@ -67,10 +119,15 @@ namespace SqlVitals.Desktop.Controls
 
         public void UpdateNodes(IEnumerable<ProcessNode> nodes)
         {
-            _allNodes = BlockingChains.Classify(nodes);
-            _chains   = BlockingChains.Find(_allNodes);
+            _allNodes    = BlockingChains.Classify(nodes);
+            _chains      = BlockingChains.Find(_allNodes);
+            _hasSnapshot = true;
+            if (_chainFocus)
+                _focusHead = BlockingChains.EvidenceHead(_chains, _focusHead);
             RenderChainSummary();
             Render();
+            if (_chainFocus)
+                FocusChanged?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>The grid rather than the map (#116). Both show the same snapshot: switching doesn't query the server.</summary>
@@ -104,6 +161,12 @@ namespace SqlVitals.Desktop.Controls
         private void Render()
         {
             var visible = BlockingChains.Visible(_allNodes, _chainsOnly, _procSearch);
+            if (_chainFocus)
+            {
+                // The chain as the whole snapshot has it, whatever else hides some of its sessions.
+                var chain = _focusHead is { } head ? BlockingChains.ChainOf(_allNodes, head) : new HashSet<int>();
+                visible = visible.Where(n => chain.Contains(n.SessionId)).ToList();
+            }
             if (_showGrid)
             {
                 RenderGrid(visible);
@@ -158,6 +221,14 @@ namespace SqlVitals.Desktop.Controls
 
         private void GoToSession(int sessionId)
         {
+            // Another chain's head chip while one chain is shown: show that chain instead.
+            if (_chainFocus && (_focusHead is not { } head || !BlockingChains.ChainOf(_allNodes, head).Contains(sessionId)))
+            {
+                _focusHead = BlockingChains.HeadOf(_allNodes, sessionId);
+                Render();
+                FocusChanged?.Invoke(this, EventArgs.Empty);
+            }
+
             if (_showGrid)
             {
                 GoToRow(sessionId);
@@ -713,6 +784,7 @@ namespace SqlVitals.Desktop.Controls
             Add("loginname",    node.UserName ?? "");
             Add("cmd",          node.Command ?? "");
 
+            _detailsSession             = node.SessionId;
             TxtProcDetailsContent.Text  = sb.ToString();
             TxtProcInfoBuffer.Text       = node.CommandText ?? "";
             ProcDetailsPopup.Visibility  = Visibility.Visible;
@@ -729,6 +801,13 @@ namespace SqlVitals.Desktop.Controls
 
         private void BtnCloseProcDetails_Click(object sender, RoutedEventArgs e) =>
             ProcDetailsPopup.Visibility = Visibility.Collapsed;
+
+        // The session's waits on Active Waits, filtered to it and the sessions it blocks (#145).
+        private void BtnActiveWaits_Click(object sender, RoutedEventArgs e)
+        {
+            if (_detailsSession is { } id)
+                SessionRequested?.Invoke(id);
+        }
 
         private void BtnCopySql_Click(object sender, RoutedEventArgs e)
         {

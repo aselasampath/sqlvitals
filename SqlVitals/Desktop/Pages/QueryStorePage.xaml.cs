@@ -25,8 +25,39 @@ namespace SqlVitals.Desktop.Pages;
 /// SSMS's Query Store reports on five tabs. Opening the page reads the settings and the tab on
 /// screen; another tab is read the first time it's opened, and again after Refresh or a new period.
 /// </summary>
-public partial class QueryStorePage : Page, IRefreshable, IPageContext
+public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPage
 {
+    // ── One query, from a link that carries it (#145) ─────────────────────────
+    // Top queries shows only it, and its details open in their own window once the settings are read.
+    private long? _query;
+    private bool  _queryOpened;
+    private int?  _queryRowsShown;
+
+    public void ShowFocus(PageFocus focus)
+    {
+        if (focus.Filter is not { Kind: FocusKind.Query, Id: { } id })
+            return;
+        _query            = id;
+        TxtQueryId.Text   = id.ToString(CultureInfo.InvariantCulture);
+        Tabs.SelectedItem = TabTop;
+    }
+
+    public void ClearFocus()
+    {
+        _query          = null;
+        _queryRowsShown = null;
+        _tabs[TabTop].IsCurrent = false;
+        if (Tabs.SelectedItem == TabTop)
+            _ = LoadTabAsync(TabTop);
+        MainWindow.ReportContextChanged(this);
+    }
+
+    public string? FocusNote => _query is not { } id || _queryRowsShown is not { } shown ? null
+        : shown == 0 ? $"query {id} isn't among the top queries of {_period.Label.ToLowerInvariant()}; its details are in their own window"
+        : $"showing query {id} only; its details are in their own window";
+
+    public string? ShowAllText => _query is null ? null : "Show all queries";
+
     // A period of the connection's database's Query Store (#140); the period box stays on the page.
     public PageKind Kind => PageKind.History;
     public bool UsesDatabase => true;
@@ -131,6 +162,13 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext
         var status = await _repo.GetQueryStoreStatusAsync();
         _status = status;
         ShowStatus(status);
+
+        // Opened on one query: its details, once (#145).
+        if (_query is { } query && !_queryOpened)
+        {
+            _queryOpened = true;
+            OpenQueryDetails(query);
+        }
 
         foreach (var state in _tabs.Values)
             state.IsCurrent = false;
@@ -456,6 +494,12 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext
             ColMetric.Binding    = new Binding(nameof(QueryStoreQueryRow.MetricValue)) { StringFormat = info.Format };
             // Ranked by total CPU, the ranked column already is the total CPU column.
             ColTotalCpu.Visibility = metric == QueryStoreMetric.Cpu && statistic == QueryStoreStatistic.Total ? Visibility.Collapsed : Visibility.Visible;
+            if (_query is { } query)
+            {
+                rows            = rows with { Rows = rows.Rows.Where(r => r.QueryId == query).ToList() };
+                _queryRowsShown = rows.Rows.Count;
+                MainWindow.ReportContextChanged(this);
+            }
             ShowRows(TopGrid, TopNotice, rows);
             TxtTopStatus.Text = rows.Unavailable is null ? Counted(rows.Rows.Count, "query", "queries") : string.Empty;
         };

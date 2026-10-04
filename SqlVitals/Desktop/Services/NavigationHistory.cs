@@ -10,8 +10,11 @@ namespace SqlVitals.Desktop.Services;
 /// <param name="ServerId">The connection an Overview (#143) shows.</param>
 /// <param name="AlertsConnectionId">The connection the Alerts page is filtered to, from a notification.</param>
 /// <param name="Settings">Where Settings opens (#131); null for the category last used.</param>
+/// <param name="Focus">What the page was opened to show (#145): an alert's evidence, filtered and
+/// set to its time, or a link's session or query. Null for the page as the sidebar opens it.</param>
 public sealed record Route(string Tag, Guid? ConnectionId = null, Guid? ServerId = null,
-                           Guid? AlertsConnectionId = null, SettingsLocation? Settings = null)
+                           Guid? AlertsConnectionId = null, SettingsLocation? Settings = null,
+                           PageFocus? Focus = null)
 {
     /// <summary>
     /// Pages that read every connection, or a connection named in the route, rather than the
@@ -21,8 +24,9 @@ public sealed record Route(string Tag, Guid? ConnectionId = null, Guid? ServerId
 
     /// <summary>
     /// The same page about the same server, opened with different details: Settings on another
-    /// category, or Alerts filtered from a notification. Moving between them replaces the
-    /// current entry instead of adding one, so Back doesn't stop at the same page twice.
+    /// category, Alerts filtered from a notification, or a page opened as evidence (#145). Moving
+    /// between them replaces the current entry instead of adding one, so Back doesn't stop at the
+    /// same page twice.
     /// </summary>
     public bool IsSamePlace(Route other) =>
         Tag == other.Tag && ConnectionId == other.ConnectionId && ServerId == other.ServerId;
@@ -59,6 +63,16 @@ public sealed class NavigationHistory
             Trim();
         }
         Current = route;
+    }
+
+    /// <summary>
+    /// Changes the route of the page on screen without a move: its focus cleared by Show all
+    /// (#145), so Back and Forward return to the page as it is now.
+    /// </summary>
+    public void ReplaceCurrent(Route route)
+    {
+        if (Current is not null)
+            Current = route;
     }
 
     /// <summary>
