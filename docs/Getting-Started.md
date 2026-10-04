@@ -133,6 +133,15 @@ From 0.60.0, press **Ctrl+K** anywhere, or click **🔍** at the right of the to
 | **Alt+←** / **Alt+→** | Back and Forward; the mouse's back and forward buttons too |
 | **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, or the sidebar slid in over the screen |
 
+### Verdict first, then the detail
+
+From 0.62.0 a screen on the new page template (Processes, Query Store and Backups so far; the others follow) starts with a **verdict**: one line saying what is wrong, or that nothing is, so you know before reading a grid whether there is a problem.
+
+- Its colour follows how bad it is (green, amber, red; grey when it can't tell), and the words say it too: *No blocking*, *Every database is within your RPO*, *4 databases are past your RPO*. A screen reader reads the level first: *Verdict, Warning: …*.
+- A second line says why, and up to four buttons do the next step: *Go to session 87*, *Show only these*, *Open query 4183*.
+- When the screen can't read its data, the verdict says that instead: *Couldn't read the sessions*, with the error.
+- The verdict and the summary sections under it (cards, counts, charts) **fold to a one-line header**: the **⌄** at the verdict's right, or a click on a section's name. Folded, a section still says what it shows in brief. Each screen remembers what you folded.
+
 ### Live, Snapshot or History
 
 Every screen says how its data relates to time, so you never act on old data without knowing:

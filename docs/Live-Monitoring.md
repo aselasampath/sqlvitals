@@ -53,7 +53,11 @@ From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Se
 
 Live **blocking chains drawn as trees**. The head blocker is at the root and every session hangs under the one blocking it (`blocking_session_id`). Sessions not in a chain are shown below the chains.
 
-The **Map | Grid** switch next to the title shows the same sessions as a [grid grouped by login](#grid-view) instead: better for scanning, sorting and comparing hundreds of sessions. **Map** is the default; the choice is remembered.
+The **Map | Grid** switch at the top right shows the same sessions as a [grid grouped by login](#grid-view) instead: better for scanning, sorting and comparing hundreds of sessions. **Map** is the default; the choice is remembered.
+
+**The verdict** (from 0.62.0) says first, in words, whether anything is blocked, and is coloured by your [blocking threshold](Health-Dot-and-Background-Monitoring.md#what-is-checked): *No blocking · 214 sessions, none waiting on another*, or *Session 87 is blocking 3 sessions, the longest for 4.2 min*, with what the head blocker is doing (*sleeping with an open transaction: the application most likely didn't commit*). With several chains it counts them and names the one waiting longest. **Go to session 87** selects it and opens its details; **Blocking chains only** hides the rest. The **⌄** at its right folds it to its first line, and the page remembers that. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Processes: the verdict says session 87 is blocking 3 sessions, the longest for 4.2 min, and that it is sleeping with an open transaction, above the map](images/page-template/processes.png)
 
 ### How to use it
 

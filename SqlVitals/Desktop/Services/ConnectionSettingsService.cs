@@ -20,7 +20,7 @@ namespace SqlVitals.Desktop.Services;
 /// The connection details are protected with Windows DPAPI (current-user scope)
 /// so they are unreadable by other OS accounts.
 /// </summary>
-public class ConnectionSettingsService
+public class ConnectionSettingsService : ISectionFolds
 {
     private static readonly string DefaultSettingsDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SqlVitals");
@@ -233,6 +233,31 @@ public class ConnectionSettingsService
             s.OverviewOpenedUtc.Remove(gone);
     });
 
+    /// <summary>The sections of a page folded to their header (#146).</summary>
+    public IReadOnlySet<string> Folded(string page)
+    {
+        var prefix = page + "/";
+        return Load().FoldedSections.Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+                                    .Select(k => k[prefix.Length..])
+                                    .ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Saves a page section folded or unfolded (#146). Only written when it changed. A layout
+    /// preference, so not in the activity log (see <see cref="SettingsActivity"/>).
+    /// </summary>
+    public void SetFolded(string page, string section, bool folded)
+    {
+        var key = ConnectionStore.FoldKey(page, section);
+        if (Load().FoldedSections.Contains(key) == folded)
+            return;
+        Update(ActivitySources.Page(page), s =>
+        {
+            if (folded) s.FoldedSections.Add(key);
+            else        s.FoldedSections.Remove(key);
+        });
+    }
+
     /// <summary>
     /// Saves the sidebar's state (#142): pinned, collapsed or hidden. Only written when it changed.
     /// A layout preference, so not in the activity log (see <see cref="SettingsActivity"/>).
@@ -351,6 +376,7 @@ public class ConnectionSettingsService
                 LastServerId            = raw.LastServerId,
                 SidebarMode             = ConnectionStore.ParseSidebarMode(raw.SidebarMode),
                 OverviewOpenedUtc       = raw.OverviewOpenedUtc?.ToDictionary(p => p.Key, p => DateTime.SpecifyKind(p.Value, DateTimeKind.Utc)) ?? [],
+                FoldedSections          = raw.FoldedSections?.Where(k => !string.IsNullOrWhiteSpace(k)).ToHashSet(StringComparer.Ordinal) ?? [],
             };
 
             var migrated = false;
@@ -545,6 +571,7 @@ public class ConnectionSettingsService
             LastServerId            = store.LastServerId,
             SidebarMode             = store.SidebarMode.ToString(),
             OverviewOpenedUtc       = store.OverviewOpenedUtc.Count > 0 ? new Dictionary<Guid, DateTime>(store.OverviewOpenedUtc) : null,
+            FoldedSections          = store.FoldedSections.Count > 0 ? store.FoldedSections.Order(StringComparer.Ordinal).ToList() : null,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -609,6 +636,7 @@ public class ConnectionSettingsService
         public Guid?   LastServerId              { get; set; }
         public string? SidebarMode               { get; set; }
         public Dictionary<Guid, DateTime>? OverviewOpenedUtc { get; set; }
+        public List<string>? FoldedSections      { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -734,6 +762,12 @@ public class ConnectionStore
 
     /// <summary>When each server's Overview was last opened (#143), UTC, by connection id.</summary>
     public Dictionary<Guid, DateTime> OverviewOpenedUtc { get; set; } = [];
+
+    /// <summary>The page sections folded to their header (#146), as "Page/section" keys.</summary>
+    public HashSet<string> FoldedSections { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>The key a folded section is saved under: "Backups/verdict".</summary>
+    public static string FoldKey(string page, string section) => $"{page}/{section}";
 
     /// <summary>A saved sidebar state; pinned for anything missing or unknown.</summary>
     public static SidebarMode ParseSidebarMode(string? value) =>

@@ -128,28 +128,23 @@
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="260"/>
-        </Grid.RowDefinitions>
-
-        <!-- Title, and the way to Query Regressions -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,12">
-            <Button DockPanel.Dock="Right" Content="🐢 Regressed queries" Style="{StaticResource LinkButton}"
+    <!-- The page template (#146): the verdict on regressed queries first, the health cards folding
+         to one line, then the period and the reports. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Query Store" PageKey="QueryStore">
+        <controls:PageShell.Actions>
+            <Button Content="🐢 Regressed queries" Style="{StaticResource LinkButton}"
                     VerticalAlignment="Center" Click="BtnRegressions_Click"
                     ToolTip="Open Query Regressions: queries that got slower, recent period against a baseline, for this database."/>
-            <TextBlock x:Name="TxtTitle" Text="Query Store" Style="{StaticResource SectionHeader}" FontSize="20" Margin="0"/>
-        </DockPanel>
+        </controls:PageShell.Actions>
 
+        <controls:PageShell.Sections>
+        <controls:FoldSection x:Name="HealthSection" Key="health" Header="Health and settings">
+        <StackPanel>
         <!-- Health and settings cards -->
-        <WrapPanel Grid.Row="1" x:Name="HealthPanel"/>
+        <WrapPanel x:Name="HealthPanel"/>
 
         <!-- Settings checks: why, and the fix to copy -->
-        <ItemsControl Grid.Row="2" x:Name="ChecksList" Margin="0,0,0,8">
+        <ItemsControl x:Name="ChecksList" Margin="0,0,0,0">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <DockPanel Margin="0,2">
@@ -187,9 +182,18 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
+        </StackPanel>
+        </controls:FoldSection>
+        </controls:PageShell.Sections>
+
+        <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="260"/>
+        </Grid.RowDefinitions>
 
         <!-- Period, how far back the data goes, and a query by ID -->
-        <Border Grid.Row="3" Style="{StaticResource KpiCard}" Margin="0,0,0,10" Padding="12,8">
+        <Border Grid.Row="0" Style="{StaticResource KpiCard}" Margin="0,0,0,10" Padding="12,8">
             <StackPanel>
                 <DockPanel LastChildFill="False">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -222,7 +226,7 @@
             </StackPanel>
         </Border>
 
-        <TabControl Grid.Row="4" x:Name="Tabs" Background="Transparent" BorderThickness="0"
+        <TabControl Grid.Row="1" x:Name="Tabs" Background="Transparent" BorderThickness="0"
                     SelectionChanged="Tabs_SelectionChanged">
 
             <!-- ── Top Queries (SSMS: Top Resource Consuming Queries) ──────── -->
@@ -509,4 +513,5 @@
             </TabItem>
         </TabControl>
     </Grid>
+    </controls:PageShell>
 </Page>

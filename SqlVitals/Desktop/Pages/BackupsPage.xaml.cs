@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Repositories;
 
@@ -20,6 +21,9 @@ public partial class BackupsPage : Page, IRefreshable, IPageContext
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;
+
+    // The filter the verdict's "Show only these" picks.
+    private const int NeedsAttentionFilter = 1;
 
     private static readonly (string Label, Func<DatabaseBackup, bool> Keep, string Empty)[] Filters =
     [
@@ -37,6 +41,9 @@ public partial class BackupsPage : Page, IRefreshable, IPageContext
 
     private readonly IWaitStatsRepository      _repo;
     private readonly ConnectionSettingsService _settings;
+
+    // The page template's verdict (#146): the databases past the RPO, or that none is.
+    internal BackupsViewModel ViewModel { get; }
 
     private BackupRpo _rpo;
 
@@ -67,6 +74,10 @@ public partial class BackupsPage : Page, IRefreshable, IPageContext
         _rpo = settings.Load().BackupRpo;
         ShowRpo(_rpo);
 
+        ViewModel = new BackupsViewModel(showThem: () => CmbFilter.SelectedIndex = NeedsAttentionFilter);
+        ViewModel.Attach(Shell);
+        Shell.Folds = settings;
+
         _ready = true;
     }
 
@@ -85,7 +96,13 @@ public partial class BackupsPage : Page, IRefreshable, IPageContext
         try
         {
             _backups = await _repo.GetBackupStatusAsync(_rpo);
+            ViewModel.Show(_backups);
             Show();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the backup history", ex);
+            throw;
         }
         finally
         {
@@ -137,6 +154,7 @@ public partial class BackupsPage : Page, IRefreshable, IPageContext
         if (!list.Available)
         {
             TxtSummary.Visibility = Visibility.Collapsed;
+            SummarySection.FoldedSummary = list.Problem;
             return;
         }
         TxtSummary.Visibility = Visibility.Visible;
@@ -164,6 +182,9 @@ public partial class BackupsPage : Page, IRefreshable, IPageContext
             Add("  ·  ", muted);
             Add($"{list.NotCheckedCount:N0} not online", muted);
         }
+
+        // Folded, the section says it in one line (#146).
+        SummarySection.FoldedSummary = string.Concat(TxtSummary.Inlines.OfType<Run>().Select(r => r.Text));
     }
 
     private static string StatusText(BackupList list) =>

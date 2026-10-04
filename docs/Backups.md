@@ -10,10 +10,10 @@ Everything is read from `msdb.dbo.backupset`, where SQL Server records each back
 
 ## How to use it
 
-1. Open **💾 Backups**. The databases that need you come first: the **red** ones (nothing, or no log, to restore), then the **amber** ones (a backup older than the ages you set), then the rest by name.
-2. The line under the toolbar counts them: *31 databases · 1 without a full backup · 2 full overdue · 3 log backups missing or overdue · 1 not online*.
+1. Open **💾 Backups**. **The verdict** at the top says it in one line (from 0.62.0): *Every database is within your RPO*, *Sales is past your RPO: log overdue*, or *4 databases are past your RPO*, red when one has nothing (or no log) to restore, amber when a backup is only older than your ages, with which ones and why. **Show only these** picks the *Needs attention* filter.
+2. The databases that need you come first: the **red** ones (nothing, or no log, to restore), then the **amber** ones (a backup older than the ages you set), then the rest by name. **RPO and counts** counts them: *31 databases · 1 without a full backup · 2 full overdue · 3 log backups missing or overdue · 1 not online*. Click its header to fold it to that one line; the page remembers it.
 3. **Set your RPO** in the two boxes: *Warn when the last full backup is older than* **7 d**, *or the last log backup older than* **1 h**. Type a number (days in the first box, minutes in the second) or a number with a unit: `26h`, `1d 12h`, `90 min`, `2h`. Press **✓ Apply** or **Enter**. The ages are saved and apply to every server.
-4. **Show** narrows the list: *Needs attention: missing or overdue*, *FULL or BULK_LOGGED recovery*, *SIMPLE recovery*, or *Not online*. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads msdb again.
+4. The box above the list narrows it: *Needs attention: missing or overdue*, *FULL or BULK_LOGGED recovery*, *SIMPLE recovery*, or *Not online*. **↻ Read again** at the top right (or **Refresh** in the top bar, **F5**) reads msdb again.
 5. Each row is one database:
 
    | Column | Meaning |
@@ -31,6 +31,10 @@ Everything is read from `msdb.dbo.backupset`, where SQL Server records each back
 6. **Select a database** to see its backups below, newest first (up to 500): type, duration, size, compressed size, whether it was taken **WITH CHECKSUM**, the recovery model at the time, who took it, and where it was written. Above them: the newest point it can be restored to, and where the last full backup went.
 
 The grids have the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).
+
+![Backups: the verdict says Sales is past your RPO because its log backup is 3 hours old, with Show only it; RPO and counts below, then the databases](images/page-template/backups.png)
+
+![The same page with RPO and counts folded to one line: 2 databases · 0 without a full backup · 0 full overdue · 1 log backup missing or overdue](images/page-template/backups-folded.png)
 
 ---
 

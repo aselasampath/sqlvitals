@@ -13,9 +13,11 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
+using SqlVitals.Engine.Regressions;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
@@ -124,6 +126,49 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
     private int  _waitQueriesVersion;
     private bool _ready;
 
+    // ── The page template's verdict (#146) ────────────────────────────────────
+    // The queries that got slower in the period against the 7 days before, as Query Regressions
+    // finds them with its saved threshold, read beside the tab on screen.
+    internal QueryStoreViewModel ViewModel { get; }
+    private int _verdictVersion;
+
+    /// <summary>The verdict's read, for tests; done once it has been shown.</summary>
+    internal Task VerdictLoaded { get; private set; } = Task.CompletedTask;
+
+    private void LoadVerdict() => VerdictLoaded = LoadVerdictAsync();
+
+    private async Task LoadVerdictAsync()
+    {
+        if (_status is not { } status)
+            return;
+        var version    = ++_verdictVersion;
+        var period     = _period;
+        var criteria   = _settings.Load().RegressionCriteria;
+        var comparison = $"{period.Label} compared with the 7 days before";
+
+        // Query Store off, or a custom period: nothing to compare (the verdict says which).
+        if (!status.IsAvailable || period.IsCustom)
+        {
+            ViewModel.Show(status, null, comparison, criteria);
+            return;
+        }
+
+        try
+        {
+            var stats = await _repo.GetQueryStoreRegressionStatsAsync(new RegressionWindows(period.Length, RegressionBaselineKind.PreviousWeek));
+            var found = stats.IsAvailable ? await Task.Run(() => QueryRegressionDetector.Detect(stats.Stats, criteria)) : null;
+            if (version == _verdictVersion)
+                ViewModel.Show(status, found, comparison, criteria,
+                               stats.IsAvailable ? null : $"Query Store's runtime statistics for {stats.DatabaseName} can't be read: it is {stats.State.Replace('_', ' ').ToLowerInvariant()}.");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("QueryStore: the regression check for the verdict failed", ex);
+            if (version == _verdictVersion)
+                ViewModel.ShowError("the regression check", ex);
+        }
+    }
+
     public QueryStorePage(IWaitStatsRepository repo, ConnectionSettingsService settings)
     {
         _repo     = repo;
@@ -150,6 +195,11 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         CmbVariationMetric.SelectedIndex = 0;
 
         FillMetricChoices(sql2017Metrics: false);
+
+        ViewModel = new QueryStoreViewModel(openQuery: OpenQueryDetails, openRegressions: OpenRegressions);
+        ViewModel.Attach(Shell);
+        Shell.Folds = settings;
+
         _ready = true;
     }
 
@@ -159,9 +209,19 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
     public async Task RefreshAsync()
     {
         NoteDataTo();
-        var status = await _repo.GetQueryStoreStatusAsync();
+        QueryStoreStatus status;
+        try
+        {
+            status = await _repo.GetQueryStoreStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("Query Store's settings", ex);
+            throw;
+        }
         _status = status;
         ShowStatus(status);
+        LoadVerdict();
 
         // Opened on one query: its details, once (#145).
         if (_query is { } query && !_queryOpened)
@@ -258,7 +318,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
 
     private void ShowStatus(QueryStoreStatus status)
     {
-        TxtTitle.Text = status.DatabaseName.Length == 0 ? "Query Store" : $"Query Store — {status.DatabaseName}";
+        Shell.Title = status.DatabaseName.Length == 0 ? "Query Store" : $"Query Store — {status.DatabaseName}";
         FillMetricChoices(status.Features.Sql2017Metrics);
 
         HealthPanel.Children.Clear();
@@ -267,6 +327,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         {
             AddCard("Query Store", "Not supported", "#94A3B8", "Query Store came with SQL Server 2016.");
             ChecksList.ItemsSource = null;
+            HealthSection.FoldedSummary = "Not supported: Query Store came with SQL Server 2016";
             TxtDataFrom.Text = string.Empty;
             return;
         }
@@ -298,6 +359,12 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
                 "The worst of the settings checks listed below the cards.");
 
         ChecksList.ItemsSource = checks;
+
+        // Folded, the section says it in one line (#146): "READ_WRITE · 41 % of storage · 2 warnings".
+        var warnings = checks.Count(c => c.Level == QueryStoreCheckLevel.Warning);
+        HealthSection.FoldedSummary = string.Format(CultureInfo.CurrentCulture, "{0} · {1:N1} % of storage · {2}",
+            h.ActualState, h.StorageUsedPct,
+            warnings switch { 0 => "settings OK", 1 => "1 settings warning", var n => $"{n} settings warnings" });
         ShowDataFrom();
     }
 
@@ -357,7 +424,9 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
             ClipboardHelper.SetText(fix);
     }
 
-    private async void BtnRegressions_Click(object sender, RoutedEventArgs e)
+    private void BtnRegressions_Click(object sender, RoutedEventArgs e) => OpenRegressions();
+
+    private async void OpenRegressions()
     {
         if (Window.GetWindow(this) is MainWindow main)
             await main.OpenPageAsync("QueryRegressions");
@@ -418,6 +487,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         _period = period;
         NoteDataTo();
         ShowDataFrom();
+        LoadVerdict();
         foreach (var state in _tabs.Values)
             state.IsCurrent = false;
         await LoadSelectedTabAsync();
@@ -655,6 +725,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         ShowCustomPeriod(slot);
         _period = slot;
         ShowDataFrom();
+        LoadVerdict();
         foreach (var state in _tabs.Values)
             state.IsCurrent = false;
 
