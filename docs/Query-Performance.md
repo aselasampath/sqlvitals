@@ -134,6 +134,8 @@ On SQL Server 2022+ and Azure SQL a second grid lists the **Query Store hints**:
 
 ### Query details
 
+**Click a row** on any tab to see the query in the [details drawer](Working-with-Grids.md#details-beside-the-grid) beside the grid (from 0.63.0): its figures from that tab (executions, plans, failures, duration, CPU, reads, forced plan, last executed; or its variation, waits or forcing), its text with **Copy**, and each plan that ran in the period with its runs, average duration and CPU and **Open in window**. **Query details in a window** opens the window below. It keeps the query while you sort, reload or change tab, so you can compare.
+
 Double-click a row on any tab, or enter a **Query ID**, to open a window for one query (several can be open at once):
 
 - the full query text with **Copy**, the object and the query ID;

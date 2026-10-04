@@ -39,6 +39,13 @@ Plans from the plan cache and Query Store are *estimated* plans, so they don't h
 
 The diagram follows the light and dark themes, including a switch while the window is open.
 
+## From the details drawer
+
+From 0.63.0 a plan can also be opened from the [details drawer](Working-with-Grids.md#details-beside-the-grid):
+
+- **Processes:** select a session, then **Show the plan**: the plan of what it is running now, or, for a session between requests (a sleeping head blocker), the cached plan of its last statement. It is drawn in the drawer; **Open in window** opens this window with it, to keep beside the grid or on a second monitor.
+- **Query Store:** select a query; under **Plans** each plan that ran in the period has **Open in window**.
+
 ## When there's no diagram
 
 - *"No execution plan available — the plan may have been evicted from cache."*: SQL Server has already evicted the plan, or the query has no cached plan. Run it again, or look for it in [Query Store](Query-Performance.md).

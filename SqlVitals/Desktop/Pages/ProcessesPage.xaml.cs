@@ -1,15 +1,51 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPage
+public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPage, IDetailsSource
 {
+    // ── The details drawer (#147): the selected session ───────────────────
+    private const string SelectHint = "Select a session on the map or in the grid to see its details.";
+
+    private SessionDetailsView? _sessionView;
+
+    public DrawerContent Details { get; private set; } = new("Session details", null, SelectHint);
+
+    public event Action<bool>? DetailsChanged;
+
+    // The selected session, as the latest snapshot has it; the same view while it stays selected,
+    // so a refresh keeps its plan and script open.
+    private void ShowSession(int sessionId, ProcessNode? node, bool open)
+    {
+        if (node is null)
+        {
+            Details = new($"Session {sessionId}", null,
+                          $"Session {sessionId} has gone since it was selected: it ended or disconnected. Select another session.");
+        }
+        else
+        {
+            _sessionView ??= new SessionDetailsView(_repo.GetSessionPlanAsync, OpenActiveWaits);
+            _sessionView.Show(node, ProcessMap.Snapshot);
+            Details = new($"Session {sessionId}", _sessionView, SelectHint);
+        }
+        DetailsChanged?.Invoke(open);
+    }
+
+    // Active Waits filtered to the session and the sessions it blocks (#145).
+    private async void OpenActiveWaits(int sessionId)
+    {
+        if (Window.GetWindow(this) is MainWindow main)
+            await main.OpenLinkAsync("ActiveWaits", new FocusFilter(FocusKind.Session, sessionId), "Processes");
+    }
+
     // ── A blocking alert's evidence (#145): one chain, until Show all ─────
     public void ShowFocus(PageFocus focus)
     {
@@ -81,11 +117,7 @@ public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPag
         if (store.ProcessesView == ProcessesView.Grid) BtnGrid.IsChecked = true;
         ProcessMap.GroupByLoginChanged += (_, _) => SaveViewChoice();
         ProcessMap.FocusChanged        += (_, _) => MainWindow.ReportContextChanged(this);
-        ProcessMap.SessionRequested    += async id =>
-        {
-            if (Window.GetWindow(this) is MainWindow main)
-                await main.OpenLinkAsync("ActiveWaits", new FocusFilter(FocusKind.Session, id), "Processes");
-        };
+        ProcessMap.SessionSelected     += ShowSession;
 
         // Wire timer (ticks every second for the countdown display)
         _timer.Interval = TimeSpan.FromSeconds(1);

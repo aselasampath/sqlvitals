@@ -24,9 +24,6 @@ namespace SqlVitals.Desktop.Controls
         private const double ZoomStep = 0.1;
         private const double ZoomMin  = 0.2;
         private const double ZoomMax  = 3.0;
-        private bool  _isDragging;
-        private Point _dragStart;
-        private Point _panelStart;
 
         // ── Grid view (#116) ──────────────────────────────────────────────
         private bool _showGrid;
@@ -49,13 +46,31 @@ namespace SqlVitals.Desktop.Controls
         private bool _chainFocus;
         private int? _focusHead;
         private bool _hasSnapshot;
-        private int? _detailsSession;
+
+        // The session whose details the drawer shows (#147), kept across refreshes; null for none.
+        private int? _selected;
 
         /// <summary>The chain shown changed, or the snapshot did: the page's banner says what is shown.</summary>
         public event EventHandler? FocusChanged;
 
-        /// <summary>Active waits for a session, from its Session Details (#145).</summary>
-        public event Action<int>? SessionRequested;
+        /// <summary>
+        /// The selected session, for the details drawer (#147): the session as the latest snapshot
+        /// has it, or null when it has gone since. <c>true</c> when the user clicked it.
+        /// </summary>
+        public event Action<int, ProcessNode?, bool>? SessionSelected;
+
+        /// <summary>The session selected on the map or in the grid; null for none.</summary>
+        public int? SelectedSession => _selected;
+
+        // Selects a session for the drawer, and rings it on the map.
+        private void Select(ProcessNode node, bool open)
+        {
+            var changed = _selected != node.SessionId;
+            _selected = node.SessionId;
+            if (changed && !_showGrid)
+                MarkSelected();
+            SessionSelected?.Invoke(node.SessionId, node, open);
+        }
 
         /// <summary>
         /// Shows only one blocking chain: the one <paramref name="head"/> heads, or with null the
@@ -137,6 +152,10 @@ namespace SqlVitals.Desktop.Controls
             Render();
             if (_chainFocus)
                 FocusChanged?.Invoke(this, EventArgs.Empty);
+
+            // The selected session as it is now, or gone.
+            if (_selected is { } id)
+                SessionSelected?.Invoke(id, _allNodes.FirstOrDefault(n => n.SessionId == id), false);
         }
 
         /// <summary>The grid rather than the map (#116). Both show the same snapshot: switching doesn't query the server.</summary>
@@ -153,7 +172,6 @@ namespace SqlVitals.Desktop.Controls
                 GridFilters.Visibility         = value ? Visibility.Visible   : Visibility.Collapsed;
                 ProcessScrollViewer.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
                 ZoomControls.Visibility        = value ? Visibility.Collapsed : Visibility.Visible;
-                ProcDetailsPopup.Visibility    = Visibility.Collapsed;
 
                 if (value ? _gridStale : _mapStale) Render();
             }
@@ -250,8 +268,7 @@ namespace SqlVitals.Desktop.Controls
             if (!_balls.TryGetValue(sessionId, out var ball) || ball.Tag is not ProcessNode node) return;
 
             ball.BringIntoView();
-            ProcessScrollViewer.UpdateLayout();
-            ShowDetails(node, ball.TranslatePoint(new Point(BallDiam, 0), OverlayCanvas));
+            Select(node, open: true);
         }
 
         private void RenderProcessCanvas(IReadOnlyList<ProcessNode> visible)
@@ -501,31 +518,31 @@ namespace SqlVitals.Desktop.Controls
                 header.IsExpanded = expanded;
         }
 
+        // A row selected, by the mouse or the keyboard: the drawer follows (#147). A click opens it,
+        // in ProcessGrid_MouseLeftButtonUp.
         private void ProcessGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_restoringSelection || ProcessGrid.SelectedItem is not ProcessGridRow row) return;
-            ShowRowDetails(row);
-        }
-
-        // Session Details at the right, under the row, clamped to stay on screen like the map's.
-        private void ShowRowDetails(ProcessGridRow row)
-        {
-            double y = 40;
-            if (ProcessGrid.ItemContainerGenerator.ContainerFromItem(row) is DataGridRow container && container.IsVisible)
-                y = container.TranslatePoint(new Point(0, container.ActualHeight), OverlayCanvas).Y;
-            ShowDetails(row.Node, new Point(OverlayCanvas.ActualWidth, y + 30));
+            Select(row.Node, open: false);
         }
 
         // A click on an underlined Blocked by or Head of chain SPID goes to that session's row.
         private void ProcessGrid_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.OriginalSource is not TextBlock { DataContext: ProcessGridRow row } text) return;
-            var cell = FindAncestor<DataGridCell>(text);
+            if (e.OriginalSource is not DependencyObject source
+                || ItemsControl.ContainerFromElement(ProcessGrid, source) is not DataGridRow { Item: ProcessGridRow row }) return;
+            var cell = FindAncestor<DataGridCell>(source);
             int? target =
                 cell?.Column == BlockedByColumn && row.BlockedByIsLink ? row.BlockedBy
               : cell?.Column == HeadColumn && row.HeadIsLink           ? row.HeadOfChain
               : null;
-            if (target is not { } id) return;
+            if (target is not { } id)
+            {
+                // Any other click on a row: its details, opening the drawer (#147).
+                if (cell is not null)
+                    Select(row.Node, open: true);
+                return;
+            }
 
             // After the click has selected the row it was on, so the jump is what stays selected.
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () => GoToRow(id));
@@ -558,10 +575,9 @@ namespace SqlVitals.Desktop.Controls
             row.Group.IsExpanded = true;
             ProcessGrid.UpdateLayout();
             ProcessGrid.SelectedItems.Clear();
-            ProcessGrid.SelectedItem = row;   // opens Session Details
+            ProcessGrid.SelectedItem = row;   // the drawer follows
             ProcessGrid.ScrollIntoView(row);
-            ProcessGrid.UpdateLayout();
-            ShowRowDetails(row);              // again, now the row is on screen to put it under
+            Select(row.Node, open: true);
         }
 
         private ProcessGridRow? FindRow(int sessionId) =>
@@ -603,6 +619,8 @@ namespace SqlVitals.Desktop.Controls
             ball.Cursor  = Cursors.Hand;
             ball.Tag     = node;
             ball.MouseLeftButtonDown += ProcBall_MouseLeftButtonDown;
+            if (node.SessionId == _selected)
+                StyleBall(ball, node, selected: true);
             ProcessCanvas.Children.Add(ball);
             _balls[node.SessionId] = ball;
 
@@ -756,107 +774,29 @@ namespace SqlVitals.Desktop.Controls
         {
             if (sender is not Ellipse ball || ball.Tag is not ProcessNode node) return;
 
-            ShowDetails(node, e.GetPosition(OverlayCanvas));
+            Select(node, open: true);
             e.Handled = true;
         }
 
-        private void ShowDetails(ProcessNode node, Point near)
+        // The selected session's ball gets an accent ring; the others their state's.
+        private void MarkSelected()
         {
-            var sb = new System.Text.StringBuilder();
-            void Add(string label, object? value) => sb.AppendLine($"{label,-16} : {value}");
-
-            int head     = BlockingChains.HeadOf(_allNodes, node.SessionId);
-            int blocking = _allNodes.Count(n => n.ParentId == node.SessionId && n.SessionId != node.SessionId);
-
-            Add("spid",         node.SessionId);
-            Add("blocked",      node.ParentId);
-            if (node.ParentId != 0)
-                Add("blocked_by", BlockingChains.DescribeBlocker(node.ParentId));
-            if (head != node.SessionId || blocking > 0)
-                Add("head_blocker", head);
-            if (blocking > 0)
-                Add("blocking",   $"{blocking} session(s) directly");
-            Add("status",       node.Status);
-            Add("waittime",     node.WaitTimeMs);
-            Add("waittype",     node.WaitType ?? "");
-            Add("lastwaittype", node.LastWaitType ?? "");
-            Add("waitresource", node.WaitResource ?? "");
-            Add("database",     node.DatabaseName ?? "");
-            Add("cpu",          node.CpuTime);
-            Add("physical_io",  node.PhysicalIo);
-            Add("memusage",     node.MemoryUsage);
-            Add("login_time",   node.LoginTime);
-            Add("last_batch",   node.LastBatch);
-            Add("open_tran",    node.OpenTran);
-            Add("program_name", node.ProgramName ?? "");
-            Add("host_name",    node.HostName ?? "");
-            Add("loginname",    node.UserName ?? "");
-            Add("cmd",          node.Command ?? "");
-
-            _detailsSession             = node.SessionId;
-            TxtProcDetailsContent.Text  = sb.ToString();
-            TxtProcInfoBuffer.Text       = node.CommandText ?? "";
-            ProcDetailsPopup.Visibility  = Visibility.Visible;
-            ProcDetailsPopup.UpdateLayout();
-
-            // Position panel near the ball, clamped so it stays fully visible
-            double panelW = ProcDetailsPopup.ActualWidth  > 0 ? ProcDetailsPopup.ActualWidth  : 380;
-            double panelH = ProcDetailsPopup.ActualHeight > 0 ? ProcDetailsPopup.ActualHeight : 420;
-            double left   = Math.Min(near.X + 20, OverlayCanvas.ActualWidth  - panelW - 10);
-            double top    = Math.Min(near.Y - 30, OverlayCanvas.ActualHeight - panelH - 10);
-            Canvas.SetLeft(ProcDetailsPopup, Math.Max(10, left));
-            Canvas.SetTop(ProcDetailsPopup,  Math.Max(10, top));
+            foreach (var (id, ball) in _balls)
+                if (ball.Tag is ProcessNode node)
+                    StyleBall(ball, node, id == _selected);
         }
 
-        private void BtnCloseProcDetails_Click(object sender, RoutedEventArgs e) =>
-            ProcDetailsPopup.Visibility = Visibility.Collapsed;
-
-        // The session's waits on Active Waits, filtered to it and the sessions it blocks (#145).
-        private void BtnActiveWaits_Click(object sender, RoutedEventArgs e)
+        private void StyleBall(Ellipse ball, ProcessNode node, bool selected)
         {
-            if (_detailsSession is { } id)
-                SessionRequested?.Invoke(id);
-        }
-
-        private void BtnCopySql_Click(object sender, RoutedEventArgs e)
-        {
-            if (!string.IsNullOrEmpty(TxtProcInfoBuffer.Text))
-                ClipboardHelper.SetText(TxtProcInfoBuffer.Text);
-        }
-
-        private void ProcDetailsDrag_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            _isDragging = true;
-            _dragStart  = e.GetPosition(OverlayCanvas);
-            _panelStart = new Point(Canvas.GetLeft(ProcDetailsPopup), Canvas.GetTop(ProcDetailsPopup));
-            ((UIElement)sender).CaptureMouse();
-            e.Handled = true;
-        }
-
-        private void ProcDetailsDrag_MouseMove(object sender, MouseEventArgs e)
-        {
-            if (!_isDragging) return;
-            var pos      = e.GetPosition(OverlayCanvas);
-            double left  = _panelStart.X + (pos.X - _dragStart.X);
-            double top   = _panelStart.Y + (pos.Y - _dragStart.Y);
-            left = Math.Max(0, Math.Min(OverlayCanvas.ActualWidth  - ProcDetailsPopup.ActualWidth,  left));
-            top  = Math.Max(0, Math.Min(OverlayCanvas.ActualHeight - ProcDetailsPopup.ActualHeight, top));
-            Canvas.SetLeft(ProcDetailsPopup, left);
-            Canvas.SetTop(ProcDetailsPopup,  top);
-        }
-
-        private void ProcDetailsDrag_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            _isDragging = false;
-            ((UIElement)sender).ReleaseMouseCapture();
-        }
-
-        private void TxtProcInfoBuffer_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control)
+            if (selected)
             {
-                TxtProcInfoBuffer.SelectAll();
-                e.Handled = true;
+                ball.SetResourceReference(Shape.StrokeProperty, "Accent");
+                ball.StrokeThickness = 4;
+            }
+            else
+            {
+                ball.Stroke = new SolidColorBrush(ProcessBallStyle(node.VisualState).Item2);
+                ball.StrokeThickness = node.VisualState == "HeadBlocker" ? 2.5 : 1.5;
             }
         }
 

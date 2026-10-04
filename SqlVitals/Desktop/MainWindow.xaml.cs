@@ -126,6 +126,12 @@ public partial class MainWindow : Window
         SettingsService = new ConnectionSettingsService();
         _overviewVisits = new OverviewVisits(SettingsService);
         var store  = SettingsService.Load();
+
+        // The details drawer (#147): pinned or floating and its width as last left; closed at start.
+        Details.Layout = new DrawerLayout(store.DrawerPinned, store.DrawerWidth);
+        Details.PreferencesChanged += SaveDrawer;
+        Details.StateChanged       += () => Bar.ShowDetailsOpen(Details.State != DrawerState.Closed);
+        Bar.DetailsRequested       += Details.Toggle;
         var active = store.Active;
         BuildSidebar(store);
         Repo = BuildRepository(active, store.CommandTimeoutSeconds);
@@ -243,6 +249,39 @@ public partial class MainWindow : Window
 
     private void ShowSidebarState() =>
         Bar.ShowSidebar(Shell.Shown, Shell.IsSlidOver, Monitoring.ActiveAlerts.Count);
+
+    // Layout preferences: saved, but not in the activity log.
+    private void SaveDrawer(bool pinned, double width)
+    {
+        try { SettingsService.SetDrawer(pinned, width); }
+        catch (Exception ex) { AppLog.Error("Details drawer: could not save whether it is pinned, or its width", ex); }
+    }
+
+    // ── The details drawer (#147) ─────────────────────────────────────────────
+
+    // The page filling the drawer, while it is the page on screen.
+    private IDetailsSource? _detailsSource;
+
+    // A new page: the drawer shows its details, or says it has none; it stays open or closed.
+    private void ShowDetailsOf(object page)
+    {
+        if (_detailsSource is not null)
+            _detailsSource.DetailsChanged -= OnDetailsChanged;
+        _detailsSource = page as IDetailsSource;
+        if (_detailsSource is not null)
+            _detailsSource.DetailsChanged += OnDetailsChanged;
+        Details.Show(_detailsSource?.Details ?? DrawerContent.None);
+    }
+
+    // The page's selection changed; a click on a row opens a closed drawer.
+    private void OnDetailsChanged(bool open)
+    {
+        if (_detailsSource is null)
+            return;
+        Details.Show(_detailsSource.Details);
+        if (open)
+            Details.Open();
+    }
 
     // A layout preference: saved, but not in the activity log (see SettingsActivity).
     private void SaveSidebarMode(SidebarMode mode)
@@ -1022,6 +1061,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Ctrl+J opens or closes the details drawer (#147).
+        if (e.Key == Key.J && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            Details.Toggle();
+            return;
+        }
+
         bool? back = e.Key switch
         {
             Key.BrowserBack    => true,
@@ -1034,6 +1081,14 @@ public partial class MainWindow : Window
             return;
         e.Handled = true;
         await GoAsync(back.Value);
+    }
+
+    // Esc closes a floating details drawer (#147), once nothing in the page has used it: a filter
+    // box clearing its text, a grid cancelling an edit, a pop-up closing come first.
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None && !Switcher.IsOpen && Details.Escape())
+            e.Handled = true;
     }
 
     // The mouse's back and forward buttons.
@@ -1148,6 +1203,7 @@ public partial class MainWindow : Window
             _page      = settings;
             _updatedAt = null;
             ShowFocusBanner();
+            ShowDetailsOf(settings);
             Bar.ShowPage(tools: null, Freshness(settings), canPause: false, database: null);
             Bar.CanRefresh = false;
             if (!_isConnectionConfigured)
@@ -1211,6 +1267,7 @@ public partial class MainWindow : Window
         _page       = page as Page;
         _pageLoaded = false;
         _updatedAt  = null;
+        ShowDetailsOf(page);
         Bar.ShowPage(tools, Freshness(context), context.CanPause, DatabaseOf(context));
         ShowFocusBanner();
 

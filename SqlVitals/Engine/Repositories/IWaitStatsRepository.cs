@@ -44,6 +44,9 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
     // ── Process map ─────────────────────────────────────────────────
     Task<IEnumerable<ProcessNode>> GetProcessesAsync();
 
+    /// <summary>The plan a session is running, or its last statement's cached plan (#147).</summary>
+    Task<SessionPlan> GetSessionPlanAsync(int sessionId);
+
     // ── Live metrics dashboard ───────────────────────────────────────
     Task<LiveMetricSnapshot> GetLiveMetricsAsync();
 

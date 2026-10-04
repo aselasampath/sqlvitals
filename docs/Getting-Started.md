@@ -129,9 +129,10 @@ From 0.60.0, press **Ctrl+K** anywhere, or click **🔍** at the right of the to
 |---|---|
 | **Ctrl+K** | Jump to a server, screen or setting (from 0.60.0); again to close |
 | **Ctrl+B** | Pin, collapse or hide the sidebar (from 0.58.0) |
+| **Ctrl+J** | Open or close the [details drawer](Working-with-Grids.md#details-beside-the-grid): the selected row's details beside the grid (from 0.63.0) |
 | **F5** | Refresh the screen |
 | **Alt+←** / **Alt+→** | Back and Forward; the mouse's back and forward buttons too |
-| **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, or the sidebar slid in over the screen |
+| **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, the sidebar slid in over the screen, or a floating details drawer |
 
 ### Verdict first, then the detail
 

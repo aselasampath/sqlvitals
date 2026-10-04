@@ -1175,9 +1175,16 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 ISNULL(r.open_transaction_count, s.open_transaction_count) AS OpenTran,
                 r.command AS Command,
                 DB_NAME(ISNULL(r.database_id, s.database_id)) AS DatabaseName,
-                ISNULL(qt.text, '') AS QueryText
+                ISNULL(qt.text, '') AS QueryText,
+                tx.TransactionBegin,
+                SYSDATETIME() AS ServerNow
             FROM sys.dm_exec_sessions s
             LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
+            -- When its oldest open transaction began, for the details drawer's transaction age (#147).
+            OUTER APPLY (SELECT MIN(at.transaction_begin_time) AS TransactionBegin
+                         FROM sys.dm_tran_session_transactions st
+                         JOIN sys.dm_tran_active_transactions at ON at.transaction_id = st.transaction_id
+                         WHERE st.session_id = s.session_id) tx
             OUTER APPLY (SELECT TOP (1) c.most_recent_sql_handle
                          FROM sys.dm_exec_connections c
                          WHERE c.session_id = s.session_id
@@ -1212,8 +1219,38 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             (int)(r.OpenTran ?? 0),
             (string?)r.Command,
             (string?)r.QueryText,
-            ""   // set by Classify
+            "",  // set by Classify
+            (DateTime?)r.TransactionBegin,
+            (DateTime?)r.ServerNow
         )));
+    }
+
+    // The plan of what a session is running; for a session between requests (a sleeping head
+    // blocker), the cached plan of its last statement, the newest one when there are several (#147).
+    internal const string SessionPlanSql = """
+        SELECT TOP (1) CAST(qp.query_plan AS NVARCHAR(MAX)) AS QueryPlan, x.IsRunning
+        FROM (
+            SELECT r.plan_handle, CAST(1 AS BIT) AS IsRunning, 0 AS Ord
+            FROM sys.dm_exec_requests r
+            WHERE r.session_id = @SessionId AND r.plan_handle IS NOT NULL
+            UNION ALL
+            SELECT last.plan_handle, CAST(0 AS BIT), 1
+            FROM (SELECT TOP (1) qs.plan_handle
+                  FROM sys.dm_exec_connections c
+                  JOIN sys.dm_exec_query_stats qs ON qs.sql_handle = c.most_recent_sql_handle
+                  WHERE c.session_id = @SessionId
+                  ORDER BY qs.last_execution_time DESC) last
+        ) x
+        CROSS APPLY sys.dm_exec_query_plan(x.plan_handle) qp
+        WHERE qp.query_plan IS NOT NULL
+        ORDER BY x.Ord;
+        """;
+
+    public async Task<SessionPlan> GetSessionPlanAsync(int sessionId)
+    {
+        using var conn = CreateConnection();
+        var row = await QFirst(conn, SessionPlanSql, new { SessionId = sessionId });
+        return row is null ? new SessionPlan(null, false) : new SessionPlan((string?)row.QueryPlan, (bool)row.IsRunning);
     }
 
     // ── 21. Live metrics dashboard (perf counters + ring buffers) ────

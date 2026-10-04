@@ -182,6 +182,11 @@
                     <Button x:Name="BtnRefresh" Style="{StaticResource BarIconButton}" Content="&#xE72C;" Margin="2,0,0,0"
                             Click="BtnRefresh_Click" IsEnabled="False"
                             ToolTip="Refresh (F5)" AutomationProperties.Name="Refresh" />
+                    <!-- The details drawer (#147): the selected row's details beside the grid -->
+                    <Button x:Name="BtnDetails" Style="{StaticResource BarIconButton}" Content="&#xE8A0;" Margin="2,0,0,0"
+                            Click="BtnDetails_Click" ToolTip="Show the selected row's details (Ctrl+J)"
+                            AutomationProperties.Name="Show details"
+                            AutomationProperties.AcceleratorKey="Ctrl+J" />
                     <Button x:Name="BtnAskAi" Style="{StaticResource BarIconButton}" Content="&#xE8BD;" Margin="2,0,0,0"
                             IsEnabled="False" ToolTip="Ask AI about this page: coming with the assistant"
                             AutomationProperties.Name="Ask AI" />

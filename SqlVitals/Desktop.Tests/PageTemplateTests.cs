@@ -21,6 +21,7 @@ namespace SqlVitals.Desktop.Tests;
 /// The page template (#146): the verdict first, summary sections that fold and stay folded, and the
 /// three pilot pages on it, rendered whole (to %TEMP%\SqlVitalsTests\page-template).
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class PageTemplateTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
