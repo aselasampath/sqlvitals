@@ -26,6 +26,26 @@
                     </StackPanel>
                 </DockPanel>
             </Border>
+
+            <!-- Grid density (#148): every grid, at once -->
+            <Border Style="{StaticResource SettingsCard}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <RadioButton x:Name="RbComfortable" Content="Comfortable" GroupName="GridDensity" Margin="0,0,16,0"
+                                     Checked="Density_Checked" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextPrimary}"
+                                     ToolTip="Rows with room around the text: the look grids have always had" />
+                        <RadioButton x:Name="RbCompact" Content="Compact" GroupName="GridDensity"
+                                     Checked="Density_Checked" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextPrimary}"
+                                     ToolTip="Tighter rows with the same text: more rows on a small or shared screen" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Grid density" Style="{StaticResource RowLabel}" />
+                        <TextBlock x:Name="TxtDensity" Style="{StaticResource RowHelp}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

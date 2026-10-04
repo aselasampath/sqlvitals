@@ -36,6 +36,7 @@ internal static class SettingsActivity
             new("Processes view", store.ProcessesView.ToString()),
             new("Processes group by login", OnOff(store.ProcessesGroupByLogin)),
             new("Query Store charts", string.Join(", ", store.QueryStoreChartMetrics)),
+            new("Grid density", store.GridDensity.ToString()),
             // Not the page last open (#141), or the sidebar pinned, collapsed or hidden (#142): layout
             // preferences, which would flood the log.
         };

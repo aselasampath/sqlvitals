@@ -83,6 +83,18 @@ public partial class TopBar : UserControl
 
     private void BtnJump_Click(object sender, RoutedEventArgs e) => JumpRequested?.Invoke();
 
+    /// <summary>Focus, or Exit focus: focus mode on or off (#148), as F11 does.</summary>
+    public event Action? FocusRequested;
+
+    private void BtnFocus_Click(object sender, RoutedEventArgs e) => FocusRequested?.Invoke();
+
+    /// <summary>In focus mode the Focus button gives way to Exit focus (Esc).</summary>
+    public void ShowFocus(bool on)
+    {
+        BtnFocus.Visibility     = on ? Visibility.Collapsed : Visibility.Visible;
+        BtnExitFocus.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>The details button: opens or closes the details drawer (#147), as Ctrl+J does.</summary>
     public event Action? DetailsRequested;
 

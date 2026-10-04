@@ -160,8 +160,23 @@ public sealed class WorkspaceShell : Grid
     /// <summary>The saved state at start-up, at the window's width.</summary>
     public void Restore(SidebarMode saved, double windowWidth)
     {
-        _layout = new SidebarLayout(saved, windowWidth);
+        _layout = new SidebarLayout(saved, windowWidth) { InFocus = _layout.InFocus };
         ApplyMode();
+    }
+
+    /// <summary>
+    /// Focus mode (#148): hidden, whatever was chosen; off, the chosen state again. Not saved.
+    /// </summary>
+    public bool InFocus
+    {
+        get => _layout.InFocus;
+        set
+        {
+            if (_layout.InFocus == value)
+                return;
+            _layout.InFocus = value;
+            ApplyMode();
+        }
     }
 
     /// <summary>The window was resized: below 1280 px a pinned sidebar shows collapsed.</summary>
@@ -171,8 +186,17 @@ public sealed class WorkspaceShell : Grid
             ApplyMode();
     }
 
-    /// <summary>Ctrl+B: Pinned → Collapsed → Hidden → Pinned.</summary>
-    public void Cycle() => Choose(SidebarLayout.Next(Shown));
+    /// <summary>Ctrl+B: Pinned → Collapsed → Hidden → Pinned. In focus mode it slides the menu in over the page, and out.</summary>
+    public void Cycle()
+    {
+        if (InFocus)
+        {
+            if (IsSlidOver) CloseSlideOver(returnFocus: true);
+            else            SlideIn(byHover: false, focus: true);
+            return;
+        }
+        Choose(SidebarLayout.Next(Shown));
+    }
 
     /// <summary>
     /// The top bar's ☰: the same as Ctrl+B, except that a hidden sidebar slides in over the page
