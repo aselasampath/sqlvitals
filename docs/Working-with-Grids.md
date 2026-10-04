@@ -2,6 +2,20 @@
 
 Most SqlVitals screens show results in grids (tables). They all work the same way.
 
+## Details beside the grid
+
+From 0.63.0 a row's details open in a **details drawer** at the right of the screen instead of a window or a panel over the grid, so you can go down a grid row by row and keep your place. **Processes** (a session) and **Query Store** (a query, from any tab) fill it; on other screens it says there is nothing to show yet.
+
+- **Click a row** (or a node on the Processes map) to open it with that row's details. Moving the selection with the keyboard updates an open drawer without opening a closed one. With nothing selected it says what to select.
+- **Ctrl+J**, or the **details button** in the top bar, opens and closes it.
+- It **floats** over the right of the grid, or is **pinned** beside it, which makes the grid narrower so nothing is hidden. The pin button at its top right switches between the two; **Esc** closes a floating drawer.
+- **Drag its left edge** to make it 320 to 640 pixels wide.
+- It opens pinned or floating, at the width you left it, the next time; whether it was open isn't kept.
+- What it shows stays while you refresh, sort or filter the grid, and while you move to another tab of the same screen, until you select another row.
+- A plan or a script in it opens in its own window with **Open in window**, for a second monitor.
+
+![Processes with the drawer pinned beside the map: session 87's status, what it blocks, how long its transaction has been open, its last statement, its plan and its KILL script](images/details-drawer/processes-pinned.png)
+
 ## Sort
 
 Click a column header to sort, and click again to reverse. **Refresh keeps your sort**, so you can sort by *Avg CPU*, press Refresh, and still see the worst query at the top. From 0.55.0 it is also kept when you leave the page and come back to it (see [below](#coming-back-to-a-page)).

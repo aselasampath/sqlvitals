@@ -11,6 +11,7 @@ using LiveChartsCore.Kernel.Sketches;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels;
@@ -27,8 +28,50 @@ namespace SqlVitals.Desktop.Pages;
 /// SSMS's Query Store reports on five tabs. Opening the page reads the settings and the tab on
 /// screen; another tab is read the first time it's opened, and again after Refresh or a new period.
 /// </summary>
-public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPage
+public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPage, IDetailsSource
 {
+    // ── The details drawer (#147): the selected query ─────────────────────────
+    // A row selected in any tab: its figures there, its text and its plans in the period. It stays
+    // until another row is selected, so a reload or another tab doesn't lose it.
+    private const string SelectQueryHint = "Select a query in any tab to see its text, its figures and its plans.";
+
+    private QueryDetailsView? _queryView;
+
+    public DrawerContent Details { get; private set; } = new("Query details", null, SelectQueryHint);
+
+    public event Action<bool>? DetailsChanged;
+
+    /// <summary>The drawer's latest read of a query's plans, for tests.</summary>
+    internal Task DetailsLoaded { get; private set; } = Task.CompletedTask;
+
+    private void ShowQuery(object row, bool open)
+    {
+        if (QueryStoreDetails.QueryOf(row) is not { } query)
+            return;
+        _queryView ??= new QueryDetailsView(
+            async queryId => (await _repo.GetQueryStoreQueryDetailsAsync(queryId, _period)).Summaries,
+            (button, planId, queryId, text) => ShowPlanAsync(this, _repo, button, planId, queryId, text),
+            OpenQueryDetails);
+        DetailsLoaded = _queryView.ShowAsync(row, _period.Label);
+        Details = new($"Query {query.QueryId}", _queryView, SelectQueryHint);
+        DetailsChanged?.Invoke(open);
+    }
+
+    // Each tab's grid: a row selected shows it; a click on one also opens the drawer.
+    private void FollowSelection(DataGrid grid)
+    {
+        grid.SelectionChanged += (_, _) =>
+        {
+            if (grid.SelectedItem is { } row)
+                ShowQuery(row, open: false);
+        };
+        grid.AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(grid, source) is DataGridRow { Item: { } row })
+                ShowQuery(row, open: true);
+        }), handledEventsToo: true);
+    }
+
     // ── One query, from a link that carries it (#145) ─────────────────────────
     // Top queries shows only it, and its details open in their own window once the settings are read.
     private long? _query;
@@ -176,6 +219,8 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         InitializeComponent();
 
         _tabs = new[] { TabTop, TabOverTime, TabVariation, TabWaits, TabForced }.ToDictionary(t => t, _ => new TabState());
+        foreach (var grid in new[] { TopGrid, VariationGrid, WaitQueriesGrid, ForcedGrid, HintsGrid })
+            FollowSelection(grid);
 
         foreach (var p in QueryStorePeriod.Presets)
             CmbPeriod.Items.Add(new ComboBoxItem { Content = p.Label, Tag = p });
@@ -868,15 +913,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
     // ── Plans and Query details ───────────────────────────────────────────────
 
     // The plan behind a row: the forced plan, or the one used most in the period.
-    private static (long QueryId, long? PlanId, string QueryText)? RowQuery(object? row) => row switch
-    {
-        QueryStoreQueryRow r     => (r.QueryId, r.TopPlanId, r.QueryText),
-        QueryStoreVariationRow r => (r.QueryId, r.TopPlanId, r.QueryText),
-        QueryStoreWaitQuery r    => (r.QueryId, r.TopPlanId, r.QueryText),
-        QueryStoreForcedPlan r   => (r.QueryId, r.PlanId, r.QueryText),
-        QueryStoreHint r         => (r.QueryId, null, r.QueryText),
-        _                        => null,
-    };
+    private static (long QueryId, long? PlanId, string QueryText)? RowQuery(object? row) => QueryStoreDetails.QueryOf(row);
 
     private async void ViewPlan_Click(object sender, RoutedEventArgs e)
     {

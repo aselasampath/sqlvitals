@@ -75,9 +75,9 @@ This is usually **blocking**.
 
 1. Check the **health dot**. Hover it to see the *Blocking* value.
 2. Open **🔗 Processes**. The line above the map lists each **head blocker** with how many sessions wait behind it. Click the largest one; tick **Blocking chains only** to hide everything else.
-3. In **Session Details**, check `status`, `open_tran`, `program_name`, `host_name` and the query text.
-4. **Sleeping with `open_tran` ≥ 1** = an application opened a transaction and didn't commit. Give the query text and program name to the application team.
-5. If it must be stopped now, a DBA can run `KILL <spid>` in SSMS. The transaction will roll back, which can take a while.
+3. In the **details drawer** at the right (Ctrl+J), check its status and open transactions, **Transaction open** (how long), program, host and the last statement.
+4. **Sleeping with an open transaction** = an application opened a transaction and didn't commit. Give the statement and program name to the application team.
+5. If it must be stopped now, **KILL script (review)** in the drawer gives the statement to copy into SSMS, with what it blocks and what to check first. The transaction will roll back, which can take a while. SqlVitals never runs it.
 6. When the blocked sessions and the head belong to different applications, switch to **Grid**: the group headers show which login holds the head blocker, and clicking **Head of chain** on a blocked row jumps to it.
 
 ## Find which login has the most sessions

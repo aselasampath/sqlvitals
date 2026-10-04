@@ -20,6 +20,7 @@ namespace SqlVitals.Desktop.Tests;
 /// with the top bar and a page, laid out off screen at the default 1320 × 820 on an STA thread.
 /// Each state is also rendered to a PNG under %TEMP%\SqlVitalsTests\sidebar-states, to look at.
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class WorkspaceShellTests
 {
     public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };

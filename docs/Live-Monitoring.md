@@ -73,7 +73,12 @@ The **Map | Grid** switch at the top right shows the same sessions as a [grid gr
    | **Sleeping** | Connected but idle |
 
 4. **Hover a node** for login, host, program, status, open transactions, what blocks it, its wait and the start of its SQL.
-5. **Click a node** to open **Session Details**: status, the session blocking it (`blocked`, `blocked_by`), the **head of its chain** (`head_blocker`) and how many sessions it blocks directly (`blocking`), wait type, wait time and wait resource, database, CPU, I/O, memory, login time, last batch, **open transactions** (`open_tran`), program, host, login and command. Below that is the **input buffer / query text**. **Copy SQL** copies the statement.
+5. **Click a node** to see the session in the [details drawer](Working-with-Grids.md#details-beside-the-grid) at the right (from 0.63.0; before, a Session Details panel over the map). The selected node gets a purple ring. The drawer shows its status and **open transactions**, what it **blocks** (how many sessions, the longest wait) or what **blocks it** (and the head of its chain), its wait type, time and resource, **how long its transaction has been open** (amber when it sleeps with one open for a minute or more), login, host, program, database, command, its last batch (and how long it has been idle), login time, CPU, I/O and memory. Then:
+   - **Last statement**, with **Copy SQL** and **Active waits →** (Active Waits filtered to it and the sessions it blocks);
+   - **Execution plan**: **Show the plan** draws what it runs, or its last statement's cached plan, with **Open in window**;
+   - **KILL script (review)**: **Show the script** gives `KILL 87;` with what it blocks, when its transaction began and that the rollback can take as long as the work did, `DBCC INPUTBUFFER` to check first and `KILL … WITH STATUSONLY` to follow the rollback. **Copy** it, or **Open in window** to save it. SqlVitals never runs it.
+
+   A refresh keeps the drawer on the same session; if the session has gone, it says so.
 6. **Blocking chains only** hides every session that is neither blocking nor blocked. **Search SPID** shows matching sessions with their whole chain, so the head stays on screen. Zoom with **Ctrl + mouse wheel**; **Reset** returns to 100 %.
 
 The **Process Map** chart on Live charts is the same view, smaller.
@@ -110,14 +115,14 @@ Click a header to collapse or expand the group, or use **Expand all** / **Collap
 | **Head of chain** | The head blocker at the top of its chain; empty for a session not in a chain |
 | **Status**, **Host**, **Program**, **Database**, **Command** | What the session is doing and where it comes from |
 | **Wait type**, **Wait (s)**, **Wait resource** | What it's waiting on now, and for how long |
-| **CPU (ms)**, **Physical I/O**, **Memory (pages)**, **Open tran** | As `cpu`, `physical_io`, `memusage` (8-KB pages) and `open_tran` in Session Details |
+| **CPU (ms)**, **Physical I/O**, **Memory (pages)**, **Open tran** | As `cpu`, `physical_io`, `memusage` (8-KB pages) and open transactions in the details drawer |
 | **Login time**, **Last batch** | When the session logged in, and when its last batch ended |
 | **Query text** | The first line of its current or last batch; hover for the whole text |
 
 **Using it**
 
 - **Click a column header** to sort. Rows are sorted inside each group; the groups keep their order.
-- **Select a row** to open the same **Session Details** as clicking a node on the map, with **Copy SQL**.
+- **Click a row** to see the session in the details drawer, as clicking a node on the map does; moving the selection with the arrow keys updates an open drawer.
 - **Follow a chain across logins**: the **Blocked by** and **Head of chain** SPIDs are underlined. Click one to jump to that session's row, even in another login's group, which is expanded for you. A blocked `svc-orders` session whose head is in `report-job` takes you straight to the report job's session.
 - **Ctrl+C** copies the selected rows with their headers (select several with Ctrl or Shift). Right-click for *Copy*, *Copy with headers* and *Export to CSV*.
 

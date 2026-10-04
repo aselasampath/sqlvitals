@@ -83,6 +83,18 @@ public partial class TopBar : UserControl
 
     private void BtnJump_Click(object sender, RoutedEventArgs e) => JumpRequested?.Invoke();
 
+    /// <summary>The details button: opens or closes the details drawer (#147), as Ctrl+J does.</summary>
+    public event Action? DetailsRequested;
+
+    private void BtnDetails_Click(object sender, RoutedEventArgs e) => DetailsRequested?.Invoke();
+
+    /// <summary>Says whether the details button opens or closes the drawer.</summary>
+    public void ShowDetailsOpen(bool open)
+    {
+        BtnDetails.ToolTip = open ? "Hide the details (Ctrl+J)" : "Show the selected row's details (Ctrl+J)";
+        System.Windows.Automation.AutomationProperties.SetName(BtnDetails, open ? "Hide details" : "Show details");
+    }
+
     // ── Back and Forward ─────────────────────────────────────────────────────
 
     /// <summary>The buttons say where they go: "Back to Processes · PROD-SQL01".</summary>

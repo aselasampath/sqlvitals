@@ -6,7 +6,7 @@
         MinHeight="600" MinWidth="900"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BgDeep}"
-        PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseDown="Window_PreviewMouseDown">
+        PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseDown="Window_PreviewMouseDown" KeyDown="Window_KeyDown">
     <!-- The sidebar, pinned, collapsed or hidden (#142), built in WorkspaceShell from Services/NavMenu.cs;
          the page is in its second column. -->
     <controls:WorkspaceShell x:Name="Shell">
@@ -23,9 +23,12 @@
             <controls:TopBar x:Name="Bar" DockPanel.Dock="Top" />
             <!-- A page opened as an alert's evidence (#145): what it shows, and Show all. -->
             <controls:FocusBannerView x:Name="FocusBar" DockPanel.Dock="Top" />
-            <Frame x:Name="MainFrame"
-                   NavigationUIVisibility="Hidden"
-                   Background="{DynamicResource BgDeep}" />
+            <!-- The page, and the selected row's details beside it or over it (#147). -->
+            <controls:DrawerHost x:Name="Details">
+                <Frame x:Name="MainFrame"
+                       NavigationUIVisibility="Hidden"
+                       Background="{DynamicResource BgDeep}" />
+            </controls:DrawerHost>
         </DockPanel>
 
         <!-- Ctrl+K, or the bar's search button (#144): any server, page or setting, over the whole window. -->

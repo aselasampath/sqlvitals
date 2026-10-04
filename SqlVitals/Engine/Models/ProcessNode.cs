@@ -5,6 +5,8 @@ namespace SqlVitals.Engine.Models;
 /// VisualState values: "Active" | "HeadBlocker" | "Blocked" | "Sleeping", set by
 /// <see cref="Monitoring.BlockingChains.Classify"/>.
 /// </summary>
+/// <param name="TransactionBegin">When its oldest open transaction began, on the server's clock; null with none (#147).</param>
+/// <param name="ServerNow">The server's clock when the snapshot was read, to age <paramref name="TransactionBegin"/>.</param>
 public record ProcessNode(
     int     SessionId,
     int     ParentId,          // blocking_session_id: 0 = no blocker, negative = not a session
@@ -25,5 +27,7 @@ public record ProcessNode(
     int     OpenTran,
     string? Command,
     string? CommandText,
-    string  VisualState        // Active | HeadBlocker | Blocked | Sleeping
+    string  VisualState,       // Active | HeadBlocker | Blocked | Sleeping
+    DateTime? TransactionBegin = null,
+    DateTime? ServerNow        = null
 );

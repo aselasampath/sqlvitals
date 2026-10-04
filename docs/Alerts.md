@@ -83,7 +83,7 @@ Its window is **15 minutes before it started to 15 minutes after it ended**.
 
 ### Links that carry their filter
 
-- **Processes** → a session's *Session Details* → **Active waits for this session →** opens Active Waits filtered to that session and the sessions it blocks.
+- **Processes** → a session in the [details drawer](Working-with-Grids.md#details-beside-the-grid) → **Active waits →** opens Active Waits filtered to that session and the sessions it blocks.
 - **Query Regressions** → a query ID (when Query Store is the source) opens **Query Store** on that query: the Top queries tab shows only it, and its details open in their own window.
 
 Both show the same banner, *Opened from Processes · session 87*, with Show all, and Back returns to the page the link was on.

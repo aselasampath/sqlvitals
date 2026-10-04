@@ -259,6 +259,23 @@ public class ConnectionSettingsService : ISectionFolds
     }
 
     /// <summary>
+    /// Saves whether the details drawer opens pinned, and its width (#147). Only written when one
+    /// changed. Layout preferences, so not in the activity log (see <see cref="SettingsActivity"/>).
+    /// </summary>
+    public void SetDrawer(bool pinned, double width)
+    {
+        width = DrawerLayout.Clamp(width);
+        var store = Load();
+        if (store.DrawerPinned == pinned && Math.Abs(store.DrawerWidth - width) < 0.5)
+            return;
+        Update(ActivitySources.Page("Details drawer"), s =>
+        {
+            s.DrawerPinned = pinned;
+            s.DrawerWidth  = width;
+        });
+    }
+
+    /// <summary>
     /// Saves the sidebar's state (#142): pinned, collapsed or hidden. Only written when it changed.
     /// A layout preference, so not in the activity log (see <see cref="SettingsActivity"/>).
     /// </summary>
@@ -377,6 +394,8 @@ public class ConnectionSettingsService : ISectionFolds
                 SidebarMode             = ConnectionStore.ParseSidebarMode(raw.SidebarMode),
                 OverviewOpenedUtc       = raw.OverviewOpenedUtc?.ToDictionary(p => p.Key, p => DateTime.SpecifyKind(p.Value, DateTimeKind.Utc)) ?? [],
                 FoldedSections          = raw.FoldedSections?.Where(k => !string.IsNullOrWhiteSpace(k)).ToHashSet(StringComparer.Ordinal) ?? [],
+                DrawerPinned            = raw.DrawerPinned,
+                DrawerWidth             = DrawerLayout.Clamp(raw.DrawerWidth ?? DrawerLayout.DefaultWidth),
             };
 
             var migrated = false;
@@ -572,6 +591,8 @@ public class ConnectionSettingsService : ISectionFolds
             SidebarMode             = store.SidebarMode.ToString(),
             OverviewOpenedUtc       = store.OverviewOpenedUtc.Count > 0 ? new Dictionary<Guid, DateTime>(store.OverviewOpenedUtc) : null,
             FoldedSections          = store.FoldedSections.Count > 0 ? store.FoldedSections.Order(StringComparer.Ordinal).ToList() : null,
+            DrawerPinned            = store.DrawerPinned,
+            DrawerWidth             = store.DrawerWidth,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -637,6 +658,8 @@ public class ConnectionSettingsService : ISectionFolds
         public string? SidebarMode               { get; set; }
         public Dictionary<Guid, DateTime>? OverviewOpenedUtc { get; set; }
         public List<string>? FoldedSections      { get; set; }
+        public bool    DrawerPinned              { get; set; }
+        public double? DrawerWidth               { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -765,6 +788,12 @@ public class ConnectionStore
 
     /// <summary>The page sections folded to their header (#146), as "Page/section" keys.</summary>
     public HashSet<string> FoldedSections { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>The details drawer opens pinned beside the page rather than floating over it (#147).</summary>
+    public bool DrawerPinned { get; set; }
+
+    /// <summary>The details drawer's width as last dragged (#147), within its limits.</summary>
+    public double DrawerWidth { get; set; } = DrawerLayout.DefaultWidth;
 
     /// <summary>The key a folded section is saved under: "Backups/verdict".</summary>
     public static string FoldKey(string page, string section) => $"{page}/{section}";

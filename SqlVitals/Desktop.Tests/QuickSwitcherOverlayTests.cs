@@ -19,6 +19,7 @@ namespace SqlVitals.Desktop.Tests;
 /// 1320 × 820 on an STA thread: the keyboard stays in the box, ↑ and ↓ move, Enter opens, Esc closes
 /// and gives the focus back. Rendered to PNGs under %TEMP%\SqlVitalsTests\quick-switcher, to look at.
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class QuickSwitcherOverlayTests
 {
     public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };

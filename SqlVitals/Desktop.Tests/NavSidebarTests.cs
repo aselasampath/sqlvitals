@@ -22,6 +22,7 @@ namespace SqlVitals.Desktop.Tests;
 /// reading back the template parts rather than trusting the XAML. Its states are also rendered to
 /// PNGs under %TEMP%\SqlVitalsTests\sidebar, to look at.
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class NavSidebarTests
 {
     public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };
