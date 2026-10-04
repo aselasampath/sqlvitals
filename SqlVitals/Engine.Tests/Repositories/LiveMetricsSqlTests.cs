@@ -1,3 +1,4 @@
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Engine.Tests.Repositories;
@@ -30,5 +31,29 @@ public class LiveMetricsSqlTests
     {
         Assert.DoesNotContain("/*CPU*/", WaitStatsRepository.LiveMetricsSql(true));
         Assert.DoesNotContain("/*CPU*/", WaitStatsRepository.LiveMetricsSql(false));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Parses_UnderSqlServer2012sAnd2022sGrammar(bool isAzureSqlDb)
+    {
+        var sql = WaitStatsRepository.LiveMetricsSql(isAzureSqlDb);
+        foreach (TSqlParser parser in new TSqlParser[] { new TSql110Parser(true), new TSql160Parser(true) })
+        {
+            parser.Parse(new StringReader(sql), out var errors);
+            Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => $"line {e.Line}: {e.Message}")));
+        }
+    }
+
+    [Fact]
+    public void CountsTheUserTasksWaitingNow()
+    {
+        // The Overview's "Waiting tasks" headline (#143).
+        var sql = WaitStatsRepository.LiveMetricsSql(isAzureSqlDb: false);
+
+        Assert.Contains("sys.dm_os_waiting_tasks", sql);
+        Assert.Contains("is_user_process = 1", sql);
+        Assert.Contains("AS WaitingTasks", sql);
     }
 }

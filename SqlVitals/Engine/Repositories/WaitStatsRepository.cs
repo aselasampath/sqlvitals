@@ -1297,6 +1297,10 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                  WHERE f.counter_name='Free Space in tempdb (KB)' AND f.object_name LIKE '%:Transactions%'
                    AND s.counter_name='Data File(s) Size (KB)' AND s.object_name LIKE '%:Databases%'
                    AND s.instance_name='tempdb') AS TempDbUsedPct,
+                -- User tasks waiting on anything right now (#143): the Overview's "Waiting tasks"
+                (SELECT COUNT(*) FROM sys.dm_os_waiting_tasks wt
+                 JOIN sys.dm_exec_sessions es ON es.session_id = wt.session_id
+                 WHERE es.is_user_process = 1) AS WaitingTasks,
                 -- Cumulative specific waits (caller will diff these)
                 (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('SOS_SCHEDULER_YIELD','THREADPOOL','CMEMTHREAD','CMEMPARTITIONED','EE_PMOLOCK','EXCHANGE','CXPACKET','CXCONSUMER','CXSYNC_PORT','CXSYNC_CONSUMER')) AS CpuWaitMs,
                 (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('ASYNC_IO_COMPLETION','IO_COMPLETION','PAGEIOLATCH_SH','PAGEIOLATCH_EX','PAGEIOLATCH_UP','PAGEIOLATCH_NL','PAGEIOLATCH_DT','PAGEIOLATCH_KP','WRITELOG','WRITE_COMPLETION','IO_QUEUE_LIMIT','IO_RETRY','BACKUPIO','BACKUPBUFFER','BACKUPTHREAD','LOGMGR','LOGMGR_QUEUE','LOGMGR_FLUSH','LOGMGR_RESERVE_APPEND','LOG_RATE_GOVERNOR')) AS IoWaitMs,
@@ -1334,7 +1338,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             LongestBlockMs:  Convert.ToInt64(r.LongestBlockMs ?? 0),
             LogUsedPct:      Convert.ToDouble(r.LogUsedPct ?? 0),
             LogUsedDatabase: (string?)r.LogUsedDatabase,
-            TempDbUsedPct:   Math.Clamp(Convert.ToDouble(r.TempDbUsedPct ?? 0), 0, 100)
+            TempDbUsedPct:   Math.Clamp(Convert.ToDouble(r.TempDbUsedPct ?? 0), 0, 100),
+            WaitingTasks:    Convert.ToInt32(r.WaitingTasks ?? 0)
         );
     }
 

@@ -40,7 +40,10 @@ public sealed record LiveMetricSample(
     double  LongestBlockSec = 0,
     double  LogUsedPct      = 0,
     string? LogUsedDatabase = null,
-    double  TempDbUsedPct   = 0)
+    double  TempDbUsedPct   = 0,
+
+    // User tasks waiting on anything now (#143): the Overview's headline, not kept in the history
+    double  WaitingTasks    = 0)
 {
     /// <summary>
     /// Builds a sample from the current snapshot and the one before it. Rates are zero for the
@@ -79,7 +82,8 @@ public sealed record LiveMetricSample(
             LongestBlockSec:       current.LongestBlockMs / 1000.0,
             LogUsedPct:            current.LogUsedPct,
             LogUsedDatabase:       current.LogUsedDatabase,
-            TempDbUsedPct:         current.TempDbUsedPct);
+            TempDbUsedPct:         current.TempDbUsedPct,
+            WaitingTasks:          current.WaitingTasks);
     }
 }
 

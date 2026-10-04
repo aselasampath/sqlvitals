@@ -50,6 +50,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **msdb** | The system database where SQL Server Agent keeps its jobs, schedules and job history, and where SQL Server records every backup (`backupset`). The [Agent Jobs](Agent-Jobs.md) and [Backups](Backups.md) pages read it. |
 | **NOLOCK / READ UNCOMMITTED** | Reading without waiting for locks. SqlVitals reads diagnostic views this way so it never gets blocked itself. |
 | **NUMA node** | A group of processors with their own memory. Queries run best within one node, which is why the recommended MAXDOP depends on the processors per node. |
+| **Overview** | From 0.59.0, a server's first page: is it OK, and if not, why? Its active alerts, what is costing its health score points, its headline numbers, what happened since you last looked, and its charts. See [Your Servers → Overview](Your-Servers.md#a-servers-overview). |
 | **Orphaned user** | A SQL user in a database whose SID matches no login on the server, usually left by restoring the database on another server or dropping its login. See [Security Audit](Security-Audit.md#orphaned-users). |
 | **Page life expectancy (PLE)** | Seconds a data page is expected to stay in memory. Low or quickly falling = memory pressure. |
 | **Page verify** | How a database detects damaged pages. **CHECKSUM** (the default since SQL Server 2005) checks every page as it's read; TORN_PAGE_DETECTION and NONE catch little or nothing. |
@@ -82,6 +83,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **TRUSTWORTHY** | A database setting that lets code in the database act outside it with its owner's permissions. With a sysadmin owner, db_owner in that database can become sysadmin. OFF except for msdb. |
 | **VIEW ANY DEFINITION** | A server permission to see the definitions of every login, user, role and object, but no data. The [Security Audit](Security-Audit.md) needs it to list sysadmin members and orphaned users. |
 | **VIEW SERVER STATE** | The permission needed to read server-level DMVs. On Azure SQL Database the equivalent is `VIEW DATABASE STATE`. |
+| **Waiting tasks** | User tasks waiting on anything (a lock, I/O, memory, a CPU…) at the moment of a sample, from `sys.dm_os_waiting_tasks`. A headline number on a server's [Overview](Your-Servers.md#headline-numbers). |
 | **Wait / wait type** | A reason a task couldn't continue, and how long it waited. See [Wait Statistics](Wait-Statistics.md). |
 | **Wait category** | Query Store's grouping of wait types per query (SQL Server 2017+), e.g. *Lock* for `LCK_M_%` or *Buffer IO* for `PAGEIOLATCH_%`. See [Query Store → Waits](Query-Performance.md#waits). |
 | **Webhook** | A URL that posts whatever is sent to it into one Slack or Microsoft Teams channel. Anyone who has it can post there, so SqlVitals stores it encrypted and never logs it. See [Chat Notifications](Chat-Notifications.md). |

@@ -164,7 +164,7 @@ public partial class HomePage : Page, IRefreshable, IPageContext
 
     private TileInput InputFor(ConnectionSettings conn, ConnectionStore store) => InputFor(conn, store, _monitoring);
 
-    /// <summary>What Home and the server detail page know about a connection, from its settings and session.</summary>
+    /// <summary>What Home and a server's Overview know about a connection, from its settings and session.</summary>
     internal static TileInput InputFor(ConnectionSettings conn, ConnectionStore store, MonitoringManager monitoring)
     {
         var session = monitoring.Get(conn.Id);
@@ -345,7 +345,7 @@ public partial class HomePage : Page, IRefreshable, IPageContext
 
     private void BreakdownPopup_Closed(object? sender, EventArgs e) => _breakdownFor = null;
 
-    // A failure is already in the session's state, which the tile and detail page show.
+    // A failure is already in the session's state, which the tile and the Overview show.
     internal static async Task RetryAsync(MonitoringSession session)
     {
         try { await session.CollectNowAsync(); }
@@ -400,7 +400,7 @@ public sealed class HomeTile : INotifyPropertyChanged
     {
         TileAction.Start when !Tile.CanAct => $"Can't start: {Tile.Footer}",
         TileAction.Start => "Start monitoring this connection until SqlVitals exits, without switching to it.",
-        TileAction.Retry => "Try to reach the server now, and open its details",
+        TileAction.Retry => "Try to reach the server now, and open its Overview",
         _                => "Open this server's details: its score over time, its checks and its alerts",
     };
 

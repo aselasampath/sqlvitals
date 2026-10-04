@@ -40,7 +40,7 @@ internal sealed class SettingsContext(
 
     /// <summary>
     /// Tells the running app the saved connections changed, so it picks up a new or edited active
-    /// connection. True asks it to open Live Metrics afterwards.
+    /// connection. True asks it to open the active server's Overview afterwards.
     /// </summary>
     public Func<bool, Task> ApplyConnections { get; } = applyConnections;
 
@@ -50,7 +50,7 @@ internal sealed class SettingsContext(
     /// <summary>Opens another category, or a connection's tab, in Settings.</summary>
     public Action<SettingsLocation> Open { get; } = open;
 
-    /// <summary>"View on Home": the server's detail page (#130).</summary>
+    /// <summary>"View on Home": the server's Overview (#143).</summary>
     public Action<Guid> OpenServer { get; } = openServer;
 
     /// <summary>

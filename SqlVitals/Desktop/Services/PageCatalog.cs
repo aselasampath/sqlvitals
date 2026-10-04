@@ -12,7 +12,7 @@ public static class PageCatalog
     public static readonly IReadOnlyDictionary<string, Type> Types = new Dictionary<string, Type>
     {
         ["Home"]             = typeof(HomePage),
-        ["ServerDetail"]     = typeof(ServerDetailPage),
+        ["Overview"]         = typeof(OverviewPage),
         ["LiveMetrics"]      = typeof(LiveMetricsDashboardPage),
         ["Alerts"]           = typeof(AlertsPage),
         ["TopWaits"]         = typeof(TopWaitsPage),

@@ -2,7 +2,7 @@
 
 Every saved connection has a **health dot** and a **health score**, on its tile on **All servers**, in the sidebar's header for the server you've opened, and in the breadcrumb's server menu. They tell you at a glance whether each of your servers is fine, and which one needs attention first, without opening them one by one.
 
-> **Where:** **All servers** (a tile per server), the sidebar's server header, the breadcrumb; the score is also at the top of 💓 Live Metrics · **Configure:** ⚙️ Settings → *Health thresholds* · **Score since:** 0.36.0
+> **Where:** **All servers** (a tile per server), the sidebar's server header, the breadcrumb; the score, and what is costing it points, on each server's [Overview](Your-Servers.md#a-servers-overview) · **Configure:** ⚙️ Settings → *Health thresholds* · **Score since:** 0.36.0
 
 ## What the colours mean
 
@@ -32,7 +32,7 @@ These are the defaults. **off** means that level isn't checked.
 
 ## Health score
 
-The dot says *whether* a server has a problem. The **health score** says *how much*: a number from **0 to 100** beside the open server's name in the sidebar and the breadcrumb, at the top of the **💓 Live Metrics** dashboard, and on each connection's tile on **[All servers](Your-Servers.md)**, which puts the servers that need attention first. With several servers, the lowest score is the one to look at first.
+The dot says *whether* a server has a problem. The **health score** says *how much*: a number from **0 to 100** beside the open server's name in the sidebar and the breadcrumb, on the server's [Overview](Your-Servers.md#a-servers-overview) with what is costing it points, and on each connection's tile on **[All servers](Your-Servers.md)**, which puts the servers that need attention first. With several servers, the lowest score is the one to look at first.
 
 **Click the score** to see which checks lowered it. A panel lists every check with its current figure, its warning and critical thresholds, its weight and the points it cost. The checks that cost points are in bold. On **All servers**, a tile's **⋯ → Why this score…** opens the panel for that server without opening it.
 
@@ -69,10 +69,10 @@ The score's **colour is the dot's colour**, not a banding of the number. A singl
 ### Good to know
 
 - The score is for the **latest sample**, like the dot, so it moves with every refresh. For how long a problem lasted, see [Alerts](Alerts.md).
-- From 0.53.0 every score is saved to the [history](Monitoring-History-Database.md) as it was graded, failed collections as 0, so a server's Summary on [All servers](Your-Servers.md#score-over-time) chart it over the last hour, day or week.
-- On Live Metrics it always shows the score **now**, also while the charts show a past range.
+- From 0.53.0 every score is saved to the [history](Monitoring-History-Database.md) as it was graded, failed collections as 0, so a server's [Overview](Your-Servers.md#charts) charts it over the window in the top bar.
+- On the Overview it always shows the score **now**, also while the charts show a past range. *What is costing points* lists each check that lowers it with its points, why, and the page that explains it; the points are the score's own, so they add up to what it lost.
 - Change a threshold and the score updates straight away, without waiting for the next sample.
-- A connection that isn't monitored has no score, in the sidebar, on its tile or on Live Metrics: an old score would read as the server's health now.
+- A connection that isn't monitored has no score, in the sidebar, on its tile or on its Overview: an old score would read as the server's health now.
 - The weights are fixed. To change what counts as a problem, change the [thresholds](#change-the-thresholds), for all connections or [just one](#per-connection-thresholds).
 
 ## Change the thresholds
@@ -95,7 +95,7 @@ Other connections keep using the shared thresholds.
 
 ## Starting and stopping monitoring
 
-**Monitoring** means collecting Live Metrics every few seconds, saving [history](History-Time-Ranges-and-Baselines.md) and raising [alerts](Alerts.md). A connection that isn't monitored gets none of it: no queries go to its server except the ones of the pages you open. From 0.46.0 nothing is monitored until you ask for it.
+**Monitoring** means collecting live metrics every few seconds, saving [history](History-Time-Ranges-and-Baselines.md) and raising [alerts](Alerts.md). A connection that isn't monitored gets none of it: no queries go to its server except the ones of the pages you open. From 0.46.0 nothing is monitored until you ask for it.
 
 > **Configure:** ⚙️ Settings → *Monitoring & history* → **Start monitoring automatically** (off for a new installation) · **Since:** 0.46.0
 
@@ -103,7 +103,7 @@ Other connections keep using the shared thresholds.
 
 | Setting | When SqlVitals starts or connects |
 |---|---|
-| **Off** (new installations) | Nothing is monitored. Live Metrics says *Monitoring is off* and has a **▶ Start monitoring** button. |
+| **Off** (new installations) | Nothing is monitored. A server's Overview says it isn't monitored and has **Start monitoring**; Live charts says *Monitoring is off*. |
 | **On** | The active connection, and every connection with **Monitor in background** ticked, are monitored from the start, as SqlVitals did before 0.46.0. |
 
 An installation upgraded from an earlier version keeps monitoring **on**, so nobody silently loses alerts they rely on. Changing the setting applies straight away: turning it on starts the active connection and the background ones; turning it off stops every connection (their active alerts end, as they do on **Stop**).
@@ -116,13 +116,14 @@ Whatever the setting, you can start and stop monitoring whenever you like:
 
 | Where | What it does |
 |---|---|
-| **💓 Live Metrics** → **▶ Start monitoring** / **■ Stop monitoring** | The active connection. |
+| A server's **Overview** → **Start monitoring** / **Pause monitoring** | That server. |
+| **💓 Live charts** → **▶ Start monitoring** / **■ Stop monitoring** | The active connection. |
 | The sidebar's server header: **▶** / **■** | The server you've opened. |
 | **All servers**: a tile's **▶ Start monitoring**, or **⋯ → Start monitoring** / **Stop monitoring** | That server, without opening it. |
 | The SqlVitals icon's menu in the notification area: **Start monitoring all** / **Stop monitoring all** | Start: the active connection and those with Monitor in background. Stop: every connection being monitored. |
 
 - **Start** takes the first sample straight away. **Stop** ends that connection's active [alerts](Alerts.md#when-monitoring-stops).
-- Every place shows the same state: press ■ in the sidebar and the Live Metrics button, the dot, the tile and the tray tooltip change at once.
+- Every place shows the same state: press ■ in the sidebar and the Overview's and Live charts' buttons, the dot, the tile and the tray tooltip change at once.
 - Start and Stop last **until SqlVitals exits**. The next start follows **Start monitoring automatically** again.
 - A connection you started keeps running when you switch to another one, like a background connection.
 - Hover the server's header in the sidebar, or its name in the breadcrumb, for its state in words: *Monitoring*, *Stopped by you at 10:42*, *Not monitored: the password isn't saved…*
@@ -139,17 +140,17 @@ Every start and stop, with who or what caused it, is written to the [activity lo
 
 Good to know:
 
-- The **Sample every** interval on the Live Metrics page sets that connection's collection interval, including while it runs in the background. It's kept while the connection is stopped.
+- The **Sample every** interval on the Live charts page sets that connection's collection interval, including while it runs in the background. It's kept while the connection is stopped.
 - A server that **can't be reached** is retried less and less often, up to every 5 minutes, so it isn't hammered.
 ---
 
 ### Under the hood
 
 - **Sources:** CPU comes from `sys.dm_os_ring_buffers` (scheduler monitor). On Azure SQL Database, which has no scheduler monitor records, it is the latest 15-second `avg_cpu_percent` in `sys.dm_db_resource_stats`: the database's CPU as a share of its service tier's limit, the figure the Azure portal shows as *CPU percentage* (before 0.36.0 it read 0 % there). Blocking is the longest `wait_time` of a blocked request in `sys.dm_exec_requests`. Page life expectancy and memory grants pending are Buffer Manager and Memory Manager counters. Log space is the maximum `Percent Log Used` across databases. TempDB is `Free Space in tempdb` against `Data File(s) Size`. All come from `sys.dm_os_performance_counters`.
-- **No extra query:** blocking, log and TempDB are read by the same Live Metrics query that feeds the charts. Their figures aren't saved to history, but [alerts](Alerts.md) on them are.
+- **No extra query:** blocking, log and TempDB are read by the same live metrics query that feeds the charts. Their figures aren't saved to history, but [alerts](Alerts.md) on them are.
 - **Missing counters:** an indicator the server doesn't report (some counters are missing on certain Azure SQL tiers) is left out of the grade, not flagged.
 - **Validation:** values out of range in a hand-edited `settings.dat` fall back to the defaults.
 - **Code:** thresholds and grading are in `SqlVitals/Engine/Monitoring/` (`HealthThresholds`, `HealthRules`, `LiveMetricSample`). `HealthRules.Grade` grades each indicator separately; `Evaluate` (the dot) and the [alert tracker](Alerts.md#under-the-hood) both use it. Collectors are run by `Desktop/Services/MonitoringManager.cs`, one `MonitoringSession` per monitored connection. The editor is `Desktop/Controls/HealthThresholdsEditor`.
 - **Which connections are monitored:** `MonitoringPlan.Decide` in `Engine/Monitoring/MonitoringPlan.cs` decides, from Start monitoring automatically, the active connection, Monitor in background, the Start and Stop pressed this run (`MonitoringOverrides`), a missing password and the Entra sign-in. It's a pure function, unit tested in `Engine.Tests/Monitoring/MonitoringPlanTests.cs`. `MonitoringManager.Sync` only starts and stops sessions to match it. The upgrade rule is `MonitoringPlan.StartAutomatically`: `StartMonitoringAutomatically` is nullable in `settings.dat`, so a file without it but with connections reads as on. `Desktop.Tests/MonitoringManagerTests.cs` proves, with a repository that counts calls, that with the setting off neither a start nor a connection switch sends a query.
-- **Score:** `SqlVitals/Engine/Monitoring/HealthScore.cs`. `HealthScore.From(readings, time)` turns the readings of `HealthRules.Grade` into the score and its checks; `HealthScore.Unavailable` is the 0 for a failed collection. `MonitoringSession.Score` holds the latest one. The panel is `Desktop/Controls/HealthScoreBreakdown`, shown in a popup by the sidebar (`MainWindow`) and by Live Metrics. Unit tested in `Engine.Tests/Monitoring/HealthScoreTests.cs`. Scores aren't saved to the history.
+- **Score:** `SqlVitals/Engine/Monitoring/HealthScore.cs`. `HealthScore.From(readings, time)` turns the readings of `HealthRules.Grade` into the score and its checks; `HealthScore.Unavailable` is the 0 for a failed collection. `MonitoringSession.Score` holds the latest one. The panel is `Desktop/Controls/HealthScoreBreakdown`, shown in a popup by the sidebar (`MainWindow`) and by Live charts. The Overview's *What is costing points* is `Engine/Home/ScoreCosts` over the same checks (tested against the weights for every check state in `Engine.Tests/Home/OverviewTests.cs`). Unit tested in `Engine.Tests/Monitoring/HealthScoreTests.cs`. From 0.53.0 scores are saved to the history (`health_scores`).
 - **Backoff:** unreachable servers retry with exponential backoff, capped at 5 minutes.

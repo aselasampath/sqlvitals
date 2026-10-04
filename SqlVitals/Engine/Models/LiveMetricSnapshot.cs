@@ -41,5 +41,6 @@ public record LiveMetricSnapshot(
     long    LongestBlockMs    = 0,
     double  LogUsedPct        = 0,     // the fullest transaction log on the server
     string? LogUsedDatabase   = null,
-    double  TempDbUsedPct     = 0      // TempDB data files, of their current size
+    double  TempDbUsedPct     = 0,     // TempDB data files, of their current size
+    int     WaitingTasks      = 0      // user tasks waiting on a resource now (#143)
 );

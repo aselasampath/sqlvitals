@@ -31,6 +31,18 @@ public partial class TimeRangePicker : UserControl
 
     public bool CompareToBaseline => BtnBaseline.IsChecked == true;
 
+    /// <summary>Whether "Compare to baseline" is offered; off for a page without a baseline, e.g. the Overview (#143).</summary>
+    public bool OffersBaseline
+    {
+        get => BtnBaseline.Visibility == Visibility.Visible;
+        set
+        {
+            BtnBaseline.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            if (!value)
+                BtnBaseline.IsChecked = false;
+        }
+    }
+
     /// <summary>
     /// Turns the history choices and the baseline off, with the reason as their tooltip, or back
     /// on. Going unavailable while showing history switches back to Live, without a baseline.

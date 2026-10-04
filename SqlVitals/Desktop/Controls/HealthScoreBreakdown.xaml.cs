@@ -15,7 +15,7 @@ public partial class HealthScoreBreakdown : UserControl
 
     /// <summary>
     /// Shows only the checks and the footnote, without its own frame and score, for a page that
-    /// shows the score itself: the server detail page (#130).
+    /// shows the score itself.
     /// </summary>
     public void ShowInline()
     {

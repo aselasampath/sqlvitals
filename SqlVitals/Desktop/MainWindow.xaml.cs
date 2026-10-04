@@ -100,6 +100,7 @@ public partial class MainWindow : Window
         };
 
         SettingsService = new ConnectionSettingsService();
+        _overviewVisits = new OverviewVisits(SettingsService);
         var store  = SettingsService.Load();
         var active = store.Active;
         BuildSidebar(store);
@@ -112,7 +113,7 @@ public partial class MainWindow : Window
         {
             ShowFromTray();
             if (connectionId is { } id && Item(id) is not null)
-                await NavigateTo("ServerDetail", serverId: id);
+                await NavigateTo("Overview", serverId: id);
             else
                 await NavigateTo("Alerts", alertsConnectionId: connectionId);
         };
@@ -175,13 +176,14 @@ public partial class MainWindow : Window
     /// <summary>
     /// Where SqlVitals opens (#141): the page open when it last closed, inside the server it was
     /// inside. A server's page made its server the active connection, so it opens on that. Before
-    /// anything was saved, Home with more than one server (#130), Live Metrics with one.
+    /// anything was saved, Home with more than one server (#130), the server's Overview with one (#143).
     /// </summary>
     private Route StartRoute(ConnectionStore store)
     {
+        // A connection from appsettings.json only has no Overview: Live charts, as before.
         if (store.LastPage is not { } tag)
-            return RouteFor(store.Connections.Count >= 2 ? "Home" : "LiveMetrics");
-        if (tag == "ServerDetail")
+            return RouteFor(store.Connections.Count >= 2 ? "Home" : _activeConnectionId is null ? "LiveMetrics" : "Overview");
+        if (tag == "Overview")
             return store.LastServerId is { } id && store.Connections.Any(c => c.Id == id) ? Workspace.Overview(id) : RouteFor("Home");
         return RouteFor(tag);
     }
@@ -298,8 +300,9 @@ public partial class MainWindow : Window
         UpdateHistoryButtons();
         ShowPageContext();
 
+        // "Save & make active": the server's Overview (#143).
         if (navigateToDashboard)
-            await NavigateTo("LiveMetrics");
+            await NavigateTo("Overview");
     }
 
     private async System.Threading.Tasks.Task SwapRepositoryAsync(ConnectionStore store)
@@ -687,37 +690,34 @@ public partial class MainWindow : Window
         return ConnectionSettingsService.RedactSecrets(ex.Message);
     }
 
-    // ── Home and server details (#130) ────────────────────────────────────────
+    // ── Home and a server's Overview (#130, #143) ─────────────────────────────
+
+    // When each server's Overview was last opened, for its "Since you last looked".
+    private readonly OverviewVisits _overviewVisits;
 
     private HomePage CreateHomePage()
     {
         var page = new HomePage(Monitoring, SettingsService);
-        page.OpenRequested          += async id => await NavigateTo("ServerDetail", serverId: id);
+        page.OpenRequested          += async id => await NavigateTo("Overview", serverId: id);
         page.AddConnectionRequested += async () => await NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage);
         page.EditRequested          += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
         return page;
     }
 
-    private ServerDetailPage CreateServerDetailPage(Guid connectionId)
+    private OverviewPage CreateOverviewPage(Guid connectionId)
     {
-        var page = new ServerDetailPage(connectionId, Monitoring, SettingsService);
-        page.BackRequested       += async () => await NavigateTo("Home");
+        var page = new OverviewPage(connectionId, Monitoring, SettingsService, _overviewVisits.Open(connectionId));
         page.EditRequested       += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
         page.ThresholdsRequested += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id, ConnectionTab.Thresholds));
         page.AlertsRequested     += async id => await NavigateTo("Alerts", alertsConnectionId: id);
         page.MakeActiveRequested += async id =>
         {
-            if (await SwitchToAsync(id, ActivitySources.Home))
+            if (await SwitchToAsync(id, ActivitySources.Overview))
                 Bar.ShowMessage($"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".");
         };
-        // A page about the server, e.g. Processes for its blocking chain. It queries the active
-        // connection, so this one is made active first.
-        page.OpenPageRequested += async (id, tag) =>
-        {
-            if (!await SwitchToAsync(id, ActivitySources.Home))
-                return;
-            await NavigateTo(tag);
-        };
+        // A page about the server: an alert's evidence, the page explaining a check, Deadlocks, Live
+        // charts… It queries the active connection, so opening it makes this one active (see OpenAsync).
+        page.OpenPageRequested += async (id, tag) => await NavigateTo(tag, serverId: id, switchSource: ActivitySources.Overview);
         return page;
     }
 
@@ -727,7 +727,7 @@ public partial class MainWindow : Window
         var page = new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync,
                                     location ?? new SettingsLocation(_settingsCategory), message);
         page.CategoryShown   += category => _settingsCategory = category;
-        page.ServerRequested += async id => await NavigateTo("ServerDetail", serverId: id);
+        page.ServerRequested += async id => await NavigateTo("Overview", serverId: id);
         page.ThemeChanged    += async () => await NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Appearance));
         return page;
     }
@@ -815,8 +815,8 @@ public partial class MainWindow : Window
     /// <summary>Opens a page as a new visit: the sidebar, a link, the tray, a Home tile.</summary>
     /// <param name="settingsMessage">Shown at the top of Settings.</param>
     /// <param name="settingsLocation">Where Settings opens (#131); the category last used when null.</param>
-    /// <param name="serverId">The server a page is about (#141): a server detail page's, or the
-    /// connection a server's page queries; null for the active connection.</param>
+    /// <param name="serverId">The server a page is about (#141): an Overview's, or the connection a
+    /// server's page queries; null for the active connection.</param>
     /// <param name="switchSource">Why, in the activity log, if opening it switches the active connection.</param>
     private System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, SettingsLocation? settingsLocation = null,
                                                    Guid? alertsConnectionId = null, Guid? serverId = null,
@@ -828,7 +828,7 @@ public partial class MainWindow : Window
     private Route RouteFor(string tag, SettingsLocation? settingsLocation = null, Guid? alertsConnectionId = null, Guid? serverId = null) =>
         new(tag,
             ConnectionId:       Route.IsGlobal(tag) ? null : serverId ?? _activeConnectionId,
-            ServerId:           tag == "ServerDetail" ? serverId ?? _activeConnectionId : null,
+            ServerId:           tag == "Overview" ? serverId ?? _activeConnectionId : null,
             AlertsConnectionId: tag == "Alerts" ? alertsConnectionId : null,
             Settings:           tag == "Settings" ? settingsLocation : null);
 
@@ -933,8 +933,8 @@ public partial class MainWindow : Window
         var tag = route.Tag;
         var settingsLocation = route.Settings;
 
-        // A server detail page needs its server; without one, Home lists them all.
-        if (tag == "ServerDetail" && route.ServerId is null)
+        // An Overview needs its server; without one, Home lists them all.
+        if (tag == "Overview" && route.ServerId is null)
             tag = "Home";
 
         // Without a connection every data page would just fail — point the user at Settings.
@@ -980,7 +980,7 @@ public partial class MainWindow : Window
         IRefreshable page = tag switch
         {
             "Home"            => CreateHomePage(),
-            "ServerDetail"    => CreateServerDetailPage(shown.ServerId!.Value),
+            "Overview"        => CreateOverviewPage(shown.ServerId!.Value),
             "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
             "Alerts"          => new AlertsPage(Monitoring, SettingsService, shown.AlertsConnectionId),
             "TopWaits"        => new TopWaitsPage(Repo),
@@ -1127,13 +1127,13 @@ public partial class MainWindow : Window
         Bar.ShowBreadcrumb(Breadcrumb.For(current, id => Item(id)?.DisplayName), id => Item(id), _selectorItems);
     }
 
-    // "Processes · PROD-SQL01", "PROD-SQL01" for its details, "Alerts" for a page about every server.
+    // "Processes · PROD-SQL01", "Overview · PROD-SQL01", "Alerts" for a page about every server.
     private string Describe(Route route)
     {
         string? Name(Guid? id) => id is null ? null : _selectorItems.FirstOrDefault(i => i.Settings.Id == id)?.DisplayName;
 
-        if (route.Tag == "ServerDetail")
-            return Name(route.ServerId) ?? "Server";
+        if (route.Tag == "Overview")
+            return Name(route.ServerId) is { } name ? $"Overview · {name}" : "Overview";
 
         var label = NavMenu.AllPages.FirstOrDefault(p => p.Tag == route.Tag)?.Label ?? route.Tag;
         return Name(route.ConnectionId ?? route.AlertsConnectionId) is { } server ? $"{label} · {server}" : label;

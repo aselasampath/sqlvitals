@@ -11,7 +11,7 @@ using SqlVitals.Engine.Monitoring;
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
-/// The Checks table of a server's detail page (#130) with a warning and a critical box per check
+/// The Checks table of the health score breakdown (#130) with a warning and a critical box per check
 /// (#131): Check, Now, Warning, Critical, Weight, Points. In Settings for the thresholds every
 /// connection shares, and on a connection's Health thresholds tab for its own, where Now and
 /// Points show its latest sample graded on what's in the boxes.

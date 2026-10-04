@@ -15,7 +15,7 @@ public sealed record ScoreChartData(
 
 /// <summary>
 /// A health score over time (#130): a Home tile's sparkline, or with <see cref="ShowAxes"/> the
-/// server detail chart with its 0/50/100 lines, times, alert markers, and the times the server
+/// Overview's chart (#143) with its 0/50/100 lines, times, alert markers, and the times the server
 /// couldn't be reached shaded. Drawn in one pass rather than built from elements, so a page of
 /// tiles costs a single visual each, however many points they hold.
 /// </summary>

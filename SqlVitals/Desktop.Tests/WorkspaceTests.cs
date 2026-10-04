@@ -16,7 +16,7 @@ public sealed class WorkspaceTests
     {
         Assert.Equal(A, Workspace.ServerOf(new Route("Processes", ConnectionId: A)));
         Assert.Equal(A, Workspace.ServerOf(new Route("Export", ConnectionId: A)));
-        Assert.Equal(A, Workspace.ServerOf(new Route("ServerDetail", ServerId: A)));
+        Assert.Equal(A, Workspace.ServerOf(new Route("Overview", ServerId: A)));
 
         // Pages about every server have no workspace: the sidebar says how to open one.
         Assert.Null(Workspace.ServerOf(new Route("Home")));
@@ -29,7 +29,7 @@ public sealed class WorkspaceTests
     public void SwitchingServer_KeepsThePage()
     {
         Assert.Equal(new Route("Processes", ConnectionId: B), Workspace.OnServer(new Route("Processes", ConnectionId: A), B));
-        Assert.Equal(new Route("ServerDetail", ServerId: B), Workspace.OnServer(new Route("ServerDetail", ServerId: A), B));
+        Assert.Equal(new Route("Overview", ServerId: B), Workspace.OnServer(new Route("Overview", ServerId: A), B));
         Assert.Equal(new Route("Alerts", AlertsConnectionId: B), Workspace.OnServer(new Route("Alerts", AlertsConnectionId: A), B));
         // From a page about every server, the server's Overview.
         Assert.Equal(Workspace.Overview(B), Workspace.OnServer(new Route("Home"), B));
@@ -41,16 +41,16 @@ public sealed class WorkspaceTests
         static bool AzureLacks(string tag) => tag is "Backups" or "AgentJobs" or "TempDb" or "SecurityAudit";
 
         var backups = Workspace.OnServer(new Route("Backups", ConnectionId: A), B);
-        Assert.Equal(new Route("ServerDetail", ServerId: B), Workspace.Available(backups, AzureLacks, B));
+        Assert.Equal(new Route("Overview", ServerId: B), Workspace.Available(backups, AzureLacks, B));
 
         var processes = new Route("Processes", ConnectionId: B);
         Assert.Same(processes, Workspace.Available(processes, AzureLacks, B));
 
-        // A connection from appsettings.json only has no saved id, and no summary: Live Metrics.
+        // A connection from appsettings.json only has no saved id, and no Overview: Live charts.
         Assert.Equal(new Route("LiveMetrics"), Workspace.Available(new Route("Backups"), AzureLacks, null));
     }
 
     [Fact]
-    public void TheOverview_IsTheServersSummary_UntilItMergesWithLiveMetrics() =>
-        Assert.Equal(new Route("ServerDetail", ServerId: A), Workspace.Overview(A));
+    public void TheOverview_IsAPageAboutTheServerByItsId() =>
+        Assert.Equal(new Route("Overview", ServerId: A), Workspace.Overview(A));
 }

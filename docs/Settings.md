@@ -40,7 +40,7 @@ The active connection has the accent border. **+ New connection** at the top and
 
 ![A connection's page, Connection tab](images/settings/connection-page.png)
 
-**← Connections** goes back to the cards. The header shows the dot, name, status and score (*CRITICAL · 70*), **ACTIVE** when it is, the server / database / sign-in, and **View on Home** for its [detail page](Your-Servers.md#a-servers-details). **Test connection** signs in with what's typed, saved or not. **⋯ → Remove connection…** removes it after a confirmation.
+**← Connections** goes back to the cards. The header shows the dot, name, status and score (*CRITICAL · 70*), **ACTIVE** when it is, the server / database / sign-in, and **View on Home** for its [Overview](Your-Servers.md#a-servers-overview). **Test connection** signs in with what's typed, saved or not. **⋯ → Remove connection…** removes it after a confirmation.
 
 | Tab | What's on it |
 |---|---|
@@ -49,7 +49,7 @@ The active connection has the accent border. **+ New connection** at the top and
 | **Health thresholds** | [Its own thresholds](#a-connections-own-thresholds). The tab shows an **OWN** tag when the connection uses them. |
 | **Advanced** | Connection timeout, and additional connection-string parameters. |
 
-A bar along the bottom saves **every tab at once**: **Discard**, **Save**, and **Save & make active** (save, then switch every page to it and open Live Metrics; not shown for the active connection). Moving between tabs keeps what you've typed, and the bar says where: *● Unsaved changes on Connection and Health thresholds*. Typing a value and putting it back leaves nothing unsaved.
+A bar along the bottom saves **every tab at once**: **Discard**, **Save**, and **Save & make active** (save, then switch every page to it and open its Overview; not shown for the active connection). Moving between tabs keeps what you've typed, and the bar says where: *● Unsaved changes on Connection and Health thresholds*. Typing a value and putting it back leaves nothing unsaved.
 
 - **Saving checks the server first** when anything about how SqlVitals connects changed (server, authentication, login, password, database, encryption, timeout, parameters), and saves nothing if it can't sign in, so the list only ever holds working connections. A new name, the monitoring and alert settings, or thresholds save **without** contacting the server, so a server that's down can still be renamed, muted or given its own thresholds.
 - A connection's settings, its own thresholds and its Windows notifications are saved in **one** write, logged as one change per field in the [activity log](#activity-log).
@@ -63,7 +63,7 @@ A bar along the bottom saves **every tab at once**: **Discard**, **Save**, and *
 
 **Use its own health thresholds** is a switch. Off, the table shows the [default thresholds](#health-thresholds) read-only, with a link to them; on, it starts from them and you can edit them for this connection alone, e.g. for a server that always runs hot.
 
-The table is the same Checks table as a server's [detail page](Your-Servers.md#a-servers-details): **Check, Now, Warning, Critical, Weight, Points**. Under each check's name is the default, e.g. *Default: ≥ 75 % / ≥ 90 %*; a box that differs from it has an accent border. Leave a box blank to turn that level off. **Reset to defaults** puts the defaults back in the boxes.
+The table is the same Checks table as the score's breakdown (click a server's score): **Check, Now, Warning, Critical, Weight, Points**. Under each check's name is the default, e.g. *Default: ≥ 75 % / ≥ 90 %*; a box that differs from it has an accent border. Leave a box blank to turn that level off. **Reset to defaults** puts the defaults back in the boxes.
 
 While you type, **Now** and **Points** grade the connection's latest sample on what's in the boxes, and the header says what it would score: *On the latest sample, UAT would score 70 → 80*. It's graded by the same rules as the health dot, so saving shows the same. With no sample (the connection isn't monitored, or can't be reached) there's no preview.
 
@@ -78,7 +78,7 @@ While you type, **Now** and **Points** grade the connection's latest sample on w
 | **Snapshot every** | 5 minutes (1, 5, 15, 30) | How often waits per type, file I/O, memory, top queries and Perfmon counters are saved. Shorter = more detail, more load on the server and more disk. Live Metrics samples are saved at their own interval regardless. |
 | **Keep history for** | 14 days (7, 14, 30, 90) | Older history is deleted automatically. **Shortening** it asks for confirmation, then deletes straight away. Use at least 14 days for week-over-week baselines. |
 
-Either way you can start and stop any connection with **▶ / ■** in the sidebar's server header, on All servers, on **💓 Live Metrics**, or from the notification-area icon's menu, until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). **Alerts are only raised for connections being monitored.** The category also shows the **history file's size** on disk, updated while it's open.
+Either way you can start and stop any connection with **▶ / ■** in the sidebar's server header, on All servers, on a server's Overview or **💓 Live charts**, or from the notification-area icon's menu, until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). **Alerts are only raised for connections being monitored.** The category also shows the **history file's size** on disk, updated while it's open.
 
 **Clear history…**, in its own card, deletes all history, alerts included, for **every** connection, after a confirmation. Monitoring carries on, and new history is saved from the next sample. This can't be undone. The [activity log](#activity-log) is **kept**, and records that history was cleared, when and by whom.
 
@@ -136,7 +136,7 @@ A record of what was done, kept in the history file (`history.db`, table `activi
 
 | Event | Logged when |
 |---|---|
-| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, in the sidebar or on All servers, in the connection selector before 0.57.0, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
+| **Monitoring started** / **Monitoring stopped** | For each connection, with the source: you (on Live Metrics, on a server's Overview from 0.59.0, in the sidebar or on All servers, in the connection selector before 0.57.0, in the tray menu, or in Settings), automatically at startup, because the setting changed, because the connection was edited or removed, or because the app exited |
 | **App started** / **App exited** | Each run. A run that was killed, crashed or lost power has no *App exited*; the next start says *The previous run didn't exit cleanly* |
 | **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. Not which sidebar groups you collapse or expand. |
 | **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |
@@ -167,7 +167,7 @@ SqlVitals writes errors and warnings to a daily log file. **Open log folder** op
 
 | What | Where | Notes |
 |---|---|---|
-| Connections, chat channels (with their webhook URLs), command timeout (since 0.54.0 saved on its own), Start monitoring automatically, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop, its Map or Grid view and Group by login | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
+| Connections, chat channels (with their webhook URLs), command timeout (since 0.54.0 saved on its own), Start monitoring automatically, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop, its Map or Grid view and Group by login, the page last open, the sidebar's state, when each server's Overview was last opened (from 0.59.0) | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
 | Monitoring history and the activity log | `%LocalAppData%\SqlVitals\history.db` | Local, not roaming. See [Monitoring History Database](Monitoring-History-Database.md). |
 | Logs | `%AppData%\SqlVitals\logs\` | 14-day retention (`Services/AppLog.cs`) |
 | Defaults | `appsettings.json` in the install folder | `QuerySettings:CommandTimeoutSeconds` (30), `QuerySettings:UseNoLock` (true), fallback `ConnectionStrings:SqlServer`, `TraceSettings:SessionName` |

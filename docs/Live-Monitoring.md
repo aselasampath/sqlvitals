@@ -1,24 +1,24 @@
 # Live Monitoring
 
-Three screens show what the server is doing **right now**:
+Three screens show what the server is doing **right now**. For *is it OK, and if not, why?*, start on the server's [Overview](Your-Servers.md#a-servers-overview): its alerts, what is costing its score points, its headline numbers and the same charts, smaller.
 
 | Screen | Answers |
 |---|---|
-| [💓 Live Metrics](#live-metrics) | How busy is the server, and on what? |
+| [💓 Live charts](#live-charts) | How busy is the server, and on what? |
 | [🔗 Processes](#processes-blocking-chains) | Who is blocking whom, and who is at the head? Which login has the most sessions ([Grid view](#grid-view))? |
 | [⚡ Active Waits](#active-waits) | Which sessions are waiting right now, and on what? |
 
 ---
 
-## Live Metrics
+## Live charts
 
-> **Where:** sidebar → 💓 Live Metrics (the start page) · **Use it when:** you want a live picture of the server's load · **Needs:** `VIEW SERVER STATE`
+> **Where:** sidebar → a server's **Overview** group → 💓 Live charts, or **Full-size live charts →** on its [Overview](Your-Servers.md#a-servers-overview) · **Use it when:** you want the charts full size, the baseline, the process map, or to change the sample interval · **Needs:** `VIEW SERVER STATE`
 
-A dashboard of live charts, updated every 10 seconds by default.
+A dashboard of live charts, updated every 10 seconds by default. It was called **Live Metrics** and was the start page until 0.59.0, when the server's [Overview](Your-Servers.md#a-servers-overview) took its place and shows the same charts, smaller, with the alerts marked.
 
 ### How to use it
 
-1. Open **💓 Live Metrics**. If the connection is already monitored, the charts show the last ~10 minutes.
+1. Open **💓 Live charts**. If the connection is already monitored, the charts show the last ~10 minutes.
 2. If it says **Monitoring is off**, press **▶ Start monitoring** (in the banner or the toolbar). The first sample is taken straight away. **■ Stop monitoring** stops it again. Both last until SqlVitals exits; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
 3. **Sample every**, in the top bar: how often the connection is sampled, every 5 s to every 2 min. It applies in the background too, and is kept while monitoring is stopped.
 4. **Charts**: tick or untick the charts you want to see.
@@ -27,9 +27,9 @@ A dashboard of live charts, updated every 10 seconds by default.
 
 ### When monitoring is off
 
-From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Settings → Monitoring & history → Start monitoring automatically** is on. Live Metrics still opens first, with a banner: *"Monitoring is off. SqlVitals isn't collecting anything from this server."*, a **▶ Start monitoring** button, and a link to the setting.
+From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Settings → Monitoring & history → Start monitoring automatically** is on. Live charts says so in a banner: *"Monitoring is off. SqlVitals isn't collecting anything from this server."*, a **▶ Start monitoring** button, and a link to the setting.
 
-- **Nothing is sent to the server** for this page: no Live Metrics query, no history snapshot, and no **Process Map** polling. The sidebar **Refresh** does nothing here either.
+- **Nothing is sent to the server** for this page: no live metrics query, no history snapshot, and no **Process Map** polling. The sidebar **Refresh** does nothing here either.
 - The health score shows **—**: an old score would read as the server's health now.
 - **Past ranges** (1h, 24h, 7d, Custom…) still show the history saved earlier.
 - If you stopped it, the banner says when (*Stopped by you at 10:42*). If the connection can't be monitored yet (no saved password, Entra sign-in not done), **Start** is greyed out and says why.
@@ -72,7 +72,7 @@ The **Map | Grid** switch next to the title shows the same sessions as a [grid g
 5. **Click a node** to open **Session Details**: status, the session blocking it (`blocked`, `blocked_by`), the **head of its chain** (`head_blocker`) and how many sessions it blocks directly (`blocking`), wait type, wait time and wait resource, database, CPU, I/O, memory, login time, last batch, **open transactions** (`open_tran`), program, host, login and command. Below that is the **input buffer / query text**. **Copy SQL** copies the statement.
 6. **Blocking chains only** hides every session that is neither blocking nor blocked. **Search SPID** shows matching sessions with their whole chain, so the head stays on screen. Zoom with **Ctrl + mouse wheel**; **Reset** returns to 100 %.
 
-The **Process Map** chart on Live Metrics is the same view, smaller.
+The **Process Map** chart on Live charts is the same view, smaller.
 
 ### Reading it
 
@@ -127,7 +127,7 @@ Click a header to collapse or expand the group, or use **Expand all** / **Collap
 
 Going to a session that a filter hides (from a head blocker chip, or a SPID link) clears the filters so its row can be shown.
 
-The **Process Map** chart on Live Metrics is always the map.
+The **Process Map** chart on Live charts is always the map.
 
 ---
 
@@ -152,8 +152,8 @@ Press **↻ Refresh** for a new snapshot.
 
 ### Under the hood
 
-- **Live Metrics** reads `sys.dm_os_performance_counters` and `sys.dm_os_ring_buffers` in one lightweight query per interval. On Azure SQL Database, CPU comes from `sys.dm_db_resource_stats` instead (the portal's *CPU percentage*, a share of the service tier's limit, per 15 seconds), so it can jump between 0 and a high figure where the portal's one-minute average looks smoother. Rates such as batch requests/sec are computed from the difference between two samples, so the first sample after a start has nothing to compare with.
+- **Live charts** (and the Overview) read `sys.dm_os_performance_counters` and `sys.dm_os_ring_buffers` in one lightweight query per interval, with a count of the user tasks waiting now from `sys.dm_os_waiting_tasks` (from 0.59.0, for the Overview's *Waiting tasks*). On Azure SQL Database, CPU comes from `sys.dm_db_resource_stats` instead (the portal's *CPU percentage*, a share of the service tier's limit, per 15 seconds), so it can jump between 0 and a high figure where the portal's one-minute average looks smoother. Rates such as batch requests/sec are computed from the difference between two samples, so the first sample after a start has nothing to compare with.
 - The collector belongs to the connection (`MonitoringSession`), not to the page. Leaving the page doesn't stop it. The page keeps the last 60 samples in memory, and every sample is also written to the [history database](Monitoring-History-Database.md) (table `metric_samples`).
 - **Active Waits** reads `sys.dm_exec_requests` joined to `sys.dm_exec_sessions` and `sys.dm_exec_sql_text`, user sessions only, excluding SqlVitals' own session. Query text is cut to 500 characters.
-- **Processes** uses `GetProcessesAsync`: `sys.dm_exec_sessions` joined to `sys.dm_exec_requests`, user sessions plus any session blocking one. A session without a request gets its text from `sys.dm_exec_connections.most_recent_sql_handle` and its open transactions from the session. `Engine/Monitoring/BlockingChains` marks head blockers and builds the trees; `Controls/ProcessMapControl` draws them. It runs only while the page (or the Live Metrics *Process Map*) is on screen. The grid view uses the same query, so it adds no load: `Engine/Monitoring/ProcessGroups` groups the sessions by login and sums up each group, and the grid draws only the rows on screen (rows are virtualised while grouped).
+- **Processes** uses `GetProcessesAsync`: `sys.dm_exec_sessions` joined to `sys.dm_exec_requests`, user sessions plus any session blocking one. A session without a request gets its text from `sys.dm_exec_connections.most_recent_sql_handle` and its open transactions from the session. `Engine/Monitoring/BlockingChains` marks head blockers and builds the trees; `Controls/ProcessMapControl` draws them. It runs only while the page (or the Live charts *Process Map*) is on screen. The grid view uses the same query, so it adds no load: `Engine/Monitoring/ProcessGroups` groups the sessions by login and sums up each group, and the grid draws only the rows on screen (rows are virtualised while grouped).
 - All queries run under `READ UNCOMMITTED` so monitoring never waits on the locks it's reporting. See [Server Impact](Server-Impact-and-Permissions.md).

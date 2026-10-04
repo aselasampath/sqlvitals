@@ -48,17 +48,18 @@ public sealed class BreadcrumbTests
     }
 
     [Fact]
-    public void AServersSummary_IsItsOverview()
+    public void AServersOverview_IsNamedOnce()
     {
-        var crumbs = For(new Route("ServerDetail", ServerId: Prod));
-        Assert.Equal(["All servers", "PROD-SQL01", "Overview", "Summary"], crumbs.Select(c => c.Text));
+        // The group and its first page have the same name (#143): it isn't said twice.
+        var crumbs = For(new Route("Overview", ServerId: Prod));
+        Assert.Equal(["All servers", "PROD-SQL01", "Overview"], crumbs.Select(c => c.Text));
         Assert.Equal(Prod, crumbs[1].ServerId);
-        Assert.Null(crumbs[2].Target);   // Summary is the group's first page
+        Assert.Null(crumbs[2].Target);
 
-        // From Live Metrics, Overview opens the server's Summary.
+        // From Live charts, Overview opens the server's Overview.
         var live = For(new Route("LiveMetrics", ConnectionId: Prod));
-        Assert.Equal(["All servers", "PROD-SQL01", "Overview", "Live Metrics"], live.Select(c => c.Text));
-        Assert.Equal(new Route("ServerDetail", ServerId: Prod), live[2].Target);
+        Assert.Equal(["All servers", "PROD-SQL01", "Overview", "Live charts"], live.Select(c => c.Text));
+        Assert.Equal(new Route("Overview", ServerId: Prod), live[2].Target);
     }
 
     [Fact]
@@ -80,7 +81,7 @@ public sealed class BreadcrumbTests
     {
         Assert.Equal(["All servers", "Activity now", "Processes"], For(new Route("Processes", ConnectionId: Gone)).Select(c => c.Text));
         Assert.Equal(["All servers", "Activity now", "Processes"], For(new Route("Processes")).Select(c => c.Text));
-        Assert.Equal(["All servers", "Overview", "Summary"], For(new Route("ServerDetail", ServerId: Gone)).Select(c => c.Text));
+        Assert.Equal(["All servers", "Overview"], For(new Route("Overview", ServerId: Gone)).Select(c => c.Text));
     }
 
     [Fact]

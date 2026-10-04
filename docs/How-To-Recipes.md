@@ -2,6 +2,7 @@
 
 Step-by-step guides for common situations. You don't need to know which screen to open. Start from the problem.
 
+- [Is this server OK?](#is-this-server-ok)
 - [The server is slow right now](#the-server-is-slow-right-now)
 - [Users say the application is hanging](#users-say-the-application-is-hanging)
 - [Find which login has the most sessions](#find-which-login-has-the-most-sessions)
@@ -31,9 +32,19 @@ Step-by-step guides for common situations. You don't need to know which screen t
 
 ---
 
+## Is this server OK?
+
+1. Open the server: **All servers → Open** on its tile. It opens on its **Overview**.
+2. **Active alerts**, at the top: each says what is happening in plain words and since when. Press its button (*Top CPU queries →*, *Blocking chain →*…) for the evidence.
+3. **What is costing points**: each check lowering the score, its points and why, with a link to the page that explains it. No alert yet doesn't mean nothing is wrong: a check can cost points before it has lasted long enough to alert.
+4. **Since you last looked**: deadlocks, failed Agent jobs and regressed queries since you last opened this Overview. Each row links to its page.
+5. The **charts** show when it started: pick **1h**, **24h** or **7d** in the top bar; dashed lines mark where alerts started.
+
+See [Your Servers → Overview](Your-Servers.md#a-servers-overview).
+
 ## The server is slow right now
 
-1. **💓 Live Metrics**: which colour dominates the **Waits** chart? Is **CPU** high?
+1. **The server's Overview**, or **💓 Live charts** for the full-size charts: which colour dominates the **Waits** chart? Is **CPU** high?
 2. Follow the dominant wait:
 
    | Dominant wait | Go to |
@@ -145,7 +156,7 @@ An application that opens connections and doesn't close them fills its pool with
 ## Something happened overnight
 
 1. History only exists for times the connection was **monitored**. To have it next time, see [Monitor my servers all the time](#monitor-my-servers-all-the-time).
-2. **💓 Live Metrics → Custom…**: set From/To around the incident, and press **Show**. Look for the CPU or wait spike.
+2. **💓 Live charts → Custom…**: set From/To around the incident, and press **Show**. Look for the CPU or wait spike.
 3. **📈 Wait Trend → same range → Top Waits**: which wait types rose.
 4. **⏱️ Perfmon → same range**: tick counters such as batch requests, lock waits or page life expectancy.
 5. **🐢 Query Regressions**: *Recent: last 24 hours*, to see if a query got slower.
@@ -176,7 +187,7 @@ An application that opens connections and doesn't close them fills its pool with
 
 ## Is today normal?
 
-1. Open **💓 Live Metrics**, **📈 Wait Trend** or **⏱️ Perfmon**.
+1. Open **💓 Live charts**, **📈 Wait Trend** or **⏱️ Perfmon**.
 2. Tick **Compare to baseline**. Dashed lines show **the same time last week**.
 3. Current line well above the dashed line = unusual. Both similar = that's just your normal load.
 
@@ -219,7 +230,7 @@ An application that opens connections and doesn't close them fills its pool with
 ## Keep an eye on several servers
 
 1. Add each server in **⚙️ Settings → Connections** with **Monitor in background** on (its *Monitoring & alerts* tab), and turn on **Settings → Monitoring & history → Start monitoring automatically** (see [Monitor my servers all the time](#monitor-my-servers-all-the-time)).
-2. Open **All servers**: a tile per server, the ones that need attention first, each with its score, its last hour and a bar per check. **Open** a tile to see why, with links to the pages that explain each check. See [Your Servers](Your-Servers.md). A tile's **⋯ → Why this score…** shows which checks lowered it, without opening the server.
+2. Open **All servers**: a tile per server, the ones that need attention first, each with its score, its last hour and a bar per check. **Open** a tile for its [Overview](Your-Servers.md#a-servers-overview): its alerts, what is costing points with links to the pages that explain each check, and what happened since you last looked. See [Your Servers](Your-Servers.md). A tile's **⋯ → Why this score…** shows which checks lowered it, without opening the server.
 3. Open **🔔 Alerts** to see what went wrong while you weren't looking, and when. Filter by connection. See [Alerts](Alerts.md).
 4. Servers that always run hot: turn on **Use its own health thresholds** on their *Health thresholds* tab so they don't cry wolf.
 5. Use **Settings → Monitoring & history** to keep 14+ days, so you can compare against last week, and keep the alerts that long.
@@ -229,7 +240,7 @@ An application that opens connections and doesn't close them fills its pool with
 With **Start monitoring automatically** off (the default for a new installation from 0.46.0), SqlVitals sends nothing to the server except what you ask for.
 
 1. Check **⚙️ Settings → Monitoring & history**: **Start monitoring automatically** is unticked.
-2. Open SqlVitals and connect. **💓 Live Metrics** says *Monitoring is off*; leave it.
+2. Open SqlVitals and connect. The server's Overview says it isn't monitored; leave it.
 3. Open **🛰️ SP Trace** and trace as usual. See [Find out what an application is calling](#find-out-what-an-application-is-calling).
 4. If the server's dot in the sidebar is coloured, it's being monitored: press **■** in its header to stop it until SqlVitals exits.
 
@@ -242,7 +253,7 @@ Nothing else runs beside the trace: no Live Metrics query, history snapshot or P
 3. Tick **Settings → Notification area → Keep SqlVitals running in the notification area…**, so closing the window doesn't stop monitoring.
 4. Keep **Settings → Monitoring & history** at 14 days or more, for week-over-week baselines.
 
-From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.md) and Windows notifications. A **■** press in the sidebar, on a tile's **⋯** menu or on Live Metrics still stops one until SqlVitals exits.
+From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.md) and Windows notifications. A **■** press in the sidebar, on a tile's **⋯** menu, on a server's Overview or on Live charts still stops one until SqlVitals exits.
 
 ## Get alerts in a Teams channel
 

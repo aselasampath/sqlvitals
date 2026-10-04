@@ -222,6 +222,18 @@ public class ConnectionSettingsService
     }
 
     /// <summary>
+    /// Saves when a server's Overview was opened (#143), for its "Since you last looked". Servers
+    /// no longer saved are forgotten. Not in the activity log (see <see cref="SettingsActivity"/>):
+    /// it changes every time an Overview opens.
+    /// </summary>
+    public void SetOverviewOpened(Guid connectionId, DateTime utc) => Update(ActivitySources.Page("Overview"), s =>
+    {
+        s.OverviewOpenedUtc[connectionId] = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        foreach (var gone in s.OverviewOpenedUtc.Keys.Where(id => s.Connections.All(c => c.Id != id)).ToList())
+            s.OverviewOpenedUtc.Remove(gone);
+    });
+
+    /// <summary>
     /// Saves the sidebar's state (#142): pinned, collapsed or hidden. Only written when it changed.
     /// A layout preference, so not in the activity log (see <see cref="SettingsActivity"/>).
     /// </summary>
@@ -335,9 +347,10 @@ public class ConnectionSettingsService
                 ProcessesView           = ConnectionStore.ParseProcessesView(raw.ProcessesView),
                 ProcessesGroupByLogin   = raw.ProcessesGroupByLogin,
                 QueryStoreChartMetrics  = QueryStoreMetrics.ParseChartMetrics(raw.QueryStoreChartMetrics),
-                LastPage                = raw.LastPage is { } last && NavMenu.AllPages.Any(p => p.Tag == last) ? last : null,
+                LastPage                = LastPageFrom(raw.LastPage),
                 LastServerId            = raw.LastServerId,
                 SidebarMode             = ConnectionStore.ParseSidebarMode(raw.SidebarMode),
+                OverviewOpenedUtc       = raw.OverviewOpenedUtc?.ToDictionary(p => p.Key, p => DateTime.SpecifyKind(p.Value, DateTimeKind.Utc)) ?? [],
             };
 
             var migrated = false;
@@ -462,6 +475,13 @@ public class ConnectionSettingsService
         }
     }
 
+    // A page still in the sidebar. A server's summary, saved before 0.59.0, is its Overview now (#143).
+    private static string? LastPageFrom(string? saved)
+    {
+        var tag = saved == "ServerDetail" ? "Overview" : saved;
+        return tag is not null && NavMenu.AllPages.Any(p => p.Tag == tag) ? tag : null;
+    }
+
     // A sync or antivirus tool can hold the file for a moment.
     private static string ReadAllTextWithRetry(string path)
     {
@@ -524,6 +544,7 @@ public class ConnectionSettingsService
             LastPage                = store.LastPage,
             LastServerId            = store.LastServerId,
             SidebarMode             = store.SidebarMode.ToString(),
+            OverviewOpenedUtc       = store.OverviewOpenedUtc.Count > 0 ? new Dictionary<Guid, DateTime>(store.OverviewOpenedUtc) : null,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -587,6 +608,7 @@ public class ConnectionSettingsService
         public string? LastPage                  { get; set; }
         public Guid?   LastServerId              { get; set; }
         public string? SidebarMode               { get; set; }
+        public Dictionary<Guid, DateTime>? OverviewOpenedUtc { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -709,6 +731,9 @@ public class ConnectionStore
 
     /// <summary>The sidebar pinned, collapsed or hidden (#142), as the user last chose it.</summary>
     public SidebarMode SidebarMode { get; set; } = SidebarMode.Pinned;
+
+    /// <summary>When each server's Overview was last opened (#143), UTC, by connection id.</summary>
+    public Dictionary<Guid, DateTime> OverviewOpenedUtc { get; set; } = [];
 
     /// <summary>A saved sidebar state; pinned for anything missing or unknown.</summary>
     public static SidebarMode ParseSidebarMode(string? value) =>
