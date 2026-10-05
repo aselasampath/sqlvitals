@@ -3,9 +3,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
-using SqlVitals.Desktop.Windows;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
 
@@ -16,8 +18,62 @@ namespace SqlVitals.Desktop.Pages;
 /// when the login can create one, and falls back to per-procedure DMV aggregates when it
 /// cannot — see <see cref="ISpTraceRepository"/>.
 /// </summary>
-public partial class SpTracePage : Page, IRefreshable, IPageContext
+public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSource
 {
+    // ── The details drawer (#149): the selected call ─────────────────────────
+    // Its figures, its statement with Copy, and its procedure's cached plan, drawn here or in a
+    // window as View Plan opened it. The pane below the calls moved here.
+    private const string SelectHint = "Select a call to see its statement, its figures and its procedure's plan.";
+
+    private RowDetailsView? _detailsView;
+
+    public DrawerContent Details { get; private set; } = new("Call details", null, SelectHint);
+
+    public event Action<bool>? DetailsChanged;
+
+    internal RowDetailsView? DetailsView => _detailsView;
+
+    private void ShowCall(object row, bool open)
+    {
+        if (row is not SpTraceEvent call)
+            return;
+        List<DrawerPlan> plans = [];
+        if (call.ObjectName is { Length: > 0 } objectName)
+            plans.Add(new("Cached plan of the procedure", () => _repo.GetObjectQueryPlanAsync(objectName), $"Execution plan · {objectName}"));
+        _detailsView ??= new RowDetailsView();
+        _detailsView.Show(RowDetails.Rows(call), string.IsNullOrEmpty(call.ObjectName) ? "Statement" : $"Statement — {call.ObjectName}",
+                          call.Statement, plans);
+        Details = new(string.IsNullOrEmpty(call.ObjectName) ? "Call" : call.ObjectName, _detailsView, SelectHint);
+        DetailsChanged?.Invoke(open);
+    }
+
+    // Clear: the drawer says to select a call again.
+    private void ClearDetail()
+    {
+        Details = new("Call details", null, SelectHint);
+        DetailsChanged?.Invoke(false);
+    }
+
+    // ── The page template's verdict (#149): what the capture is doing ─────────
+    internal SpTraceViewModel ViewModel { get; }
+
+    private void UpdateVerdict() =>
+        ViewModel.Show(_status, _allCalls, (AggregateGrid.ItemsSource as System.Collections.ICollection)?.Count ?? 0, ReadMinDurationMs());
+
+    // The verdict's Show the slowest: on Live Calls, selected, in view and in the drawer; the
+    // filters cleared first if they hide it.
+    private void ShowSlowest()
+    {
+        if (_allCalls.OrderByDescending(c => c.DurationMs).ThenByDescending(c => c.EventTime).FirstOrDefault() is not { } slowest)
+            return;
+        if (!_visibleCalls.Contains(slowest))
+            BtnClearFilters_Click(this, new RoutedEventArgs());
+        TraceTabs.SelectedItem = TabLiveCalls;
+        CallsGrid.SelectedItem = slowest;
+        CallsGrid.ScrollIntoView(slowest);
+        ShowCall(slowest, open: true);
+    }
+
     // The trace's events as they arrive, once started (#140); Start and Stop stay on the page.
     public PageKind Kind => PageKind.Live;
 
@@ -50,7 +106,8 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext
     // exists) and while combo items are being rebuilt.
     private bool _filtersReady;
 
-    public SpTracePage(IWaitStatsRepository repo)
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public SpTracePage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
@@ -69,9 +126,18 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext
         CmbInterval.SelectedIndex = 1;   // 2s — matches MAX_DISPATCH_LATENCY
 
         CallsGrid.ItemsSource = _visibleCalls;
+        DrawerParts.FollowSelection(CallsGrid, ShowCall);
 
         _timer.Interval = TimeSpan.FromSeconds(1);
         _timer.Tick += Timer_Tick;
+
+        ViewModel = new SpTraceViewModel(
+            start:       () => BtnTrace.IsChecked = true,
+            stop:        () => BtnTrace.IsChecked = false,
+            showSlowest: ShowSlowest);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        UpdateVerdict();
     }
 
     /// <summary>
@@ -81,10 +147,18 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext
     /// </summary>
     public async Task RefreshAsync()
     {
-        if (_status.IsRunning)
-            await PollOnceAsync();
-        else
-            await LoadAggregatesAsync();
+        try
+        {
+            if (_status.IsRunning)
+                await PollOnceAsync();
+            else
+                await LoadAggregatesAsync();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the procedure statistics", ex);
+            throw;
+        }
     }
 
     // ── Trace lifecycle ──────────────────────────────────────────────────
@@ -220,6 +294,7 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext
                 TrimHistory();
                 RefreshFilterChoices();
                 ApplyFilter();
+                UpdateVerdict();
             }
 
             _status = await _repo.GetTraceStatusAsync();
@@ -238,6 +313,7 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext
 
         AggregateGrid.ItemsSource = rows;
         TxtNoAggregates.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateVerdict();
     }
 
     private void TrimHistory()
@@ -407,66 +483,18 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext
         RefreshFilterChoices();
         ApplyFilter();
         ClearDetail();
-    }
-
-    // ── Detail pane ──────────────────────────────────────────────────────
-
-    private void CallsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CallsGrid.SelectedItem is not SpTraceEvent call)
-        {
-            ClearDetail();
-            return;
-        }
-
-        TxtDetailHeader.Text = string.IsNullOrEmpty(call.ObjectName)
-            ? "Statement"
-            : $"Statement — {call.ObjectName}";
-        TxtStatement.Text = call.Statement ?? "(no statement text captured)";
-
-        BtnCopyStatement.IsEnabled = !string.IsNullOrWhiteSpace(call.Statement);
-        BtnViewPlan.IsEnabled      = !string.IsNullOrWhiteSpace(call.ObjectName);
-    }
-
-    private void ClearDetail()
-    {
-        TxtDetailHeader.Text       = "Statement";
-        TxtStatement.Text          = string.Empty;
-        BtnCopyStatement.IsEnabled = false;
-        BtnViewPlan.IsEnabled      = false;
-    }
-
-    private void BtnCopyStatement_Click(object sender, RoutedEventArgs e)
-    {
-        if (!string.IsNullOrWhiteSpace(TxtStatement.Text))
-            ClipboardHelper.SetText(TxtStatement.Text);
-    }
-
-    private async void BtnViewPlan_Click(object sender, RoutedEventArgs e)
-    {
-        if (CallsGrid.SelectedItem is not SpTraceEvent { ObjectName: { Length: > 0 } objectName } call)
-            return;
-
-        BtnViewPlan.IsEnabled = false;
-        try
-        {
-            var planXml = await _repo.GetObjectQueryPlanAsync(objectName);
-            new QueryExecutionPlanWindow(planXml, call.Statement) { Owner = Window.GetWindow(this) }
-                .ShowDialog();
-        }
-        catch (Exception ex)
-        {
-            ShowError($"Could not load the execution plan: {ex.Message}");
-        }
-        finally
-        {
-            BtnViewPlan.IsEnabled = true;
-        }
+        UpdateVerdict();
     }
 
     // ── Status strip ─────────────────────────────────────────────────────
 
     private void ApplyStatus()
+    {
+        ApplyStatusStrip();
+        UpdateVerdict();
+    }
+
+    private void ApplyStatusStrip()
     {
         if (!_status.IsRunning)
         {

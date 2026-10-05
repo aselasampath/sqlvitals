@@ -2,15 +2,61 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFocusPage
+public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFocusPage, IDetailsSource
 {
+    // ── The details drawer (#149): the selected query ─────────────────────────
+    // A row selected on any tab: its figures, its text and its plan, drawn here or in a window as
+    // View Plan always opened it. It stays until another row is selected.
+    private const string SelectHint = "Select a query on any tab to see its figures, its text and its plan.";
+
+    private RowDetailsView? _detailsView;
+
+    public DrawerContent Details { get; private set; } = new("Query details", null, SelectHint);
+
+    public event Action<bool>? DetailsChanged;
+
+    internal RowDetailsView? DetailsView => _detailsView;
+
+    private void ShowQuery(object row, bool open)
+    {
+        if (row is not ResourceIntensiveQuery q)
+            return;
+        var name = string.IsNullOrWhiteSpace(q.ObjectName) ? "Ad hoc query" : q.ObjectName;
+        _detailsView ??= new RowDetailsView();
+        _detailsView.Show(RowDetails.Rows(q), "Query text", q.QueryText,
+                          [new DrawerPlan("Execution plan", () => PlanOf(q), $"Execution plan · {name}")]);
+        Details = new(name, _detailsView, SelectHint);
+        DetailsChanged?.Invoke(open);
+    }
+
+    // The procedure's plan when the row names one, else the statement's cached plan, as View Plan reads it.
+    private async Task<string?> PlanOf(ResourceIntensiveQuery q) =>
+        !string.IsNullOrEmpty(q.ObjectName) ? await _repo.GetObjectQueryPlanAsync(q.ObjectName) ?? q.QueryPlan : q.QueryPlan;
+
+    // The verdict's Show it: the tab, its top row selected, in view, and in the drawer.
+    private void ShowTop(TabItem tab, DataGrid grid, Func<ResourceIntensiveQuery, long> by)
+    {
+        Tabs.SelectedItem = tab;
+        if (grid.ItemsSource is not IEnumerable<ResourceIntensiveQuery> rows || rows.OrderByDescending(by).FirstOrDefault() is not { } top)
+            return;
+        grid.SelectedItem = top;
+        grid.ScrollIntoView(top);
+        ShowQuery(top, open: true);
+    }
+
+    // The page template's verdict (#149): the query that uses the most CPU, and the one that reads the most.
+    internal ResourceQueriesViewModel ViewModel { get; }
+
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;
 
@@ -26,18 +72,39 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFo
 
     /// <param name="serverOffset">The server's clock from UTC, to compare the plan cache's last
     /// execution times with an alert's; this PC's when not known.</param>
-    public ResourceQueriesPage(IWaitStatsRepository repo, TimeSpan? serverOffset = null)
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public ResourceQueriesPage(IWaitStatsRepository repo, TimeSpan? serverOffset = null, ISectionFolds? folds = null)
     {
         _repo         = repo;
         _serverOffset = serverOffset ?? TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
         InitializeComponent();
+
+        foreach (var grid in new[] { ReadsGrid, CpuGrid, HighestReadsGrid })
+            DrawerParts.FollowSelection(grid, ShowQuery);
+
+        ViewModel = new ResourceQueriesViewModel(
+            showCpu:   () => ShowTop(TabCpu, CpuGrid, q => q.TotalCPUTime),
+            showReads: () => ShowTop(TabReads, ReadsGrid, q => q.TotalLogicalReads));
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
     }
 
     public async Task RefreshAsync()
     {
-        var (byReads, byCpu, byHighestReads) = await _repo.GetResourceIntensiveQueriesAsync(_topN);
+        IEnumerable<ResourceIntensiveQuery> byReads, byCpu, byHighestReads;
+        try
+        {
+            (byReads, byCpu, byHighestReads) = await _repo.GetResourceIntensiveQueriesAsync(_topN);
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the plan cache's query statistics", ex);
+            throw;
+        }
+        var readsList = byReads.ToList();
+        ViewModel.Show(byCpu.ToList(), readsList);
 
-        DataGridRefresh.SetItemsSource(ReadsGrid,        byReads.ToList());
+        DataGridRefresh.SetItemsSource(ReadsGrid,        readsList);
         DataGridRefresh.SetItemsSource(HighestReadsGrid, byHighestReads.ToList());
         _byCpu = byCpu.ToList();
         ShowCpu();

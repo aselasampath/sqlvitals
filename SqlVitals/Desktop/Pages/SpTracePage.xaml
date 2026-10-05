@@ -1,6 +1,7 @@
 <Page x:Class="SqlVitals.Desktop.Pages.SpTracePage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="SP Trace"
       Unloaded="Page_Unloaded">
 
@@ -53,10 +54,11 @@
         </Style>
     </Page.Resources>
 
-    <Grid Margin="16,12,16,12">
+    <!-- The page template (#149): the verdict on what the capture is doing first, then the trace's
+         controls and the calls; a call selected shows its statement and plan in the details drawer. -->
+    <controls:PageShell x:Name="Shell" Margin="16,12,16,12" Title="Live SP Trace" PageKey="SpTrace">
+    <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <!-- title -->
             <RowDefinition Height="Auto"/>
             <!-- toolbar -->
             <RowDefinition Height="Auto"/>
@@ -65,13 +67,8 @@
             <!-- tabs -->
         </Grid.RowDefinitions>
 
-        <!-- ── Title ──────────────────────────────────────────────── -->
-        <TextBlock Grid.Row="0" Text="Live SP Trace"
-                   Style="{StaticResource SectionHeader}" FontSize="20"
-                   Margin="0,0,0,12"/>
-
         <!-- ── Toolbar ────────────────────────────────────────────── -->
-        <Border Grid.Row="1" Background="{StaticResource BgCard}"
+        <Border Grid.Row="0" Background="{StaticResource BgCard}"
                 BorderBrush="{StaticResource Border}" BorderThickness="1"
                 CornerRadius="4" Padding="10,7" Margin="0,0,0,8">
             <WrapPanel Orientation="Horizontal">
@@ -119,7 +116,7 @@
         </Border>
 
         <!-- ── Status strip ───────────────────────────────────────── -->
-        <Border Grid.Row="2" Background="{StaticResource BgCard}"
+        <Border Grid.Row="1" Background="{StaticResource BgCard}"
                 BorderBrush="{StaticResource Border}" BorderThickness="1"
                 CornerRadius="3" Padding="10,5" Margin="0,0,0,8">
             <DockPanel>
@@ -141,7 +138,7 @@
         </Border>
 
         <!-- ── Tabs ───────────────────────────────────────────────── -->
-        <TabControl x:Name="TraceTabs" Grid.Row="3"
+        <TabControl x:Name="TraceTabs" Grid.Row="2"
                     Background="Transparent" BorderThickness="0">
 
             <!-- Live calls -->
@@ -150,8 +147,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*" MinHeight="140"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Filter bar — client-side, applies to captured history -->
@@ -242,8 +237,7 @@
                     <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,8,0,0">
                         <Grid>
                             <DataGrid x:Name="CallsGrid" IsReadOnly="True"
-                                      AutoGenerateColumns="False"
-                                      SelectionChanged="CallsGrid_SelectionChanged">
+                                      AutoGenerateColumns="False">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Time"      Binding="{Binding EventTime, StringFormat=HH:mm:ss.fff}" Width="92"/>
                                     <DataGridTextColumn Header="Procedure" Binding="{Binding ObjectName}"    Width="230"/>
@@ -269,42 +263,6 @@
                         </Grid>
                     </Border>
 
-                    <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
-                                  Background="{StaticResource Border}" Margin="0,4"/>
-
-                    <!-- Detail pane -->
-                    <Border Grid.Row="3" Style="{StaticResource KpiCard}" Height="176">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-
-                            <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                                <Button x:Name="BtnViewPlan" Content="View Plan"
-                                        DockPanel.Dock="Right" Width="80"
-                                        Style="{StaticResource TraceFlatBtn}"
-                                        IsEnabled="False" Click="BtnViewPlan_Click"
-                                        ToolTip="Show the cached execution plan for this procedure"/>
-                                <Button x:Name="BtnCopyStatement" Content="Copy"
-                                        DockPanel.Dock="Right" Width="60" Margin="0,0,6,0"
-                                        Style="{StaticResource TraceFlatBtn}"
-                                        IsEnabled="False" Click="BtnCopyStatement_Click"/>
-                                <TextBlock x:Name="TxtDetailHeader" Text="Statement"
-                                           Foreground="{StaticResource TextPrimary}"
-                                           FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
-                                           VerticalAlignment="Center"/>
-                            </DockPanel>
-
-                            <TextBox x:Name="TxtStatement" Grid.Row="1"
-                                     IsReadOnly="True" TextWrapping="Wrap"
-                                     VerticalScrollBarVisibility="Auto"
-                                     Background="{StaticResource BgDeep}"
-                                     Foreground="{StaticResource TextPrimary}"
-                                     BorderBrush="{StaticResource Border}" BorderThickness="1"
-                                     FontFamily="Consolas" FontSize="11" Padding="6"/>
-                        </Grid>
-                    </Border>
                 </Grid>
             </TabItem>
 
@@ -339,4 +297,5 @@
             </TabItem>
         </TabControl>
     </Grid>
+    </controls:PageShell>
 </Page>

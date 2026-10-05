@@ -14,12 +14,11 @@
             <Setter Property="FontSize" Value="11"/>
         </Style>
     </Page.Resources>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
-        <StackPanel>
-            <TextBlock Text="Resource-Intensive Queries" Style="{StaticResource SectionHeader}"
-                       FontSize="20" Margin="0,0,0,12" />
-
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+    <!-- The page template (#149): the verdict on the costliest queries first, then the tabs; a row
+         selected shows its figures, its text and its plan in the details drawer. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Resource-Intensive Queries" PageKey="ResourceQueries">
+        <controls:PageShell.Actions>
+            <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Row Limit:" VerticalAlignment="Center"
                            Foreground="{StaticResource TextMuted}"
                            FontFamily="Segoe UI" FontSize="13" Margin="0,0,8,0"/>
@@ -35,16 +34,17 @@
                     <ComboBoxItem Content="200"/>
                 </ComboBox>
             </StackPanel>
+        </controls:PageShell.Actions>
 
             <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}"
                         BorderBrush="{StaticResource Border}"
                         Foreground="{StaticResource TextPrimary}">
 
                 <!-- Tab 1: By Logical Reads -->
-                <TabItem Header="By Logical Reads">
+                <TabItem x:Name="TabReads" Header="By Logical Reads">
                     <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
-                        <StackPanel>
-                            <DockPanel Margin="0,0,0,8">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <Button Content="&#x2398; Copy All" DockPanel.Dock="Right"
                                         Style="{StaticResource RefreshButton}" Padding="10,5"
                                         ToolTip="Copy every row shown, in the grid's current order, with headers."
@@ -54,7 +54,7 @@
                                 <TextBlock Text="Queries sorted by total logical reads (most I/O-intensive)"
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
-                            <DataGrid x:Name="ReadsGrid" MaxHeight="520" CanUserAddRows="False"
+                            <DataGrid x:Name="ReadsGrid" CanUserAddRows="False"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       RowBackground="{StaticResource BgDeep}"
@@ -108,15 +108,15 @@
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
-                        </StackPanel>
+                        </DockPanel>
                     </Border>
                 </TabItem>
 
                 <!-- Tab 2: By CPU -->
                 <TabItem x:Name="TabCpu" Header="By CPU">
                     <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
-                        <StackPanel>
-                            <DockPanel Margin="0,0,0,8">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <Button Content="&#x2398; Copy All" DockPanel.Dock="Right"
                                         Style="{StaticResource RefreshButton}" Padding="10,5"
                                         ToolTip="Copy every row shown, in the grid's current order, with headers."
@@ -126,7 +126,7 @@
                                 <TextBlock Text="Queries sorted by total CPU time (most processor-intensive)"
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
-                            <DataGrid x:Name="CpuGrid" MaxHeight="520" CanUserAddRows="False"
+                            <DataGrid x:Name="CpuGrid" CanUserAddRows="False"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       RowBackground="{StaticResource BgDeep}"
@@ -164,15 +164,15 @@
                                     <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"    Width="*" ElementStyle="{StaticResource SingleLineText}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                        </StackPanel>
+                        </DockPanel>
                     </Border>
                 </TabItem>
 
                 <!-- Tab 3: Highest Logical Reads -->
                 <TabItem Header="Highest Logical Reads">
                     <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
-                        <StackPanel>
-                            <DockPanel Margin="0,0,0,8">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <Button Content="&#x2398; Copy All" DockPanel.Dock="Right"
                                         Style="{StaticResource RefreshButton}" Padding="10,5"
                                         ToolTip="Copy every row shown, in the grid's current order, with headers."
@@ -182,7 +182,7 @@
                                 <TextBlock Text="Queries sorted by total logical reads"
                                            Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
-                            <DataGrid x:Name="HighestReadsGrid" MaxHeight="520" CanUserAddRows="False"
+                            <DataGrid x:Name="HighestReadsGrid" CanUserAddRows="False"
                                       IsReadOnly="True" AutoGenerateColumns="False"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       RowBackground="{StaticResource BgDeep}"
@@ -216,11 +216,10 @@
                                     <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"    Width="*" ElementStyle="{StaticResource SingleLineText}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                        </StackPanel>
+                        </DockPanel>
                     </Border>
                 </TabItem>
 
             </TabControl>
-        </StackPanel>
-    </ScrollViewer>
+    </controls:PageShell>
 </Page>

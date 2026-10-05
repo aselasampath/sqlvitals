@@ -1,14 +1,11 @@
 <Page x:Class="SqlVitals.Desktop.Pages.ActiveWaitsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Active Waits">
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Active Waits" Style="{StaticResource SectionHeader}" FontSize="20" Margin="0,0,0,14" />
-        <Border Grid.Row="1" Style="{StaticResource KpiCard}">
+    <!-- The page template (#149): the verdict on blocking and waits first, then every request. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Active Waits" PageKey="ActiveWaits">
+        <Border Style="{StaticResource KpiCard}">
             <DataGrid x:Name="ActiveGrid">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Session"     Binding="{Binding SessionId}"          Width="65" />
@@ -26,5 +23,5 @@
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
-    </Grid>
+    </controls:PageShell>
 </Page>

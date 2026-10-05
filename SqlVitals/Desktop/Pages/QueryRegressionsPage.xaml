@@ -84,18 +84,19 @@
         </Style>
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-
-        <TextBlock Grid.Row="0" Text="Query Regressions — queries that got slower" Style="{StaticResource SectionHeader}"
-                   FontSize="20" Margin="0,0,0,14" />
+    <!-- The page template (#149): the verdict on the queries that got slower first, what is compared
+         folding to one line, then the queries; a row selected shows its plans in the details drawer. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Query Regressions — queries that got slower" PageKey="QueryRegressions">
+        <controls:PageShell.Actions>
+            <Button x:Name="BtnCheck" Content="↻ Check" Style="{StaticResource RefreshButton}" Padding="12,4"
+                    ToolTip="Check again with these settings (or press Enter in either box). The settings are saved."
+                    Click="BtnCheck_Click"/>
+        </controls:PageShell.Actions>
 
         <!-- What to compare, and when a query counts as regressed -->
-        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,16">
+        <controls:PageShell.Sections>
+        <controls:FoldSection x:Name="CriteriaSection" Key="criteria" Header="What is compared">
+        <Border Style="{StaticResource KpiCard}" Margin="0">
             <StackPanel>
                 <WrapPanel>
                     <TextBlock Text="Recent:" Style="{StaticResource ToolbarLabel}"/>
@@ -134,10 +135,6 @@
                     <TextBox x:Name="TxtMinExecutions" Width="60" Style="{StaticResource ToolbarBox}" KeyDown="Criteria_KeyDown"
                              ToolTip="Executions a query needs in each period to be compared, so one odd run can't flag it. Lower it to 1 for jobs that run once a day."/>
                     <TextBlock Text="executions in each period" Style="{StaticResource ToolbarLabel}" Margin="6,0,16,0"/>
-
-                    <Button x:Name="BtnCheck" Content="↻ Check" Style="{StaticResource RefreshButton}" Padding="12,4"
-                            ToolTip="Check again with these settings (or press Enter in either box). The settings are saved."
-                            Click="BtnCheck_Click"/>
                 </WrapPanel>
 
                 <TextBlock x:Name="TxtError" Foreground="{StaticResource Danger}" FontSize="12" Margin="0,8,0,0"
@@ -146,9 +143,11 @@
                            TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
+        </controls:FoldSection>
+        </controls:PageShell.Sections>
 
         <!-- Regressed queries -->
-        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+        <Border Style="{StaticResource KpiCard}">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="True">
                     <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=RegressionsGrid}" />
@@ -228,5 +227,5 @@
                 </Grid>
             </DockPanel>
         </Border>
-    </Grid>
+    </controls:PageShell>
 </Page>

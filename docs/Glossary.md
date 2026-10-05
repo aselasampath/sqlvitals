@@ -24,7 +24,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Deadlock** | Two or more sessions each holding a lock another needs, so none can go on. SQL Server rolls one back (the **victim**, error 1205) so the others can finish. See [Deadlocks](Deadlocks.md). |
 | **Deadlock graph (.xdl)** | A deadlock report saved as a file. SSMS opens it as a drawing of the processes and the locks they fought over. |
 | **Detail snapshot** | SqlVitals' periodic (5-minute default) save of waits per type, file I/O, top queries, memory and counters |
-| **Details drawer** | The panel at the right of the screen (from 0.63.0) that shows the selected row's details: a session on Processes, a query on Query Store. It floats over the grid or is pinned beside it; Ctrl+J opens and closes it. See [Working with Grids](Working-with-Grids.md#details-beside-the-grid). |
+| **Details drawer** | The panel at the right of the screen (from 0.63.0) that shows the selected row's details: a session on Processes, a query on Query Store, Resource Queries or Query Regressions, a call on SP Trace (from 0.65.0). It floats over the grid or is pinned beside it; Ctrl+J opens and closes it. See [Working with Grids](Working-with-Grids.md#details-beside-the-grid). |
 | **DMV** | *Dynamic Management View*: SQL Server's built-in diagnostic views (`sys.dm_*`), which SqlVitals reads |
 | **DPAPI** | Windows' data-protection API. SqlVitals uses it to encrypt saved connections so only your Windows account can read them. |
 | **Estimated vs. actual plan** | An *estimated* plan (plan cache, Query Store) has SQL Server's guesses only. An *actual* plan was captured while the query ran and adds the real row counts and times. |

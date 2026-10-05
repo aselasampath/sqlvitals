@@ -146,6 +146,10 @@ The **Process Map** chart on Live charts is always the map.
 
 A grid of every user request currently waiting, one row per session.
 
+**The verdict** (from 0.65.0) says first whether anything is blocked, coloured by your [blocking threshold](Health-Dot-and-Background-Monitoring.md#what-is-checked): *3 requests are blocked; session 112 the longest, for 4.2 min*, with what it waits on and who holds the lock, and **Blocking in Processes** to see the chain. With nothing blocked it says what most requests wait on (*4 requests are waiting, 2 on I/O waits*) and the longest wait, amber when one has waited over a minute; or *No request is waiting*. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Active Waits: the verdict says 3 requests are blocked, session 112 the longest for 4.2 min, above the grid](images/page-template/active-waits.png)
+
 | Column | Meaning |
 |---|---|
 | **Session** / **Blocking** | The session ID, and the session blocking it (0 = not blocked) |

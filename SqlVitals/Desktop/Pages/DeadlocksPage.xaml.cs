@@ -6,6 +6,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.Repositories;
 
@@ -32,13 +33,20 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
 
     private readonly IWaitStatsRepository _repo;
 
+    // The page template's verdict (#149): how many deadlocks in the range, and the object fought over most.
+    internal DeadlocksViewModel ViewModel { get; }
+
+    // The most frequent pattern in the range, for the verdict's Open the newest.
+    private DeadlockPattern? _topPattern;
+
     // What was read last; changing the range only filters it again.
     private DeadlockHistory? _history;
 
     // Set once the range choices are filled in, so filling them doesn't filter.
     private readonly bool _ready;
 
-    public DeadlocksPage(IWaitStatsRepository repo)
+    /// <param name="folds">Where the verdict's and the source's folds are remembered; none in some tests.</param>
+    public DeadlocksPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
@@ -47,8 +55,18 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
             CmbRange.Items.Add(label);
         CmbRange.SelectedIndex = Ranges.Length - 1;
 
+        ViewModel = new DeadlocksViewModel(
+            openNewest:    () => { if (_topPattern is { } top) OpenNewest(top); },
+            showRecurring: () => TabRecurring.IsSelected = true,
+            showAll:       () => CmbRange.SelectedIndex = Ranges.Length - 1);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+
         _ready = true;
     }
+
+    // "in the last 24 hours", "in what system_health holds".
+    private string During => SelectedSpan is null ? "in what system_health holds" : $"in the {Ranges[CmbRange.SelectedIndex].Label.ToLowerInvariant()}";
 
     private TimeSpan? SelectedSpan => Ranges[Math.Max(0, CmbRange.SelectedIndex)].Span;
 
@@ -64,6 +82,11 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
         {
             _history = await _repo.GetDeadlockHistoryAsync();
             Show();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the deadlock history", ex);
+            throw;
         }
         finally
         {
@@ -103,6 +126,18 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
 
         TxtNoData.Text       = EmptyText(history, reports.Count);
         TxtNoData.Visibility = reports.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        _topPattern = patterns.Count > 0 ? patterns[0] : null;
+        ViewModel.Show(history, reports, patterns, During);
+
+        // Folded, the section says it in one line (#149): "Event files · oldest 2026-09-12 08:14".
+        SourceSection.FoldedSummary = history.Source switch
+        {
+            DeadlockSource.None      => history.Problem ?? "Nothing could be read",
+            DeadlockSource.EventFile => "system_health's event files",
+            _                        => "system_health's ring buffer",
+        } + (history.Deadlocks.Count > 0 && history.Source != DeadlockSource.None ? $" · oldest held {history.Deadlocks[^1].Time:yyyy-MM-dd HH:mm}" : "")
+          + (history.Problem is not null && history.Source != DeadlockSource.None ? " · read in part" : "");
     }
 
     private static bool SameDeadlock(DeadlockReport a, DeadlockReport b) =>

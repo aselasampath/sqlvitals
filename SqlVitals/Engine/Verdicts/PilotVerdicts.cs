@@ -124,7 +124,7 @@ public static class QueryStoreVerdict
     }
 
     // "runs 4.1× slower" on duration, else on CPU; without a factor when the baseline was zero.
-    private static string Change(QueryRegression r)
+    internal static string Change(QueryRegression r)
     {
         var (pct, what) = r.DurationRegressed ? (r.DurationChangePct, "runs") : (r.CpuChangePct, "uses CPU");
         var factor = pct is { } p ? 1 + p / 100 : (double?)null;

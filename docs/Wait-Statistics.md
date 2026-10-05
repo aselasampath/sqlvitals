@@ -15,6 +15,10 @@ Whenever a query can't continue, for example because it needs data from disk, a 
 
 The top 25 wait types, ranked, with a bar chart of the top 15.
 
+**The verdict** (from 0.65.0) names the [wait category](#wait-categories) with most of the wait time since the server started, and what it usually means: *Most waiting is on I/O: 53 % of the wait time, mostly PAGEIOLATCH_SH*, then the next category. It is amber when **Locks** comes first. A button opens the page that shows the cause (File I/O, Resource Queries, Memory Grants or Processes), and **Wait Trend** shows whether it is happening now. The chart folds to one line (*PAGEIOLATCH_SH 38.2 % · WRITELOG 14.0 % · …*). See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Top Waits: the verdict says most waiting is on I/O, above the chart and the grid](images/page-template/top-waits.png)
+
 | Column | Meaning |
 |---|---|
 | **Rank** | 1 = the most time spent waiting |
@@ -45,8 +49,12 @@ The top 25 wait types, ranked, with a bar chart of the top 15.
    - **Signal Wait (ms/sec)**: time spent waiting for a CPU *after* the resource became free. High values point to CPU pressure.
    - **Resource Wait (ms/sec)**: time spent waiting for the resource itself: disk, lock, memory.
    - **Waiting Tasks/sec**: how often the wait happens.
-3. Choose an **Interval** (10s, 30s or 60s) and press **▶ Start**.
+3. Choose an **Interval** (5s, 10s, 30s or 60s) and press **Resume (▶)** in the top bar; **Pause** stops it. From 0.65.0 these are the page's Start and Stop, which were the same switch.
 4. To look back instead, use the **range picker** in the top bar: **1h**, **24h**, **7d** or **Custom…**. Add **Compare to baseline** to overlay the same time last week. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
+
+**The verdict** (from 0.65.0) reads the lines on the chart: the wait type that waits the most on average over what is drawn (*CXPACKET waits the most: 2,485 ms/s on average over the last 4 min*), its share, the next one, and **and rising**, in amber, when its last readings are at least twice its first. Before it has anything to judge it says so (*Not trending yet*, *Nothing recorded in this range*). **Top Waits** opens that page. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Wait Trend: the verdict says CXPACKET waits the most and is rising, above the wait types and the chart](images/page-template/wait-trend.png)
 
 ---
 
