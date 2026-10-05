@@ -59,6 +59,10 @@ public sealed class TemplateRolloutTests : IDisposable
     /// </summary>
     private static void Hosted(Page page, Func<Task> load, string? png, Action? whileShown = null, double width = 1400, double height = 860)
     {
+        // The page gets its size itself: Windows caps a window at the screen, and a CI runner's
+        // screen (1024 × 768) is shorter than this window, which squeezed the grids below the counts.
+        page.Width  = width;
+        page.Height = height;
         var window = new Window { Content = page, Width = width, Height = height, Left = -20_000, Top = -20_000,
                                   WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false };
         window.Show();
