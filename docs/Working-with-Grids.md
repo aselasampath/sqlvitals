@@ -4,7 +4,7 @@ Most SqlVitals screens show results in grids (tables). They all work the same wa
 
 ## Details beside the grid
 
-From 0.63.0 a row's details open in a **details drawer** at the right of the screen instead of a window or a panel over the grid, so you can go down a grid row by row and keep your place. **Processes** (a session) and **Query Store** (a query, from any tab) fill it; on other screens it says there is nothing to show yet.
+From 0.63.0 a row's details open in a **details drawer** at the right of the screen instead of a window or a panel over the grid, so you can go down a grid row by row and keep your place. **Processes** (a session) and **Query Store** (a query, from any tab) fill it; from 0.65.0 so do **Resource Queries** (a query, from any tab), **Query Regressions** (a regressed query, with its plans now and before) and **SP Trace** (a captured call, which replaced the statement pane under the calls). Each plan there is drawn in the drawer when you press **Show the plan**, and **Open in window** opens it in its own window as the grid's plan buttons do. On other screens it says there is nothing to show yet.
 
 - **Click a row** (or a node on the Processes map) to open it with that row's details. Moving the selection with the keyboard updates an open drawer without opening a closed one. With nothing selected it says what to select.
 - **Ctrl+J**, or the **details button** in the top bar, opens and closes it.

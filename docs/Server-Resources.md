@@ -83,6 +83,10 @@ Connections grouped **by application** (program name): number of connections, ac
 
 **Reading it:** hundreds of connections from one application with few active requests usually means a connection pool that's too big, or connections that aren't closed.
 
+**The verdict** (from 0.65.0) says who holds the connections (*5 applications hold 213 connections; OrderService the most, 120*), or, in amber, names an application holding 200 or more connections with fewer than 5 % of them running a request: a likely leak or an oversized pool. The **Counts** cards and the **Connections by application** chart fold to one line each (*5 application(s) · 213 connections · 10 active requests*), and the grid takes the room. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![App Connections: the verdict, the counts and the chart above the grid](images/page-template/app-connections.png)
+
 ---
 
 ## Perfmon

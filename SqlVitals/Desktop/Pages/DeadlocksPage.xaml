@@ -62,36 +62,37 @@
         </Style>
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-
-        <TextBlock Grid.Row="0" Text="Deadlocks — history from system_health" Style="{StaticResource SectionHeader}"
-                   FontSize="20" Margin="0,0,0,14"/>
-
-        <!-- Range, source and anything that stopped the history being read -->
-        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,12">
-            <StackPanel>
-                <WrapPanel>
-                    <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
-                    <ComboBox x:Name="CmbRange" Width="190" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="CmbRange_SelectionChanged"
-                              ToolTip="Deadlocks reported in this period, ending now. system_health rolls over its files, so how far back it reaches depends on how busy the server is."/>
-                    <Button x:Name="BtnReload" Content="↻ Read again" Style="{StaticResource RefreshButton}" Padding="12,4"
-                            ToolTip="Read system_health again for deadlocks since this page opened."
-                            Click="BtnReload_Click"/>
-                </WrapPanel>
-                <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap" Visibility="Collapsed"/>
-                <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap"/>
+    <!-- The page template (#149): the verdict on the deadlocks in the range first, where they were
+         read from folding to one line, then the deadlocks and the recurring ones. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Deadlocks — history from system_health" PageKey="Deadlocks">
+        <!-- The range applies to both tabs, so it stays beside the title when the source folds. -->
+        <controls:PageShell.Actions>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
+                <ComboBox x:Name="CmbRange" Width="190" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
+                          SelectionChanged="CmbRange_SelectionChanged"
+                          ToolTip="Deadlocks reported in this period, ending now. system_health rolls over its files, so how far back it reaches depends on how busy the server is."/>
+                <Button x:Name="BtnReload" Content="↻ Read again" Style="{StaticResource RefreshButton}" Padding="12,4"
+                        ToolTip="Read system_health again for deadlocks since this page opened."
+                        Click="BtnReload_Click"/>
             </StackPanel>
-        </Border>
+        </controls:PageShell.Actions>
 
-        <TabControl x:Name="Tabs" Grid.Row="2" Background="Transparent" BorderThickness="0">
+        <!-- Where the history was read from, and anything that stopped it being read -->
+        <controls:PageShell.Sections>
+            <controls:FoldSection x:Name="SourceSection" Key="source" Header="Source">
+                <Border Style="{StaticResource KpiCard}" Margin="0">
+                    <StackPanel>
+                        <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,0,0,8"
+                                   TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </controls:FoldSection>
+        </controls:PageShell.Sections>
+
+        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0">
 
             <!-- ── Every deadlock, newest first ───────────────────────── -->
             <TabItem x:Name="TabDeadlocks" Header="Deadlocks">
@@ -263,5 +264,5 @@
                 </Border>
             </TabItem>
         </TabControl>
-    </Grid>
+    </controls:PageShell>
 </Page>

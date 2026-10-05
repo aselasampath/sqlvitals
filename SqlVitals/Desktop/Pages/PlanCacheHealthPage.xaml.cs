@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -13,16 +14,35 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, IRefres
 
     private readonly IWaitStatsRepository _repo;
 
-    public PlanCacheHealthPage(IWaitStatsRepository repo)
+    // The page template's verdict (#149): the worst of what the page checks.
+    internal PlanCacheHealthViewModel ViewModel { get; }
+
+    /// <param name="folds">Where the verdict's and the summary's folds are remembered; none in some tests.</param>
+    public PlanCacheHealthPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel = new PlanCacheHealthViewModel(showTab: index => Tabs.SelectedIndex = index);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        var (summary, multiPlan, keyLookups, cardinality, skewed, guides) =
-            await _repo.GetPlanCacheHealthAsync();
+        var read = _repo.GetPlanCacheHealthAsync();
+        try
+        {
+            await read;
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the plan cache", ex);
+            throw;
+        }
+        var (summary, multiPlan, keyLookups, cardinality, skewed, guides) = read.Result;
+        var lookups = keyLookups.ToList();
+        ViewModel.Show(summary, lookups.Count);
 
         // ── KPI strip ─────────────────────────────────────────────────
         KpiStrip.Children.Clear();
@@ -47,6 +67,11 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, IRefres
         AddKpi("Severity",          summary.Severity,                          severityColor,
                "Overall plan cache health signal: CRITICAL = cache was erased or > 10 multi-plan queries; WARNING = multi-plan queries detected or plan guides present; OK = no issues found.");
 
+        // Folded, the section says it in one line (#149).
+        SummarySection.FoldedSummary = string.Join(" · ",
+            $"Plan cache {cacheStatus}", $"{summary.TotalCachedPlans:N0} plans", $"{summary.MultiPlanQueryCount:N0} multi-plan queries",
+            $"{summary.PlanGuidesEnabled:N0} plan guides", summary.Severity);
+
         // ── Cache-erased banner ────────────────────────────────────────
         BannerCacheErased.Visibility = summary.PlanCacheErasedRecently
             ? Visibility.Visible
@@ -54,7 +79,7 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, IRefres
 
         // ── DataGrids ─────────────────────────────────────────────────
         MultiPlanGrid.ItemsSource  = multiPlan.ToList();
-        KeyLookupGrid.ItemsSource  = keyLookups.ToList();
+        KeyLookupGrid.ItemsSource  = lookups;
         CardinalityGrid.ItemsSource = cardinality.ToList();
         SkewGrid.ItemsSource        = skewed.ToList();
         PlanGuidesGrid.ItemsSource  = guides.ToList();

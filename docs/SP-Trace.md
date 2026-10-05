@@ -6,6 +6,10 @@
 
 ## How to use it
 
+**The verdict** (from 0.65.0) says what the capture is doing: *Not capturing* (with **Start Trace**), *Capturing; no call yet*, *Capturing: 5 calls so far* with the slowest call, *Capturing totals per procedure only* in [DMV mode](#two-capture-modes), *Stopped, with 1,204 calls captured*, or, in amber, *Capturing, but 340 events were dropped*. **Start Trace**, **Stop Trace** and **Show the slowest** do what they say. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![SP Trace: the verdict says the trace is capturing, 5 calls so far, above the trace's controls and the calls](images/page-template/sp-trace.png)
+
 1. Set **Min duration (ms)**: only calls at least this slow are captured. **On a busy server, start high** (e.g. 100 ms) and lower it if needed.
 2. Pick a **Poll** interval: how often new calls are fetched.
 3. Press **● Start Trace**. The badge in the status strip shows the [capture mode](#two-capture-modes).
@@ -27,7 +31,7 @@ Narrow the list with the filters above it:
 | **Hide sp_reset_connection** | Hides connection-pool resets, which are noise for most investigations |
 | **Hide sp_executesql** | Hides parameterised ad-hoc batches. Their statement text is often the real query, so untick this if you're hunting an ORM's SQL. |
 
-**Clear filters** resets them. Select a row to see its **Statement**. **View Plan** shows the procedure's cached execution plan as a [graphical plan](Execution-Plans.md), and **Copy** copies the statement.
+**Clear filters** resets them. Click a row to open it in the [details drawer](Working-with-Grids.md#details-beside-the-grid) (from 0.65.0, instead of the statement pane under the list): its figures, its **Statement** with **Copy**, and the procedure's cached execution plan as a [graphical plan](Execution-Plans.md), drawn there by **Show the plan** or in a window by **Open in window** (what **View Plan** did).
 
 ### By Procedure tab
 

@@ -1,31 +1,31 @@
 <Page x:Class="SqlVitals.Desktop.Pages.ImplicitConversionsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Implicit Conversions">
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <!-- The page template (#149): the verdict first, what implicit conversions are folding to one
+         line, then the plans. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Implicit Conversions" PageKey="ImplicitConv">
+        <controls:PageShell.Sections>
+            <controls:FoldSection x:Name="AboutSection" Key="about" Header="What they cost"
+                                  FoldedSummary="A converted column can't be sought in its index: align the parameter's type with the column's">
+                <Border Background="#1AFBBF24" BorderBrush="#FBBF24" BorderThickness="1"
+                        CornerRadius="6" Padding="12,8">
+                    <TextBlock TextWrapping="Wrap" Foreground="#FBBF24" FontFamily="Segoe UI" FontSize="11">
+                        ⚠  Implicit conversions occur when SQL Server must cast one type to another at runtime.
+                        This often prevents index seeks and forces scans. Common causes: VARCHAR vs NVARCHAR mismatches,
+                        INT vs DECIMAL comparisons, or application code sending incorrect parameter types.
+                        Fix by aligning column types with parameter types in the application or query.
+                    </TextBlock>
+                </Border>
+            </controls:FoldSection>
+        </controls:PageShell.Sections>
 
-        <TextBlock Grid.Row="0" Text="Implicit Conversions" Style="{StaticResource SectionHeader}"
-                   FontSize="20" Margin="0,0,0,6" />
-        <Border Grid.Row="1" Background="#1AFBBF24" BorderBrush="#FBBF24" BorderThickness="1"
-                CornerRadius="6" Padding="12,8" Margin="0,0,0,16">
-            <TextBlock TextWrapping="Wrap" Foreground="#FBBF24" FontFamily="Segoe UI" FontSize="11">
-                ⚠  Implicit conversions occur when SQL Server must cast one type to another at runtime.
-                This often prevents index seeks and forces scans. Common causes: VARCHAR vs NVARCHAR mismatches,
-                INT vs DECIMAL comparisons, or application code sending incorrect parameter types.
-                Fix by aligning column types with parameter types in the application or query.
-            </TextBlock>
-        </Border>
-
-        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
-            <StackPanel>
-                <TextBlock Text="Cached plans containing CONVERT_IMPLICIT — sorted by execution count"
+        <Border Style="{StaticResource KpiCard}">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Cached plans containing CONVERT_IMPLICIT — sorted by execution count"
                            Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
-                <DataGrid x:Name="ConvGrid" MaxHeight="600" CanUserAddRows="False"
+                <DataGrid x:Name="ConvGrid" CanUserAddRows="False"
                           IsReadOnly="True" AutoGenerateColumns="False"
                           RowBackground="{StaticResource BgDeep}"
                           AlternatingRowBackground="{StaticResource BgSidebar}"
@@ -50,7 +50,7 @@
                         </DataGridTextColumn>
                     </DataGrid.Columns>
                 </DataGrid>
-            </StackPanel>
+            </DockPanel>
         </Border>
-    </Grid>
+    </controls:PageShell>
 </Page>

@@ -8,6 +8,9 @@ using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -18,20 +21,44 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageConte
 
     private readonly IWaitStatsRepository _repo;
 
-    public ApplicationConnectionsPage(IWaitStatsRepository repo)
+    // The page template's verdict (#149): who holds the connections, and a pool that looks leaked.
+    internal AppConnectionsViewModel ViewModel { get; } = new();
+
+    /// <param name="folds">Where the verdict's, the counts' and the chart's folds are remembered; none in some tests.</param>
+    public ApplicationConnectionsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        var data = (await _repo.GetApplicationConnectionsAsync()).ToList();
+        List<ApplicationConnection> data;
+        try
+        {
+            data = (await _repo.GetApplicationConnectionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the connections", ex);
+            throw;
+        }
+        ViewModel.Show(data);
 
         // ── Summary line ─────────────────────────────────────────────
         TxtSummary.Text = data.Count > 0
             ? $"{data.Count} application(s)  •  {data.Sum(d => d.CurrentConnections)} total connections"
             : "No active user connections";
+
+        // Folded, each section says it in one line (#149).
+        SummarySection.FoldedSummary = data.Count == 0 ? "No active user connections"
+            : $"{data.Count:N0} application(s) · {data.Sum(d => d.CurrentConnections):N0} connections · {data.Sum(d => d.ActiveRequests):N0} active requests";
+        ChartSection.FoldedSummary = data.Count == 0 ? "Nothing to chart"
+            : string.Join(" · ", data.OrderByDescending(d => d.CurrentConnections).Take(3)
+                                     .Select(d => $"{AppConnectionsVerdict.Name(d)} {d.CurrentConnections:N0}"));
 
         // ── KPI cards ────────────────────────────────────────────────
         KpiPanel.Children.Clear();

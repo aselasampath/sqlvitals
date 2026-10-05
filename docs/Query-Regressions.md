@@ -20,7 +20,13 @@ Set the options at the top. The check runs straight away when you change *Recent
 | **Flag a rise of more than** | Any percentage | 50 % | 50 = more than 1.5× slower; 100 = more than doubled |
 | **with at least … executions in each period** | Any number | 5 | Stops one odd run from flagging a query. Set **1** for jobs that run once a day. |
 
-Press **↻ Check** (or **Enter** in either box) after changing the threshold or executions. The threshold and minimum executions are remembered.
+Press **↻ Check** (beside the title, or **Enter** in either box) after changing the threshold or executions. The threshold and minimum executions are remembered. The options fold to one line (*Last 24 hours compared with the 7 days before · Query Store · more than 50 % slower, at least 5 runs in each period*).
+
+**The verdict** (from 0.65.0) says first whether any query got slower, the one costing the most extra time first: *2 queries got slower; query 4183 the most: runs 4.1× slower since it got a new plan*, and how much time its slower runs cost. **Show its plans** selects it and opens the [details drawer](Working-with-Grids.md#details-beside-the-grid); **Open query 4183 in Query Store** opens it there (Query Store only). When nothing could be compared it says why (*Nothing to compare*), and *No query got slower* says what was checked. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+A click on a row opens it in the drawer: duration and CPU before and now, runs, extra time, the plan change, its text with **Copy**, and its plans (Query Store: the plan used most now and, when it differs, before; the monitoring history: the plan in the cache now), each drawn by **Show the plan** or opened by **Open in window**, like the **Now** and **Before** buttons.
+
+![Query Regressions: the verdict says query 4183 runs 4.1× slower since it got a new plan, above the options and the list](images/page-template/query-regressions.png)
 
 ## Reading the results
 

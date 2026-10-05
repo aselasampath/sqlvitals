@@ -10,8 +10,12 @@ Every SQL Server already records each deadlock in **system_health**, an Extended
 
 ## How to use it
 
-1. Open **💥 Deadlocks**. It reads the reports system_health still holds, newest first. The line under the toolbar says where they came from and how far back they go.
-2. **Show** narrows the list to the last hour, 24 hours, 7 days or 30 days. *Everything system_health has* is the default. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads the server again for deadlocks since you opened the page.
+**The verdict** (from 0.65.0) says first how many deadlocks the range holds and the table fought over in most of them: *4 deadlocks in the last 24 hours; SalesDb.dbo.OrderLines in 3 of them*, and whether the same one keeps coming back (*The same deadlock came back 3 times … Fix it first*). **Open the newest of them** selects that pattern's latest deadlock; **Recurring** opens the tab. With none in the range it says so, and **Show the older ones** widens it when system_health holds older ones; when the history can't be read, it says why. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Deadlocks: the verdict says 4 deadlocks in the last 24 hours, 3 of them on OrderLines, above the source, the list and the selected deadlock](images/page-template/deadlocks.png)
+
+1. Open **💥 Deadlocks**. It reads the reports system_health still holds, newest first. The **Source** section under the verdict says where they came from and how far back they go; it folds to one line.
+2. **Show** (beside the title) narrows the list to the last hour, 24 hours, 7 days or 30 days. *Everything system_health has* is the default. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads the server again for deadlocks since you opened the page.
 3. Each row is one deadlock:
 
    | Column | Meaning |

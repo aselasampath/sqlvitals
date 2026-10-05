@@ -25,11 +25,15 @@ The most expensive queries currently in the **plan cache**, on three tabs:
 | **By CPU** | Total CPU time | High-CPU servers |
 | **Highest Logical Reads** | Total logical reads, with each query's **Last Reads** | Checking whether the latest run is still as heavy |
 
+**The verdict** (from 0.65.0) names the query that used the most CPU and its share of the top queries' CPU (*dbo.usp_GetOrderHistory uses the most CPU: 61 % of the top 5 queries'*, amber over half), its runs and CPU per run, and the one that reads the most. **Show it** and **Show the top reader** open the tab with that query selected and in the drawer. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Resource Queries: the verdict names the query using the most CPU, above the tabs](images/page-template/resource-queries.png)
+
 ### How to use it
 
-1. Pick a **Row Limit** (how many queries to load) at the top.
+1. Pick a **Row Limit** (how many queries to load) beside the title.
 2. Choose a tab. Click a column header to sort, for example by **Avg CPU µs** to find queries that are expensive *per run*.
-3. **View Plan** opens the query's execution plan. See [Execution plans](#execution-plans).
+3. **View Plan** opens the query's execution plan. See [Execution plans](#execution-plans). From 0.65.0 a click on a row also opens it in the [details drawer](Working-with-Grids.md#details-beside-the-grid): its figures with their units, its text with **Copy**, and its plan, drawn there by **Show the plan** or in a window by **Open in window**.
 4. Type in **Filter rows…** to find a table, procedure or piece of text. See [Working with Grids](Working-with-Grids.md).
 5. **⎘ Copy All** copies every row shown, with headers, in the current order.
 
@@ -153,6 +157,10 @@ Cached plans that contain `CONVERT_IMPLICIT`, sorted by execution count.
 
 **Typical fix:** make the application's parameter type match the column, e.g. send `VARCHAR` for a `VARCHAR` column. In .NET, set the parameter's `SqlDbType` explicitly instead of passing a string.
 
+**The verdict** (from 0.65.0) counts the cached plans that convert and names the most used first: *3 cached plans convert implicitly; the most used ran 48,120 times* (amber from 1,000 runs; *At least 50* when the page's limit is reached). **Show it** selects that plan. The explanation folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Implicit Conversions: the verdict counts the plans that convert, above the grid](images/page-template/implicit-conversions.png)
+
 ---
 
 ## Plan Cache Health
@@ -170,6 +178,10 @@ Five tabs, each looking for a different plan problem:
 | **Plan Guides** | Plan guides: plans frozen by hand | Check they're still wanted, and not disabled or stale |
 
 *(live)* tabs show only queries running at that moment. Refresh while the problem is happening.
+
+**The verdict** (from 0.65.0) says the worst of what the page found, coloured by the page's own severity: the plan cache emptied in the last 24 hours, else queries with more than 5 cached plans, else plan guides, else busy plans doing key lookups, or *The plan cache looks healthy*. Its button opens the tab concerned. The explanation, the cache-erased banner and the cards fold to one line (*Plan cache OK · 18,420 plans · 4 multi-plan queries · 0 plan guides · WARNING*), and the tabs take the rest of the screen, each grid scrolling in it. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Plan Cache Health: the verdict says 4 queries have more than 5 cached plans, above the summary cards and the tabs](images/page-template/plan-cache-health.png)
 
 ---
 

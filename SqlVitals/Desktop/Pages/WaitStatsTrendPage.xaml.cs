@@ -10,9 +10,11 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -49,8 +51,15 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => _range.IsLive;
-    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
-    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+    public bool IsPaused => !_timer.IsEnabled;
+
+    // The bar's Resume and Pause start and stop the reads: the page's own Start and Stop were the
+    // same toggle, so they went with the page template (#149).
+    public void SetPaused(bool paused)
+    {
+        if (paused) StopReading();
+        else if (_range.IsLive) StartReading();
+    }
     public DateTime? DataTo => _range.IsLive ? null : PageBar.DataTo(_historyLoad, b => b.TimeUtc);
     public FrameworkElement? TakeBarTools() => PageBar.Detach(RangePicker);
 
@@ -89,7 +98,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
 
     // Past ranges come from the history's detail snapshots (waits per type, every few minutes).
     // The live buffers above are kept while one is shown, so switching back to Live loses nothing.
-    private const string NoLiveDataText = "Select wait types on the left, then start auto-refresh to begin trending";
+    private const string NoLiveDataText = "Select wait types on the left, then press Resume (▶) in the top bar to begin trending";
     private const string NotRecordedText =
         "Waits per type are recorded every few minutes while SqlVitals monitors this connection (Settings → Monitoring & history).";
     private readonly ConnectionHistory? _history;
@@ -104,8 +113,13 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
     private string _baselineNote = "";
     private string _statusMain   = "";
 
+    // The page template's verdict (#149): the wait type that waits the most on the chart, and
+    // whether it is rising. Null until InitializeComponent has run.
+    internal WaitTrendViewModel ViewModel { get; }
+
     // ── constructor ───────────────────────────────────────────────────────────
-    public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null)
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null)
     {
         _repo    = repo;
         _history = history;
@@ -115,6 +129,52 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _statusMain  = TxtStatus.Text;
         _timer.Tick += Timer_Tick;
+
+        ViewModel = new WaitTrendViewModel(openTopWaits: OpenTopWaits);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        UpdateVerdict();
+    }
+
+    private async void OpenTopWaits()
+    {
+        if (Window.GetWindow(this) is MainWindow main)
+            await main.OpenPageAsync("TopWaits");
+    }
+
+    // ── verdict ───────────────────────────────────────────────────────────────
+    // The lines on the chart, as the chart has them: the wait types ticked (at most MaxSeries).
+    private void UpdateVerdict()
+    {
+        if (ViewModel is null)
+            return;
+        // Nothing read yet: nothing to judge, as on the pilots before their first read.
+        if (_allItems.Count == 0)
+        {
+            ViewModel.Verdict = null;
+            return;
+        }
+        var windows = _range.IsLive ? _windows : _historyWindows;
+        var series = _allItems.Where(i => i.IsChecked).Take(MaxSeries)
+            .Select(i => new WaitTrendSeries(i.WaitType,
+                windows.TryGetValue(i.WaitType, out var points) ? points.Select(p => p.Value).ToList() : []))
+            .ToList();
+        var state = !_range.IsLive ? WaitTrendState.History : _timer.IsEnabled ? WaitTrendState.Live : WaitTrendState.NotStarted;
+        var unit  = _metric == MetricType.WaitingTasks ? "tasks/s" : "ms/s";
+        string? noData = _range.IsLive || _historyLoad is null ? null : _historyLoad.NoData(NotRecordedText);
+        ViewModel.Show(series, state, unit, Over(windows), noData);
+    }
+
+    // "over the last 4 min", "over the last 24 hours".
+    private string Over(Dictionary<string, ObservableCollection<DateTimePoint>> windows)
+    {
+        if (!_range.IsLive)
+            return $"over the {_range.Label.ToLowerInvariant()}";
+        var shown = windows.Values.Where(w => w.Count > 1).ToList();
+        if (shown.Count == 0)
+            return "since reading started";
+        var span = shown.Max(w => w[^1].DateTime) - shown.Min(w => w[0].DateTime);
+        return span.TotalMinutes >= 2 ? $"over the last {span.TotalMinutes:0} min" : $"over the last {Math.Max(1, span.TotalSeconds):0} s";
     }
 
     // ── IRefreshable ──────────────────────────────────────────────────────────
@@ -141,7 +201,8 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
                 PopulateWaitTypeList(data);
                 StoreValues(data, now);
                 _initialized = true;
-                ShowStatus($"Loaded {_allItems.Count} wait types. Select types, then press ▶ Start.");
+                ShowStatus($"Loaded {_allItems.Count} wait types. Select types, then press Resume (▶) in the top bar.");
+                UpdateVerdict();
                 return; // first tick — no delta yet
             }
 
@@ -191,7 +252,10 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         catch (Exception ex)
         {
             if (_range.IsLive)
+            {
                 ShowStatus($"Error: {ex.Message}");
+                ViewModel.ShowError("the wait statistics", ex);
+            }
         }
     }
 
@@ -201,10 +265,9 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         _range = range;
         var live = range.IsLive;
 
-        // Live collection is paused while a past range is shown; Start picks it up again.
+        // Live collection is paused while a past range is shown; Resume picks it up again.
         if (!live)
-            BtnAutoRefresh.IsChecked = false;
-        BtnAutoRefresh.IsEnabled = live;
+            StopReading();
         CmbInterval.IsEnabled    = live;
         MainWindow.ReportContextChanged(this);
 
@@ -217,7 +280,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
             _historyVersion++;
             _historyLoad = null;
             _historyWindows.Clear();
-            ShowStatus("Live — press ▶ Start to trend");
+            ShowStatus("Live — press Resume (▶) in the top bar to trend");
             RebuildSeries();
             await LoadBaselineAsync();
             return;
@@ -267,6 +330,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
             if (version != _historyVersion)
                 return;
             ShowStatus($"Could not read the history: {ex.Message}");
+            ViewModel.ShowError("the monitoring history", ex);
             MainWindow.ReportBackgroundError(this, "Wait Stats Trend history", ex);
             return;
         }
@@ -446,6 +510,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
                            : _historyLoad.NoData(NotRecordedText);
             TrendChart.Series = Array.Empty<ISeries>();
             TxtNoData.Visibility = Visibility.Visible;
+            UpdateVerdict();
             return;
         }
 
@@ -536,6 +601,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         // Force LiveCharts to repaint immediately
         TrendChart.CoreChart?.Update(
             new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
+        UpdateVerdict();
     }
 
     // ── timer ─────────────────────────────────────────────────────────────────
@@ -597,24 +663,46 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         RebuildSeries();
     }
 
-    private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
+    private int SelectedIntervalSec => CmbInterval.SelectedIndex switch
     {
-        BtnAutoRefresh.Content = "⏹  Stop";
-        _intervalSec = CmbInterval.SelectedIndex switch
-        {
-            0 => 5, 1 => 10, 2 => 30, 3 => 60, _ => 10
-        };
+        0 => 5, 1 => 10, 2 => 30, 3 => 60, _ => 10
+    };
+
+    // What Start did: read every interval, counting down to the next read.
+    private void StartReading()
+    {
+        if (_timer.IsEnabled)
+            return;
+        _intervalSec = SelectedIntervalSec;
         _countdown = _intervalSec;
         TxtCountdown.Text = $"{_countdown}s";
         _timer.Start();
         MainWindow.ReportContextChanged(this);
+        UpdateVerdict();
     }
 
-    private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
+    // What Stop did.
+    private void StopReading()
     {
-        BtnAutoRefresh.Content = "▶  Start";
+        if (!_timer.IsEnabled)
+            return;
         TxtCountdown.Text = "--";
         _timer.Stop();
+        MainWindow.ReportContextChanged(this);
+        UpdateVerdict();
+    }
+
+    // Another interval: used from the next read on, while reading.
+    private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TxtCountdown is null)
+            return;   // during InitializeComponent
+        _intervalSec = SelectedIntervalSec;
+        if (_timer.IsEnabled)
+        {
+            _countdown = Math.Min(_countdown, _intervalSec);
+            TxtCountdown.Text = $"{_countdown}s";
+        }
         MainWindow.ReportContextChanged(this);
     }
 }

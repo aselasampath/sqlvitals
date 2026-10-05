@@ -87,6 +87,24 @@ internal static class DrawerParts
         }
     }
 
+    /// <summary>
+    /// A grid whose selected row fills the drawer (#147, #149): a row selected shows it, a click on
+    /// one also opens a closed drawer.
+    /// </summary>
+    public static void FollowSelection(DataGrid grid, Action<object, bool> show)
+    {
+        grid.SelectionChanged += (_, _) =>
+        {
+            if (grid.SelectedItem is { } row)
+                show(row, false);
+        };
+        grid.AddHandler(UIElement.MouseLeftButtonUpEvent, new System.Windows.Input.MouseButtonEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(grid, source) is DataGridRow { Item: { } row })
+                show(row, true);
+        }), handledEventsToo: true);
+    }
+
     /// <summary>"Label: value" for each row of a grid from <see cref="Fill"/>; for tests.</summary>
     public static IReadOnlyList<string> Texts(Grid grid) =>
         grid.Children.OfType<TextBlock>().Chunk(2).Select(pair => $"{pair[0].Text}: {pair[1].Text}").ToList();
