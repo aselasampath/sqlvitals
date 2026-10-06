@@ -11,8 +11,11 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a warn
 ## How to use it
 
 1. Open **✅ Config Checks**. Warnings come first, tinted amber, then the checks that pass, in the order of the table below.
-2. The line under the toolbar counts them: *3 warnings · 9 passed · 1 not checked*. An amber line under it says when something couldn't be checked in full (a missing permission, or Azure SQL Database).
-3. **Show** narrows the list: *Warnings*, *Server settings*, *Database settings* or *Not checked*. **↻ Check again** (or **Refresh** in the top bar, **F5**) reads the settings again, after you've changed one, say.
+2. **The verdict** at the top says how many checks fail and names the riskiest (from 0.66.0; a count line under the toolbar before): *2 of 14 checks fail; the riskiest: Max server memory (Server)*, with its value, the recommendation and why. The riskiest comes in this order: max server memory, page verify, auto-shrink, MAXDOP, the TempDB file count, cost threshold, compatibility level, TempDB file sizes. **Show it** selects it, with its fix in the drawer; **Script the warnings** writes them all. With nothing failing it says so, and how many couldn't be checked. An amber line under the grid says when something couldn't be checked in full (a missing permission, or Azure SQL Database). See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+   ![Config Checks: the verdict names the riskiest failing check, above the checks](images/page-template/config-checks.png)
+
+3. The list beside the **Checks** title narrows it: *Warnings*, *Server settings*, *Database settings* or *Not checked*. **↻ Check again**, beside the page title (or **Refresh** in the top bar, **F5**), reads the settings again, after you've changed one, say.
 4. Each row is one check:
 
    | Column | Meaning |
@@ -24,7 +27,7 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a warn
    | **Recommended** | The value best practice recommends here, worked out from the server's processors and memory where it depends on them |
    | **Explanation** | Why it matters, and how the recommendation was worked out |
 
-5. **Select a check** to read its full explanation below and, for a warning, the **script to fix it**. **⧉ Copy** copies it.
+5. **Select a check** to read in the [details drawer](Working-with-Grids.md#details-beside-the-grid) its value, the recommendation, the full explanation and, for a warning, the **script to fix it**. **Copy** copies it (from 0.66.0; a panel under the grid before).
 6. **📝 Script the warnings** puts the fix for every warning into one script, to review, save and run yourself at a quiet time.
 
 The grid has the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).

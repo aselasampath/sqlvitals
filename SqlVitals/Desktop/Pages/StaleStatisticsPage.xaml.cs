@@ -5,6 +5,8 @@ using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -16,16 +18,48 @@ public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefres
 
     private readonly IWaitStatsRepository _repo;
 
-    public StaleStatisticsPage(IWaitStatsRepository repo)
+    // The page template's verdict (#150): the statistic with the most of its table changed.
+    internal StaleStatsViewModel ViewModel { get; }
+
+    /// <param name="folds">Where the verdict's and the explanation's folds are remembered; none in some tests.</param>
+    public StaleStatisticsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel = new StaleStatsViewModel(showWorst: ShowWorst);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        StatsGrid.ItemsSource = (await _repo.GetStaleStatisticsAsync()).ToList();
+        List<StaleStatistic> stats;
+        try
+        {
+            stats = (await _repo.GetStaleStatisticsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the statistics", ex);
+            throw;
+        }
+        ViewModel.Show(stats);
+        _stats = stats;
+        StatsGrid.ItemsSource = stats;
         UpdateScriptButton();
+    }
+
+    // What the verdict judged, so Show it selects the statistic it names.
+    private IReadOnlyList<StaleStatistic> _stats = [];
+
+    // The verdict's Show it: the most changed statistic, selected and in view.
+    private void ShowWorst()
+    {
+        if (StaleStatsVerdict.Worst(_stats) is not { } worst)
+            return;
+        StatsGrid.SelectedItem = worst;
+        StatsGrid.ScrollIntoView(worst);
     }
 
     private void StatsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateScriptButton();

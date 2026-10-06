@@ -24,14 +24,16 @@ That's the average time each read or write took **during that interval**. The av
 
 1. Open **💽 File I/O**. The first reading is taken straight away and lists every file as *Measuring…*. The latency appears with the second reading, one interval later (10 s by default).
 2. The files **over the threshold** come first: **red** at five times the threshold or more, **amber** over it, with the row tinted. Then the rest, then files with no I/O.
-3. The line under the toolbar sums up: *48 files · 3 slower than the threshold (1 of them at 5× or more) · slowest: Sales · Sales_log writes 38.2 ms · 30 with no I/O*.
-4. **Set the thresholds**: *Highlight data files slower than* **20 ms** *and log files slower than* **10 ms**. Type milliseconds (`20`, `2.5`, `15 ms`) and press **✓ Apply** or **Enter**. The readings already taken are graded again at once; nothing is read again. The thresholds are saved and apply to every server.
+3. **The verdict** at the top says it first (from 0.66.0; a summary line under the toolbar before): *3 files are slower than your threshold; Sales · Sales_log writes in 38.2 ms*, amber, or red when one is at five times the threshold or more. It says how many are that slow, and whether a **volume is slow as a whole** (the storage itself) or only one file is. **Show the slow files** lists only those, with the slowest selected and its details in the drawer. With none over, it says so and names the slowest file anyway. While there is only one reading it says *Measuring*. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+4. Under **Measuring**, which folds to one line (*The last interval · every 10 s · data files over 20 ms, log files over 10 ms*), **set the thresholds**: *Highlight data files slower than* **20 ms** *and log files slower than* **10 ms**. Type milliseconds (`20`, `2.5`, `15 ms`) and press **✓ Apply** or **Enter**. The readings already taken are graded again at once; nothing is read again. The thresholds are saved and apply to every server.
 5. **Latency over:**
    - **The last interval**: between the two newest readings. What the storage is doing right now; it moves with every reading.
    - **Since the first reading**: since the page opened, or since you pressed **↺ Start over**. Steadier, and it covers a whole workload: press **Start over**, run the report or the batch, and read the result.
-6. **Read every** 5, 10, 15, 30 or 60 seconds (saved). **⏸ Pause** stops reading while you look; the sidebar **Refresh** takes a reading at any time. Reading stops when you leave the page.
-7. **Select a file** for why it's highlighted, how many I/Os that was based on, and its path.
-8. **Show** narrows the list: *Slower than threshold*, *With I/O*, *Data files*, *Log files*.
+6. **Read every** 5, 10, 15, 30 or 60 seconds (saved), beside the title. **Pause** in the top bar stops reading while you look, and **Resume (▶)** starts it again (from 0.66.0; the page had its own **⏸ Pause** before); **Refresh** (F5) takes a reading at any time. Reading stops when you leave the page.
+7. **Select a file** to see in the [details drawer](Working-with-Grids.md#details-beside-the-grid) why it's highlighted, how many I/Os that was based on, its figures since startup, its volume and its path (from 0.66.0; a line under the grid before).
+8. The list beside the **Files** title narrows it: *Slower than threshold*, *With I/O*, *Data files*, *Log files*.
+
+![File I/O: the verdict names the slow file and its volume, above Measuring, the files and the volumes](images/page-template/file-io.png)
 
 Each row is one file:
 
@@ -90,7 +92,7 @@ A commit waits for its log write, so **log write latency** is felt by every tran
 
 - **Latency is SQL Server's view**: from when it issued the I/O to when Windows said it was done. It includes queueing in Windows and the storage stack, so it's what queries actually wait for.
 - **Counters reset**: a file's totals went *down* between readings. Its database was taken offline and back, restored, or detached and attached again, which starts its totals from zero. It has no figure until the next reading.
-- **A SQL Server restart** starts every file's totals from zero, so the readings start again, and a line under the toolbar says so.
+- **A SQL Server restart** starts every file's totals from zero, so the readings start again, and a line under **Measuring** says so.
 - **A file that appears between readings** (its database came online) is measured from zero: all its I/O happened in the interval.
 - Files of the hidden, read-only resource database aren't listed.
 - A login that can't see `sys.master_files` for some databases (it needs `VIEW ANY DEFINITION`, or to be able to see the database) gets them as *file n* with no type or path. They're held to the data threshold, and a line says so.

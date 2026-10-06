@@ -88,7 +88,8 @@ public sealed record DrawerContent(string Title, System.Windows.UIElement? Body,
 {
     /// <summary>A page that supplies nothing for the drawer.</summary>
     public static DrawerContent None { get; } =
-        new("Details", null, "This page has no details to show here. On Processes, Query Store, Resource Queries, Query Regressions and SP Trace, select a row to see its details.");
+        new("Details", null, "This page has no details to show here. On Processes, Query Store, Resource Queries, Query Regressions, SP Trace, " +
+                             "File I/O, Index Health, Agent Jobs, Config Checks, Security Audit and Alerts, select a row to see its details.");
 }
 
 /// <summary>

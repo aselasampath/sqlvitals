@@ -11,8 +11,11 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a risk
 ## How to use it
 
 1. Open **🔒 Security Audit**. Risks come first, in red, then what to review, what couldn't be checked, and what passes.
-2. The line under the toolbar counts them: *3 risks · 4 to review · 6 passed · 1 not checked*. An amber line under it says when the login can't see everything.
-3. **Show** narrows the list: *Risks*, *To review*, one check (*sysadmin members*, *sa login*, *TRUSTWORTHY*, *Orphaned users*) or *Not checked*. **↻ Audit again** (or **Refresh** in the top bar, **F5**) reads everything again, after you've fixed something, say.
+2. **The verdict** at the top says how many risks were found and names the highest (from 0.66.0; a count line under the toolbar before): *2 risks found; the highest: sa login (SQL login · enabled)*, in amber, with the risk explained and how many are left to review; sa comes first, then sysadmin members, TRUSTWORTHY and orphaned users. **Show it** selects it, with its fix in the drawer; **Script the risks** writes them all. With no risk it names the first thing to review, or says nothing widens the attack surface. An amber line under the grid says when the login can't see everything. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+   ![Security Audit: the verdict names the highest risk, above the findings](images/page-template/security-audit.png)
+
+3. The list beside the **Findings** title narrows it: *Risks*, *To review*, one check (*sysadmin members*, *sa login*, *TRUSTWORTHY*, *Orphaned users*) or *Not checked*. **↻ Audit again**, beside the page title (or **Refresh** in the top bar, **F5**), reads everything again, after you've fixed something, say.
 4. Each row is one finding:
 
    | Column | Meaning |
@@ -24,7 +27,7 @@ Everything is read from the catalog views. SqlVitals changes nothing: for a risk
    | **Finding** | What was found: *SQL login · enabled*, *ON · owner sa*, *SQL user, no login · created 2019-04-02* |
    | **Risk** | Why it matters, starting with what is specific to this row |
 
-5. **Select a finding** to read the whole explanation below and, for a risk, the **script to remove it**. **⧉ Copy** copies it.
+5. **Select a finding** to read in the [details drawer](Working-with-Grids.md#details-beside-the-grid) the whole explanation and, for a risk, the **script to remove it**. **Copy** copies it (from 0.66.0; a panel under the grid before).
 6. **📝 Script the risks** puts the fix for every risk into one script, to review, save and run yourself. A fix that would take sysadmin from the login **you are connected with**, or a Windows group or role you get it through, or would disable sa while you're signed in as sa, stays in the script **commented out**, with a note: run on its own, it would lock you out part-way through. Run it signed in as another sysadmin.
 
 The grid has the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).

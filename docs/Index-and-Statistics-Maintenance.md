@@ -23,7 +23,11 @@ Two screens find index and statistics problems **and write the T-SQL to fix them
 
 > **Where:** sidebar → 🔍 Index Health · **Use it when:** planning index tuning or routine maintenance
 
-Four tabs.
+**The verdict** (from 0.66.0) names the most valuable missing index, critical ones first (*3 missing indexes suggested, 1 critical; the most valuable on SalesDb.dbo.Orders*), in amber when one is critical: how many seeks and scans it would serve, on which columns, and how many unused indexes only cost writes. **Show it** opens the Missing Indexes tab with it selected and its `CREATE` statement in the [details drawer](Working-with-Grids.md#details-beside-the-grid), with **Copy**; **Unused indexes** opens that tab. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Index Health: the verdict names the most valuable missing index, above the four tabs](images/page-template/index-health.png)
+
+Four tabs, which fill the page and are kept when you come back to it (from 0.66.0).
 
 ### Missing Indexes
 
@@ -79,6 +83,10 @@ Change them and press **↻ Refresh** (or **Enter**). Only this tab reloads, and
 > **Where:** sidebar → 📉 Stale Stats · **Use it when:** queries got slower after lots of data changed, or plans look badly estimated
 
 **Statistics** tell SQL Server's optimizer how data is distributed. When lots of rows change, they go out of date and the optimizer makes poor choices. This screen lists statistics with pending modifications, most-modified first.
+
+**The verdict** (from 0.66.0) names the statistics with 20 % or more of their table's rows changed since they were updated, the largest share first (*1 statistic has 20 % or more of its table changed; the most, SalesDb.dbo.OrderLines (…)*), in amber, with how many rows changed and when it was last updated. With none that stale, it names the most changed one anyway. **Show it** selects it, so **Generate UPDATE STATISTICS Script** scripts just that one. What statistics are for folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Stale Stats: the verdict names the most changed statistic, above the statistics](images/page-template/stale-stats.png)
 
 | Column | Meaning |
 |---|---|

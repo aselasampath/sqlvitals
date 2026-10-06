@@ -7,7 +7,9 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -58,10 +60,21 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
         [ExportService.G_SP_TRACE]         = "Stored procedure execution counts, duration & reads",
     };
 
-    public ExportPage(IWaitStatsRepository repo)
+    // The page template's verdict (#150): what an export will write and where, or what the last one did.
+    internal ExportViewModel ViewModel { get; }
+
+    // What the last export from this page did; null before the first.
+    private ExportOutcome? _last;
+
+    /// <param name="folds">Where the verdict's and the explanation's folds are remembered; none in some tests.</param>
+    public ExportPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _svc = new ExportService(repo);
         InitializeComponent();
+
+        ViewModel = new ExportViewModel(export: async () => await ExportAsync(), open: OpenLast);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
 
         // Build the item list from the canonical AllGroups array
         foreach (var g in ExportService.AllGroups)
@@ -87,6 +100,26 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
         RefreshFullPath();
     }
 
+    // What an export would write now, unless the last one is still the news.
+    private void UpdateVerdict() =>
+        ViewModel.Show(_items.Count(i => i.IsChecked), _items.Count, GetFullPath(), _last);
+
+    // A choice changed after an export: the verdict is about the next one again.
+    private void ChoiceChanged()
+    {
+        _last = null;
+        UpdateVerdict();
+    }
+
+    // The verdict's Open the file, as "Open file after export" does.
+    private void OpenLast()
+    {
+        if (_last is not { Error: null } last)
+            return;
+        try { Process.Start(new ProcessStartInfo(last.Path) { UseShellExecute = true }); }
+        catch (Exception ex) { TxtExportStatus.Text = $"✗  Couldn't open it: {ex.Message}"; }
+    }
+
     // ── Path helpers ─────────────────────────────────────────────────────────
 
     private void RefreshFullPath()
@@ -100,6 +133,7 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
                 : "";
         }
         catch { TxtFullPath.Text = ""; }
+        ChoiceChanged();
     }
 
     private string? GetFullPath()
@@ -148,12 +182,19 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
         var n = _items.Count(i => i.IsChecked);
         TxtCheckedCount.Text = $"{n} of {_items.Count} selected";
         BtnExport.IsEnabled  = n > 0;
+        ChoiceChanged();
     }
 
     // ── Export ─────────────────────────────────────────────────────────────────
 
-    private async void BtnExport_Click(object sender, RoutedEventArgs e)
+    private async void BtnExport_Click(object sender, RoutedEventArgs e) => await ExportAsync();
+
+    // Export Now, from the button or the verdict.
+    private async Task ExportAsync()
     {
+        if (!BtnExport.IsEnabled)
+            return;   // an export is running, or nothing is selected
+
         var path = GetFullPath();
 
         if (path is null)
@@ -205,9 +246,9 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
             var sizeKb   = info.Length / 1024.0;
             var summary  = $"{selected.Count} group(s) · {sizeKb:F1} KB · {sw.Elapsed.TotalSeconds:F1}s";
 
-            TxtExportStatus.Text       = $"✓  Saved: {path}";
-            TxtLastExport.Text         = $"{summary}\n{path}";
-            PanelLastExport.Visibility = Visibility.Visible;
+            TxtExportStatus.Text       = $"✓  Saved: {path} · {summary}";
+            _last = new ExportOutcome(path, selected.Count, info.Length, sw.Elapsed);
+            UpdateVerdict();
 
             if (ChkOpenAfter.IsChecked == true)
             {
@@ -218,6 +259,8 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
         catch (Exception ex)
         {
             TxtExportStatus.Text = $"✗  Export failed: {ex.Message}";
+            _last = new ExportOutcome(path, selected.Count, 0, sw.Elapsed, ex.Message);
+            UpdateVerdict();
             MessageBox.Show($"Export failed:\n\n{ex.Message}",
                             "Export error", MessageBoxButton.OK, MessageBoxImage.Error);
         }

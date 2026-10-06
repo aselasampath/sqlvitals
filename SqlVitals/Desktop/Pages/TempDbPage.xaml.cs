@@ -8,6 +8,8 @@ using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -18,19 +20,51 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
 
     private readonly ITempDbRepository _repo;
 
-    public TempDbPage(ITempDbRepository repo)
+    // The page template's verdict (#150): who holds TempDB, and how much room is left.
+    internal TempDbViewModel ViewModel { get; }
+
+    /// <param name="folds">Where the verdict's, the counters' and the chart's folds are remembered; none in some tests.</param>
+    public TempDbPage(ITempDbRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel = new TempDbViewModel(showSession: ShowTopSession);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+    }
+
+    // The verdict's Show the session: the one holding the most, selected and in view.
+    private void ShowTopSession()
+    {
+        if (SessionsGrid.Items.OfType<TempDbSession>().MaxBy(s => s.NetTempDBUsageKB) is not { } top)
+            return;
+        SessionsGrid.SelectedItem = top;
+        SessionsGrid.ScrollIntoView(top);
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        var (files, sessions, counters) = await _repo.GetTempDbPressureAsync();
+        List<TempDbFile> fileList;
+        List<TempDbSession> sessionList;
+        List<TempDbCounter> counterList;
+        try
+        {
+            var (files, sessions, counters) = await _repo.GetTempDbPressureAsync();
+            (fileList, sessionList, counterList) = (files.ToList(), sessions.ToList(), counters.ToList());
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("TempDB", ex);
+            throw;
+        }
+        ViewModel.Show(fileList, sessionList, counterList);
 
-        var fileList    = files.ToList();
-        var sessionList = sessions.ToList();
-        var counterList = counters.ToList();
+        // Folded, the counters and the chart say it in one line (#150).
+        CountersSection.FoldedSummary = counterList.Count == 0 ? "No TempDB counters were read"
+            : string.Join(" · ", counterList.Take(3).Select(c => $"{c.CounterName.Trim()} {c.CounterValue:N0}"));
+        FilesSection.FoldedSummary = fileList.Count == 0 ? "No TempDB files were read"
+            : $"{fileList.Count} file{(fileList.Count == 1 ? "" : "s")} · {fileList.Sum(f => f.SpaceUsedMB):N0} MB used of {fileList.Sum(f => f.FileSizeMB):N0} MB";
 
         // ── Counter KPI cards ──────────────────────────────────────────
         CounterGrid.Children.Clear();

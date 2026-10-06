@@ -3,6 +3,8 @@ using System.Windows.Controls;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -11,6 +13,9 @@ public sealed class DatabaseFileVm
 {
     private readonly DatabaseFile _m;
     public DatabaseFileVm(DatabaseFile m) { _m = m; }
+
+    /// <summary>The file read, for the verdict's Show the file (#150).</summary>
+    public DatabaseFile File => _m;
 
     public string  DatabaseName       => _m.DatabaseName;
     public string  State              => _m.State;
@@ -88,20 +93,59 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFo
 
     private readonly IWaitStatsRepository _repo;
 
-    public DatabaseStoragePage(IWaitStatsRepository repo)
+    // The page template's verdict (#150): files near their maximum size, auto-shrink, or the storage at a glance.
+    internal DbStorageViewModel ViewModel { get; }
+
+    private DatabaseFile? _subject;
+
+    /// <param name="folds">Where the verdict's and the sizes' folds are remembered; none in some tests.</param>
+    public DatabaseStoragePage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel = new DbStorageViewModel(showFile: ShowSubject);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+    }
+
+    // The verdict's Show the file: the Database Files tab with the file selected and in view (while
+    // an alert's focus shows one database only, a file of another stays hidden until Show all).
+    private void ShowSubject()
+    {
+        if (_subject is not { } subject)
+            return;
+        Tabs.SelectedItem = TabFiles;
+        if (GridFiles.Items.OfType<DatabaseFileVm>().FirstOrDefault(f => f.File == subject) is { } row)
+        {
+            GridFiles.SelectedItem = row;
+            GridFiles.ScrollIntoView(row);
+        }
     }
 
     public async Task RefreshAsync()
     {
-        var (config, files, tempFiles, tables) = await _repo.GetDatabaseStorageAsync();
+        IEnumerable<ServerConfigParam> config;
+        IEnumerable<DatabaseFile> files;
+        IEnumerable<TempDbFileSummary> tempFiles;
+        IEnumerable<TableStorage> tables;
+        try
+        {
+            (config, files, tempFiles, tables) = await _repo.GetDatabaseStorageAsync();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the database storage", ex);
+            throw;
+        }
 
         var fileList    = files.ToList();
         var tempList    = tempFiles.ToList();
         var configList  = config.ToList();
         var tableList   = tables.ToList();
+
+        ViewModel.Show(fileList, tempList);
+        _subject = DbStorageVerdict.Subject(fileList);
 
         // KPI strip
         var totalMB    = fileList.Sum(f => f.FileSizeMB);
@@ -119,6 +163,10 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFo
         KpiMaxDop.Text        = maxDop  != null ? maxDop.CurrentValue.ToString()  : "—";
         KpiCostThreshold.Text = costThr != null ? costThr.CurrentValue.ToString() : "—";
 
+        // Folded, the sizes say it in one line (#150).
+        SizesSection.FoldedSummary = $"{FormatMB(totalMB)} in all · data {FormatMB(dataMB)} · log {FormatMB(logMB)} · TempDB {FormatMB(tempDbMB)} · " +
+                                     $"MAXDOP {KpiMaxDop.Text} · cost threshold {KpiCostThreshold.Text}";
+
         // Grids
         _files = fileList.Select(f => new DatabaseFileVm(f)).ToList();
         ShowFiles();
@@ -131,38 +179,5 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFo
     {
         if (mb >= 1024) return $"{mb / 1024:N2} GB";
         return $"{mb:N1} MB";
-    }
-
-    // ── Sub-tab switching ─────────────────────────────────────────────────────
-    private void SubTab_Click(object sender, RoutedEventArgs e)
-    {
-        var tag = (string)((Button)sender).Tag;
-
-        // Tabs
-        foreach (var btn in new[] { TabBtnFiles, TabBtnTempDb, TabBtnConfig, TabBtnTables })
-            btn.Style = (Style)FindResource("NavButton");
-        var active = tag switch
-        {
-            "TempDb"  => TabBtnTempDb,
-            "Config"  => TabBtnConfig,
-            "Tables"  => TabBtnTables,
-            _         => TabBtnFiles,
-        };
-        active.Style = (Style)FindResource("NavButtonActive");
-
-        // Panels
-        PanelFiles.Visibility  = Visibility.Collapsed;
-        PanelTempDb.Visibility = Visibility.Collapsed;
-        PanelConfig.Visibility = Visibility.Collapsed;
-        PanelTables.Visibility = Visibility.Collapsed;
-
-        var visible = tag switch
-        {
-            "TempDb"  => PanelTempDb,
-            "Config"  => PanelConfig,
-            "Tables"  => PanelTables,
-            _         => PanelFiles,
-        };
-        visible.Visibility = Visibility.Visible;
     }
 }

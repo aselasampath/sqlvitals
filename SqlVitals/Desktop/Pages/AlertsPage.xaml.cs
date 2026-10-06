@@ -2,21 +2,52 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
 /// <summary>
 /// Active and past alerts (#34): health indicators that stayed past a threshold, read from the
 /// monitoring history, with the ones active right now taken from the running sessions so they
-/// show straight away. Filtered by connection, status and period.
+/// show straight away. Filtered by connection, status and period. On the page template (#150): the
+/// verdict names the worst active alert, and a row's details are in the drawer.
 /// </summary>
-public partial class AlertsPage : Page, IRefreshable, IPageContext
+public partial class AlertsPage : Page, IRefreshable, IPageContext, IDetailsSource
 {
+    // ── The details drawer (#150): the selected alert ─────────────────────────
+    private const string SelectHint = "Select an alert to see its figures, its times and what the health dot said.";
+
+    private readonly RowDrawer _drawer = new("Alert details", SelectHint);
+
+    public DrawerContent Details => _drawer.Content;
+
+    public event Action<bool>? DetailsChanged
+    {
+        add    => _drawer.Changed += value;
+        remove => _drawer.Changed -= value;
+    }
+
+    internal RowDetailsView? DetailsView => _drawer.View;
+
+    private void ShowAlert(object row, bool open)
+    {
+        if (row is AlertRow alert)
+            _drawer.Show($"{alert.IndicatorName} · {alert.ConnectionName}",
+                         RowDetails.Rows(new NamedAlert(alert.Alert, alert.ConnectionName), DateTime.UtcNow), open);
+    }
+
+    // The page template's verdict (#150): the active alerts, the worst first, and whether alerts are raised.
+    internal AlertsViewModel ViewModel { get; }
+
+    private const int ActiveOnlyIndex = 1;
+
     // Alerts as they start and end, from every monitored connection (#140).
     public PageKind Kind => PageKind.Live;
 
@@ -49,11 +80,18 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
     private int _loadVersion;
 
     /// <param name="connectionId">The connection to filter on at first, e.g. the one a notification was about; null for all.</param>
+    /// <param name="settings">The connections, and where the verdict's fold is remembered.</param>
     public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings, Guid? connectionId = null)
     {
         _monitoring = monitoring;
         _settings   = settings;
         InitializeComponent();
+
+        ViewModel = new AlertsViewModel(investigate: alert => InvestigateRequested?.Invoke(alert),
+                                        activeOnly: () => CmbStatus.SelectedIndex = ActiveOnlyIndex);
+        ViewModel.Attach(Shell);
+        Shell.Folds = settings;
+        DrawerParts.FollowSelection(AlertsGrid, ShowAlert, _drawer.Clear);
 
         CmbConnection.Items.Add(new ComboBoxItem { Content = "All connections", Tag = null });
         foreach (var conn in settings.Load().Connections.OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase))
@@ -154,6 +192,12 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
             stored      = [];
             readProblem = "The history file is from a newer SqlVitals, so only the alerts active now are listed.";
         }
+        catch (Exception ex)
+        {
+            if (version == _loadVersion)
+                ViewModel.ShowError("the alert history", ex);
+            throw;
+        }
         if (version != _loadVersion)
             return;
 
@@ -187,8 +231,14 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
 
         DataGridRefresh.SetItemsSource(AlertsGrid, rows);
 
-        var active = all.Where(a => a.IsActive).ToList();
-        TxtSummary.Text = Summary(active, all.Count, period);
+        // Only the connections listed: all of them, or the one picked.
+        var notMonitored = _monitoring.NotMonitoredNames()
+            .Where(n => connectionId is not { } id || n == NameOf(id))
+            .ToList();
+        ViewModel.Show(all.Select(a => new NamedAlert(a, NameOf(a.ConnectionId))).ToList(), InPeriod(period), nowUtc,
+                       _monitoring.MonitoredCount, notMonitored, activeOnly: status == StatusFilter.Active);
+        if (AlertsGrid.SelectedItem is AlertRow selected)
+            ShowAlert(selected, open: false);
         TxtCount.Text   = rows.Count switch
         {
             0     => "Alerts",
@@ -204,41 +254,18 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext
 
         TxtNoData.Text       = EmptyText(status, period, connectionId is null);
         TxtNoData.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        ShowMonitoringOff();
     }
 
-    // "No alerts are being raised: monitoring is off", for every connection or the ones named.
-    private void ShowMonitoringOff()
-    {
-        var off = _monitoring.NotMonitoredNames();
-        TxtMonitoringOff.Text = _monitoring.MonitoredCount == 0
-            ? "No alerts are being raised: monitoring is off. Start it on a server's Overview, from its tile on All servers or its header in the sidebar, or turn on Start monitoring automatically in Settings."
-            : $"No alerts are being raised for some connections: monitoring is off for {string.Join(", ", off)}.";
-        MonitoringOffBanner.Visibility = _monitoring.MonitoredCount == 0 || off.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
+    // Monitoring started or stopped: whether alerts are raised changed, which the verdict says.
     private void OnMonitoringChanged()
     {
-        ShowMonitoringOff();
         _reloadSoon.Stop();
         _reloadSoon.Start();
     }
 
-    private static string Summary(IReadOnlyList<Alert> active, int total, Period period)
-    {
-        var culture  = CultureInfo.CurrentCulture;
-        var inPeriod = period.Span is null ? "in the history kept" : $"in the {period.Label.ToLower(culture)}";
-        var critical = active.Count(a => a.Severity == HealthLevel.Critical);
-
-        var now = active.Count switch
-        {
-            0 => "No active alerts",
-            1 => $"1 active alert ({(critical == 1 ? "critical" : "warning")})",
-            var n => $"{n} active alerts ({critical} critical, {n - critical} warning)",
-        };
-        return string.Format(culture, "{0} · {1:N0} alert{2} {3}", now, total, total == 1 ? "" : "s", inPeriod);
-    }
+    // "in the last 7 days", "in the history kept".
+    private static string InPeriod(Period period) =>
+        period.Span is null ? "in the history kept" : $"in the {period.Label.ToLower(CultureInfo.CurrentCulture)}";
 
     // Why a connection picked in the filter raises no new alerts, when it doesn't.
     private string? NotMonitoredNote(Guid? connectionId) =>

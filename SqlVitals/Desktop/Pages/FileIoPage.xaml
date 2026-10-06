@@ -124,150 +124,149 @@
         </Style>
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="2*" MinHeight="160"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="120"/>
-        </Grid.RowDefinitions>
-
-        <TextBlock Grid.Row="0" Text="File I/O — read and write latency per database file, from sys.dm_io_virtual_file_stats"
-                   Style="{StaticResource SectionHeader}" FontSize="20" Margin="0,0,0,14"/>
-
-        <!-- What's shown, how it's measured, when it's highlighted, and what was found -->
-        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,12">
-            <StackPanel>
-                <WrapPanel>
-                    <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
-                    <ComboBox x:Name="CmbFilter" Width="200" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="CmbFilter_SelectionChanged"/>
-                    <TextBlock Text="Latency over:" Style="{StaticResource ToolbarLabel}"/>
-                    <ComboBox x:Name="CmbWindow" Width="190" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="CmbWindow_SelectionChanged"
-                              ToolTip="The last interval shows what the storage is doing now. Since the first reading averages everything since the page opened (or you started over): steadier, and it covers a whole workload run while the page is open.">
-                        <ComboBoxItem Content="The last interval"/>
-                        <ComboBoxItem Content="Since the first reading"/>
-                    </ComboBox>
-                    <TextBlock Text="Read every:" Style="{StaticResource ToolbarLabel}"/>
-                    <ComboBox x:Name="CmbInterval" Width="64" Style="{StaticResource ToolbarCombo}" Margin="0,0,6,0"
-                              SelectionChanged="CmbInterval_SelectionChanged"
-                              ToolTip="How often the file totals are read while this page is open. Longer intervals smooth out bursts; each reading is one light query."/>
-                    <Button x:Name="BtnPause" Content="⏸ Pause" MinWidth="86" Style="{StaticResource RefreshButton}" Padding="10,4"
-                            ToolTip="Stop reading while you look at the figures. Refresh (F5) in the top bar still takes a reading."
-                            Click="BtnPause_Click"/>
-                    <Border Margin="6,0,16,0" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}"
-                            BorderThickness="1" CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center"
-                            ToolTip="Seconds to the next reading">
-                        <TextBlock x:Name="TxtCountdown" Text="--" Foreground="{StaticResource TextMuted}"
-                                   VerticalAlignment="Center" FontFamily="Segoe UI Mono" FontSize="11"
-                                   MinWidth="28" TextAlignment="Center"/>
-                    </Border>
-                    <Button x:Name="BtnStartOver" Content="↺ Start over" Style="{StaticResource RefreshButton}" Padding="12,4"
-                            ToolTip="Forget the readings so far and take a new first one: 'Since the first reading' then measures from now."
-                            Click="BtnStartOver_Click"/>
-                </WrapPanel>
-
-                <WrapPanel Margin="0,10,0,0">
-                    <TextBlock Text="Highlight data files slower than" Style="{StaticResource ToolbarLabel}"/>
-                    <TextBox x:Name="TxtDataMs" Width="64" Style="{StaticResource ToolbarBox}" KeyDown="Threshold_KeyDown"
-                             ToolTip="Average read or write latency in milliseconds (20, or 2.5). Applies to data, FILESTREAM and full-text files."/>
-                    <TextBlock Text="and log files slower than" Style="{StaticResource ToolbarLabel}" Margin="6,0,6,0"/>
-                    <TextBox x:Name="TxtLogMs" Width="64" Style="{StaticResource ToolbarBox}" KeyDown="Threshold_KeyDown"
-                             ToolTip="Average read or write latency in milliseconds. Every commit waits for its log write, so keep this lower than the data file threshold."/>
-                    <TextBlock x:Name="TxtCriticalHint" Style="{StaticResource ToolbarLabel}" Margin="6,0,16,0"/>
-                    <Button x:Name="BtnApply" Content="✓ Apply" Style="{StaticResource RefreshButton}" Padding="12,4"
-                            ToolTip="Highlight against these thresholds (or press Enter in either box). They are saved for every server."
-                            Click="BtnApply_Click"/>
-                </WrapPanel>
-                <TextBlock x:Name="TxtError" Foreground="{StaticResource Danger}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap" Visibility="Collapsed"/>
-
-                <TextBlock x:Name="TxtSummary" FontSize="13" Margin="0,10,0,0" TextWrapping="Wrap"
-                           Foreground="{StaticResource TextPrimary}"/>
-                <TextBlock x:Name="TxtNote" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap" Visibility="Collapsed"/>
-                <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap"/>
+    <!-- The page template (#150): the verdict on the files slower than your threshold first; how
+         it's measured folds to one line; then every file and the volumes. A file's details are in the
+         drawer. Pause and Resume are the top bar's (#140). -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="File I/O" PageKey="FileIo">
+        <controls:PageShell.Actions>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Read every:" Style="{StaticResource ToolbarLabel}"/>
+                <ComboBox x:Name="CmbInterval" Width="64" Style="{StaticResource ToolbarCombo}" Margin="0,0,6,0"
+                          SelectionChanged="CmbInterval_SelectionChanged"
+                          ToolTip="How often the file totals are read while this page is open. Longer intervals smooth out bursts; each reading is one light query. Pause and Resume are in the top bar."/>
+                <Border Margin="0,0,12,0" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}"
+                        BorderThickness="1" CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center"
+                        ToolTip="Seconds to the next reading; -- while paused">
+                    <TextBlock x:Name="TxtCountdown" Text="--" Foreground="{StaticResource TextMuted}"
+                               VerticalAlignment="Center" FontFamily="Segoe UI Mono" FontSize="11"
+                               MinWidth="28" TextAlignment="Center"/>
+                </Border>
+                <Button x:Name="BtnStartOver" Content="↺ Start over" Style="{StaticResource RefreshButton}" Padding="12,4"
+                        ToolTip="Forget the readings so far and take a new first one: 'Since the first reading' then measures from now."
+                        Click="BtnStartOver_Click"/>
             </StackPanel>
-        </Border>
+        </controls:PageShell.Actions>
 
-        <!-- ── Every file, the slowest first ─────────────────────────── -->
-        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
-            <DockPanel>
-                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=FilesGrid}"/>
-                    <TextBlock x:Name="TxtCount" Text="Files" Style="{StaticResource SectionHeader}"
-                               Margin="0" VerticalAlignment="Center"/>
+        <controls:PageShell.Sections>
+            <!-- How it's measured and when a file is highlighted -->
+            <controls:FoldSection x:Name="MeasureSection" Key="measure" Header="Measuring">
+                <Border Style="{StaticResource KpiCard}" Margin="0">
+                    <StackPanel>
+                        <WrapPanel>
+                            <TextBlock Text="Latency over:" Style="{StaticResource ToolbarLabel}"/>
+                            <ComboBox x:Name="CmbWindow" Width="190" Style="{StaticResource ToolbarCombo}"
+                                      SelectionChanged="CmbWindow_SelectionChanged"
+                                      ToolTip="The last interval shows what the storage is doing now. Since the first reading averages everything since the page opened (or you started over): steadier, and it covers a whole workload run while the page is open.">
+                                <ComboBoxItem Content="The last interval"/>
+                                <ComboBoxItem Content="Since the first reading"/>
+                            </ComboBox>
+                        </WrapPanel>
+
+                        <WrapPanel Margin="0,10,0,0">
+                            <TextBlock Text="Highlight data files slower than" Style="{StaticResource ToolbarLabel}"/>
+                            <TextBox x:Name="TxtDataMs" Width="64" Style="{StaticResource ToolbarBox}" KeyDown="Threshold_KeyDown"
+                                     ToolTip="Average read or write latency in milliseconds (20, or 2.5). Applies to data, FILESTREAM and full-text files."/>
+                            <TextBlock Text="and log files slower than" Style="{StaticResource ToolbarLabel}" Margin="6,0,6,0"/>
+                            <TextBox x:Name="TxtLogMs" Width="64" Style="{StaticResource ToolbarBox}" KeyDown="Threshold_KeyDown"
+                                     ToolTip="Average read or write latency in milliseconds. Every commit waits for its log write, so keep this lower than the data file threshold."/>
+                            <TextBlock x:Name="TxtCriticalHint" Style="{StaticResource ToolbarLabel}" Margin="6,0,16,0"/>
+                            <Button x:Name="BtnApply" Content="✓ Apply" Style="{StaticResource RefreshButton}" Padding="12,4"
+                                    ToolTip="Highlight against these thresholds (or press Enter in either box). They are saved for every server."
+                                    Click="BtnApply_Click"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="TxtError" Foreground="{StaticResource Danger}" FontSize="12" Margin="0,8,0,0"
+                                   TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <TextBlock x:Name="TxtNote" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,8,0,0"
+                                   TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,8,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </controls:FoldSection>
+        </controls:PageShell.Sections>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="2*" MinHeight="160"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="120"/>
+            </Grid.RowDefinitions>
+
+            <!-- ── Every file, the slowest first ─────────────────────────── -->
+            <Border Grid.Row="0" Style="{StaticResource KpiCard}">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <controls:GridFilterBox x:Name="FilesFilter" DockPanel.Dock="Right" Target="{Binding ElementName=FilesGrid}"/>
+                        <ComboBox x:Name="CmbFilter" DockPanel.Dock="Right" Width="200" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
+                                  SelectionChanged="CmbFilter_SelectionChanged" ToolTip="Which files to list"/>
+                        <TextBlock x:Name="TxtCount" Text="Files" Style="{StaticResource SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Grid>
+                        <DataGrid x:Name="FilesGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  SelectionMode="Single" RowStyle="{StaticResource LatencyRow}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource StatusText}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Amber: reads or writes averaged more than the threshold for the file's type. Red: five times it or more. Sorted with these first."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="130" ElementStyle="{StaticResource DatabaseName}"/>
+                                <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="130" ElementStyle="{StaticResource SingleLineText}"/>
+                                <DataGridTextColumn Header="Type" Binding="{Binding TypeText}" Width="56" ElementStyle="{StaticResource Muted}"/>
+                                <DataGridTextColumn Header="Read ms" Binding="{Binding ReadLatencyText}" Width="70" SortMemberPath="ReadLatencyMs" ElementStyle="{StaticResource ReadMs}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average read latency between the readings: the change in io_stall_read_ms divided by the change in num_of_reads. Blank: no reads."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Reads" Binding="{Binding ReadsText}" Width="70" SortMemberPath="Reads" ElementStyle="{StaticResource Number}"/>
+                                <DataGridTextColumn Header="Write ms" Binding="{Binding WriteLatencyText}" Width="70" SortMemberPath="WriteLatencyMs" ElementStyle="{StaticResource WriteMs}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average write latency between the readings: the change in io_stall_write_ms divided by the change in num_of_writes. Blank: no writes."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Writes" Binding="{Binding WritesText}" Width="70" SortMemberPath="Writes" ElementStyle="{StaticResource Number}"/>
+                                <DataGridTextColumn Header="Read MB/s" Binding="{Binding ReadMBpsText}" Width="76" SortMemberPath="ReadMBps" ElementStyle="{StaticResource Number}"/>
+                                <DataGridTextColumn Header="Write MB/s" Binding="{Binding WriteMBpsText}" Width="78" SortMemberPath="WriteMBps" ElementStyle="{StaticResource Number}"/>
+                                <DataGridTextColumn Header="KB/read" Binding="{Binding AvgReadKBText}" Width="62" SortMemberPath="AvgReadKB" ElementStyle="{StaticResource Number}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average size of a read. 8 KB is single pages; 64 KB and more is read-ahead or scans, which take longer each."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="KB/write" Binding="{Binding AvgWriteKBText}" Width="64" SortMemberPath="AvgWriteKB" ElementStyle="{StaticResource Number}"/>
+                                <DataGridTextColumn Header="Read ms (start)" Binding="{Binding StartupReadLatencyText}" Width="96" SortMemberPath="StartupReadLatencyMs" ElementStyle="{StaticResource MutedNumber}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="For comparison only: the average read latency over the file's totals since its database came online, usually since SQL Server started. Old slow periods (backups, CHECKDB) stay in it for good, so it isn't highlighted."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Write ms (start)" Binding="{Binding StartupWriteLatencyText}" Width="98" SortMemberPath="StartupWriteLatencyMs" ElementStyle="{StaticResource MutedNumber}"/>
+                                <DataGridTextColumn Header="Size" Binding="{Binding SizeText}" Width="72" SortMemberPath="SizeBytes" ElementStyle="{StaticResource MutedNumber}"/>
+                                <DataGridTextColumn Header="Volume" Binding="{Binding Volume}" Width="*" MinWidth="80" ElementStyle="{StaticResource SingleLineText}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
+                                   Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,40,0,0"
+                                   HorizontalAlignment="Center" VerticalAlignment="Top"
+                                   IsHitTestVisible="False" Visibility="Collapsed"/>
+                    </Grid>
                 </DockPanel>
-                <TextBlock x:Name="TxtDetail" DockPanel.Dock="Bottom" Foreground="{StaticResource TextMuted}" FontSize="12"
-                           Margin="0,8,0,0" TextWrapping="Wrap" Text="Select a file for why it's highlighted and where it is."/>
-                <Grid>
-                    <DataGrid x:Name="FilesGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                              SelectionMode="Single" RowStyle="{StaticResource LatencyRow}"
-                              SelectionChanged="FilesGrid_SelectionChanged">
+            </Border>
+
+            <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                          Background="{StaticResource Border}" Margin="0,4"/>
+
+            <!-- ── The same by volume: several slow files on one volume point at the storage ── -->
+            <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" x:Name="TxtVolumes" Text="Volumes" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"
+                               ToolTip="Every file on a volume taken together: total stall over total reads or writes, so busy files count for more. Held to the log threshold when only log files did I/O there, otherwise to the data one."/>
+                    <DataGrid x:Name="VolumesGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                              SelectionMode="Single" RowStyle="{StaticResource LatencyRow}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource StatusText}">
-                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Amber: reads or writes averaged more than the threshold for the file's type. Red: five times it or more. Sorted with these first."/></Style></DataGridTextColumn.HeaderStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="130" ElementStyle="{StaticResource DatabaseName}"/>
-                            <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="130" ElementStyle="{StaticResource SingleLineText}"/>
-                            <DataGridTextColumn Header="Type" Binding="{Binding TypeText}" Width="56" ElementStyle="{StaticResource Muted}"/>
-                            <DataGridTextColumn Header="Read ms" Binding="{Binding ReadLatencyText}" Width="70" SortMemberPath="ReadLatencyMs" ElementStyle="{StaticResource ReadMs}">
-                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average read latency between the readings: the change in io_stall_read_ms divided by the change in num_of_reads. Blank: no reads."/></Style></DataGridTextColumn.HeaderStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Reads" Binding="{Binding ReadsText}" Width="70" SortMemberPath="Reads" ElementStyle="{StaticResource Number}"/>
-                            <DataGridTextColumn Header="Write ms" Binding="{Binding WriteLatencyText}" Width="70" SortMemberPath="WriteLatencyMs" ElementStyle="{StaticResource WriteMs}">
-                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average write latency between the readings: the change in io_stall_write_ms divided by the change in num_of_writes. Blank: no writes."/></Style></DataGridTextColumn.HeaderStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Writes" Binding="{Binding WritesText}" Width="70" SortMemberPath="Writes" ElementStyle="{StaticResource Number}"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource VolumeStatusText}"/>
+                            <DataGridTextColumn Header="Volume" Binding="{Binding VolumeText}" Width="220" ElementStyle="{StaticResource DatabaseName}"/>
+                            <DataGridTextColumn Header="Files" Binding="{Binding FilesText}" Width="90" SortMemberPath="FileCount" ElementStyle="{StaticResource Number}"/>
+                            <DataGridTextColumn Header="Read ms" Binding="{Binding ReadLatencyText}" Width="70" SortMemberPath="ReadLatencyMs" ElementStyle="{StaticResource ReadMs}"/>
+                            <DataGridTextColumn Header="Reads/s" Binding="{Binding ReadsPerSec, StringFormat='N0'}" Width="70" SortMemberPath="ReadsPerSec" ElementStyle="{StaticResource Number}"/>
+                            <DataGridTextColumn Header="Write ms" Binding="{Binding WriteLatencyText}" Width="70" SortMemberPath="WriteLatencyMs" ElementStyle="{StaticResource WriteMs}"/>
+                            <DataGridTextColumn Header="Writes/s" Binding="{Binding WritesPerSec, StringFormat='N0'}" Width="70" SortMemberPath="WritesPerSec" ElementStyle="{StaticResource Number}"/>
                             <DataGridTextColumn Header="Read MB/s" Binding="{Binding ReadMBpsText}" Width="76" SortMemberPath="ReadMBps" ElementStyle="{StaticResource Number}"/>
                             <DataGridTextColumn Header="Write MB/s" Binding="{Binding WriteMBpsText}" Width="78" SortMemberPath="WriteMBps" ElementStyle="{StaticResource Number}"/>
-                            <DataGridTextColumn Header="KB/read" Binding="{Binding AvgReadKBText}" Width="62" SortMemberPath="AvgReadKB" ElementStyle="{StaticResource Number}">
-                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Average size of a read. 8 KB is single pages; 64 KB and more is read-ahead or scans, which take longer each."/></Style></DataGridTextColumn.HeaderStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="KB/write" Binding="{Binding AvgWriteKBText}" Width="64" SortMemberPath="AvgWriteKB" ElementStyle="{StaticResource Number}"/>
-                            <DataGridTextColumn Header="Read ms (start)" Binding="{Binding StartupReadLatencyText}" Width="96" SortMemberPath="StartupReadLatencyMs" ElementStyle="{StaticResource MutedNumber}">
-                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="For comparison only: the average read latency over the file's totals since its database came online, usually since SQL Server started. Old slow periods (backups, CHECKDB) stay in it for good, so it isn't highlighted."/></Style></DataGridTextColumn.HeaderStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Write ms (start)" Binding="{Binding StartupWriteLatencyText}" Width="98" SortMemberPath="StartupWriteLatencyMs" ElementStyle="{StaticResource MutedNumber}"/>
-                            <DataGridTextColumn Header="Size" Binding="{Binding SizeText}" Width="72" SortMemberPath="SizeBytes" ElementStyle="{StaticResource MutedNumber}"/>
-                            <DataGridTextColumn Header="Volume" Binding="{Binding Volume}" Width="*" MinWidth="80" ElementStyle="{StaticResource SingleLineText}"/>
+                            <DataGridTextColumn Header="Threshold" Binding="{Binding ThresholdMs, StringFormat='{}{0:0.##} ms'}" Width="*" MinWidth="80" ElementStyle="{StaticResource MutedNumber}"/>
                         </DataGrid.Columns>
                     </DataGrid>
-                    <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
-                               Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,40,0,0"
-                               HorizontalAlignment="Center" VerticalAlignment="Top"
-                               IsHitTestVisible="False" Visibility="Collapsed"/>
-                </Grid>
-            </DockPanel>
-        </Border>
-
-        <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch"
-                      Background="{StaticResource Border}" Margin="0,4"/>
-
-        <!-- ── The same by volume: several slow files on one volume point at the storage ── -->
-        <Border Grid.Row="4" Style="{StaticResource KpiCard}">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" x:Name="TxtVolumes" Text="Volumes" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"
-                           ToolTip="Every file on a volume taken together: total stall over total reads or writes, so busy files count for more. Held to the log threshold when only log files did I/O there, otherwise to the data one."/>
-                <DataGrid x:Name="VolumesGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                          SelectionMode="Single" RowStyle="{StaticResource LatencyRow}">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource VolumeStatusText}"/>
-                        <DataGridTextColumn Header="Volume" Binding="{Binding VolumeText}" Width="220" ElementStyle="{StaticResource DatabaseName}"/>
-                        <DataGridTextColumn Header="Files" Binding="{Binding FilesText}" Width="90" SortMemberPath="FileCount" ElementStyle="{StaticResource Number}"/>
-                        <DataGridTextColumn Header="Read ms" Binding="{Binding ReadLatencyText}" Width="70" SortMemberPath="ReadLatencyMs" ElementStyle="{StaticResource ReadMs}"/>
-                        <DataGridTextColumn Header="Reads/s" Binding="{Binding ReadsPerSec, StringFormat='N0'}" Width="70" SortMemberPath="ReadsPerSec" ElementStyle="{StaticResource Number}"/>
-                        <DataGridTextColumn Header="Write ms" Binding="{Binding WriteLatencyText}" Width="70" SortMemberPath="WriteLatencyMs" ElementStyle="{StaticResource WriteMs}"/>
-                        <DataGridTextColumn Header="Writes/s" Binding="{Binding WritesPerSec, StringFormat='N0'}" Width="70" SortMemberPath="WritesPerSec" ElementStyle="{StaticResource Number}"/>
-                        <DataGridTextColumn Header="Read MB/s" Binding="{Binding ReadMBpsText}" Width="76" SortMemberPath="ReadMBps" ElementStyle="{StaticResource Number}"/>
-                        <DataGridTextColumn Header="Write MB/s" Binding="{Binding WriteMBpsText}" Width="78" SortMemberPath="WriteMBps" ElementStyle="{StaticResource Number}"/>
-                        <DataGridTextColumn Header="Threshold" Binding="{Binding ThresholdMs, StringFormat='{}{0:0.##} ms'}" Width="*" MinWidth="80" ElementStyle="{StaticResource MutedNumber}"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
-        </Border>
-    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </controls:PageShell>
 </Page>

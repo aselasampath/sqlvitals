@@ -148,7 +148,7 @@ Together with **Compact** [grid density](Working-with-Grids.md#grid-density) it 
 
 ### Verdict first, then the detail
 
-From 0.62.0 a screen on the new page template (Processes, Query Store and Backups; from 0.65.0 also Active Waits, Deadlocks, App Connections, Top Waits, Wait Trend, Resource Queries, Query Regressions, Plan Cache Health, Implicit Conversions and SP Trace; the rest follow) starts with a **verdict**: one line saying what is wrong, or that nothing is, so you know before reading a grid whether there is a problem.
+From 0.62.0 a screen on the new page template (Processes, Query Store and Backups; from 0.65.0 also Active Waits, Deadlocks, App Connections, Top Waits, Wait Trend, Resource Queries, Query Regressions, Plan Cache Health, Implicit Conversions and SP Trace; from 0.66.0 every other screen in the sidebar too, but All servers, a server's Overview, Live charts and Settings, which have layouts of their own) starts with a **verdict**: one line saying what is wrong, or that nothing is, so you know before reading a grid whether there is a problem.
 
 - Its colour follows how bad it is (green, amber, red; grey when it can't tell), and the words say it too: *No blocking*, *Every database is within your RPO*, *4 databases are past your RPO*. A screen reader reads the level first: *Verdict, Warning: …*.
 - A second line says why, and up to four buttons do the next step: *Go to session 87*, *Show only these*, *Open query 4183*.

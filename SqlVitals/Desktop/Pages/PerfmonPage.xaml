@@ -31,171 +31,164 @@
         </Style>
     </Page.Resources>
 
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="230" MinWidth="180"/>
-            <ColumnDefinition Width="5"/>
-            <!-- splitter -->
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-
-        <!-- ── Left: Counter Selector ─────────────────────────────── -->
-        <Border Grid.Column="0"
-                Background="{StaticResource BgSidebar}"
-                BorderBrush="{StaticResource Border}"
-                BorderThickness="0,0,1,0">
-            <DockPanel Margin="12,14,12,14">
-
-                <!-- Title -->
-                <TextBlock DockPanel.Dock="Top"
-                           Text="Select Counters"
-                           Foreground="{StaticResource TextPrimary}"
-                           FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
-                           Margin="0,0,0,10"/>
-
-                <!-- Group preset dropdown -->
-                <ComboBox x:Name="CmbGroup" DockPanel.Dock="Top"
-                          Height="28" Margin="0,0,0,8"
+    <!-- The page template (#150): the verdict on counters past a known limit first, then the
+         counters and the chart. Start and Stop are the top bar's Resume and Pause (#140). -->
+    <controls:PageShell x:Name="Shell" Margin="16,12,16,12" Title="Perfmon Counters" PageKey="Perfmon">
+        <controls:PageShell.Actions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Live, or a past range from the monitoring history; and the baseline. In the top bar (#140). -->
+                <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0"
+                                          RangeChanged="RangePicker_RangeChanged"
+                                          BaselineChanged="RangePicker_BaselineChanged"/>
+                <TextBlock Text="Read every:" Foreground="{StaticResource TextMuted}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"
+                           FontFamily="Segoe UI" FontSize="12"/>
+                <ComboBox x:Name="CmbInterval" Width="80" Height="26"
                           Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                           BorderBrush="{StaticResource Border}"
                           FontFamily="Segoe UI" FontSize="12"
-                          SelectionChanged="CmbGroup_SelectionChanged">
+                          ToolTip="How often the counters are read while live. Resume (▶) in the top bar starts reading, Pause stops it."
+                          SelectionChanged="CmbInterval_SelectionChanged">
                     <ComboBox.ItemContainerStyle>
                         <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                     </ComboBox.ItemContainerStyle>
                 </ComboBox>
+                <Border Margin="8,0,0,0" Background="{StaticResource BgCard}"
+                        BorderBrush="{StaticResource Border}" BorderThickness="1"
+                        CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center"
+                        ToolTip="Seconds to the next read; -- while paused">
+                    <TextBlock x:Name="TxtCountdown" Text="--"
+                               Foreground="{StaticResource TextMuted}"
+                               VerticalAlignment="Center"
+                               FontFamily="Segoe UI Mono" FontSize="11"
+                               MinWidth="28" TextAlignment="Center"/>
+                </Border>
+            </StackPanel>
+        </controls:PageShell.Actions>
 
-                <!-- Select All / Clear All -->
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="6"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Content="Select All" Style="{StaticResource FlatBtn}" Click="SelectAll_Click"/>
-                    <Button Grid.Column="2" Content="Clear All"  Style="{StaticResource FlatBtn}" Click="ClearAll_Click"/>
-                </Grid>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230" MinWidth="180"/>
+                <ColumnDefinition Width="5"/>
+                <!-- splitter -->
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-                <!-- Search box -->
-                <TextBox x:Name="TxtSearch" DockPanel.Dock="Top"
-                         Height="26" Margin="0,0,0,8"
-                         Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
-                         CaretBrush="{StaticResource TextPrimary}"
-                         BorderBrush="{StaticResource Border}" BorderThickness="1"
-                         Padding="6,2" FontFamily="Segoe UI" FontSize="11"
-                         TextChanged="TxtSearch_TextChanged"/>
+            <!-- ── Left: Counter Selector ─────────────────────────────── -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource BgSidebar}"
+                    BorderBrush="{StaticResource Border}"
+                    BorderThickness="0,0,1,0">
+                <DockPanel Margin="12,14,12,14">
 
-                <!-- Checkboxes list (scrollable) -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl x:Name="CounterList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <CheckBox Style="{StaticResource DarkCheck}"
-                                          Content="{Binding DisplayName}"
-                                          IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                                          Checked="Counter_CheckChanged"
-                                          Unchecked="Counter_CheckChanged"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                    <!-- Title -->
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Select Counters"
+                               Foreground="{StaticResource TextPrimary}"
+                               FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                               Margin="0,0,0,10"/>
 
-            </DockPanel>
-        </Border>
-
-        <!-- ── Splitter ───────────────────────────────────────────── -->
-        <GridSplitter Grid.Column="1" Width="5"
-                      HorizontalAlignment="Stretch"
-                      Background="{StaticResource Border}"/>
-
-        <!-- ── Right: Chart + toolbar ─────────────────────────────── -->
-        <Grid Grid.Column="2">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-
-            <!-- Toolbar -->
-            <DockPanel Grid.Row="0" Margin="16,12,16,8">
-                <TextBlock Text="Perfmon Counters" DockPanel.Dock="Left"
-                           Style="{StaticResource SectionHeader}" FontSize="18"
-                           VerticalAlignment="Center"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                            VerticalAlignment="Center">
-                    <!-- Live, or a past range from the monitoring history; and the baseline -->
-                    <controls:TimeRangePicker x:Name="RangePicker" Margin="0,0,16,0"
-                                              RangeChanged="RangePicker_RangeChanged"
-                                              BaselineChanged="RangePicker_BaselineChanged"/>
-                    <TextBlock Text="Auto-refresh:" Foreground="{StaticResource TextMuted}"
-                               VerticalAlignment="Center" Margin="0,0,6,0"
-                               FontFamily="Segoe UI" FontSize="12"/>
-                    <ComboBox x:Name="CmbInterval" Width="80" Height="26"
+                    <!-- Group preset dropdown -->
+                    <ComboBox x:Name="CmbGroup" DockPanel.Dock="Top"
+                              Height="28" Margin="0,0,0,8"
                               Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                               BorderBrush="{StaticResource Border}"
                               FontFamily="Segoe UI" FontSize="12"
-                              SelectionChanged="CmbInterval_SelectionChanged">
+                              SelectionChanged="CmbGroup_SelectionChanged">
                         <ComboBox.ItemContainerStyle>
                             <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                         </ComboBox.ItemContainerStyle>
                     </ComboBox>
-                    <ToggleButton x:Name="BtnAutoRefresh" Content="Start" Width="58" Height="26"
-                                  Margin="6,0,0,0" Padding="6,0"
-                                  Background="#1A22C55E" BorderBrush="{StaticResource Success}"
-                                  Foreground="{StaticResource Success}"
-                                  FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
-                                  Checked="BtnAutoRefresh_Checked"
-                                  Unchecked="BtnAutoRefresh_Unchecked"/>
-                    <Border Margin="8,0,0,0" Background="{StaticResource BgCard}"
-                            BorderBrush="{StaticResource Border}" BorderThickness="1"
-                            CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center">
-                        <TextBlock x:Name="TxtCountdown" Text="--"
-                                   Foreground="{StaticResource TextMuted}"
-                                   VerticalAlignment="Center"
-                                   FontFamily="Segoe UI Mono" FontSize="11"
-                                   MinWidth="28" TextAlignment="Center"/>
-                    </Border>
-                </StackPanel>
-            </DockPanel>
 
-            <!-- Chart -->
-            <Border Grid.Row="1" Margin="16,0,16,6"
-                    Background="{StaticResource BgCard}"
-                    BorderBrush="{StaticResource Border}" BorderThickness="1"
-                    CornerRadius="6">
-                <Grid>
-                    <lvc:CartesianChart x:Name="PerfmonChart"
-                                        Margin="4"
-                                        TooltipPosition="Top"
-                                        LegendPosition="Bottom"/>
-                    <TextBlock x:Name="TxtNoData"
-                               Text="Select counters from the left panel to begin charting."
-                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="560"
-                               Foreground="{StaticResource TextMuted}"
-                               FontFamily="Segoe UI" FontSize="13"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Visibility="Collapsed"/>
-                </Grid>
-            </Border>
+                    <!-- Select All / Clear All -->
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Select All" Style="{StaticResource FlatBtn}" Click="SelectAll_Click"/>
+                        <Button Grid.Column="2" Content="Clear All"  Style="{StaticResource FlatBtn}" Click="ClearAll_Click"/>
+                    </Grid>
 
-            <!-- Status bar -->
-            <Border Grid.Row="2" Margin="16,0,16,10"
-                    Background="{StaticResource BgCard}"
-                    BorderBrush="{StaticResource Border}" BorderThickness="1"
-                    CornerRadius="3" Padding="10,4">
-                <DockPanel>
-                    <TextBlock x:Name="TxtMaxNote"
-                               Text="Max 12 counters shown simultaneously."
-                               Foreground="{StaticResource TextMuted}"
-                               FontFamily="Segoe UI" FontSize="10"
-                               DockPanel.Dock="Right" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="TxtStatus"
-                               Text="Not refreshing — press Start or use manual Refresh."
-                               Foreground="{StaticResource TextMuted}"
-                               FontFamily="Segoe UI" FontSize="10"
-                               VerticalAlignment="Center"/>
+                    <!-- Search box -->
+                    <TextBox x:Name="TxtSearch" DockPanel.Dock="Top"
+                             Height="26" Margin="0,0,0,8"
+                             Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
+                             CaretBrush="{StaticResource TextPrimary}"
+                             BorderBrush="{StaticResource Border}" BorderThickness="1"
+                             Padding="6,2" FontFamily="Segoe UI" FontSize="11"
+                             TextChanged="TxtSearch_TextChanged"/>
+
+                    <!-- Checkboxes list (scrollable) -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="CounterList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Style="{StaticResource DarkCheck}"
+                                              Content="{Binding DisplayName}"
+                                              IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                              Checked="Counter_CheckChanged"
+                                              Unchecked="Counter_CheckChanged"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
                 </DockPanel>
             </Border>
+
+            <!-- ── Splitter ───────────────────────────────────────────── -->
+            <GridSplitter Grid.Column="1" Width="5"
+                          HorizontalAlignment="Stretch"
+                          Background="{StaticResource Border}"/>
+
+            <!-- ── Right: Chart + toolbar ─────────────────────────────── -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Chart -->
+                <Border Grid.Row="0" Margin="12,0,0,6"
+                        Background="{StaticResource BgCard}"
+                        BorderBrush="{StaticResource Border}" BorderThickness="1"
+                        CornerRadius="6">
+                    <Grid>
+                        <lvc:CartesianChart x:Name="PerfmonChart"
+                                            Margin="4"
+                                            TooltipPosition="Top"
+                                            LegendPosition="Bottom"/>
+                        <TextBlock x:Name="TxtNoData"
+                                   Text="Select counters from the left panel to begin charting."
+                                   TextWrapping="Wrap" TextAlignment="Center" MaxWidth="560"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="13"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
+
+                <!-- Status bar -->
+                <Border Grid.Row="1" Margin="12,0,0,0"
+                        Background="{StaticResource BgCard}"
+                        BorderBrush="{StaticResource Border}" BorderThickness="1"
+                        CornerRadius="3" Padding="10,4">
+                    <DockPanel>
+                        <TextBlock x:Name="TxtMaxNote"
+                                   Text="Max 12 counters shown simultaneously."
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10"
+                                   DockPanel.Dock="Right" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="TxtStatus"
+                                   Text="Not reading: Resume (▶) in the top bar starts it, Refresh reads once."
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Segoe UI" FontSize="10"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Border>
+            </Grid>
         </Grid>
-    </Grid>
+    </controls:PageShell>
 </Page>

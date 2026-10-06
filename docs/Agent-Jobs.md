@@ -11,8 +11,11 @@ Everything is read from `msdb`, where Agent keeps its jobs and their history. Sq
 ## How to use it
 
 1. Open **🕒 Agent Jobs**. The jobs that need you come first: **running long** (amber), then **failed** (red), then running, then the rest by name.
-2. The line under the toolbar counts them: *42 jobs · 3 failed · 2 running, 1 longer than usual · 5 disabled*. An amber line above the list means **SQL Server Agent itself isn't running**, so no job starts on its schedule.
-3. **Show** narrows the list: *Needs attention: failed or running long*, *Running now*, *Last run failed* or *Enabled jobs*. **↻ Read again** (or **Refresh** in the top bar, **F5**) reads msdb again. Tick **Every 30 s** to watch a long job while the page is open.
+2. **The verdict** at the top names them (from 0.66.0; a count line under the toolbar before): *1 job failed its last run: Nightly backup; 1 is running longer than usual: Reindex SalesDb*, red when one failed, amber when one only runs long, and what happened to the first. In red it says **SQL Server Agent is stopped: no job runs** when Agent isn't running. **Show its runs** selects that job, with its runs below and its details in the drawer; **Only these** lists only the jobs that failed or run long. With nothing to act on it says so, with the next job due. Agent's state and the server's time are in **SQL Server Agent**, which folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+   ![Agent Jobs: the verdict names the failed and long-running jobs, above the jobs and the selected job's runs](images/page-template/agent-jobs.png)
+
+3. The list beside the **Jobs** title narrows it: *Needs attention: failed or running long*, *Running now*, *Last run failed* or *Enabled jobs*. **↻ Read again**, beside the page title (or **Refresh** in the top bar, **F5**), reads msdb again. Tick **Every 30 s** to watch a long job while the page is open.
 4. Each row is one job:
 
    | Column | Meaning |
@@ -30,9 +33,9 @@ Everything is read from `msdb`, where Agent keeps its jobs and their history. Sq
    | **Category**, **Owner** | As in SSMS. *(no such login)*: the owner's login no longer exists, which can stop the job from starting |
    | **Last message** | Agent's message for the last run, e.g. *The job failed. … The last step to run was step 2 (Load facts).* |
 
-5. **Select a job** to see its runs below the list, newest first:
+5. **Select a job** to see its details in the [details drawer](Working-with-Grids.md#details-beside-the-grid) (what happened, duration against the average, next run, failed runs, owner, description) and its runs below the list, newest first:
    - Each **run** with its start, outcome and duration. For a **failed** run the message is the **failing step and its error**, e.g. *Step 2 (Load facts): Violation of PRIMARY KEY constraint …*. A run in progress shows as **Running**.
-   - **Select a run** to see its **steps**: each step's outcome, start, duration and message. The failing step is selected for you, and its full message is shown on the right.
+   - **Select a run** to see its **steps**: each step's outcome, start, duration and message. The failing step is selected for you, and its full message is in the drawer, under the job (from 0.66.0; beside the steps before).
 
 The grids have the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).
 

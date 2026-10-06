@@ -91,12 +91,15 @@ internal static class DrawerParts
     /// A grid whose selected row fills the drawer (#147, #149): a row selected shows it, a click on
     /// one also opens a closed drawer.
     /// </summary>
-    public static void FollowSelection(DataGrid grid, Action<object, bool> show)
+    /// <param name="cleared">Run when no row is selected any more, e.g. a filter hid it (#150).</param>
+    public static void FollowSelection(DataGrid grid, Action<object, bool> show, Action? cleared = null)
     {
         grid.SelectionChanged += (_, _) =>
         {
             if (grid.SelectedItem is { } row)
                 show(row, false);
+            else
+                cleared?.Invoke();
         };
         grid.AddHandler(UIElement.MouseLeftButtonUpEvent, new System.Windows.Input.MouseButtonEventHandler((_, e) =>
         {

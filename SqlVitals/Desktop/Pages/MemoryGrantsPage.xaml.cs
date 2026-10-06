@@ -11,6 +11,7 @@ using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -53,12 +54,18 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         MainWindow.ReportContextChanged(this);
     }
 
-    // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140).
+    // Live while trending. The bar's Resume and Pause start and stop it: the page's own Start and
+    // Stop were the same toggle, so they went with the page template (#150).
     public PageKind Kind => PageKind.Live;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => true;
-    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
-    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+    public bool IsPaused => !_timer.IsEnabled;
+
+    public void SetPaused(bool paused)
+    {
+        if (paused) StopReading();
+        else StartReading();
+    }
 
     // ── constants ────────────────────────────────────────────────────
     private const int MaxPoints = 60;
@@ -82,25 +89,56 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
 
     private readonly IWaitStatsRepository _repo;
 
-    public MemoryGrantsPage(IWaitStatsRepository repo)
+    // The page template's verdict (#150): queries waiting for a memory grant, or how memory is used.
+    internal MemoryViewModel ViewModel { get; }
+
+    /// <param name="folds">Where the verdict's, the figures' and the trend's folds are remembered; none in some tests.</param>
+    public MemoryGrantsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
         _timer.Tick += Timer_Tick;
         BuildInitialChart(); // create series (empty windows) on startup
+
+        ViewModel = new MemoryViewModel(showWaiting: ShowWaiting, showClerks: () => Tabs.SelectedItem = TabClerks);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        ShowTrendSummary();
+    }
+
+    // The verdict's Show the waiting grants: the Memory Grants tab, the longest waiter read selected.
+    private void ShowWaiting()
+    {
+        Tabs.SelectedItem = TabGrants;
+        if ((_grants ?? []).Where(g => g.IsPending).MaxBy(g => g.WaitForGrantMs) is { } longest && GrantsGrid.Items.Contains(longest))
+        {
+            GrantsGrid.SelectedItem = longest;
+            GrantsGrid.ScrollIntoView(longest);
+        }
     }
 
     // ── IRefreshable ──────────────────────────────────────────────────
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        // Load grids and chart in parallel
-        var snapTask   = _repo.GetMemorySnapshotAsync();
-        var grantsTask = _repo.GetMemoryGrantsAsync();
+        MemorySnapshot snap;
+        IEnumerable<MemoryGrant> grants;
+        IEnumerable<MemoryClerk> clerks;
+        try
+        {
+            // Load grids and chart in parallel
+            var snapTask   = _repo.GetMemorySnapshotAsync();
+            var grantsTask = _repo.GetMemoryGrantsAsync();
 
-        await System.Threading.Tasks.Task.WhenAll(snapTask, grantsTask);
+            await System.Threading.Tasks.Task.WhenAll(snapTask, grantsTask);
 
-        var snap               = snapTask.Result;
-        var (grants, clerks, _) = grantsTask.Result;
+            snap = snapTask.Result;
+            (grants, clerks, _) = grantsTask.Result;
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the memory figures", ex);
+            throw;
+        }
 
         // ── KPI strip ────────────────────────────────────────────────
         ApplyKpi(snap);
@@ -116,6 +154,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         // ── Grants DataGrid ───────────────────────────────────────────
         _grants = grants.ToList();
         ShowGrants();
+        ViewModel.Show(snap, _grants);
     }
 
     // ── KPI strip update ─────────────────────────────────────────────
@@ -131,6 +170,10 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         KpiAvailPage.Text  = FormatKB(s.AvailablePageFileKB);
         KpiMemState.Text   = s.SystemMemoryState;
         KpiMemModel.Text   = s.MemoryModel;
+
+        // Folded, the figures say it in one line (#150).
+        FiguresSection.FoldedSummary = $"SQL Server {FormatKB(s.TotalServerMemoryKB)} of {FormatKB(s.TargetServerMemoryKB)} target · " +
+                                       $"buffer pool {FormatKB(s.DatabaseCacheMemoryKB)} · plan cache {FormatKB(s.SqlCacheMemoryKB)} · {s.SystemMemoryState}";
 
         // Colour system state text
         KpiMemState.Foreground = s.SystemMemoryState switch
@@ -158,6 +201,8 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         Append(_winGrants, t, toGB(s.GrantedWorkspaceMemoryKB));
 
         TxtNoData.Visibility = Visibility.Collapsed;
+        _last = s;
+        ShowTrendSummary();
 
         // Force chart repaint
         MemChart.CoreChart?.Update(
@@ -254,19 +299,6 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         }};
     }
 
-    // ── tab switching ─────────────────────────────────────────────────
-    private void Tab_Checked(object sender, RoutedEventArgs e)
-    {
-        if (sender is not RadioButton rb) return;
-        bool isOverview = (string?)rb.Tag == "Overview";
-
-        if (PanelOverview is null) return; // guard during InitializeComponent
-        PanelOverview.Visibility  = isOverview                         ? Visibility.Visible : Visibility.Collapsed;
-        PanelClerks.Visibility    = (string?)rb.Tag == "Clerks"        ? Visibility.Visible : Visibility.Collapsed;
-        PanelGrants.Visibility    = (string?)rb.Tag == "Grants"        ? Visibility.Visible : Visibility.Collapsed;
-        OverviewToolbar.Visibility = isOverview                         ? Visibility.Visible : Visibility.Collapsed;
-    }
-
     // ── page lifetime ────────────────────────────────────────────────
     private void Page_Unloaded(object sender, RoutedEventArgs e) => _timer.Stop();
 
@@ -289,6 +321,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
             var snap = await _repo.GetMemorySnapshotAsync();
             ApplyKpi(snap);
             AppendSnapshot(snap);
+            ViewModel.Show(snap, null);   // the counter says whether queries wait; the grants are read on Refresh
             MainWindow.ReportBackgroundSuccess(this);
         }
         catch (Exception ex)
@@ -297,21 +330,55 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         }
     }
 
-    private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
+    private int SelectedIntervalSec => CmbInterval.SelectedIndex switch { 0 => 5, 1 => 10, 2 => 30, 3 => 60, _ => 10 };
+
+    // The latest reading, for the trend's folded line.
+    private MemorySnapshot? _last;
+
+    // Folded, the trend says it in one line (#150): the latest figures, and whether it is moving.
+    private void ShowTrendSummary()
     {
-        BtnAutoRefresh.Content = "⏹  Stop";
-        _intervalSec = CmbInterval.SelectedIndex switch { 0 => 5, 1 => 10, 2 => 30, 3 => 60, _ => 10 };
+        static double Gb(long kb) => Math.Round(kb / 1_048_576.0, 2);
+        var reading = _last is { } s ? $"SQL Server {Gb(s.TotalServerMemoryKB):0.##} GB, grants {Gb(s.GrantedWorkspaceMemoryKB):0.##} GB · " : "";
+        TrendSection.FoldedSummary = reading + (_timer.IsEnabled ? $"every {_intervalSec} s" : "paused: Resume (▶) in the top bar trends it");
+    }
+
+    // What Start did: read every interval, counting down to the next read.
+    private void StartReading()
+    {
+        if (_timer.IsEnabled)
+            return;
+        _intervalSec = SelectedIntervalSec;
         _countdown = _intervalSec;
         TxtCountdown.Text = $"{_countdown}s";
         _timer.Start();
+        ShowTrendSummary();
         MainWindow.ReportContextChanged(this);
     }
 
-    private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
+    // What Stop did.
+    private void StopReading()
     {
-        BtnAutoRefresh.Content = "▶  Start";
+        if (!_timer.IsEnabled)
+            return;
         TxtCountdown.Text = "--";
         _timer.Stop();
+        ShowTrendSummary();
+        MainWindow.ReportContextChanged(this);
+    }
+
+    // Another interval: used from the next read on, while reading.
+    private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TxtCountdown is null)
+            return;   // during InitializeComponent
+        _intervalSec = SelectedIntervalSec;
+        if (_timer.IsEnabled)
+        {
+            _countdown = Math.Min(_countdown, _intervalSec);
+            TxtCountdown.Text = $"{_countdown}s";
+            ShowTrendSummary();
+        }
         MainWindow.ReportContextChanged(this);
     }
 

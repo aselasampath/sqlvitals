@@ -28,6 +28,10 @@ Five screens show how the server's memory, TempDB, storage, configuration and co
 
 A session with large **Internal KB** is usually one query sorting or hashing a lot of data. Look at its plan for a missing index or a bad estimate.
 
+**The verdict** (from 0.66.0) names, in amber, a session holding 500 MB or more of TempDB (*Session 88 holds 870 MB of TempDB*, and whether it's temp tables or sorts and hashes spilling), TempDB's data files 90 % used or more, or a version store of 1 GB or more, which a long-running transaction keeps alive. Otherwise it says how much room is left and who holds the most (*TempDB has room: 12 GB free of 16 GB*). **Show the session** selects the session holding the most. The cards and the file chart fold to one line each (*3 files · 4,450 MB used of 18,432 MB*), and the sessions take the room. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![TempDB: the verdict names the session holding the most, above the counters, the file chart and the sessions](images/page-template/tempdb.png)
+
 ---
 
 ## Memory Grants
@@ -38,12 +42,11 @@ A session with large **Internal KB** is usually one query sorting or hashing a l
 
 **Memory Model** is how SQL Server allocates memory: `CONVENTIONAL`, `LOCK_PAGES` (the service account has *Lock pages in memory*) or `LARGE_PAGES`. It shows **N/A** on Azure SQL Database and on builds that don't report it, such as SQL Server 2016 RTM and 2012 before SP4.
 
-Three views:
+Under the cards, a **Trend** chart of SQL Server memory, its target, the buffer pool and the memory granted to queries: pick an **Interval** (5s, 10s, 30s, 60s) and press **Resume (▶)** in the top bar; **Pause** stops it. From 0.66.0 these are the page's Start and Stop, which were the same switch. Then two tabs:
 
-| View | Shows |
+| Tab | Shows |
 |---|---|
-| **Overview** | A memory trend chart. Pick an **Interval** (10s, 30s, 60s) and press **▶ Start**. |
-| **Memory Clerks** | The top consumers of SQL Server memory (buffer pool, plan cache, …) in MB and % of total |
+| **Memory Clerks** | The top consumers of SQL Server memory (buffer pool, plan cache, …) in MB and % of total, charted beside the grid |
 | **Memory Grants** | Queries holding or **waiting for** workspace memory: requested, granted and used KB, wait ms, **Pending** |
 
 | Severity | Rule |
@@ -53,6 +56,10 @@ Three views:
 | Info | Otherwise |
 
 **Reading it:** a grant that's much bigger than what's **Used** means the optimizer over-estimated. That's often a stale-statistics or parameter-sniffing problem, and it starves other queries of memory.
+
+**The verdict** (from 0.66.0) names the queries waiting for a memory grant, the longest first (*2 queries wait for a memory grant; session 77 the longest, for 41 s*), in red once one has waited 30 seconds, and how much it asked for. **Show the waiting grants** opens the Memory Grants tab with it selected. With nothing waiting it is red if Windows reports low physical memory, and otherwise says how SQL Server's memory is used (*SQL Server uses 24 GB of its 28 GB target; the buffer pool 18 GB, the plan cache 2 GB*), with **Memory clerks**. The cards and the trend fold to one line each. The verdict follows each trend reading. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Memory Grants: the verdict names the queries waiting for memory, above the figures, the trend and the clerks](images/page-template/memory.png)
 
 ---
 
@@ -64,12 +71,16 @@ Three views:
 
 | Tab | Shows | Look for |
 |---|---|---|
-| **📂 Database Files** | Every data and log file of every online database: state, recovery model, compatibility level, size, used, free, max size, auto-growth, auto-shrink, Query Store on, encrypted, path. **Used** and **Free** are blank for a database your login can't open | Files close to **Max MB**; **percent** auto-growth on big files; **Auto-Shrink on** (almost always bad) |
-| **🌡️ TempDB Files** | TempDB data and log files | Data files of unequal size |
-| **⚙️ Server Config** | Key `sp_configure` settings, with min, max, whether dynamic, and a description | *max server memory* left at the default; *cost threshold for parallelism* at 5 |
-| **📋 Top Tables** | The 20 largest tables in the current database: rows, data, index and unused MB | Tables with more index than data |
+| **Database Files** | Every data and log file of every online database: state, recovery model, compatibility level, size, used, free, max size, auto-growth, auto-shrink, Query Store on, encrypted, path. **Used** and **Free** are blank for a database your login can't open | Files close to **Max MB**; **percent** auto-growth on big files; **Auto-Shrink on** (almost always bad) |
+| **TempDB Files** | TempDB data and log files | Data files of unequal size |
+| **Server Config** | Key `sp_configure` settings, with min, max, whether dynamic, and a description | *max server memory* left at the default; *cost threshold for parallelism* at 5 |
+| **Top Tables** | The 20 largest tables in the current database: rows, data, index and unused MB | Tables with more index than data |
 
 On **Azure SQL Database**, server-level parts (TempDB files, `sp_configure`) aren't available and are skipped automatically.
+
+**The verdict** (from 0.66.0) names, in amber, the files within 10 % of their **Max MB** (*1 file is near its maximum size; SalesDb · SalesDb_log at 94 %*): a file at its maximum can't grow, so inserts fail with error 1105, or 9002 for a log. Next it names the databases with auto-shrink on. Otherwise it gives the storage at a glance: the total, the largest database, data, log and TempDB. **Show the file** opens the Database Files tab with the file selected. The cards fold to one line, and from 0.66.0 the four views are tabs the page keeps when you come back to it, in the grids' usual style and [density](Working-with-Grids.md#grid-density). See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![DB Storage: the verdict names the log file near its maximum size, above the size cards and the files](images/page-template/db-storage.png)
 
 > **Tip:** [Configuration Checks](Configuration-Checks.md) checks these settings for you: MAXDOP, cost threshold, max server memory, TempDB's files, auto-shrink, page verify and compatibility level, with the value recommended for this server.
 
@@ -94,10 +105,14 @@ Connections grouped **by application** (program name): number of connections, ac
 > **Where:** sidebar → ⏱️ Perfmon · **Use it when:** you need a specific SQL Server counter that the other screens don't show
 
 1. Tick counters in **Select Counters** on the left (**Select All** / **Clear All**). Up to **12** are charted at once.
-2. Set **Auto-refresh** and press **Start**, or use the sidebar **Refresh** for one reading.
+2. Set **Read every** and press **Resume (▶)** in the top bar; **Pause** stops it, and **Refresh** (F5) takes one reading. From 0.66.0 these are the page's Start and Stop, which were the same switch.
 3. Use the **range picker** in the top bar (1h, 24h, 7d, Custom…) to chart recorded history, and **Compare to baseline** for last week. See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md).
 
 Counters include batch requests, compilations, lock waits and timeouts, log flushes, memory grants, page life expectancy and more. Per-second counters are shown as rates.
+
+**The verdict** (from 0.66.0) reads the counters charted against the few with a well-known limit: *Memory Grants Pending*, *Processes blocked* or *Number of Deadlocks/sec* above 0, *Free list stalls/sec* above 2, *Lazy writes/sec* above 20. One past its limit is named in amber (*Memory Grants Pending is 3: queries wait for a memory grant*), with a button to the page that shows the cause: Memory Grants, Processes or Deadlocks. Counters have different units, so they aren't compared with each other; it names the ones **rising**, whose last readings are at least twice their first, and otherwise says none is past a limit. Before it has anything to judge it says so (*Not charting yet*, *Nothing recorded in this range*). See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Perfmon: the verdict says Memory Grants Pending is past its limit, above the counters and the chart](images/page-template/perfmon.png)
 
 ---
 

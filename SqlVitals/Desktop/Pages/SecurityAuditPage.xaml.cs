@@ -1,13 +1,15 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.Windows;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Security;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -17,8 +19,38 @@ namespace SqlVitals.Desktop.Pages;
 /// Each finding is a Risk, something to Review, or a Pass, with the risk explained; a risk comes
 /// with the T-SQL to remove it, which is never run here.
 /// </summary>
-public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
+public partial class SecurityAuditPage : Page, IRefreshable, IPageContext, IDetailsSource
 {
+    // ── The details drawer (#150): the selected finding ─────────────────────────────
+    private const string SelectHint = "Select a finding to see the risk and the script that removes it.";
+
+    private readonly RowDrawer _drawer = new("Finding details", SelectHint);
+
+    public DrawerContent Details => _drawer.Content;
+
+    public event Action<bool>? DetailsChanged
+    {
+        add    => _drawer.Changed += value;
+        remove => _drawer.Changed -= value;
+    }
+
+    internal RowDetailsView? DetailsView => _drawer.View;
+
+    private void ShowFinding(object row, bool open)
+    {
+        if (row is not SecurityFinding finding)
+            return;
+        var heading = finding.IsRisk
+            ? "To remove the risk: review, then run it yourself. SqlVitals never runs it."
+            : "If you decide to change it: review, then run it yourself. SqlVitals never runs it.";
+        _drawer.Show($"{finding.Name} · {finding.Subject}", RowDetails.Rows(finding), open, heading, finding.FixScript);
+    }
+
+    // The page template's verdict (#150): the risks found, the highest first.
+    internal SecurityAuditViewModel ViewModel { get; }
+
+    private const int RisksFilter = 1;
+
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;
 
@@ -53,7 +85,8 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
 
     private bool _refreshing;
 
-    public SecurityAuditPage(IWaitStatsRepository repo, string? serverName)
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public SecurityAuditPage(IWaitStatsRepository repo, string? serverName, ISectionFolds? folds = null)
     {
         _repo       = repo;
         _serverName = string.IsNullOrWhiteSpace(serverName) ? "this server" : serverName;
@@ -62,6 +95,11 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
         foreach (var (label, _, _) in Filters)
             CmbFilter.Items.Add(label);
         CmbFilter.SelectedIndex = 0;
+
+        ViewModel = new SecurityAuditViewModel(showFinding: ShowSubject, script: OpenScript);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        DrawerParts.FollowSelection(FindingsGrid, ShowFinding, _drawer.Clear);
 
         // Filled before the page has been laid out, the grid can keep every fixed-width column at
         // its 20 px minimum, so findings read that soon are shown once it has been.
@@ -86,6 +124,12 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
         {
             _findings = await _repo.GetSecurityAuditAsync();
             Show();
+        }
+        catch (Exception ex) when (_findings is null)
+        {
+            // Nothing read yet: the verdict says why. Later, the results read last stay shown.
+            ViewModel.ShowError("the logins, databases and users", ex);
+            throw;
         }
         finally
         {
@@ -112,7 +156,7 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
             : shown.Count == list.Findings.Count ? $"{list.Findings.Count:N0} finding{(list.Findings.Count == 1 ? "" : "s")}"
             : $"{shown.Count:N0} of {list.Findings.Count:N0} findings";
 
-        ShowSummary(list);
+        ViewModel.Show(list);
 
         var problem = list.Available ? list.Problem : null;
         TxtProblem.Text       = problem ?? string.Empty;
@@ -125,40 +169,26 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
 
         TxtNoData.Text       = !list.Available ? list.Problem : filter.Empty;
         TxtNoData.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (FindingsGrid.SelectedItem is { } selectedRow)
+            ShowFinding(selectedRow, open: false);
     }
 
-    // "2 risks  ·  4 to review  ·  6 passed  ·  1 not checked".
-    private void ShowSummary(SecurityFindingList list)
+    // The verdict's Show it: the finding it names, selected (with the risks listed if the
+    // filter hides it), in view and in the drawer.
+    private void ShowSubject()
     {
-        TxtSummary.Inlines.Clear();
-        if (!list.Available)
-        {
-            TxtSummary.Visibility = Visibility.Collapsed;
+        if (_findings is null || SecurityAuditVerdict.Subject(_findings) is not { } subject)
             return;
-        }
-        TxtSummary.Visibility = Visibility.Visible;
-
-        void Add(string text, Brush? brush = null, bool bold = false)
+        if (!FindingsGrid.Items.Contains(subject))
+            CmbFilter.SelectedIndex = RisksFilter;
+        if (!FindingsGrid.Items.Contains(subject))
         {
-            var run = new Run(text) { FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
-            if (brush is not null) run.Foreground = brush;
-            TxtSummary.Inlines.Add(run);
+            CmbFilter.SelectedIndex = 0;
+            FindingsFilter.Clear();
         }
-        var danger  = (Brush)FindResource("Danger");
-        var warning = (Brush)FindResource("Warning");
-        var success = (Brush)FindResource("Success");
-        var muted   = (Brush)FindResource("TextMuted");
-
-        Add($"{list.RiskCount:N0} risk{(list.RiskCount == 1 ? "" : "s")}", list.RiskCount > 0 ? danger : null, true);
-        Add("  ·  ", muted);
-        Add($"{list.ReviewCount:N0} to review", list.ReviewCount > 0 ? warning : null);
-        Add("  ·  ", muted);
-        Add($"{list.PassCount:N0} passed", list.RiskCount == 0 ? success : null);
-        if (list.NotCheckedCount > 0)
-        {
-            Add("  ·  ", muted);
-            Add($"{list.NotCheckedCount:N0} not checked", muted);
-        }
+        FindingsGrid.SelectedItem = subject;
+        FindingsGrid.ScrollIntoView(subject);
+        ShowFinding(subject, open: true);
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -183,7 +213,10 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
         }
     }
 
-    private void BtnScript_Click(object sender, RoutedEventArgs e)
+    private void BtnScript_Click(object sender, RoutedEventArgs e) => OpenScript();
+
+    // Script the risks, from the button or the verdict.
+    private void OpenScript()
     {
         if (_findings?.FixScript(_serverName, DateTime.Now) is not { } script) return;
 
@@ -197,36 +230,5 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext
         {
             Owner = Window.GetWindow(this)
         }.ShowDialog();
-    }
-
-    // ── Selected finding ──────────────────────────────────────────────────────
-
-    private void FindingsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (FindingsGrid.SelectedItem is not SecurityFinding finding)
-        {
-            DetailPanel.IsEnabled     = false;
-            TxtDetailHeader.Text      = "Select a finding above to see the risk and how to remove it.";
-            TxtDetailExplanation.Text = string.Empty;
-            FixPanel.Visibility       = Visibility.Collapsed;
-            return;
-        }
-
-        DetailPanel.IsEnabled = true;
-        TxtDetailHeader.Text  = string.Join(" · ", new[] { finding.Name, finding.Scope, finding.Subject, finding.StatusText, finding.Finding }
-            .Where(s => s.Length > 0).Distinct());
-        TxtDetailExplanation.Text = finding.Explanation;
-
-        TxtFix.Text         = finding.FixScript ?? string.Empty;
-        TxtFixLabel.Text    = finding.IsRisk
-            ? "To remove the risk: review, then run it yourself. SqlVitals never runs it."
-            : "If you decide to change it: review, then run it yourself. SqlVitals never runs it.";
-        FixPanel.Visibility = finding.FixScript is null ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void BtnCopyFix_Click(object sender, RoutedEventArgs e)
-    {
-        if (TxtFix.Text.Length > 0)
-            ClipboardHelper.SetText(TxtFix.Text);
     }
 }
