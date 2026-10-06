@@ -11,7 +11,7 @@ using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -90,7 +90,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
     private readonly IWaitStatsRepository _repo;
 
     // The page template's verdict (#150): queries waiting for a memory grant, or how memory is used.
-    internal MemoryViewModel ViewModel { get; }
+    internal MemoryGrantsViewModel ViewModel { get; }
 
     /// <param name="folds">Where the verdict's, the figures' and the trend's folds are remembered; none in some tests.</param>
     public MemoryGrantsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
@@ -100,7 +100,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
         _timer.Tick += Timer_Tick;
         BuildInitialChart(); // create series (empty windows) on startup
 
-        ViewModel = new MemoryViewModel(showWaiting: ShowWaiting, showClerks: () => Tabs.SelectedItem = TabClerks);
+        ViewModel = new MemoryGrantsViewModel(showWaiting: ShowWaiting, showClerks: () => Tabs.SelectedItem = TabClerks);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         ShowTrendSummary();

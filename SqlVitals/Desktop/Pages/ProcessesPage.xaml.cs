@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;

@@ -9,7 +9,7 @@ using Microsoft.Win32;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Verdicts;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 

@@ -10,7 +10,7 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
@@ -115,7 +115,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
 
     // The page template's verdict (#149): the wait type that waits the most on the chart, and
     // whether it is rising. Null until InitializeComponent has run.
-    internal WaitTrendViewModel ViewModel { get; }
+    internal WaitStatsTrendViewModel ViewModel { get; }
 
     // ── constructor ───────────────────────────────────────────────────────────
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
@@ -130,7 +130,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         _statusMain  = TxtStatus.Text;
         _timer.Tick += Timer_Tick;
 
-        ViewModel = new WaitTrendViewModel(openTopWaits: OpenTopWaits);
+        ViewModel = new WaitStatsTrendViewModel(openTopWaits: OpenTopWaits);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         UpdateVerdict();

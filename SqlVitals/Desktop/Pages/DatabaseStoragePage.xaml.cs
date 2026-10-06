@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
@@ -94,7 +94,7 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFo
     private readonly IWaitStatsRepository _repo;
 
     // The page template's verdict (#150): files near their maximum size, auto-shrink, or the storage at a glance.
-    internal DbStorageViewModel ViewModel { get; }
+    internal DatabaseStorageViewModel ViewModel { get; }
 
     private DatabaseFile? _subject;
 
@@ -104,7 +104,7 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFo
         _repo = repo;
         InitializeComponent();
 
-        ViewModel = new DbStorageViewModel(showFile: ShowSubject);
+        ViewModel = new DatabaseStorageViewModel(showFile: ShowSubject);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
     }

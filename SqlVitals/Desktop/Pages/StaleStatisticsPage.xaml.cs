@@ -5,7 +5,7 @@ using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
@@ -19,7 +19,7 @@ public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefres
     private readonly IWaitStatsRepository _repo;
 
     // The page template's verdict (#150): the statistic with the most of its table changed.
-    internal StaleStatsViewModel ViewModel { get; }
+    internal StaleStatisticsViewModel ViewModel { get; }
 
     /// <param name="folds">Where the verdict's and the explanation's folds are remembered; none in some tests.</param>
     public StaleStatisticsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
@@ -27,7 +27,7 @@ public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefres
         _repo = repo;
         InitializeComponent();
 
-        ViewModel = new StaleStatsViewModel(showWorst: ShowWorst);
+        ViewModel = new StaleStatisticsViewModel(showWorst: ShowWorst);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
     }

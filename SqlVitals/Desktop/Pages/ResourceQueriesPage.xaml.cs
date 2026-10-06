@@ -8,7 +8,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 

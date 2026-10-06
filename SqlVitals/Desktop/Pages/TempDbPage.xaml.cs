@@ -8,7 +8,7 @@ using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Desktop.Pages;
