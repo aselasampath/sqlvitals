@@ -1,0 +1,395 @@
+using System.IO;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
+namespace SqlVitals.Desktop.Tests;
+
+/// <summary>
+/// The MVVM rules (#181, written down in <c>docs/Architecture.md</c>, "MVVM") checked over the
+/// app's sources. Each rule has an allowlist of today's offenders that may only shrink: a new
+/// offence fails with its file and line, and so does an entry that no longer offends, so the list
+/// is cut as each page moves to its view model (#180).
+/// </summary>
+public sealed class MvvmGuardTests
+{
+    // ── Allowlists: today's offenders. Remove an entry (or lower a count) when it's fixed. ─────
+
+    /// <summary>View models that refer to the view, and to what.</summary>
+    private static readonly Dictionary<string, string[]> ViewReferencesAllowed = new()
+    {
+        // ShowError formats the error with MainWindow.FormatErrorStatus; #182 takes it out.
+        ["ViewModels/PageViewModel.cs"] = ["MainWindow"],
+    };
+
+    /// <summary>Page code that reads through a repository itself.</summary>
+    private static readonly string[] RepositoryReferencesAllowed =
+    [
+        "Pages/ActiveWaitsPage.xaml.cs",
+        "Pages/AgentJobsPage.xaml.cs",
+        "Pages/ApplicationConnectionsPage.xaml.cs",
+        "Pages/BackupsPage.xaml.cs",
+        "Pages/ConfigChecksPage.xaml.cs",
+        "Pages/DatabaseStoragePage.xaml.cs",
+        "Pages/DeadlocksPage.xaml.cs",
+        "Pages/ExportPage.xaml.cs",
+        "Pages/FileIoPage.xaml.cs",
+        "Pages/ImplicitConversionsPage.xaml.cs",
+        "Pages/IndexHealthPage.xaml.cs",
+        "Pages/LiveMetricsDashboardPage.xaml.cs",
+        "Pages/MemoryGrantsPage.xaml.cs",
+        "Pages/OverviewPage.xaml.cs",
+        "Pages/PerfmonPage.xaml.cs",
+        "Pages/PlanCacheHealthPage.xaml.cs",
+        "Pages/ProcessesPage.xaml.cs",
+        "Pages/QueryRegressionsPage.xaml.cs",
+        "Pages/QueryStorePage.xaml.cs",
+        "Pages/ResourceQueriesPage.xaml.cs",
+        "Pages/SecurityAuditPage.xaml.cs",
+        "Pages/SpTracePage.xaml.cs",
+        "Pages/StaleStatisticsPage.xaml.cs",
+        "Pages/TempDbPage.xaml.cs",
+        "Pages/TopWaitsPage.xaml.cs",
+        "Pages/WaitStatsTrendPage.xaml.cs",
+    ];
+
+    /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
+    private static readonly Dictionary<string, int> ClicksAllowed = new()
+    {
+        ["Pages/AgentJobsPage.xaml"]                     = 1,
+        ["Pages/BackupsPage.xaml"]                       = 2,
+        ["Pages/ConfigChecksPage.xaml"]                  = 2,
+        ["Pages/DeadlocksPage.xaml"]                     = 4,
+        ["Pages/ExportPage.xaml"]                        = 4,
+        ["Pages/FileIoPage.xaml"]                        = 2,
+        ["Pages/HomePage.xaml"]                          = 4,
+        ["Pages/IndexHealthPage.xaml"]                   = 4,
+        ["Pages/LiveMetricsDashboardPage.xaml"]          = 4,
+        ["Pages/OverviewPage.xaml"]                      = 14,
+        ["Pages/PerfmonPage.xaml"]                       = 2,
+        ["Pages/QueryRegressionsPage.xaml"]              = 3,
+        ["Pages/QueryStorePage.xaml"]                    = 7,
+        ["Pages/ResourceQueriesPage.xaml"]               = 6,
+        ["Pages/SecurityAuditPage.xaml"]                 = 2,
+        ["Pages/Settings/ActivityCategory.xaml"]         = 1,
+        ["Pages/Settings/AlertsCategory.xaml"]           = 8,
+        ["Pages/Settings/AppearanceCategory.xaml"]       = 1,
+        ["Pages/Settings/ConnectionEditor.xaml"]         = 11,
+        ["Pages/Settings/ConnectionsCategory.xaml"]      = 4,
+        ["Pages/Settings/MonitoringCategory.xaml"]       = 2,
+        ["Pages/Settings/NotificationAreaCategory.xaml"] = 1,
+        ["Pages/Settings/ThresholdsCategory.xaml"]       = 3,
+        ["Pages/SettingsPage.xaml"]                      = 1,
+        ["Pages/SpTracePage.xaml"]                       = 2,
+        ["Pages/StaleStatisticsPage.xaml"]               = 1,
+        ["Pages/WaitStatsTrendPage.xaml"]                = 2,
+    };
+
+    /// <summary>How many <c>async void</c> methods and lambdas each file has that aren't event handlers.</summary>
+    private static readonly Dictionary<string, int> AsyncVoidAllowed = new()
+    {
+        ["Controls/QueryDetailsView.cs"]       = 1,
+        ["Controls/RowDetailsView.cs"]         = 2,
+        ["Controls/SessionDetailsView.cs"]     = 1,
+        ["Pages/ActiveWaitsPage.xaml.cs"]      = 1,
+        ["Pages/ExportPage.xaml.cs"]           = 1,
+        ["Pages/PerfmonPage.xaml.cs"]          = 1,
+        ["Pages/ProcessesPage.xaml.cs"]        = 1,
+        ["Pages/QueryRegressionsPage.xaml.cs"] = 1,
+        ["Pages/QueryStorePage.xaml.cs"]       = 1,
+        ["Pages/TopWaitsPage.xaml.cs"]         = 1,
+        ["Pages/WaitStatsTrendPage.xaml.cs"]   = 1,
+    };
+
+    // ── View models stay out of the view ─────────────────────────────────
+
+    [Fact]
+    public void ViewModels_DoNotReferToTheView()
+    {
+        var broken = ViewModelOffences()
+            .Where(o => !(ViewReferencesAllowed.TryGetValue(o.File, out var names) && names.Contains(o.Name)))
+            .ToList();
+
+        Fail(broken, "A view model may not refer to System.Windows.Controls, MessageBox, MainWindow, Application or a Dispatcher " +
+                     "(docs/Architecture.md, MVVM). Ask a service for it instead:");
+    }
+
+    [Fact]
+    public void ViewModels_AllowlistOnlyNamesOffenders()
+    {
+        var offences = ViewModelOffences().Select(o => (o.File, o.Name)).ToHashSet();
+        var stale = ViewReferencesAllowed
+            .SelectMany(entry => entry.Value.Select(name => (File: entry.Key, Name: name)))
+            .Where(entry => !offences.Contains(entry))
+            .Select(entry => $"Desktop/{entry.File} no longer refers to {entry.Name}: take it off ViewReferencesAllowed.")
+            .ToList();
+
+        Fail(stale, "The allowlist only shrinks:");
+    }
+
+    private static IReadOnlyList<Offence> ViewModelOffences() => LazyViewModelOffences.Value;
+
+    private static readonly Lazy<IReadOnlyList<Offence>> LazyViewModelOffences = new(() =>
+        Models("ViewModels/").SelectMany(m => MvvmRules.ViewReferences(m.Model, m.File)).ToList());
+
+    // ── Page code leaves the repositories to view models ─────────────────
+
+    [Fact]
+    public void PageCode_DoesNotReadThroughARepository()
+    {
+        var broken = RepositoryOffences().Where(o => !RepositoryReferencesAllowed.Contains(o.File)).ToList();
+
+        Fail(broken, "Page code may not use a repository (docs/Architecture.md, MVVM); its view model reads the data:");
+    }
+
+    [Fact]
+    public void PageCode_AllowlistOnlyNamesOffenders()
+    {
+        var offending = RepositoryOffences().Select(o => o.File).ToHashSet();
+        var stale = RepositoryReferencesAllowed
+            .Where(file => !offending.Contains(file))
+            .Select(file => $"Desktop/{file} no longer uses a repository: take it off RepositoryReferencesAllowed.")
+            .ToList();
+
+        Fail(stale, "The allowlist only shrinks:");
+    }
+
+    private static IReadOnlyList<Offence> RepositoryOffences() => LazyRepositoryOffences.Value;
+
+    private static readonly Lazy<IReadOnlyList<Offence>> LazyRepositoryOffences = new(() =>
+        Models("Pages/").SelectMany(m => MvvmRules.RepositoryReferences(m.Model, m.File)).ToList());
+
+    // ── Click= in the pages' XAML doesn't grow ───────────────────────────
+
+    [Fact]
+    public void PageXaml_ClickHandlersDoNotGrow() =>
+        Fail(Grown(ClickOffences(), ClicksAllowed),
+             "A page's XAML has more Click= than allowed; bind a command instead (docs/Architecture.md, MVVM):");
+
+    [Fact]
+    public void PageXaml_AllowlistShrinksWithIt() =>
+        Fail(Shrunk(ClickOffences(), ClicksAllowed, nameof(ClicksAllowed)), "The allowlist only shrinks:");
+
+    private static IEnumerable<Offence> ClickOffences() =>
+        DesktopSource.Files("*.xaml", "Pages")
+            .SelectMany(path => MvvmRules.Clicks(File.ReadAllText(path), DesktopSource.Relative(path)));
+
+    // ── async void only in event handlers ────────────────────────────────
+
+    [Fact]
+    public void AsyncVoid_OnlyInEventHandlers() =>
+        Fail(Grown(AsyncVoidOffences(), AsyncVoidAllowed),
+             "async void outside an event handler: its caller can't await it or catch what it throws. Return a Task, or use an async command:");
+
+    [Fact]
+    public void AsyncVoid_AllowlistShrinksWithIt() =>
+        Fail(Shrunk(AsyncVoidOffences(), AsyncVoidAllowed, nameof(AsyncVoidAllowed)), "The allowlist only shrinks:");
+
+    private static IReadOnlyList<Offence> AsyncVoidOffences() => LazyAsyncVoidOffences.Value;
+
+    private static readonly Lazy<IReadOnlyList<Offence>> LazyAsyncVoidOffences = new(() =>
+        Models("").SelectMany(m =>
+        {
+            var xaml = m.Path.EndsWith(".xaml.cs", StringComparison.OrdinalIgnoreCase) && File.Exists(m.Path[..^3])
+                ? File.ReadAllText(m.Path[..^3]) : null;
+            return MvvmRules.AsyncVoid(m.Model, m.File, xaml);
+        }).ToList());
+
+    // ── Where view models live ───────────────────────────────────────────
+
+    [Fact]
+    public void ViewModels_OneFileEach_NamedForTheirPage()
+    {
+        var pages    = DesktopSource.Files("*Page.xaml", "Pages").Select(p => Path.GetFileName(p)[..^"Page.xaml".Length]).ToHashSet();
+        var settings = DesktopSource.Files("*.xaml", "Pages/Settings").Select(p => Path.GetFileNameWithoutExtension(p)).ToHashSet();
+        var broken   = Models("ViewModels/").SelectMany(m => MvvmRules.ViewModelLayout(m.Model, m.File, pages, settings)).ToList();
+
+        Fail(broken, "View models are one file each, named for their page (docs/Architecture.md, MVVM):");
+    }
+
+    // ── The checks themselves ────────────────────────────────────────────
+
+    // A line marked "// ✗ Name" is where the check must find Name; no other line may be found.
+    private static void AssertFinds(string code, Func<SemanticModel, string, IEnumerable<Offence>> check)
+    {
+        var tree     = DesktopSource.Parse(code, "Snippet.cs");
+        var model    = DesktopSource.Compile([tree]).GetSemanticModel(tree);
+        var expected = code.Split('\n')
+            .Select((line, i) => (Line: i + 1, Mark: line.Split("// ✗ ") is [_, var name] ? name.Trim() : null))
+            .Where(l => l.Mark is not null)
+            .SelectMany(l => l.Mark!.Split(", ").Select(name => $"{l.Line}: {name}"));
+
+        Assert.Equal(expected.Order(), check(model, "Snippet.cs").Select(o => $"{o.Line}: {o.Name}").Order());
+    }
+
+    [Fact]
+    public void ViewReferences_FindsTheView_ByNameMemberOrType()
+    {
+        AssertFinds("""
+            using System.Windows;
+            using System.Windows.Controls;                                                  // ✗ System.Windows.Controls
+            using System.Windows.Threading;
+
+            namespace SqlVitals.Desktop { public static class MainWindow { public static string Format(Exception e) => e.Message; } }
+
+            namespace SqlVitals.Desktop.ViewModels
+            {
+                public class App : Application { }                                          // ✗ Application
+                /// <summary>Not <see cref="MessageBox"/>: comments don't count.</summary>
+                public class SomeViewModel : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
+                {
+                    public void Ask() => MessageBox.Show("Sure?");                         // ✗ MessageBox
+                    public object? Owner => App.Current.MainWindow;                         // ✗ Application
+                    public string Text(Exception e) => MainWindow.Format(e);                // ✗ MainWindow
+                    public void Later(DispatcherObject o) => o.Dispatcher.Invoke(() => { }); // ✗ Dispatcher
+                    public string Name => "MainWindow";
+                    public SqlVitals.Engine.Verdicts.PageVerdict? Verdict { get; set; }
+                    public LiveChartsCore.Defaults.ObservableValue Point { get; } = new(1);
+                }
+            }
+            """, MvvmRules.ViewReferences);
+    }
+
+    [Fact]
+    public void RepositoryReferences_FindsTheType_ItsMembers_AndValuesOfIt()
+    {
+        AssertFinds("""
+            using SqlVitals.Engine.Repositories;
+
+            namespace SqlVitals.Desktop.Pages;
+
+            public class Session { public IWaitStatsRepository Repository { get; } = null!; }            // ✗ IWaitStatsRepository
+
+            /// <summary>Reads through <see cref="ITempDbRepository"/>: comments don't count.</summary>
+            public class SomePage
+            {
+                private readonly ITempDbRepository _repo = null!;                                      // ✗ ITempDbRepository
+                public async Task Load(Session session) => await session.Repository.GetProcessesAsync(); // ✗ IWaitStatsRepository
+                public string Name => "Repository";
+            }
+            """, MvvmRules.RepositoryReferences);
+    }
+
+    [Fact]
+    public void AsyncVoid_AllowsEventHandlers_FindsTheRest()
+    {
+        AssertFinds("""
+            namespace SqlVitals.Desktop.Pages;
+
+            public partial class SomePage : System.Windows.Controls.UserControl
+            {
+                public event EventHandler? Changed;
+
+                public SomePage()
+                {
+                    Changed += OnChanged;
+                    Changed += async (_, _) => await Task.Yield();
+                    Loaded  += new System.Windows.RoutedEventHandler(OnLoaded);
+                    Run(async () => await Task.Yield());                                    // ✗ async void
+                    _ = Task.Run(async () => await Task.Yield());
+                    async void Later() => await Task.Yield();                               // ✗ async void
+                    Loaded += OnLoadedHere;
+                    async void OnLoadedHere(object sender, System.Windows.RoutedEventArgs e) => await Task.Yield();
+                }
+
+                private async void OnChanged(object? sender, EventArgs e) => await Task.Yield();
+                private async void OnLoaded(object sender, System.Windows.RoutedEventArgs e) => await Task.Yield();
+                private async void Save_Click(object sender, System.Windows.RoutedEventArgs e) => await Task.Yield();
+                private async void Panel_Click(object sender, System.Windows.RoutedEventArgs e) => await Task.Yield();
+                private async void Open() => await Task.Yield();                            // ✗ async void
+                private async void Refresh() => await Task.Yield();                         // ✗ async void
+                private async Task LoadAsync() => await Task.Yield();
+                private static void Run(Action action) => action();
+            }
+            """, (model, file) => MvvmRules.AsyncVoid(model, file, xaml: """
+                <UserControl>
+                    <Button Click="Save_Click"/>
+                    <StackPanel ButtonBase.Click="Panel_Click"/>
+                    <Button x:Name="Refresh" Content="Open"/>
+                </UserControl>
+                """));
+    }
+
+    [Fact]
+    public void ViewModelLayout_FindsMisnamedAndMisplacedViewModels()
+    {
+        var files = new Dictionary<string, string>
+        {
+            ["ViewModels/PageViewModel.cs"]                    = "namespace SqlVitals.Desktop.ViewModels; public abstract class PageViewModel { }",
+            ["ViewModels/ChartPageViewModel.cs"]               = "namespace SqlVitals.Desktop.ViewModels; public abstract class ChartPageViewModel : PageViewModel { }",
+            ["ViewModels/LostViewModel.cs"]                    = "namespace SqlVitals.Desktop.ViewModels; public sealed class LostViewModel : PageViewModel { }",
+            ["ViewModels/Pages/BackupsViewModel.cs"]           = "namespace SqlVitals.Desktop.ViewModels.Pages; public sealed class BackupsViewModel : PageViewModel { }",
+            ["ViewModels/Pages/BackupsRowViewModel.cs"]        = "namespace SqlVitals.Desktop.ViewModels.Pages; public sealed class BackupsRowViewModel { }",
+            ["ViewModels/Pages/PerfmonViewModel.cs"]           = "namespace SqlVitals.Desktop.ViewModels.Pages; public sealed class PerfmonViewModel : ChartPageViewModel { } public sealed class Extra { }",
+            ["ViewModels/Pages/Foo.cs"]                        = "namespace SqlVitals.Desktop.ViewModels.Pages; public sealed class Foo : PageViewModel { }",
+            ["ViewModels/Settings/AlertsCategoryViewModel.cs"] = "namespace SqlVitals.Desktop.ViewModels.Settings; public sealed class AlertsCategoryViewModel { }",
+            ["ViewModels/Settings/Misc.cs"]                    = "namespace SqlVitals.Desktop.ViewModels.Settings; public sealed class Misc { }",
+        };
+        var trees       = files.Select(f => DesktopSource.Parse(f.Value, f.Key)).ToList();
+        var compilation = DesktopSource.Compile(trees);
+
+        var found = trees
+            .SelectMany(tree => MvvmRules.ViewModelLayout(compilation.GetSemanticModel(tree), tree.FilePath,
+                                                          new HashSet<string> { "Backups", "Perfmon" }, new HashSet<string> { "AlertsCategory" }))
+            .Select(o => o.File);
+
+        // Foo.cs twice: not named for a page, and a page's view model named so.
+        Assert.Equal(["ViewModels/LostViewModel.cs", "ViewModels/Pages/Foo.cs", "ViewModels/Pages/Foo.cs",
+                      "ViewModels/Pages/PerfmonViewModel.cs", "ViewModels/Settings/Misc.cs"], found.Order());
+    }
+
+    [Fact]
+    public void Clicks_CountsClickAttributes_NotCommentsOrOtherEvents()
+    {
+        const string xaml = """
+            <UserControl>
+                <!-- <Button Click="Old"/> -->
+                <Button Click="Save"/>
+                <Grid MouseDoubleClick="Open"/>
+                <MenuItem Header="Copy"
+                          Click = "Copy"/>
+                <StackPanel ButtonBase.Click="Any"/>
+            </UserControl>
+            """;
+
+        Assert.Equal([3, 6, 7], MvvmRules.Clicks(xaml, "Some.xaml").Select(o => o.Line));
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>Each app file under <paramref name="folder"/> with its semantic model.</summary>
+    private static IEnumerable<(SemanticModel Model, string File, string Path)> Models(string folder) =>
+        DesktopSource.Compilation.SyntaxTrees
+            .Where(tree => tree.FilePath.Length > 0)
+            .Select(tree => (Tree: tree, File: DesktopSource.Relative(tree.FilePath)))
+            .Where(t => t.File.StartsWith(folder, StringComparison.Ordinal))
+            .Select(t => (DesktopSource.Compilation.GetSemanticModel(t.Tree), t.File, t.Tree.FilePath));
+
+    // The files with more offences than allowed, each offence listed.
+    private static List<string> Grown(IEnumerable<Offence> offences, IReadOnlyDictionary<string, int> allowed) =>
+        offences.GroupBy(o => o.File)
+            .Where(g => g.Count() > allowed.GetValueOrDefault(g.Key))
+            .SelectMany(g => g.Select(o => o.ToString())
+                              .Prepend($"Desktop/{g.Key}: {g.Count()}, allowed {allowed.GetValueOrDefault(g.Key)}"))
+            .ToList();
+
+    // The entries that allow more than the file has.
+    private static List<string> Shrunk(IEnumerable<Offence> offences, IReadOnlyDictionary<string, int> allowed, string list)
+    {
+        var counts = offences.GroupBy(o => o.File).ToDictionary(g => g.Key, g => g.Count());
+        return allowed
+            .Where(entry => counts.GetValueOrDefault(entry.Key) < entry.Value)
+            .Select(entry => counts.GetValueOrDefault(entry.Key) is var now && now == 0
+                ? $"Desktop/{entry.Key} has none now: take it off {list}."
+                : $"Desktop/{entry.Key} has {now} now: lower it from {entry.Value} to {now} in {list}.")
+            .ToList();
+    }
+
+    private static void Fail(IReadOnlyCollection<string> lines, string why)
+    {
+        if (lines.Count > 0)
+            Assert.Fail(why + Environment.NewLine + string.Join(Environment.NewLine, lines));
+    }
+
+    private static void Fail(IReadOnlyCollection<Offence> offences, string why) =>
+        Fail(offences.Select(o => o.ToString()).ToList(), why);
+}

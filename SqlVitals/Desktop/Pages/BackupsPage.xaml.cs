@@ -5,7 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Repositories;
 

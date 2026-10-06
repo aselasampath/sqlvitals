@@ -50,11 +50,12 @@ SqlVitalsDashboard.slnx
 .github/workflows/release.yml    Release: tag vX.Y.Z → tests, Setup build, GitHub Release
 TODO/wait-stats-ui/              Parked React UI (not in the solution)
 SqlVitals/
-  Desktop/          WPF app: Pages/, Controls/, Windows/, Helpers/, Services/, Styles/
+  Desktop/          WPF app: Pages/, ViewModels/, Controls/, Windows/, Helpers/, Services/, Styles/
   Engine/           Models/, Repositories/, History/, Regressions/, Scripting/, Export/,
                     Filtering/, Monitoring/, Errors/, Controllers/ (+ appsettings.json)
   Engine.Tests/     xUnit
-  Desktop.Tests/    xUnit for the app's services (settings file, monitoring)
+  Desktop.Tests/    xUnit for the app's services (settings file, monitoring), pages,
+                    and the MVVM guard tests over the app's sources
   Installer/        Setup wizard: Core/ (logic, no WPF), Views/, Build-Installer.ps1
   Installer.Tests/  xUnit for Installer/Core
   Branding/         Icon sources + Build-Icon.ps1
@@ -131,6 +132,7 @@ Releases are **unsigned** for now. Code signing and an in-app update check are t
 - Squash-merge titles follow `<Title> (#<issue>) (#<PR>)`.
 - Bump `<Version>` in `SqlVitals.Desktop.csproj` when a change ships a feature. It reaches users when that version is tagged (see [Release a new version](#release-a-new-version)).
 - Document what users see in this wiki: a feature's page, the sidebar, Home's feature map and the reference pages it touches. The README stays a short front page (what SqlVitals is, features in a line each, getting started, how it compares, links here); only touch it when one of those changes.
+- Follow the MVVM rules in [Architecture](Architecture.md#mvvm). `MvvmGuardTests` names the file and line of a new offence. It also fails an allowlist entry that no longer offends, so when you move a page to its view model, take the page off the allowlists in the same PR.
 - Put pure logic in **Engine** and cover it with tests. Script generators, `RowFilter`, `DelimitedText`, `QueryRegressionDetector`, `HistoryDetailTracker`, `SpTraceXmlParser` and `ProcedureStatsDelta` are all database-free and unit-tested. Keep the WPF layer thin.
 
 ---
@@ -203,7 +205,7 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Text="Your Feature" Style="{StaticResource SectionHeader}" />
-        <DataGrid x:Name="MainGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False">
+        <DataGrid x:Name="MainGrid" Grid.Row="1" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" CanUserAddRows="False">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Name"     Binding="{Binding SomeColumn}" Width="200"/>
                 <DataGridTextColumn Header="Value MB" Binding="{Binding ValueMB, StringFormat=N2}" Width="100"/>
@@ -213,31 +215,48 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 </Page>
 ```
 
-`YourFeaturePage.xaml.cs`:
+The page's view model reads the data. It goes in `SqlVitals/Desktop/ViewModels/Pages/YourFeatureViewModel.cs`, one file named after the page (see [Architecture → MVVM](Architecture.md#mvvm)):
 
 ```csharp
+using CommunityToolkit.Mvvm.ComponentModel;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
+
+namespace SqlVitals.Desktop.ViewModels.Pages;
+
+public sealed partial class YourFeatureViewModel(IWaitStatsRepository repo) : PageViewModel
+{
+    [ObservableProperty]
+    private IReadOnlyList<YourFeatureRow> _rows = [];
+
+    public async Task RefreshAsync() => Rows = (await repo.GetYourFeatureAsync()).ToList();
+
+    protected override void OnAction(VerdictAction action) { }
+}
+```
+
+`YourFeaturePage.xaml.cs` holds only the view. Page code that uses a repository fails `MvvmGuardTests`:
+
+```csharp
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
 public partial class YourFeaturePage : System.Windows.Controls.Page, IRefreshable
 {
-    private readonly IWaitStatsRepository _repo;
+    internal YourFeatureViewModel ViewModel { get; }
 
-    public YourFeaturePage(IWaitStatsRepository repo)
+    public YourFeaturePage(YourFeatureViewModel viewModel)
     {
-        _repo = repo;
         InitializeComponent();
+        DataContext = ViewModel = viewModel;
     }
 
-    public async Task RefreshAsync()
-    {
-        MainGrid.ItemsSource = (await _repo.GetYourFeatureAsync()).ToList();
-    }
+    public Task RefreshAsync() => ViewModel.RefreshAsync();
 }
 ```
 
-To keep the sort and filter across refreshes, set rows with `DataGridRefresh.SetItemsSource` and add a `GridFilterBox` (see [Working with Grids](Working-with-Grids.md#under-the-hood)). Use theme brush keys, not hex colours.
+Bind buttons to `[RelayCommand]` methods, not `Click=`. Add a `GridFilterBox` to filter the grid (see [Working with Grids](Working-with-Grids.md#under-the-hood)). Replacing `Rows` makes a new collection view, which drops the grid's sort and filter. Until the pilot (#184) settles how a bound grid keeps them, a page that needs them hands the view model's `Rows` to `DataGridRefresh.SetItemsSource` from code-behind instead of binding `ItemsSource`. Use theme brush keys, not hex colours.
 
 ### 6. Wire up navigation
 
@@ -254,7 +273,7 @@ new("Queries", "Queries", "Which queries cost the most, which got slower, and wh
 Then open it in `MainWindow.xaml.cs`, in the `page` switch of `NavigateTo`:
 
 ```csharp
-"YourFeature" => new YourFeaturePage(Repo),
+"YourFeature" => new YourFeaturePage(new YourFeatureViewModel(Repo)),
 ```
 
 `Desktop.Tests/NavMenuTests.cs` lists every page and the groups' layout, so update it too. A tag `NavigateTo` is given with no button in `NavMenu` fails a `Debug.Assert`.
@@ -287,7 +306,7 @@ Then add a description for it to the `_descriptions` dictionary in `ExportPage.x
 
 ### 8. Test and document
 
-Add unit tests for any pure logic, run `dotnet test`, and document the screen in this wiki (its own page, the sidebar, [Home](Home.md)'s feature map, and [Architecture](Architecture.md)'s main flows).
+Add unit tests for any pure logic and for the view model, run `dotnet test` (the MVVM guard tests run with it), and document the screen in this wiki (its own page, the sidebar, [Home](Home.md)'s feature map, and [Architecture](Architecture.md)'s main flows).
 
 ---
 

@@ -5,7 +5,7 @@ using System.Windows.Input;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;

@@ -8,7 +8,7 @@ using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Verdicts;
 
@@ -22,7 +22,7 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageConte
     private readonly IWaitStatsRepository _repo;
 
     // The page template's verdict (#149): who holds the connections, and a pool that looks leaked.
-    internal AppConnectionsViewModel ViewModel { get; } = new();
+    internal ApplicationConnectionsViewModel ViewModel { get; } = new();
 
     /// <param name="folds">Where the verdict's, the counts' and the chart's folds are remembered; none in some tests.</param>
     public ApplicationConnectionsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)

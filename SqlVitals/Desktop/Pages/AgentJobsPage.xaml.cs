@@ -4,7 +4,7 @@ using System.Windows.Threading;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.AgentJobs;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;

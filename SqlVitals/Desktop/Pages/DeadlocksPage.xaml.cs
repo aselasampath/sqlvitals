@@ -6,7 +6,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.Repositories;
 
