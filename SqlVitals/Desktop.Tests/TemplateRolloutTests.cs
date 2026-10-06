@@ -57,7 +57,7 @@ public sealed class TemplateRolloutTests : IDisposable
     /// Shows the page in an off-screen window, as the app does (a DataGrid that isn't laid out while
     /// the dispatcher runs shrinks its columns), runs the load, and renders it.
     /// </summary>
-    private static void Hosted(Page page, Func<Task> load, string? png, Action? whileShown = null, double width = 1400, double height = 860)
+    internal static void Hosted(Page page, Func<Task> load, string? png, Action? whileShown = null, double width = 1400, double height = 860)
     {
         // The page gets its size itself: Windows caps a window at the screen, and a CI runner's
         // screen (1024 × 768) is shorter than this window, which squeezed the grids below the counts.
@@ -92,11 +92,11 @@ public sealed class TemplateRolloutTests : IDisposable
         encoder.Save(file);
     }
 
-    private static void Press(VerdictView verdict, int index) =>
+    internal static void Press(VerdictView verdict, int index) =>
         verdict.ActionButtons[index].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
     // The verdict on top, the detail filling what is left below it.
-    private static void AssertLaidOut(PageShell shell, FrameworkElement detail, double minDetail = 250)
+    internal static void AssertLaidOut(PageShell shell, FrameworkElement detail, double minDetail = 250)
     {
         Assert.Equal(Visibility.Visible, shell.VerdictView.Visibility);
         Assert.True(shell.VerdictView.ActualHeight is > 0 and < 200, $"verdict {shell.VerdictView.ActualHeight}");
@@ -657,7 +657,9 @@ public sealed class TemplateRolloutTests : IDisposable
         {
             await again.RefreshAsync();
             state.Restore(again);
-            await Task.Delay(100);
+            // The state is put back at ContextIdle: wait for the dispatcher to get there, not a
+            // fixed time, which a busy test run can outlast.
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         }, null);
 
         Assert.Same(again.TabCpu, again.Tabs.SelectedItem);

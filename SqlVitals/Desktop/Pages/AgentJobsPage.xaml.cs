@@ -1,12 +1,14 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.AgentJobs;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -14,10 +16,46 @@ namespace SqlVitals.Desktop.Pages;
 /// SQL Server Agent jobs from msdb (#39): each job's last run, duration against its average and
 /// next run, with failed jobs and jobs running longer than usual first. Selecting a job shows
 /// its runs, and the steps and error messages of each. Not reachable on Azure SQL Database,
-/// which has no Agent: MainWindow disables the button, and the repository says so too.
+/// which has no Agent: MainWindow disables the button, and the repository says so too. On the page
+/// template (#150): the verdict names failed and long-running jobs; a job's details and the
+/// selected step's message are in the drawer.
 /// </summary>
-public partial class AgentJobsPage : Page, IRefreshable, IPageContext
+public partial class AgentJobsPage : Page, IRefreshable, IPageContext, IDetailsSource
 {
+    // ── The details drawer (#150): the selected job, and its selected step's message ──
+    private const string SelectHint = "Select a job to see what happened, its next run and owner, and the message of the step selected below.";
+
+    private readonly RowDrawer _drawer = new("Job details", SelectHint);
+
+    public DrawerContent Details => _drawer.Content;
+
+    public event Action<bool>? DetailsChanged
+    {
+        add    => _drawer.Changed += value;
+        remove => _drawer.Changed -= value;
+    }
+
+    internal RowDetailsView? DetailsView => _drawer.View;
+
+    private void ShowJobDetails(bool open)
+    {
+        if (JobsGrid.SelectedItem is not AgentJob job)
+        {
+            _drawer.Clear();
+            return;
+        }
+        var run  = RunsGrid.SelectedItem as JobRun;
+        var step = StepsGrid.SelectedItem as JobStepRun;
+        _drawer.Show(job.Name, RowDetails.Rows(job), open,
+                     step is not null ? "Message of the selected step" : "Message of the selected run",
+                     RowDetails.Message(run, step), noText: run is null ? null : "(no message)");
+    }
+
+    // The page template's verdict (#150): failed and long-running jobs, or Agent stopped.
+    internal AgentJobsViewModel ViewModel { get; }
+
+    private const int NeedsAttentionFilter = 1;
+
     // A snapshot, or live while "Auto-refresh every 30 s" is ticked (#140).
     public PageKind Kind => ChkAutoRefresh.IsChecked == true ? PageKind.Live : PageKind.Snapshot;
     public TimeSpan? LiveInterval => _timer.Interval;
@@ -55,10 +93,22 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(30) };
 
-    public AgentJobsPage(IWaitStatsRepository repo)
+    /// <param name="folds">Where the verdict's and the source's folds are remembered; none in some tests.</param>
+    public AgentJobsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel = new AgentJobsViewModel(showJob: ShowSubject, needsAttention: () => CmbFilter.SelectedIndex = NeedsAttentionFilter);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+
+        // A click on a job opens a closed drawer; a selection moved by the keyboard or a refresh only fills it.
+        JobsGrid.AddHandler(MouseLeftButtonUpEvent, new System.Windows.Input.MouseButtonEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(JobsGrid, source) is DataGridRow)
+                ShowJobDetails(open: true);
+        }), handledEventsToo: true);
 
         foreach (var (label, _, _) in Filters)
             CmbFilter.Items.Add(label);
@@ -83,6 +133,12 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
         {
             _jobs = await _repo.GetAgentJobsAsync();
             Show();
+        }
+        catch (Exception ex) when (_jobs is null)
+        {
+            // Nothing read yet: the verdict says why. Later, the jobs read last stay shown.
+            ViewModel.ShowError("the SQL Agent jobs", ex);
+            throw;
         }
         finally
         {
@@ -116,7 +172,9 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
             : shown.Count == list.Jobs.Count ? $"{list.Jobs.Count:N0} job{(list.Jobs.Count == 1 ? "" : "s")}"
             : $"{shown.Count:N0} of {list.Jobs.Count:N0} jobs";
 
-        ShowSummary(list);
+        ViewModel.Show(list);
+        SourceSection.FoldedSummary = !list.Available ? "Not read"
+            : $"Agent {AgentText(list.Agent)} · read at {DateTime.Now:HH:mm:ss}" + (list.Problem is null ? "" : " · see the note");
 
         var problem = list.Available ? list.Problem : null;
         TxtProblem.Text       = problem ?? string.Empty;
@@ -127,37 +185,31 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
         TxtNoData.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // "42 jobs · 3 failed · 2 running, 1 longer than usual · 5 disabled", the counts to act on in colour.
-    private void ShowSummary(AgentJobList list)
+    // The verdict's Show its runs: the job it names, selected (with every job listed if a filter
+    // hides it), its runs below and its details in the drawer.
+    private void ShowSubject()
     {
-        TxtSummary.Inlines.Clear();
-        if (!list.Available)
-        {
-            TxtSummary.Visibility = Visibility.Collapsed;
+        if (_jobs is null || AgentJobsVerdict.Subject(_jobs) is not { } subject)
             return;
-        }
-        TxtSummary.Visibility = Visibility.Visible;
-
-        void Add(string text, Brush? brush = null, bool bold = false)
+        if (!JobsGrid.Items.OfType<AgentJob>().Any(j => j.JobId == subject.JobId))
         {
-            var run = new Run(text) { FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
-            if (brush is not null) run.Foreground = brush;
-            TxtSummary.Inlines.Add(run);
+            CmbFilter.SelectedIndex = 0;
+            JobsFilter.Clear();
         }
-        var danger  = (Brush)FindResource("Danger");
-        var warning = (Brush)FindResource("Warning");
-        var muted   = (Brush)FindResource("TextMuted");
-
-        Add($"{list.Jobs.Count:N0} job{(list.Jobs.Count == 1 ? "" : "s")}", bold: true);
-        Add("  ·  ", muted);
-        Add($"{list.FailedCount:N0} failed", list.FailedCount > 0 ? danger : null, list.FailedCount > 0);
-        Add("  ·  ", muted);
-        Add($"{list.RunningCount:N0} running");
-        if (list.RunningLongCount > 0)
-            Add($", {list.RunningLongCount:N0} longer than usual", warning, bold: true);
-        Add("  ·  ", muted);
-        Add($"{list.DisabledCount:N0} disabled", muted);
+        if (JobsGrid.Items.OfType<AgentJob>().FirstOrDefault(j => j.JobId == subject.JobId) is not { } row)
+            return;
+        JobsGrid.SelectedItem = row;
+        JobsGrid.ScrollIntoView(row);
+        ShowJobDetails(open: true);
     }
+
+    private static string AgentText(AgentServiceState agent) => agent switch
+    {
+        AgentServiceState.Running      => "running",
+        AgentServiceState.Stopped      => "stopped",
+        AgentServiceState.NotInstalled => "not part of Express",
+        _                              => "state unknown",
+    };
 
     private static string StatusText(AgentJobList list)
     {
@@ -224,14 +276,17 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
         {
             DetailPanel.IsEnabled = false;
             TxtDetailHeader.Text  = "Select a job above to see its runs.";
-            TxtDetailSub.Text     = string.Empty;
+            ShowRunsProblem(null);
             RunsGrid.ItemsSource  = null;
+            ShowJobDetails(open: false);
             return;
         }
 
         DetailPanel.IsEnabled = true;
         TxtDetailHeader.Text  = $"{job.Name} · {job.StatusText}";
-        TxtDetailSub.Text     = DetailText(job);
+        ShowRunsProblem(null);
+        RunsGrid.ItemsSource  = null;   // the job selected before's runs and steps go, so the drawer can't show its message
+        ShowJobDetails(open: false);
 
         // The same job after a refresh: open the run that was open.
         DateTime? keepRun = _showing && _keep is { } keep && keep.JobId == job.JobId ? keep.RunStart : null;
@@ -246,7 +301,7 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
             AppLog.Error("Agent Jobs: reading a job's runs failed", ex);
             if (version != _runsVersion) return;
             RunsGrid.ItemsSource = null;
-            TxtDetailSub.Text    = "Its runs could not be read: " + MainWindow.FormatErrorStatus(ex);
+            ShowRunsProblem("Its runs could not be read: " + MainWindow.FormatErrorStatus(ex));
             return;
         }
         if (version != _runsVersion) return;
@@ -258,17 +313,11 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
         RunsGrid.SelectedItem = (keepRun is null ? null : runs.FirstOrDefault(r => r.Start == keepRun)) ?? runs.FirstOrDefault();
     }
 
-    private static string DetailText(AgentJob job)
+    // Under the job's name: why its runs aren't listed, when they couldn't be read.
+    private void ShowRunsProblem(string? problem)
     {
-        var parts = new List<string> { job.StatusDetail };
-        parts.Add(job.NextRun is not null ? $"Next run: {job.NextRunText}." : $"{job.NextRunText}.");
-        if (job.Owner is null)
-            parts.Add("Its owner isn't a login on this server any more, which can stop the job from starting.");
-        else
-            parts.Add($"Owner {job.Owner}.");
-        if (!string.IsNullOrWhiteSpace(job.Description) && job.Description != "No description available.")
-            parts.Add(job.Description.Trim());
-        return string.Join(" ", parts);
+        TxtDetailSub.Text       = problem ?? string.Empty;
+        TxtDetailSub.Visibility = problem is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void RunsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -276,24 +325,16 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext
         if (RunsGrid.SelectedItem is not JobRun run)
         {
             StepsGrid.ItemsSource = null;
-            TxtMessage.Text       = string.Empty;
+            ShowJobDetails(open: false);
             return;
         }
 
         StepsGrid.ItemsSource  = run.Steps;
         // The failing step is the one to read; otherwise the last step that ran.
         StepsGrid.SelectedItem = run.FailedStep ?? run.Steps.LastOrDefault();
-        if (StepsGrid.SelectedItem is null)
-            TxtMessage.Text = run.Message ?? string.Empty;
+        ShowJobDetails(open: false);
     }
 
-    private void StepsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (StepsGrid.SelectedItem is JobStepRun step)
-            TxtMessage.Text = $"-- Step {step.StepId}: {step.StepName} ({step.OutcomeText}" +
-                              (step.Start is { } start ? $", started {start:yyyy-MM-dd HH:mm:ss}" : "") +
-                              $", took {step.DurationText})\n{step.Message}";
-        else if (RunsGrid.SelectedItem is JobRun run)
-            TxtMessage.Text = run.Message ?? string.Empty;
-    }
+    // The step's full message, in the drawer under the job (#150).
+    private void StepsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => ShowJobDetails(open: false);
 }

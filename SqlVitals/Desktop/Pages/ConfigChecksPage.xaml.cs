@@ -1,13 +1,15 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.ConfigChecks;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -17,8 +19,35 @@ namespace SqlVitals.Desktop.Pages;
 /// verify and compatibility level. Each check shows Pass or Warn, the value now, the value
 /// recommended and why; a warning comes with the T-SQL to fix it, which is never run here.
 /// </summary>
-public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
+public partial class ConfigChecksPage : Page, IRefreshable, IPageContext, IDetailsSource
 {
+    // ── The details drawer (#150): the selected check ─────────────────────────────
+    private const string SelectHint = "Select a check to see why it matters and the script that fixes it.";
+
+    private readonly RowDrawer _drawer = new("Check details", SelectHint);
+
+    public DrawerContent Details => _drawer.Content;
+
+    public event Action<bool>? DetailsChanged
+    {
+        add    => _drawer.Changed += value;
+        remove => _drawer.Changed -= value;
+    }
+
+    internal RowDetailsView? DetailsView => _drawer.View;
+
+    private void ShowCheck(object row, bool open)
+    {
+        if (row is ConfigCheck check)
+            _drawer.Show($"{check.Name} · {check.Scope}", RowDetails.Rows(check), open,
+                         "To fix it: review, then run it yourself. SqlVitals never runs it.", check.FixScript);
+    }
+
+    // The page template's verdict (#150): how many checks fail, the riskiest first.
+    internal ConfigChecksViewModel ViewModel { get; }
+
+    private const int RisksFilter = 1;
+
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;
 
@@ -47,7 +76,8 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
 
     private bool _refreshing;
 
-    public ConfigChecksPage(IWaitStatsRepository repo, string? serverName)
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public ConfigChecksPage(IWaitStatsRepository repo, string? serverName, ISectionFolds? folds = null)
     {
         _repo       = repo;
         _serverName = string.IsNullOrWhiteSpace(serverName) ? "this server" : serverName;
@@ -56,6 +86,11 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
         foreach (var (label, _, _) in Filters)
             CmbFilter.Items.Add(label);
         CmbFilter.SelectedIndex = 0;
+
+        ViewModel = new ConfigChecksViewModel(showCheck: ShowSubject, script: OpenScript);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        DrawerParts.FollowSelection(ChecksGrid, ShowCheck, _drawer.Clear);
 
         // Filled before the page has been laid out, the grid can keep every fixed-width column at
         // its 20 px minimum, so checks read that soon are shown once it has been.
@@ -81,6 +116,12 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
             _checks = await _repo.GetConfigurationChecksAsync();
             Show();
         }
+        catch (Exception ex) when (_checks is null)
+        {
+            // Nothing read yet: the verdict says why. Later, the results read last stay shown.
+            ViewModel.ShowError("the server's configuration", ex);
+            throw;
+        }
         finally
         {
             _refreshing = false;
@@ -105,7 +146,7 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
             ? $"{list.Checks.Count:N0} result{(list.Checks.Count == 1 ? "" : "s")}"
             : $"{shown.Count:N0} of {list.Checks.Count:N0} results";
 
-        ShowSummary(list);
+        ViewModel.Show(list);
 
         TxtProblem.Text       = list.Problem ?? string.Empty;
         TxtProblem.Visibility = list.Problem is null ? Visibility.Collapsed : Visibility.Visible;
@@ -115,32 +156,26 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
 
         TxtNoData.Text       = filter.Empty;
         TxtNoData.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (ChecksGrid.SelectedItem is { } selectedRow)
+            ShowCheck(selectedRow, open: false);
     }
 
-    // "3 warnings  ·  11 passed  ·  1 not checked".
-    private void ShowSummary(ConfigCheckList list)
+    // The verdict's Show it: the check it names, selected (with the warnings listed if the
+    // filter hides it), in view and in the drawer.
+    private void ShowSubject()
     {
-        TxtSummary.Inlines.Clear();
-        TxtSummary.Visibility = Visibility.Visible;
-
-        void Add(string text, Brush? brush = null, bool bold = false)
+        if (_checks is null || ConfigChecksVerdict.Riskiest(_checks) is not { } subject)
+            return;
+        if (!ChecksGrid.Items.Contains(subject))
+            CmbFilter.SelectedIndex = RisksFilter;
+        if (!ChecksGrid.Items.Contains(subject))
         {
-            var run = new Run(text) { FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
-            if (brush is not null) run.Foreground = brush;
-            TxtSummary.Inlines.Add(run);
+            CmbFilter.SelectedIndex = 0;
+            ChecksFilter.Clear();
         }
-        var warning = (Brush)FindResource("Warning");
-        var success = (Brush)FindResource("Success");
-        var muted   = (Brush)FindResource("TextMuted");
-
-        Add($"{list.WarnCount:N0} warning{(list.WarnCount == 1 ? "" : "s")}", list.WarnCount > 0 ? warning : null, true);
-        Add("  ·  ", muted);
-        Add($"{list.PassCount:N0} passed", list.WarnCount == 0 ? success : null);
-        if (list.NotCheckedCount > 0)
-        {
-            Add("  ·  ", muted);
-            Add($"{list.NotCheckedCount:N0} not checked", muted);
-        }
+        ChecksGrid.SelectedItem = subject;
+        ChecksGrid.ScrollIntoView(subject);
+        ShowCheck(subject, open: true);
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -165,7 +200,10 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
         }
     }
 
-    private void BtnScript_Click(object sender, RoutedEventArgs e)
+    private void BtnScript_Click(object sender, RoutedEventArgs e) => OpenScript();
+
+    // Script the warnings, from the button or the verdict.
+    private void OpenScript()
     {
         if (_checks?.FixScript(_serverName, DateTime.Now) is not { } script) return;
 
@@ -180,34 +218,5 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext
         {
             Owner = Window.GetWindow(this)
         }.ShowDialog();
-    }
-
-    // ── Selected check ────────────────────────────────────────────────────────
-
-    private void ChecksGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (ChecksGrid.SelectedItem is not ConfigCheck check)
-        {
-            DetailPanel.IsEnabled       = false;
-            TxtDetailHeader.Text        = "Select a check above to see why it matters and how to fix it.";
-            TxtDetailExplanation.Text   = string.Empty;
-            FixPanel.Visibility         = Visibility.Collapsed;
-            return;
-        }
-
-        DetailPanel.IsEnabled = true;
-        TxtDetailHeader.Text  = $"{check.Name} · {check.Scope} · {check.StatusText}" +
-                                (check.Current.Length > 0 ? $" · {check.Current}" : "") +
-                                (check.Recommended.Length > 0 ? $", recommended {check.Recommended}" : "");
-        TxtDetailExplanation.Text = check.Explanation;
-
-        TxtFix.Text         = check.FixScript ?? string.Empty;
-        FixPanel.Visibility = check.FixScript is null ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void BtnCopyFix_Click(object sender, RoutedEventArgs e)
-    {
-        if (TxtFix.Text.Length > 0)
-            ClipboardHelper.SetText(TxtFix.Text);
     }
 }

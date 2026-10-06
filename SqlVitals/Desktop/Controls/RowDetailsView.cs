@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.ExecutionPlans;
 using SqlVitals.Engine.Monitoring;
@@ -18,14 +19,54 @@ namespace SqlVitals.Desktop.Controls;
 public sealed record DrawerPlan(string Heading, Func<Task<string?>> Load, string WindowTitle);
 
 /// <summary>
+/// What the details drawer shows for a page whose selected row goes in a <see cref="RowDetailsView"/>
+/// (#150): the row, or the hint while none is selected. A page that is an <see cref="IDetailsSource"/>
+/// hands its <c>Details</c> and <c>DetailsChanged</c> to one of these.
+/// </summary>
+/// <param name="title">The drawer's title while nothing is selected.</param>
+/// <param name="hint">What to select for details.</param>
+internal sealed class RowDrawer(string title, string hint)
+{
+    public DrawerContent Content { get; private set; } = new(title, null, hint);
+
+    /// <summary>The view, once a row has been shown; for tests.</summary>
+    public RowDetailsView? View { get; private set; }
+
+    /// <summary>The content changed; <c>true</c> when the user asked to see it, so a closed drawer opens.</summary>
+    public event Action<bool>? Changed;
+
+    /// <summary>Shows a row: its figures, and a text (a script, a message) with Copy when it has one.</summary>
+    /// <param name="noText">Shown when there is no text; null hides the text and its heading.</param>
+    public void Show(string rowTitle, IEnumerable<DetailRow> rows, bool open, string textHeading = "", string? text = null, string? noText = null)
+    {
+        View ??= new RowDetailsView();
+        View.Show(rows, textHeading, text, [], noText);
+        Content = new(rowTitle, View, hint);
+        Changed?.Invoke(open);
+    }
+
+    /// <summary>No row is selected any more (a filter hid it): the hint again.</summary>
+    public void Clear()
+    {
+        if (Content.Body is null)
+            return;
+        Content = new(title, null, hint);
+        Changed?.Invoke(false);
+    }
+}
+
+/// <summary>
 /// A grid row's details in the drawer (#149), for Resource Queries, Query Regressions and SP Trace:
-/// its figures, its text with Copy, and its plans, each shown inline or in a window.
+/// its figures, its text with Copy, and its plans, each shown inline or in a window. The Resources,
+/// Maintenance, Configuration and Alerts pages use it too (#150): a fix script or a job's message
+/// as the text, and no plans.
 /// </summary>
 public sealed class RowDetailsView : StackPanel
 {
     private readonly Grid       _rows        = DrawerParts.Rows();
     private readonly TextBlock  _textHeading = DrawerParts.Heading("Query text");
     private readonly TextBox    _text        = DrawerParts.Code(maxHeight: 260);
+    private readonly WrapPanel  _copy;
     private readonly StackPanel _plans       = new();
     private readonly List<PlanPart> _parts   = [];
     private string? _queryText;
@@ -35,7 +76,8 @@ public sealed class RowDetailsView : StackPanel
         Children.Add(_rows);
         Children.Add(_textHeading);
         Children.Add(_text);
-        Children.Add(DrawerParts.Row(DrawerParts.Button("Copy", () => ClipboardHelper.SetText(_queryText ?? string.Empty), "Copy the text")));
+        _copy = DrawerParts.Row(DrawerParts.Button("Copy", () => ClipboardHelper.SetText(_queryText ?? string.Empty), "Copy the text"));
+        Children.Add(_copy);
         Children.Add(_plans);
     }
 
@@ -43,6 +85,9 @@ public sealed class RowDetailsView : StackPanel
     internal IReadOnlyList<string> RowTexts => DrawerParts.Texts(_rows);
 
     internal string Text => _text.Text;
+
+    /// <summary>Whether the text, its heading and Copy are shown; for tests.</summary>
+    internal bool TextShown => _text.Visibility == Visibility.Visible;
 
     /// <summary>Each plan's heading; for tests.</summary>
     internal IReadOnlyList<string> PlanHeadings => _parts.Select(p => p.Heading.Text).ToList();
@@ -53,13 +98,19 @@ public sealed class RowDetailsView : StackPanel
     internal bool PlanShown(int index) => _parts[index].View.Visibility == Visibility.Visible && _parts[index].View.HasDiagram;
 
     /// <summary>Shows a row: its figures, its text and its plans, none read until asked for.</summary>
-    /// <param name="textHeading">"Query text", "Statement".</param>
-    public void Show(IEnumerable<DetailRow> rows, string textHeading, string? text, IReadOnlyList<DrawerPlan> plans)
+    /// <param name="textHeading">"Query text", "Statement", "To fix it".</param>
+    /// <param name="noText">Shown when there is no text; null hides the text, its heading and Copy instead (#150).</param>
+    public void Show(IEnumerable<DetailRow> rows, string textHeading, string? text, IReadOnlyList<DrawerPlan> plans,
+                     string? noText = "(no text was captured)")
     {
         DrawerParts.Fill(_rows, rows);
         _queryText        = text;
         _textHeading.Text = textHeading;
-        _text.Text        = string.IsNullOrWhiteSpace(text) ? "(no text was captured)" : text;
+        _text.Text        = string.IsNullOrWhiteSpace(text) ? noText ?? string.Empty : text;
+
+        var shown = !string.IsNullOrWhiteSpace(text) || noText is not null ? Visibility.Visible : Visibility.Collapsed;
+        _textHeading.Visibility = _text.Visibility = shown;
+        _copy.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
 
         foreach (var part in _parts)
             part.Forget();

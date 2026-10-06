@@ -9,7 +9,12 @@
 1. Under **Counter Groups**, tick the data you want. **Select All** / **Select None** help.
 2. Under **Output File**, choose a **File Path** and **Filename** (default `SqlVitals_Report.txt`). *Full path preview* shows where it will go.
 3. Tick **Open file after export** if you want it opened straight away.
-4. Click **📤 Export Now**. All selected groups are collected at the same time. **✓ Last Export** shows the result.
+4. Click **📤 Export Now**, or **Export now** in the verdict. All selected groups are collected at the same time.
+
+**The verdict** at the top (from 0.66.0) says what an export will write and where (*Ready to export 14 of 14 sections*, to the full path), or what is missing (*Nothing to export: no section is selected*, *Choose where to save the report*). After an export it says what was saved (*Exported 14 sections to SqlVitals_Report.txt*, its size and how long it took), with **Open the file** and **Export again**; this replaced the **✓ Last Export** box. If the export fails it says why. What the report is folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Export / AI: the verdict says what an export will write, above the sections and the output file](images/page-template/export.png)
+
 5. Open the file, copy it, and paste it into your AI assistant with a question, for example:
 
    > *"This is a diagnostic report from a SQL Server that users say is slow in the afternoons. What are the most likely causes, and what should I check first?"*

@@ -9,11 +9,40 @@ using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Monitoring;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshable, IPageContext
+public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshable, IPageContext, IDetailsSource
 {
+    // ── The details drawer (#150): the selected missing index ─────────────────
+    // Its figures, its columns and its CREATE statement with Copy, which the grid's last column cuts short.
+    private const string SelectHint = "Select a missing index to see what it would serve, its columns and its CREATE statement.";
+
+    private readonly RowDrawer _drawer = new("Missing index", SelectHint);
+
+    public DrawerContent Details => _drawer.Content;
+
+    public event Action<bool>? DetailsChanged
+    {
+        add    => _drawer.Changed += value;
+        remove => _drawer.Changed -= value;
+    }
+
+    internal RowDetailsView? DetailsView => _drawer.View;
+
+    private void ShowMissing(object row, bool open)
+    {
+        if (row is MissingIndex index)
+            _drawer.Show($"{index.SchemaName}.{index.TableName}", RowDetails.Rows(index), open,
+                         "CREATE statement (review before running it)", index.CreateIndexStatement);
+    }
+
+    // The page template's verdict (#150): the missing indexes asked for, and the unused ones.
+    internal IndexHealthViewModel ViewModel { get; }
+
     // Read once, and again on Refresh, from the connection's database (#140).
     public PageKind Kind => PageKind.Snapshot;
     public bool UsesDatabase => true;
@@ -31,10 +60,33 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
     // switch, so the answer cannot go stale underneath us.
     private bool _onlineSupportChecked;
 
-    public IndexHealthPage(IWaitStatsRepository repo)
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public IndexHealthPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
     {
         _repo = repo;
         InitializeComponent();
+
+        ViewModel = new IndexHealthViewModel(showMissing: ShowTopMissing, showUnused: () => Tabs.SelectedItem = TabUnused);
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        DrawerParts.FollowSelection(MissingGrid, ShowMissing, _drawer.Clear);
+    }
+
+    // What the verdict judged, so Show it opens the suggestion it names whatever the grid shows.
+    private IReadOnlyList<MissingIndex> _missing = [];
+
+    // The verdict's Show it: the Missing Indexes tab, the most valuable selected (past a filter
+    // typed in the box) and in the drawer.
+    private void ShowTopMissing()
+    {
+        Tabs.SelectedItem = TabMissing;
+        if (IndexHealthVerdict.Top(_missing) is not { } top)
+            return;
+        if (!MissingGrid.Items.Contains(top))
+            MissingFilter.Clear();
+        MissingGrid.SelectedItem = top;
+        MissingGrid.ScrollIntoView(top);
+        ShowMissing(top, open: true);
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()
@@ -50,15 +102,30 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             TxtMinPageCount.Text = minPages.ToString(CultureInfo.CurrentCulture);
         }
 
-        var (missing, unused) = await _repo.GetIndexHealthAsync();
-        var usage = await _repo.GetIndexUsagePatternsAsync();
+        IEnumerable<MissingIndex> missing;
+        IEnumerable<UnusedIndex> unused;
+        IEnumerable<IndexUsagePattern> usage;
+        try
+        {
+            (missing, unused) = await _repo.GetIndexHealthAsync();
+            usage = await _repo.GetIndexUsagePatternsAsync();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ShowError("the index statistics", ex);
+            throw;
+        }
+        var missingList = missing.ToList();
+        var unusedList  = unused.ToList();
+        ViewModel.Show(missingList, unusedList);
+        _missing = missingList;
 
         // A refresh keeps each grid's column sort and filter; the order below is only the default.
-        DataGridRefresh.SetItemsSource(MissingGrid, missing
+        DataGridRefresh.SetItemsSource(MissingGrid, missingList
             .OrderBy(m => m.Severity == "CRITICAL" ? 1 : m.Severity == "WARNING" ? 2 : 3)
             .ThenByDescending(m => m.ImpactScore)
             .ToList());
-        DataGridRefresh.SetItemsSource(UnusedGrid, unused.OrderByDescending(u => u.UserUpdates).ToList());
+        DataGridRefresh.SetItemsSource(UnusedGrid, unusedList.OrderByDescending(u => u.UserUpdates).ToList());
         DataGridRefresh.SetItemsSource(UsageGrid,  usage.ToList());
         UpdateCreateScriptButton();
         UpdateDropScriptButton();

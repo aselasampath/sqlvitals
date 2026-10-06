@@ -35,7 +35,7 @@ From 0.56.0 the picker is in the top bar, beside the page's badge. On **Live** t
 
 - **Long ranges are averaged** so a chart has at most 600 points: about 10 s per point on 1h, 5 min on 24h and 30 min on 7d. The status line says how many points there are and how far apart.
 - **Gaps stay gaps.** When the app was closed or monitoring stopped, the line breaks instead of drawing a misleading straight line across.
-- **Live charts and the Overview keep collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Start**, to resume.
+- **Live charts and the Overview keep collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Resume (▶)** in the top bar, to resume.
 
 ## Compare to a baseline
 

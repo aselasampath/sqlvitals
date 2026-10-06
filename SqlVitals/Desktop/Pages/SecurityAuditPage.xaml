@@ -51,12 +51,6 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="ToolbarLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,6,0"/>
-        </Style>
         <Style x:Key="ToolbarCombo" TargetType="ComboBox">
             <Setter Property="Height" Value="26"/>
             <Setter Property="FontSize" Value="11"/>
@@ -73,55 +67,41 @@
         </Style>
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="160"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto" MinHeight="150"/>
-        </Grid.RowDefinitions>
-
-        <TextBlock Grid.Row="0" Text="Security Audit — sysadmin, sa, TRUSTWORTHY and orphaned users" Style="{StaticResource SectionHeader}"
-                   FontSize="20" Margin="0,0,0,14"/>
-
-        <!-- Filter, counts, and anything that left checks out -->
-        <Border Grid.Row="1" Style="{StaticResource KpiCard}" Margin="0,0,0,12">
-            <StackPanel>
-                <WrapPanel>
-                    <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
-                    <ComboBox x:Name="CmbFilter" Width="200" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="CmbFilter_SelectionChanged"/>
-                    <Button x:Name="BtnReload" Content="↻ Audit again" Style="{StaticResource RefreshButton}" Padding="12,4"
-                            ToolTip="Read the logins, databases and users from the server again and audit them."
-                            Click="BtnReload_Click"/>
-                    <Button x:Name="BtnScript" Content="📝 Script the risks" Style="{StaticResource SecondaryButton}" Padding="12,4"
-                            Margin="8,0,0,0" IsEnabled="False"
-                            ToolTip="One T-SQL script with the change for every risk, to review and run yourself. SqlVitals never runs it."
-                            Click="BtnScript_Click"/>
-                </WrapPanel>
-
-                <TextBlock x:Name="TxtSummary" FontSize="13" Margin="0,10,0,0" TextWrapping="Wrap"
-                           Foreground="{StaticResource TextPrimary}"/>
-                <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap" Visibility="Collapsed"/>
-                <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap"/>
+    <!-- The page template (#150): the verdict on the risks found, the highest first, then every
+         finding. The selected finding's risk and its fix script are in the drawer. -->
+    <controls:PageShell x:Name="Shell" Margin="20" Title="Security Audit" PageKey="SecurityAudit">
+        <controls:PageShell.Actions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="BtnReload" Content="↻ Audit again" Style="{StaticResource RefreshButton}" Padding="12,4"
+                        ToolTip="Read the logins, databases and users from the server again and audit them."
+                        Click="BtnReload_Click"/>
+                <Button x:Name="BtnScript" Content="📝 Script the risks" Style="{StaticResource SecondaryButton}" Padding="12,4"
+                        Margin="8,0,0,0" IsEnabled="False"
+                        ToolTip="One T-SQL script with the change for every risk, to review and run yourself. SqlVitals never runs it."
+                        Click="BtnScript_Click"/>
             </StackPanel>
-        </Border>
+        </controls:PageShell.Actions>
 
         <!-- ── Every finding, risks first ────────────────────────────── -->
-        <Border Grid.Row="2" Style="{StaticResource KpiCard}">
+        <Border Style="{StaticResource KpiCard}">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=FindingsGrid}"/>
+                    <controls:GridFilterBox x:Name="FindingsFilter" DockPanel.Dock="Right" Target="{Binding ElementName=FindingsGrid}"/>
+                    <ComboBox x:Name="CmbFilter" DockPanel.Dock="Right" Width="200" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
+                              SelectionChanged="CmbFilter_SelectionChanged" ToolTip="Which results to list"/>
                     <TextBlock x:Name="TxtCount" Text="Findings" Style="{StaticResource SectionHeader}"
                                Margin="0" VerticalAlignment="Center"/>
                 </DockPanel>
+                <!-- When it was read, and anything that left items out -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12"
+                               TextWrapping="Wrap" Visibility="Collapsed"/>
+                    <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,4,0,0"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
                 <Grid>
                     <DataGrid x:Name="FindingsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                              SelectionMode="Single" RowStyle="{StaticResource FindingRow}"
-                              SelectionChanged="FindingsGrid_SelectionChanged">
+                              SelectionMode="Single" RowStyle="{StaticResource FindingRow}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource StatusText}">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Risk: widens the attack surface; fix it unless there's a reason not to. Review: not wrong in itself, but someone should know why it's there. Pass: fine. Not checked: a permission is missing, or a database couldn't be read. Sorted with risks first."/></Style></DataGridTextColumn.HeaderStyle>
@@ -142,38 +122,5 @@
                 </Grid>
             </DockPanel>
         </Border>
-
-        <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch"
-                      Background="{StaticResource Border}" Margin="0,4"/>
-
-        <!-- ── The selected finding: the risk, and the fix ────────────── -->
-        <Border Grid.Row="4" Style="{StaticResource KpiCard}">
-            <Grid x:Name="DetailPanel" IsEnabled="False">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" x:Name="TxtDetailHeader" Text="Select a finding above to see the risk and how to remove it."
-                           Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Row="1" x:Name="TxtDetailExplanation" Foreground="{StaticResource TextMuted}" FontSize="12"
-                           Margin="0,4,0,0" TextWrapping="Wrap"/>
-
-                <DockPanel Grid.Row="2" x:Name="FixPanel" Margin="0,10,0,0" Visibility="Collapsed">
-                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-                        <Button x:Name="BtnCopyFix" DockPanel.Dock="Right" Content="⧉ Copy" Style="{StaticResource SecondaryButton}"
-                                Padding="10,2" ToolTip="Copy this script to the clipboard." Click="BtnCopyFix_Click"/>
-                        <TextBlock x:Name="TxtFixLabel" Foreground="{StaticResource TextMuted}" FontSize="11" VerticalAlignment="Center"/>
-                    </DockPanel>
-                    <TextBox x:Name="TxtFix" IsReadOnly="True" TextWrapping="NoWrap" MaxHeight="140"
-                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                             Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}"
-                             BorderBrush="{StaticResource Border}" BorderThickness="1"
-                             FontFamily="Consolas" FontSize="11" Padding="6"/>
-                </DockPanel>
-            </Grid>
-        </Border>
-    </Grid>
+    </controls:PageShell>
 </Page>

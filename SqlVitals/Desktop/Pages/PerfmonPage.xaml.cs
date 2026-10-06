@@ -12,8 +12,10 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -42,8 +44,15 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => _range.IsLive;
-    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
-    public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
+    public bool IsPaused => !_timer.IsEnabled;
+
+    // The bar's Resume and Pause start and stop the reads: the page's own Start and Stop were the
+    // same toggle, so they went with the page template (#150).
+    public void SetPaused(bool paused)
+    {
+        if (paused) StopTimer();
+        else if (_range.IsLive) StartTimer();
+    }
     public DateTime? DataTo => _range.IsLive ? null : PageBar.DataTo(_historyLoad, b => b.TimeUtc);
     public FrameworkElement? TakeBarTools() => PageBar.Detach(RangePicker);
 
@@ -207,12 +216,19 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     private string _baselineNote = "";
     private string _statusMain;
 
-    public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null)
+    // The page template's verdict (#150): the counters past a known limit, and the ones rising.
+    internal PerfmonViewModel ViewModel { get; }
+
+    /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
+    public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null)
     {
         _repo    = repo;
         _history = history;
         if (history is not null)
             _baseline = new BaselineTracker<CounterHistoryBucket>(history, (reader, id, from, to, bucket) => reader.ReadCounters(id, from, to, bucket));
+
+        // Before the controls: picking the first group of counters below judges them already.
+        ViewModel = new PerfmonViewModel(openPage: OpenPage);
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _statusMain = TxtStatus.Text;
@@ -225,6 +241,33 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
 
         _timer.Interval = TimeSpan.FromSeconds(1);
         _timer.Tick    += Timer_Tick;
+
+        ViewModel.Attach(Shell);
+        Shell.Folds = folds;
+        UpdateVerdict();
+    }
+
+    private async void OpenPage(string tag)
+    {
+        if (Window.GetWindow(this) is MainWindow main)
+            await main.OpenPageAsync(tag);
+    }
+
+    // The counters ticked, as the chart draws them, judged against their well-known limits. Before
+    // the first read there are none to tick yet: the group picked is what will be charted.
+    private void UpdateVerdict()
+    {
+        var windows  = _range.IsLive ? _windows : _historyWindows;
+        var names    = _allItems.Count == 0
+            ? Groups[CmbGroup.SelectedItem as string ?? GroupNames[0]].Take(MaxSeries)
+            : _allItems.Where(i => i.IsChecked).Take(MaxSeries).Select(i => i.CounterName);
+        var selected = names
+            .Select(name => new PerfmonSeries(name,
+                windows.TryGetValue(name, out var w) ? w.Select(p => p.Value).ToList() : []))
+            .ToList();
+        var state  = !_range.IsLive ? WaitTrendState.History : _timer.IsEnabled ? WaitTrendState.Live : WaitTrendState.NotStarted;
+        var noData = !_range.IsLive && _historyLoad is { Items.Count: 0 } load ? load.NoData(NotRecordedText) : null;
+        ViewModel.Show(selected, state, noData);
     }
 
     // ── Page lifetime ────────────────────────────────────────────────────────
@@ -251,7 +294,17 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
 
     private async System.Threading.Tasks.Task RefreshLiveAsync()
     {
-        var data = (await _repo.GetPerfmonCountersAsync()).ToList();
+        List<SqlVitals.Engine.Models.PerfmonCounter> data;
+        try
+        {
+            data = (await _repo.GetPerfmonCountersAsync()).ToList();
+        }
+        catch (Exception ex) when (_allItems.Count == 0)
+        {
+            // Nothing read yet: the verdict says why. Later, the lines so far stay drawn.
+            ViewModel.ShowError("the performance counters", ex);
+            throw;
+        }
 
         // On first call: build master counter list from whatever the server returns
         if (_allItems.Count == 0)
@@ -300,6 +353,7 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
         if (RangePicker.CompareToBaseline)
             RebuildSeries();
         UpdateChart();
+        UpdateVerdict();
 
         ShowStatus($"Last refresh: {now:HH:mm:ss}  •  {data.Count} counters retrieved");
         await LoadBaselineAsync();
@@ -311,10 +365,9 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
         _range = range;
         var live = range.IsLive;
 
-        // Live refresh is stopped while a past range is shown; Start picks it up again.
+        // Live refresh is stopped while a past range is shown; Resume picks it up again.
         if (!live)
             StopTimer();
-        BtnAutoRefresh.IsEnabled = live;
         CmbInterval.IsEnabled    = live;
         MainWindow.ReportContextChanged(this);
 
@@ -327,7 +380,7 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
             _historyVersion++;
             _historyLoad = null;
             _historyWindows.Clear();
-            ShowStatus("Live — press Start or use manual Refresh.");
+            ShowStatus("Live: Resume (▶) in the top bar starts reading, Refresh reads once.");
             RebuildSeries();
             UpdateChart();
             await LoadBaselineAsync();
@@ -526,7 +579,14 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     }
 
     // ── Chart series management ──────────────────────────────────────────────
+    // The lines for the counters ticked, and the verdict on them.
     private void RebuildSeries()
+    {
+        RebuildSeriesCore();
+        UpdateVerdict();
+    }
+
+    private void RebuildSeriesCore()
     {
         var selected = _allItems.Where(i => i.IsChecked).Take(MaxSeries).ToList();
 
@@ -630,22 +690,28 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     }
 
     // ── Timer ────────────────────────────────────────────────────────────────
+    // What Start did: read every interval, counting down to the next read.
     private void StartTimer()
     {
+        if (_timer.IsEnabled)
+            return;
+        _intervalSec = CmbInterval.SelectedIndex >= 0 ? Intervals[CmbInterval.SelectedIndex] : 10;
         _remainingSec = _intervalSec;
         UpdateCountdown();
         _timer.Start();
+        MainWindow.ReportContextChanged(this);
+        UpdateVerdict();
     }
 
+    // What Stop did; also when the page is left.
     private void StopTimer()
     {
+        if (!_timer.IsEnabled)
+            return;
         _timer.Stop();
         TxtCountdown.Text = "--";
-        if (BtnAutoRefresh.IsChecked == true)
-        {
-            BtnAutoRefresh.IsChecked = false;
-            BtnAutoRefresh.Content   = "Start";
-        }
+        MainWindow.ReportContextChanged(this);
+        UpdateVerdict();
     }
 
     private void UpdateCountdown() =>
@@ -675,28 +741,14 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     }
 
     // ── UI event handlers ────────────────────────────────────────────────────
+    // Another interval: used from the next read on; the countdown shows only while reading.
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CmbInterval.SelectedIndex < 0) return;
         _intervalSec  = Intervals[CmbInterval.SelectedIndex];
         _remainingSec = _intervalSec;
-        UpdateCountdown();
-        MainWindow.ReportContextChanged(this);
-    }
-
-    private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
-    {
-        BtnAutoRefresh.Content = "Stop";
-        _intervalSec = CmbInterval.SelectedIndex >= 0
-            ? Intervals[CmbInterval.SelectedIndex] : 10;
-        StartTimer();
-        MainWindow.ReportContextChanged(this);
-    }
-
-    private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
-    {
-        BtnAutoRefresh.Content = "Start";
-        StopTimer();
+        if (_timer.IsEnabled)
+            UpdateCountdown();
         MainWindow.ReportContextChanged(this);
     }
 

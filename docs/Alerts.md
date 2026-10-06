@@ -27,6 +27,10 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 
 ## The Alerts page
 
+**The verdict** (from 0.66.0) names the active alerts, the critical and longest-running first: *2 active alerts, 1 critical; Blocking on PROD-SQL02, critical for 12 min*, red when one is critical, with its worst value, the threshold and what the health dot said. **Investigate** opens [its evidence](#from-an-alert-to-its-evidence); **Active only** hides the past ones. With none active it says when the last one ended, and it says when alerts can't be raised at all (*No alerts are being raised: monitoring is off*) or not for some connections (it names them): this replaced the banner above the list. **Connection**, **Show** and **Period** are beside the page title. Select an alert to see all of its figures in the [details drawer](Working-with-Grids.md#details-beside-the-grid), the **Details** text in full. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+
+![Alerts: the verdict names the worst active alert, above the alerts](images/page-template/alerts.png)
+
 | Column | What it shows |
 |---|---|
 | **Status** | **● Active**: still past its threshold. **Ended**: finished. |
@@ -114,7 +118,7 @@ A **failed collection** (the server can't be reached) counts neither way, so an 
 
 ## Good to know
 
-- **Which connections:** only saved connections that are **monitored**. From 0.46.0 nothing is monitored until you press Start or turn on **Start monitoring automatically**; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). While nothing is monitored the page says **No alerts are being raised: monitoring is off**, and while some connections aren't, it names them (*…monitoring is off for Sales-Prod, HR-DB*). Windows notifications say nothing then either, because there are no alerts. If you pick a connection that isn't monitored, the page says why.
+- **Which connections:** only saved connections that are **monitored**. From 0.46.0 nothing is monitored until you press Start or turn on **Start monitoring automatically**; see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). While nothing is monitored the page's verdict says **No alerts are being raised: monitoring is off**, and while some connections aren't, it names them (*Monitoring is off for Sales-Prod, HR-DB, so no alerts are raised for them*). Windows notifications say nothing then either, because there are no alerts. If you pick a connection that isn't monitored, the page says why.
 - **No extra load on the server:** alerts are worked out from the samples SqlVitals already collects.
 - **How long they're kept:** as long as the rest of the [history](Settings.md#monitoring--history), counted from when the alert ended. An active alert is never deleted. **Clear history** deletes alerts too.
 - **Notifications:** from 0.35.0 a Windows notification appears when an alert starts or turns critical; clicking it opened this page filtered to that connection until 0.57.0, the server's Summary from 0.57.0, and its [Overview](Your-Servers.md#active-alerts) from 0.59.0. From 0.61.0 a notification about one alert opens [its evidence](#from-an-alert-to-its-evidence); one about several still opens the Overview. Mute a connection on its **Monitoring & alerts** tab in **Settings → Connections**, or every connection with **Settings → Alerts & chat → Windows notifications**. See [Notifications and Tray](Notifications-and-Tray.md).
