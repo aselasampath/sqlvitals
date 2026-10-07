@@ -19,6 +19,7 @@ using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Security;
 using SqlVitals.Engine.Verdicts;
+using SqlVitals.Desktop.Tests.Fakes;
 using static SqlVitals.Desktop.Tests.TemplateRolloutTests;
 
 namespace SqlVitals.Desktop.Tests;
@@ -487,9 +488,8 @@ public sealed class TemplateEverywhereTests : IDisposable
         for (var i = 0; i < 3; i++)
             UiThread.Wait(_monitoring.Get(hot.Id)!.CollectNowAsync());
 
-        var page = new AlertsPage(_monitoring, settings);
-        Alert? investigated = null;
-        page.InvestigateRequested += alert => investigated = alert;
+        var navigator = new FakeNavigator();
+        var page = new AlertsPage(_monitoring, settings, navigator: navigator);
         Hosted(page, page.RefreshAsync, "alerts.png", () => AssertLaidOut(page.Shell, page.AlertsGrid));
 
         var verdict = page.Shell.Verdict!;
@@ -498,8 +498,11 @@ public sealed class TemplateEverywhereTests : IDisposable
         Assert.Contains(" on Hot, critical for ", verdict.Headline);
         Assert.EndsWith("No past alerts in the last 7 days.", verdict.Why);
 
+        // Investigate, through the navigator (#182): the alert's evidence, logged as from the Alerts page.
         Press(page.Shell.VerdictView, 0);
-        Assert.Equal(hot.Id, investigated!.ConnectionId);
+        var (investigated, source) = Assert.Single(navigator.Investigated);
+        Assert.Equal(hot.Id, investigated.ConnectionId);
+        Assert.Equal(ActivitySources.AlertsPage, source);
 
         page.AlertsGrid.SelectedItem = page.AlertsGrid.Items[0];
         Assert.Contains("Connection: Hot", page.DetailsView!.RowTexts);

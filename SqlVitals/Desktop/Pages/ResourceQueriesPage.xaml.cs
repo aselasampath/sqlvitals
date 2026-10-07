@@ -6,7 +6,6 @@ using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
 
@@ -161,8 +160,7 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFo
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to reload queries:\n{ex.Message}",
-                "Refresh Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            CompositionRoot.Get<IDialogService>().Warn($"Failed to reload queries:\n{ex.Message}", "Refresh Error");
         }
     }
 
@@ -185,12 +183,11 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFo
                 planXml = q.QueryPlan;
             }
 
-            new QueryExecutionPlanWindow(planXml, q.QueryText) { Owner = Window.GetWindow(this) }.Show();
+            CompositionRoot.Get<IDialogService>().ShowQueryPlan(planXml, q.QueryText);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to retrieve execution plan:\n{ex.Message}",
-                "Plan Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            CompositionRoot.Get<IDialogService>().Warn($"Failed to retrieve execution plan:\n{ex.Message}", "Plan Error");
         }
         finally
         {
@@ -240,8 +237,7 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFo
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to copy data:\n{ex.Message}",
-                "Copy Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            CompositionRoot.Get<IDialogService>().Warn($"Failed to copy data:\n{ex.Message}", "Copy Failed");
         }
     }
 }

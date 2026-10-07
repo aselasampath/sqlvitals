@@ -6,6 +6,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
@@ -65,6 +66,7 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext, IDetailsSour
 
     private readonly MonitoringManager         _monitoring;
     private readonly ConnectionSettingsService _settings;
+    private readonly INavigator                _navigator;
 
     // A change is queued to the history writer, which saves it within moments; reading straight
     // away could miss it, so the list is re-read shortly after.
@@ -81,14 +83,16 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext, IDetailsSour
 
     /// <param name="connectionId">The connection to filter on at first, e.g. the one a notification was about; null for all.</param>
     /// <param name="settings">The connections, and where the verdict's fold is remembered.</param>
-    public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings, Guid? connectionId = null)
+    /// <param name="navigator">Where Investigate goes; the app's (#182) when null.</param>
+    public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings, Guid? connectionId = null,
+                      INavigator? navigator = null)
     {
         _monitoring = monitoring;
         _settings   = settings;
+        _navigator  = navigator ?? CompositionRoot.Get<INavigator>();
         InitializeComponent();
 
-        ViewModel = new AlertsViewModel(investigate: alert => InvestigateRequested?.Invoke(alert),
-                                        activeOnly: () => CmbStatus.SelectedIndex = ActiveOnlyIndex);
+        ViewModel = new AlertsViewModel(_navigator, activeOnly: () => CmbStatus.SelectedIndex = ActiveOnlyIndex);
         ViewModel.Attach(Shell);
         Shell.Folds = settings;
         DrawerParts.FollowSelection(AlertsGrid, ShowAlert, _drawer.Clear);
@@ -129,28 +133,28 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext, IDetailsSour
         _ready = true;
     }
 
-    /// <summary>An alert's Investigate: its evidence, filtered to the problem and set to its time (#145).</summary>
-    public event Action<Alert>? InvestigateRequested;
+    // An alert's Investigate: its evidence, filtered to the problem and set to its time (#145).
+    private Task InvestigateAsync(Alert alert) => _navigator.InvestigateAsync(alert, ActivitySources.AlertsPage);
 
-    private void AlertsGrid_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private async void AlertsGrid_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (e.OriginalSource is TextBlock { DataContext: AlertRow row } text && CellOf(text)?.Column == InvestigateColumn)
-            InvestigateRequested?.Invoke(row.Alert);
+            await InvestigateAsync(row.Alert);
     }
 
-    private void AlertsGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private async void AlertsGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         // Only a row: not the header or the scroll bar.
         if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(AlertsGrid, source) is DataGridRow { Item: AlertRow row })
-            InvestigateRequested?.Invoke(row.Alert);
+            await InvestigateAsync(row.Alert);
     }
 
-    private void AlertsGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private async void AlertsGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key != System.Windows.Input.Key.Enter || AlertsGrid.SelectedItem is not AlertRow row)
             return;
         e.Handled = true;
-        InvestigateRequested?.Invoke(row.Alert);
+        await InvestigateAsync(row.Alert);
     }
 
     private static DataGridCell? CellOf(DependencyObject? element)

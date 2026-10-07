@@ -22,20 +22,15 @@ public partial class TopWaitsPage : System.Windows.Controls.Page, IRefreshable, 
     internal TopWaitsViewModel ViewModel { get; }
 
     /// <param name="folds">Where the verdict's and the chart's folds are remembered; none in some tests.</param>
-    public TopWaitsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    /// <param name="navigator">Where the verdict's actions go; the app's (#182) when null.</param>
+    public TopWaitsPage(IWaitStatsRepository repo, ISectionFolds? folds = null, INavigator? navigator = null)
     {
         _repo = repo;
         InitializeComponent();
 
-        ViewModel = new TopWaitsViewModel(openPage: OpenPage);
+        ViewModel = new TopWaitsViewModel(navigator ?? CompositionRoot.Get<INavigator>());
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
-    }
-
-    private async void OpenPage(string tag)
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenPageAsync(tag);
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()

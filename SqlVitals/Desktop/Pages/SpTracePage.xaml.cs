@@ -539,6 +539,5 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSou
     private int ReadMinDurationMs() =>
         int.TryParse(TxtMinDuration.Text.Trim(), out var ms) && ms >= 0 ? ms : 0;
 
-    private void ShowError(string message) =>
-        MessageBox.Show(message, "SP Trace", MessageBoxButton.OK, MessageBoxImage.Warning);
+    private static void ShowError(string message) => CompositionRoot.Get<IDialogService>().Warn(message, "SP Trace");
 }

@@ -9,14 +9,17 @@ namespace SqlVitals.Desktop.Pages.Settings;
 internal partial class AppearanceCategory : UserControl, ISettingsCategory
 {
     private readonly SettingsContext _context;
+    private readonly IThemeService   _theme;
 
-    public AppearanceCategory(SettingsContext context)
+    /// <param name="theme">The theme switched; the app's (#182) when null.</param>
+    public AppearanceCategory(SettingsContext context, IThemeService? theme = null)
     {
         _context = context;
+        _theme   = theme ?? CompositionRoot.Get<IThemeService>();
         InitializeComponent();
         TxtSubtitle.Text = SettingsNav.Info(SettingsCategory.Appearance).Subtitle;
 
-        var dark = Application.Current is App { IsDarkTheme: true };
+        var dark = _theme.Current == AppTheme.Dark;
         BtnThemeToggle.Content = dark ? "☀  Light" : "🌙  Dark";
         TxtTheme.Text = dark
             ? "Dark at the moment. Switch every page to the light theme."
@@ -57,13 +60,14 @@ internal partial class AppearanceCategory : UserControl, ISettingsCategory
 
     private void BtnThemeToggle_Click(object sender, RoutedEventArgs e)
     {
-        if (Application.Current is not App app)
+        var was = _theme.Current;
+        _theme.Set(was == AppTheme.Dark ? AppTheme.Light : AppTheme.Dark);
+        if (_theme.Current == was)
             return;
-        app.ToggleTheme();
 
         // Not in the settings file, so logged here rather than by the settings diff.
         _context.Monitoring.Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.SettingChanged, null, null, ActivitySources.Settings,
-                                                  "Theme", app.IsDarkTheme ? "Light" : "Dark", app.IsDarkTheme ? "Dark" : "Light"));
+                                                  "Theme", was.ToString(), _theme.Current.ToString()));
         ThemeChanged?.Invoke();
     }
 }

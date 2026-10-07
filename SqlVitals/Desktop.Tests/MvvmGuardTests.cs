@@ -14,12 +14,8 @@ public sealed class MvvmGuardTests
 {
     // ── Allowlists: today's offenders. Remove an entry (or lower a count) when it's fixed. ─────
 
-    /// <summary>View models that refer to the view, and to what.</summary>
-    private static readonly Dictionary<string, string[]> ViewReferencesAllowed = new()
-    {
-        // ShowError formats the error with MainWindow.FormatErrorStatus; #182 takes it out.
-        ["ViewModels/PageViewModel.cs"] = ["MainWindow"],
-    };
+    /// <summary>View models that refer to the view, and to what: none since #182 took <c>PageViewModel.ShowError</c> off <c>MainWindow</c>.</summary>
+    private static readonly Dictionary<string, string[]> ViewReferencesAllowed = new();
 
     /// <summary>Page code that reads through a repository itself.</summary>
     private static readonly string[] RepositoryReferencesAllowed =
@@ -90,14 +86,8 @@ public sealed class MvvmGuardTests
         ["Controls/QueryDetailsView.cs"]       = 1,
         ["Controls/RowDetailsView.cs"]         = 2,
         ["Controls/SessionDetailsView.cs"]     = 1,
-        ["Pages/ActiveWaitsPage.xaml.cs"]      = 1,
         ["Pages/ExportPage.xaml.cs"]           = 1,
-        ["Pages/PerfmonPage.xaml.cs"]          = 1,
         ["Pages/ProcessesPage.xaml.cs"]        = 1,
-        ["Pages/QueryRegressionsPage.xaml.cs"] = 1,
-        ["Pages/QueryStorePage.xaml.cs"]       = 1,
-        ["Pages/TopWaitsPage.xaml.cs"]         = 1,
-        ["Pages/WaitStatsTrendPage.xaml.cs"]   = 1,
     };
 
     // ── View models stay out of the view ─────────────────────────────────

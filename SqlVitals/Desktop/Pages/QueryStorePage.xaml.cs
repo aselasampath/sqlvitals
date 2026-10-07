@@ -15,7 +15,6 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Regressions;
@@ -50,7 +49,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
             return;
         _queryView ??= new QueryDetailsView(
             async queryId => (await _repo.GetQueryStoreQueryDetailsAsync(queryId, _period)).Summaries,
-            (button, planId, queryId, text) => ShowPlanAsync(this, _repo, button, planId, queryId, text),
+            (button, planId, queryId, text) => ShowPlanAsync(_repo, button, planId, queryId, text),
             OpenQueryDetails);
         DetailsLoaded = _queryView.ShowAsync(row, _period.Label);
         Details = new($"Query {query.QueryId}", _queryView, SelectQueryHint);
@@ -155,6 +154,8 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
 
     private readonly IWaitStatsRepository      _repo;
     private readonly ConnectionSettingsService _settings;
+    private readonly INavigator                _navigator;
+    private readonly IDialogService            _dialogs = CompositionRoot.Get<IDialogService>();
     private readonly Dictionary<TabItem, TabState> _tabs;
 
     private QueryStoreStatus? _status;
@@ -212,7 +213,8 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         }
     }
 
-    public QueryStorePage(IWaitStatsRepository repo, ConnectionSettingsService settings)
+    /// <param name="navigator">Where Regressions goes; the app's (#182) when null.</param>
+    public QueryStorePage(IWaitStatsRepository repo, ConnectionSettingsService settings, INavigator? navigator = null)
     {
         _repo     = repo;
         _settings = settings;
@@ -241,7 +243,8 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
 
         FillMetricChoices(sql2017Metrics: false);
 
-        ViewModel = new QueryStoreViewModel(openQuery: OpenQueryDetails, openRegressions: OpenRegressions);
+        _navigator = navigator ?? CompositionRoot.Get<INavigator>();
+        ViewModel  = new QueryStoreViewModel(openQuery: OpenQueryDetails, _navigator);
         ViewModel.Attach(Shell);
         Shell.Folds = settings;
 
@@ -469,13 +472,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
             ClipboardHelper.SetText(fix);
     }
 
-    private void BtnRegressions_Click(object sender, RoutedEventArgs e) => OpenRegressions();
-
-    private async void OpenRegressions()
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenPageAsync("QueryRegressions");
-    }
+    private async void BtnRegressions_Click(object sender, RoutedEventArgs e) => await _navigator.GoToAsync("QueryRegressions");
 
     // ── Period ────────────────────────────────────────────────────────────────
 
@@ -919,28 +916,24 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
     {
         if (sender is not Button btn || RowQuery(btn.Tag) is not { PlanId: { } planId } q)
             return;
-        await ShowPlanAsync(this, _repo, btn, planId, q.QueryId, q.QueryText);
+        await ShowPlanAsync(_repo, btn, planId, q.QueryId, q.QueryText);
     }
 
     /// <summary>Opens a Query Store plan in the graphical plan window, as Query Regressions does.</summary>
-    internal static async Task ShowPlanAsync(DependencyObject owner, IWaitStatsRepository repo, Button btn, long planId, long queryId, string? queryText)
+    internal static async Task ShowPlanAsync(IWaitStatsRepository repo, Button btn, long planId, long queryId, string? queryText)
     {
+        var dialogs = CompositionRoot.Get<IDialogService>();
         var label = btn.Content;
         btn.IsEnabled = false;
         btn.Content   = "…";
         try
         {
             var planXml = await repo.GetQueryStorePlanAsync(planId);
-            new QueryExecutionPlanWindow(planXml, queryText)
-            {
-                Owner = Window.GetWindow(owner),
-                Title = $"Execution plan · Query Store plan {planId} · query {queryId}",
-            }.Show();
+            dialogs.ShowQueryPlan(planXml, queryText, $"Execution plan · Query Store plan {planId} · query {queryId}");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to retrieve execution plan:\n{ConnectionSettingsService.RedactSecrets(ex.Message)}",
-                "Plan Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            dialogs.Warn($"Failed to retrieve execution plan:\n{ConnectionSettingsService.RedactSecrets(ex.Message)}", "Plan Error");
         }
         finally
         {
@@ -986,9 +979,6 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
     {
         if (_status is not { IsSupported: true } status)
             return;
-        new QueryStoreQueryWindow(_repo, queryId, _period, status)
-        {
-            Owner = Window.GetWindow(this),
-        }.Show();
+        _dialogs.ShowQueryStoreQuery(_repo, queryId, _period, status);
     }
 }

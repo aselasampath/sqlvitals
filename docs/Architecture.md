@@ -58,7 +58,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 | `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
 | `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
 | `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
-| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), and the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)) |
+| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)), the services view models ask for and the verdict actions that open pages (`UiServicesTests`, `VerdictNavigationTests`, with the fakes in `Fakes/`) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -274,7 +274,7 @@ bool isAzureSqlDb = Convert.ToInt32(edition.Edition) == 5;
 
 ## UI conventions
 
-- **Themes:** `Styles/LightTheme.xaml` (default) and `DarkTheme.xaml`; `App.ToggleTheme()` swaps the merged dictionary.
+- **Themes:** `Styles/LightTheme.xaml` (default) and `DarkTheme.xaml`; `IThemeService.Set` swaps the merged dictionary and raises `Changed` (#182).
 - Use **brush keys**, never hex: `BgDeep`, `BgCard`, `BgSidebar`, `Accent`, `AccentLight`, `TextPrimary`, `TextMuted`, `TextDisabled`, `Border`, `Success`, `Warning`, `Danger`.
 - Style keys: `NavButton` (dimmed, arrow cursor and an **N/A** badge while disabled), `NavButtonActive`, `SectionHeader`, `KpiCard`, `KpiValue`, `KpiLabel`, `RefreshButton`, `SecondaryButton`. `DataGrid` has an implicit style.
 - Chart colours come from `Helpers/ChartTheme` (e.g. `ChartTheme.MutedAxisColor`, `ChartTheme.GridColor`) so charts follow the theme.
@@ -298,8 +298,26 @@ Pages are moving from code-behind to view models one at a time (epic #180). Ever
 ### What a view model may use
 
 - **May use:** Engine (models, verdicts, repositories), the Desktop service interfaces in `Services/`, CommunityToolkit.Mvvm, and `LiveChartsCore` (series and axes, not the WPF chart control).
-- **May not use:** `System.Windows.Controls`, `MessageBox`, `MainWindow`, `Application.Current` (or `App`), or a `Dispatcher`. A view model asks a service for these instead: dialogs, the clipboard, files, navigation, the theme and the UI thread (#182).
-- **The one exception today:** `PageViewModel.ShowError` formats the error with `MainWindow.FormatErrorStatus`, which #182 removes. `PageViewModel.Attach(PageShell)` is the bridge between the shell and the view model. The page calls it once.
+- **May not use:** `System.Windows.Controls`, `MessageBox`, `MainWindow`, `Application.Current` (or `App`), or a `Dispatcher`. A view model asks a service for these instead (see [Services for view models](#services-for-view-models)).
+- `PageViewModel.Attach(PageShell)` is the bridge between the shell and the view model. The page calls it once.
+
+### Services for view models
+
+Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wpf/` and fakes in `Desktop.Tests/Fakes/`:
+
+| Service | What it does | WPF implementation |
+|---|---|---|
+| `IDialogService` | `Confirm` (yes or no, No by default), `AskToSave` (yes, no or cancel), `Inform`, `Warn`, `Error`; opens the SQL script, query plan and Query Store query windows | `WpfDialogService`: message boxes and windows owned by the window in front (the active one, else the main window while shown) |
+| `IClipboard` | Copies text | `WpfClipboard`, through `Helpers/ClipboardHelper` (retries a busy clipboard) |
+| `IFileDialogs` | `Save` and `Open`, with a `FileDialogOptions`; null when cancelled | `WpfFileDialogs`: Windows' dialogs, owned as above |
+| `INavigator` | `GoToAsync(tag)` by `PageCatalog` tag, on a server (#141) or with a focus filter (#145); `InvestigateAsync(alert)`; `BackAsync`, `ForwardAsync` | `ShellNavigator`, through the main window's navigator (#139). An unknown tag throws; with no window it does nothing |
+| `IThemeService` | The current theme and `Changed`, for charts and brushes built in code | `WpfThemeService`, over the application's resources |
+| `IUiDispatcher` | `Post` and `InvokeAsync` on the UI thread, `IsOnUiThread` | `WpfUiDispatcher`, over the application's dispatcher |
+
+- **The composition root:** `Services/CompositionRoot` builds a `Microsoft.Extensions.DependencyInjection` container (from the ASP.NET Core shared framework the Engine brings) with these services, checked as it is built. `App.OnStartup` builds it before the main window opens. #166 adds settings, monitoring and the repositories to it.
+- **Until the page factory (#183):** a page that hands a service to its view model takes it as an optional constructor parameter, which a test fills with a fake, and falls back to `CompositionRoot.Get<T>()`. Controls, windows and helpers that WPF creates ask `CompositionRoot.Get<T>()` directly.
+- **A verdict action that opens a page** overrides `OnActionAsync` and returns the navigator's task; one that stays on the page overrides `OnAction`. Active Waits, Alerts, Perfmon, Top Waits, Wait Trend, Query Store and Query Regressions navigate this way.
+- Every message box in the app goes through `IDialogService`, and every save dialog through `IFileDialogs`. `ErrorStatus.Format` is the one-line error a verdict and the top bar show.
 
 ### Commands
 
@@ -323,13 +341,13 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 
 | Rule | Where | Today's offenders (allowlist) |
 |---|---|---|
-| A view model doesn't refer to `System.Windows.Controls`, `MessageBox`, `MainWindow`, `Application` or a `Dispatcher` | `ViewModels/**` | `ViewReferencesAllowed`: `PageViewModel` → `MainWindow` |
+| A view model doesn't refer to `System.Windows.Controls`, `MessageBox`, `MainWindow`, `Application` or a `Dispatcher` | `ViewModels/**` | `ViewReferencesAllowed`: none |
 | Page code doesn't use a repository | `Pages/**/*.cs` | `RepositoryReferencesAllowed`: 26 pages |
 | A page's XAML gains no `Click=` (comments aren't counted) | `Pages/**/*.xaml` | `ClicksAllowed`: 98 in 27 files |
-| `async void` only in event handlers | all of `Desktop/` | `AsyncVoidAllowed`: 12 in 11 files |
+| `async void` only in event handlers | all of `Desktop/` | `AsyncVoidAllowed`: 6 in 5 files |
 | One file per view model, named after its page | `ViewModels/**` | none |
 
-- A failure names the file and line, for example `Desktop/Pages/ActiveWaitsPage.xaml.cs:59: async void OpenProcesses isn't an event handler`.
+- A failure names the file and line, for example `Desktop/Pages/ProcessesPage.xaml.cs:43: async void OpenActiveWaits isn't an event handler`.
 - An allowlist may only shrink. An entry that no longer offends, or a count higher than the file's, fails too, so a PR that moves a page also takes it off the list.
 - A method or local function counts as an event handler when its class subscribes it with `+=` (or wraps it in `new …EventHandler(…)`), or when an event attribute in its XAML names it (`Click="Save_Click"`, but not `x:Name="Save"`). A lambda counts as one when it is subscribed with `+=`. Any other async lambda that becomes a delegate returning `void`, such as an `Action`, counts as `async void`.
 - The checks don't see the code that the XAML compiler and the MVVM Toolkit generate. Names that only that code defines stay unresolved, and no rule depends on them.
@@ -345,5 +363,6 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | LiveChartsCore.SkiaSharpView.WPF | 2.0.0-rc4.5 | Desktop | Charts |
 | System.Security.Cryptography.ProtectedData | 8.0.0 | Desktop | DPAPI |
 | CommunityToolkit.Mvvm | 8.4.2 | Desktop | View models: `ObservableObject`, `[ObservableProperty]`, `[RelayCommand]` |
+| Microsoft.Extensions.DependencyInjection | 8.0 (ASP.NET Core shared framework) | Desktop | The composition root (#182) |
 | xunit | 2.9.3 | Tests | Unit tests |
 | Microsoft.CodeAnalysis.CSharp | 4.14.0 | Desktop.Tests | The MVVM guard tests read the app's sources (#181) |

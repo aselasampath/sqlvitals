@@ -178,6 +178,6 @@ public partial class QueryStoreQueryWindow : Window
     private async void ViewPlan_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: QueryStorePlanSummary plan } btn)
-            await QueryStorePage.ShowPlanAsync(this, _repo, btn, plan.PlanId, _queryId, _details?.Query?.QueryText);
+            await QueryStorePage.ShowPlanAsync(_repo, btn, plan.PlanId, _queryId, _details?.Query?.QueryText);
     }
 }

@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
-using SqlVitals.Desktop.Windows;
+using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.ExecutionPlans;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -159,11 +159,7 @@ public sealed class SessionDetailsView : StackPanel
     {
         if (_loadedPlan?.PlanXml is not { } xml || _node is not { } node)
             return;
-        new QueryExecutionPlanWindow(xml, node.CommandText)
-        {
-            Owner = Window.GetWindow(this),
-            Title = $"Execution plan · session {node.SessionId}",
-        }.Show();
+        CompositionRoot.Get<IDialogService>().ShowQueryPlan(xml, node.CommandText, $"Execution plan · session {node.SessionId}");
     }
 
     private void ShowScript()
@@ -181,11 +177,10 @@ public sealed class SessionDetailsView : StackPanel
     {
         if (_node is not { } node)
             return;
-        new SqlScriptWindow($"KILL session {node.SessionId}",
-                            "Review before running. SqlVitals never runs it: KILL rolls back the session's open transaction, which can take as long as the work did.",
-                            SessionDetails.KillScript(node, _snapshot), $"kill-session-{node.SessionId}.sql")
-        {
-            Owner = Window.GetWindow(this),
-        }.Show();
+        // Beside the drawer, not over it: the session stays in view while the script is read.
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
+            $"KILL session {node.SessionId}",
+            "Review before running. SqlVitals never runs it: KILL rolls back the session's open transaction, which can take as long as the work did.",
+            SessionDetails.KillScript(node, _snapshot), $"kill-session-{node.SessionId}.sql"), modal: false);
     }
 }

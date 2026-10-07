@@ -6,7 +6,6 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -69,13 +68,6 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, ID
         ShowRegression(worst, open: true);
     }
 
-    // The verdict's Open query: Query Store on that query (#145).
-    private async void OpenQuery(long id)
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenLinkAsync("QueryStore", new FocusFilter(FocusKind.Query, id), "Query Regressions");
-    }
-
     // The page template's verdict (#149): the queries that got slower, the worst first.
     internal QueryRegressionsViewModel ViewModel { get; }
 
@@ -97,6 +89,8 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, ID
     private readonly IWaitStatsRepository      _repo;
     private readonly ConnectionHistory?        _history;
     private readonly ConnectionSettingsService _settings;
+    private readonly INavigator                _navigator;
+    private readonly IDialogService            _dialogs = CompositionRoot.Get<IDialogService>();
 
     private RegressionCriteria _criteria;
 
@@ -109,11 +103,14 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, ID
     // Where the rows on screen came from, which decides where the plan buttons look.
     private bool _shownFromQueryStore;
 
-    public QueryRegressionsPage(IWaitStatsRepository repo, ConnectionHistory? history, ConnectionSettingsService settings)
+    /// <param name="navigator">Where a query_id goes; the app's (#182) when null.</param>
+    public QueryRegressionsPage(IWaitStatsRepository repo, ConnectionHistory? history, ConnectionSettingsService settings,
+                                INavigator? navigator = null)
     {
-        _repo     = repo;
-        _history  = history;
-        _settings = settings;
+        _repo      = repo;
+        _history   = history;
+        _settings  = settings;
+        _navigator = navigator ?? CompositionRoot.Get<INavigator>();
         InitializeComponent();
 
         foreach (var recent in RegressionWindows.RecentChoices)
@@ -133,7 +130,7 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, ID
         TxtMinExecutions.Text = _criteria.MinExecutions.ToString("N0", CultureInfo.CurrentCulture);
 
         DrawerParts.FollowSelection(RegressionsGrid, ShowRegression);
-        ViewModel = new QueryRegressionsViewModel(showPlans: ShowWorst, openQuery: OpenQuery);
+        ViewModel = new QueryRegressionsViewModel(showPlans: ShowWorst, _navigator);
         ViewModel.Attach(Shell);
         Shell.Folds = settings;
 
@@ -331,9 +328,9 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, ID
         DependencyObject? cell = text;
         while (cell is not null and not DataGridCell)
             cell = System.Windows.Media.VisualTreeHelper.GetParent(cell);
-        if ((cell as DataGridCell)?.Column != QueryColumn || Window.GetWindow(this) is not MainWindow main)
+        if ((cell as DataGridCell)?.Column != QueryColumn)
             return;
-        await main.OpenLinkAsync("QueryStore", new FocusFilter(FocusKind.Query, id), "Query Regressions");
+        await _navigator.GoToAsync("QueryStore", new FocusFilter(FocusKind.Query, id), "Query Regressions");
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -404,16 +401,11 @@ public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, ID
                 which   = "in the plan cache now";
             }
 
-            new QueryExecutionPlanWindow(planXml, r.QueryText)
-            {
-                Owner = Window.GetWindow(this),
-                Title = $"Execution plan {which} · query {r.QueryKey}",
-            }.Show();
+            _dialogs.ShowQueryPlan(planXml, r.QueryText, $"Execution plan {which} · query {r.QueryKey}");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to retrieve execution plan:\n{ConnectionSettingsService.RedactSecrets(ex.Message)}",
-                "Plan Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn($"Failed to retrieve execution plan:\n{ConnectionSettingsService.RedactSecrets(ex.Message)}", "Plan Error");
         }
         finally
         {

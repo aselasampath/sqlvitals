@@ -25,7 +25,8 @@ public partial class ActiveWaitsPage : System.Windows.Controls.Page, IRefreshabl
     private List<ActiveWait>? _waits;
 
     /// <param name="settings">Where the verdict's fold is remembered, and the blocking threshold; none in some tests.</param>
-    public ActiveWaitsPage(IWaitStatsRepository repo, ConnectionSettingsService? settings = null)
+    /// <param name="navigator">Where the verdict's Processes goes; the app's (#182) when null.</param>
+    public ActiveWaitsPage(IWaitStatsRepository repo, ConnectionSettingsService? settings = null, INavigator? navigator = null)
     {
         _repo = repo;
         InitializeComponent();
@@ -35,7 +36,7 @@ public partial class ActiveWaitsPage : System.Windows.Controls.Page, IRefreshabl
             var store = settings.Load();
             _blocking = (store.Active is { } active ? store.ThresholdsFor(active) : store.HealthThresholds).Get(HealthIndicator.Blocking);
         }
-        ViewModel = new ActiveWaitsViewModel(openProcesses: _ => OpenProcesses());
+        ViewModel = new ActiveWaitsViewModel(navigator ?? CompositionRoot.Get<INavigator>());
         ViewModel.Attach(Shell);
         Shell.Folds = settings;
     }
@@ -53,13 +54,6 @@ public partial class ActiveWaitsPage : System.Windows.Controls.Page, IRefreshabl
         }
         ViewModel.Show(_waits, _blocking);
         ShowWaits();
-    }
-
-    // Processes on the chain waiting longest (#145).
-    private async void OpenProcesses()
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenLinkAsync("Processes", new FocusFilter(FocusKind.BlockingChain), "Active Waits");
     }
 
     public void ShowFocus(PageFocus focus)

@@ -5,7 +5,7 @@ using SkiaSharp;
 namespace SqlVitals.Desktop.Helpers;
 
 // Reads chart colours from whatever theme dictionary is currently merged into
-// Application.Current.Resources (see App.ToggleTheme), so LiveChartsCore axis/grid
+// Application.Current.Resources (see IThemeService), so LiveChartsCore axis/grid
 // paint stays legible whether the app is in dark or light mode.
 public static class ChartTheme
 {

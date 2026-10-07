@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.ExecutionPlans;
 using SqlVitals.Engine.Monitoring;
 
@@ -173,11 +172,7 @@ public sealed class RowDetailsView : StackPanel
         {
             if (!_loaded && !await LoadAsync())
                 return;
-            new QueryExecutionPlanWindow(_xml, _owner._queryText)
-            {
-                Owner = Window.GetWindow(_owner),
-                Title = _plan.WindowTitle,
-            }.Show();
+            CompositionRoot.Get<IDialogService>().ShowQueryPlan(_xml, _owner._queryText, _plan.WindowTitle);
         }
 
         private async Task<bool> LoadAsync()

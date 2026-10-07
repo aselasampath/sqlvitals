@@ -11,8 +11,6 @@ public partial class App : System.Windows.Application
     // Held for the life of the process; Windows releases it when the process ends.
     private static System.Threading.Mutex? _instanceMutex;
 
-    public bool IsDarkTheme { get; private set; } = false;
-
     /// <summary>
     /// Set when SqlVitals is really quitting (Exit in the tray menu, Windows signing out or
     /// shutting down), so closing the window doesn't just hide it to the tray.
@@ -46,6 +44,9 @@ public partial class App : System.Windows.Application
 
         SessionEnding += (_, _) => IsExiting = true;
 
+        // The services view models ask for (#182), before anything asks.
+        Services.CompositionRoot.Start();
+
         Services.AppLog.DeleteExpiredFiles();
         DispatcherUnhandledException += OnDispatcherUnhandledException;
 
@@ -71,19 +72,9 @@ public partial class App : System.Windows.Application
         System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         Services.AppLog.Error("Unhandled exception", e.Exception);
-        System.Windows.MessageBox.Show(
+        Services.CompositionRoot.Get<Services.IDialogService>().Error(
             $"An unexpected error occurred:\n\n{Services.ConnectionSettingsService.RedactSecrets(e.Exception.Message)}",
-            "SqlVitals", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            "SqlVitals");
         e.Handled = true;
-    }
-
-    public void ToggleTheme()
-    {
-        IsDarkTheme = !IsDarkTheme;
-        var uri = new System.Uri(IsDarkTheme
-            ? "pack://application:,,,/Styles/DarkTheme.xaml"
-            : "pack://application:,,,/Styles/LightTheme.xaml");
-        Resources.MergedDictionaries.Clear();
-        Resources.MergedDictionaries.Add(new System.Windows.ResourceDictionary { Source = uri });
     }
 }

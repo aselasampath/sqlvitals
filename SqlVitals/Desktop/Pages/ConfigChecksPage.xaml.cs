@@ -5,7 +5,6 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.ConfigChecks;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -208,15 +207,12 @@ public partial class ConfigChecksPage : Page, IRefreshable, IPageContext, IDetai
         if (_checks?.FixScript(_serverName, DateTime.Now) is not { } script) return;
 
         var fixes = _checks.Checks.Count(c => c.IsWarning && c.FixScript is not null);
-        new SqlScriptWindow(
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
             "Configuration Fixes",
             $"Review before running. {fixes:N0} change{(fixes == 1 ? "" : "s")}, one per warning. Server settings take effect at " +
             "RECONFIGURE; a compatibility level change can change query plans, so turn Query Store on first. " +
             "SqlVitals does not run this script.",
             script,
-            $"ConfigurationFixes_{DateTime.Now:yyyyMMdd_HHmm}.sql")
-        {
-            Owner = Window.GetWindow(this)
-        }.ShowDialog();
+            $"ConfigurationFixes_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 }
