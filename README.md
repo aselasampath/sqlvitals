@@ -124,7 +124,7 @@ Needs Windows 10/11 and the [.NET 10 SDK](https://dotnet.microsoft.com/download)
 ```powershell
 git clone https://github.com/aselasampath/sqlvitals.git
 cd sqlvitals
-dotnet build SqlVitalsDashboard.slnx
+dotnet build SqlVitals.slnx
 dotnet test
 dotnet run --project SqlVitals\Desktop
 ```

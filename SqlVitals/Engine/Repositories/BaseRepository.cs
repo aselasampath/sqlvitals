@@ -2,6 +2,7 @@ using System.Data;
 using System.Runtime.CompilerServices;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 
 namespace SqlVitals.Engine.Repositories;

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace SqlVitals.Engine.ChatNotifications;
@@ -22,6 +23,7 @@ public sealed record ChannelStatus(DateTime? LastPostedUtc, DateTime? FailingSin
     public bool IsFailing => FailingSinceUtc is not null;
 
     /// <summary>A message (or a test message) reached the channel: no longer failing.</summary>
+    [SuppressMessage("Performance", "CA1822", Justification = "A transition from this status, read like Failed: status.Posted(now)")]
     public ChannelStatus Posted(DateTime utc) => new(utc);
 
     /// <summary>

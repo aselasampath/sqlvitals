@@ -1,6 +1,7 @@
 using System.Data;
 using System.Globalization;
 using Dapper;
+using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;

@@ -10,7 +10,7 @@
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.67.2</Version>
+    <Version>0.68.0</Version>
     <!-- The name Windows shows on notifications and in Task Manager. -->
     <AssemblyTitle>SqlVitals</AssemblyTitle>
     <Product>SqlVitals</Product>
@@ -37,7 +37,7 @@
     <InternalsVisibleTo Include="SqlVitals.Desktop.Tests" />
   </ItemGroup>
 
-  <!-- Reuse models + repository directly — no HTTP, no Kestrel -->
+  <!-- Models, repositories and the rest of the logic -->
   <ItemGroup>
     <ProjectReference Include="..\Engine\SqlVitals.Engine.csproj" />
   </ItemGroup>
@@ -46,14 +46,14 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.5" />
+    <!-- appsettings.json under the saved connection (RepositoryFactory), and the service container. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>
 
-  <!-- Copy appsettings.json beside the exe -->
+  <!-- Defaults the repositories read (RepositoryFactory); copied beside the exe. -->
   <ItemGroup>
-    <None Update="..\Engine\appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>appsettings.json</Link>
-    </None>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
