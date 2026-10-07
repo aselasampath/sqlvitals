@@ -2,7 +2,6 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
-using Microsoft.Win32;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Export;
 
@@ -73,26 +72,23 @@ public static class DataGridExport
     /// <summary>Exports every row in the grid's current sort order, whatever is selected, asking where.</summary>
     internal static void ExportCsv(DataGrid grid)
     {
-        var dialog = new SaveFileDialog
+        var path = CompositionRoot.Get<IFileDialogs>().Save(new FileDialogOptions("Export to CSV", "CSV files (*.csv)|*.csv|All files (*.*)|*.*")
         {
-            Title      = "Export to CSV",
-            Filter     = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
             DefaultExt = ".csv",
             FileName   = $"SqlVitals-{(string.IsNullOrEmpty(grid.Name) ? "Grid" : grid.Name)}-{DateTime.Now:yyyyMMdd-HHmmss}.csv",
-        };
-        if (dialog.ShowDialog(Window.GetWindow(grid)) != true) return;
+        });
+        if (path is null) return;
 
         try
         {
             var columns = ExportColumns(grid);
             var csv = DelimitedText.ToCsv(Headers(columns), Rows(DataItems(grid).ToList(), columns));
-            File.WriteAllText(dialog.FileName, csv, DelimitedText.CsvEncoding);
+            File.WriteAllText(path, csv, DelimitedText.CsvEncoding);
         }
         catch (Exception ex)
         {
-            AppLog.Error($"Export to CSV failed: {dialog.FileName}", ex);
-            MessageBox.Show($"Could not export to CSV:\n{ex.Message}",
-                "Export Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            AppLog.Error($"Export to CSV failed: {path}", ex);
+            CompositionRoot.Get<IDialogService>().Warn($"Could not export to CSV:\n{ex.Message}", "Export Failed");
         }
     }
 

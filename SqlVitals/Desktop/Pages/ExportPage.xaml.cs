@@ -5,7 +5,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
-using Microsoft.Win32;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Verdicts;
 using SqlVitals.Desktop.Services;
@@ -39,6 +38,8 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
     public PageKind Kind => PageKind.None;
 
     private readonly ExportService                    _svc;
+    private readonly IDialogService                   _dialogs = CompositionRoot.Get<IDialogService>();
+    private readonly IFileDialogs                     _files   = CompositionRoot.Get<IFileDialogs>();
     private readonly ObservableCollection<ExportGroupItem> _items = [];
 
     // Friendly one-line descriptions for each group
@@ -149,18 +150,16 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
 
     private void BtnBrowse_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new SaveFileDialog
+        var path = _files.Save(new FileDialogOptions("Choose export file location", "Text files (*.txt)|*.txt|All files (*.*)|*.*")
         {
-            Title            = "Choose export file location",
-            Filter           = "Text files (*.txt)|*.txt|All files (*.*)|*.*",
             DefaultExt       = ".txt",
             FileName         = TxtFileName.Text.Trim(),
             InitialDirectory = TxtFilePath.Text.Trim(),
-        };
-        if (dlg.ShowDialog() == true)
+        });
+        if (path is not null)
         {
-            TxtFilePath.Text = Path.GetDirectoryName(dlg.FileName) ?? "";
-            TxtFileName.Text = Path.GetFileName(dlg.FileName);
+            TxtFilePath.Text = Path.GetDirectoryName(path) ?? "";
+            TxtFileName.Text = Path.GetFileName(path);
         }
     }
 
@@ -199,16 +198,14 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
 
         if (path is null)
         {
-            MessageBox.Show("Please enter a valid folder and filename.",
-                            "Missing path", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn("Please enter a valid folder and filename.", "Missing path");
             return;
         }
 
         var selected = _items.Where(i => i.IsChecked).Select(i => i.Name).ToList();
         if (selected.Count == 0)
         {
-            MessageBox.Show("Please select at least one counter group.",
-                            "Nothing selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn("Please select at least one counter group.", "Nothing selected");
             return;
         }
 
@@ -220,8 +217,7 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Cannot create directory:\n{ex.Message}",
-                            "Path error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"Cannot create directory:\n{ex.Message}", "Path error");
             return;
         }
 
@@ -261,8 +257,7 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
             TxtExportStatus.Text = $"✗  Export failed: {ex.Message}";
             _last = new ExportOutcome(path, selected.Count, 0, sw.Elapsed, ex.Message);
             UpdateVerdict();
-            MessageBox.Show($"Export failed:\n\n{ex.Message}",
-                            "Export error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"Export failed:\n\n{ex.Message}", "Export error");
         }
         finally
         {

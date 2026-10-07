@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
@@ -94,13 +93,10 @@ public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefres
                 : "with default sampling.") +
             " Plans that use them recompile on their next run. SqlVitals does not run this script.";
 
-        new SqlScriptWindow(
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
             "Update Statistics",
             notice,
             UpdateStatisticsScript.Build(statistics, sampling, DateTime.Now),
-            $"UpdateStatistics_{DateTime.Now:yyyyMMdd_HHmm}.sql")
-        {
-            Owner = Window.GetWindow(this)
-        }.ShowDialog();
+            $"UpdateStatistics_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 }

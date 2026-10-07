@@ -58,6 +58,9 @@ public partial class MainWindow : Window
     private int _loadVersion;
 
 
+    // Messages and the app's windows (#182).
+    private readonly IDialogService _dialogs = CompositionRoot.Get<IDialogService>();
+
     // Background live-metrics collection for the active and every monitored connection.
     internal readonly MonitoringManager Monitoring = new();
 
@@ -753,10 +756,7 @@ public partial class MainWindow : Window
     }
 
     // Returns a compact one-line status bar string, e.g. "Error [WaitStatsRepository.GetCumulativeWaitsAsync]: Timeout"
-    internal static string FormatErrorStatus(Exception ex) =>
-        ConnectionSettingsService.RedactSecrets(ex is WaitStatsException wse
-            ? $"Error [{wse.ErrorTag}]: {ex.InnerException?.Message ?? ex.Message}"
-            : $"Error: {ex.Message}");
+    internal static string FormatErrorStatus(Exception ex) => ErrorStatus.Format(ex);
 
     // Timer-driven page refreshes report here rather than through a MessageBox, which would
     // pop up again on every tick while the server stays unreachable. The details go to the
@@ -839,12 +839,8 @@ public partial class MainWindow : Window
         return page;
     }
 
-    private AlertsPage CreateAlertsPage(Guid? connectionId)
-    {
-        var page = new AlertsPage(Monitoring, SettingsService, connectionId);
-        page.InvestigateRequested += async alert => await OpenEvidenceAsync(alert, ActivitySources.AlertsPage);
-        return page;
-    }
+    // Investigate goes through the navigator (#182), to OpenEvidenceAsync.
+    private AlertsPage CreateAlertsPage(Guid? connectionId) => new(Monitoring, SettingsService, connectionId);
 
     // ── An alert's evidence (#145) ────────────────────────────────────────────
 
@@ -853,7 +849,7 @@ public partial class MainWindow : Window
     /// time, through the navigator so Back returns. The alert as it stands now: one a notification
     /// was about may have ended since. A deleted connection's alert has no server: Alerts instead.
     /// </summary>
-    private async System.Threading.Tasks.Task OpenEvidenceAsync(Alert alert, string source)
+    internal async System.Threading.Tasks.Task OpenEvidenceAsync(Alert alert, string source)
     {
         if (Item(alert.ConnectionId) is null)
         {
@@ -941,8 +937,9 @@ public partial class MainWindow : Window
         return page;
     }
 
-    /// <summary>Opens another page, as its sidebar button would; for links between pages.</summary>
-    internal System.Threading.Tasks.Task OpenPageAsync(string tag) => NavigateTo(tag);
+    /// <summary>Opens another page, as its sidebar button would; for links between pages (<see cref="INavigator"/>).</summary>
+    /// <param name="serverId">The server a page is about; null for the active connection.</param>
+    internal System.Threading.Tasks.Task OpenPageAsync(string tag, Guid? serverId = null) => NavigateTo(tag, serverId: serverId);
 
     // ── Quick switcher (#144) ─────────────────────────────────────────────────
 
@@ -1166,7 +1163,7 @@ public partial class MainWindow : Window
     /// Back or Forward to the nearest route still available, switching to its connection first
     /// when it's another server's page. Routes skipped on the way are dropped from the history.
     /// </summary>
-    private async System.Threading.Tasks.Task GoAsync(bool back)
+    internal async System.Threading.Tasks.Task GoAsync(bool back)
     {
         if (_historyMovePending)
             return;
@@ -1361,9 +1358,9 @@ public partial class MainWindow : Window
                 return;
 
             Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
-            MessageBox.Show(
+            _dialogs.Warn(
                 FormatErrorDetail(ex) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
-                "Data Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "Data Error");
         }
         finally
         {

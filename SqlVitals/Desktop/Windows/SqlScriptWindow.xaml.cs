@@ -1,7 +1,7 @@
 using System.IO;
 using System.Windows;
-using Microsoft.Win32;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Windows;
 
@@ -27,24 +27,17 @@ public partial class SqlScriptWindow : Window
 
     private void BtnSave_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new SaveFileDialog
-        {
-            Title = "Save SQL Script",
-            Filter = "SQL Script (*.sql)|*.sql|All Files (*.*)|*.*",
-            FileName = _defaultFileName
-        };
-
-        if (dlg.ShowDialog(this) != true) return;
+        var path = CompositionRoot.Get<IFileDialogs>().Save(new FileDialogOptions(
+            "Save SQL Script", "SQL Script (*.sql)|*.sql|All Files (*.*)|*.*") { FileName = _defaultFileName });
+        if (path is null) return;
 
         try
         {
-            File.WriteAllText(dlg.FileName, _script, System.Text.Encoding.UTF8);
+            File.WriteAllText(path, _script, System.Text.Encoding.UTF8);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"Failed to save the file:\n{ex.Message}",
-                "Save Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            CompositionRoot.Get<IDialogService>().Error($"Failed to save the file:\n{ex.Message}", "Save Failed");
         }
     }
 

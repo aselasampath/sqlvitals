@@ -4,7 +4,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
@@ -196,14 +195,11 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             $"Review before running. {suggestions.Count:N0} index(es) will be created. " +
             "SQL Server does not check these suggestions against your existing indexes, and every new index slows writes. SqlVitals does not run this script.";
 
-        new SqlScriptWindow(
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
             "Create Missing Indexes",
             notice,
             MissingIndexCreateScript.Build(suggestions, DateTime.Now),
-            $"CreateMissingIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql")
-        {
-            Owner = Window.GetWindow(this)
-        }.ShowDialog();
+            $"CreateMissingIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 
     private void UnusedGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateDropScriptButton();
@@ -234,14 +230,11 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             (uniqueCount > 0 ? $"; {uniqueCount:N0} unique index(es) are commented out" : "") +
             ". Usage stats reset on every SQL Server restart — confirm the uptime in the script covers a full business cycle. SqlVitals does not run this script.";
 
-        new SqlScriptWindow(
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
             "Drop Unused Indexes",
             notice,
             UnusedIndexDropScript.Build(indexes, DateTime.Now),
-            $"DropUnusedIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql")
-        {
-            Owner = Window.GetWindow(this)
-        }.ShowDialog();
+            $"DropUnusedIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 
     private void FragGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateMaintenanceScriptButton();
@@ -288,14 +281,11 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshabl
             (options.OnlineRebuild ? ", rebuilds using ONLINE = ON" : "") +
             ". A rebuild without ONLINE = ON locks the table for the whole operation — run this in a maintenance window. SqlVitals does not run this script.";
 
-        new SqlScriptWindow(
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
             "Index Maintenance",
             notice,
             IndexMaintenanceScript.Build(indexes, options, DateTime.Now),
-            $"IndexMaintenance_{DateTime.Now:yyyyMMdd_HHmm}.sql")
-        {
-            Owner = Window.GetWindow(this)
-        }.ShowDialog();
+            $"IndexMaintenance_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 
     /// <summary>

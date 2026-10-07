@@ -220,7 +220,9 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     internal PerfmonViewModel ViewModel { get; }
 
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null)
+    /// <param name="navigator">Where the verdict's cause goes; the app's (#182) when null.</param>
+    public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null,
+                       INavigator? navigator = null)
     {
         _repo    = repo;
         _history = history;
@@ -228,7 +230,7 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
             _baseline = new BaselineTracker<CounterHistoryBucket>(history, (reader, id, from, to, bucket) => reader.ReadCounters(id, from, to, bucket));
 
         // Before the controls: picking the first group of counters below judges them already.
-        ViewModel = new PerfmonViewModel(openPage: OpenPage);
+        ViewModel = new PerfmonViewModel(navigator ?? CompositionRoot.Get<INavigator>());
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _statusMain = TxtStatus.Text;
@@ -245,12 +247,6 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         UpdateVerdict();
-    }
-
-    private async void OpenPage(string tag)
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenPageAsync(tag);
     }
 
     // The counters ticked, as the chart draws them, judged against their well-known limits. Before

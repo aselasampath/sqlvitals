@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Helpers;
 
@@ -30,18 +31,15 @@ internal static class ClipboardHelper
             {
                 if (attempt == MaxRetries - 1)
                 {
-                    MessageBox.Show(
-                        "Could not open the clipboard — another application is holding it.\nPlease try again.",
-                        "Copy Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    CompositionRoot.Get<IDialogService>().Warn(
+                        "Could not open the clipboard — another application is holding it.\nPlease try again.", "Copy Failed");
                     return;
                 }
                 System.Threading.Thread.Sleep(RetryDelayMs);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"Failed to copy to clipboard:\n{ex.Message}",
-                    "Copy Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                CompositionRoot.Get<IDialogService>().Warn($"Failed to copy to clipboard:\n{ex.Message}", "Copy Failed");
                 return;
             }
         }

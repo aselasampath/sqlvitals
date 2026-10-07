@@ -66,9 +66,15 @@ public partial class SettingsPage : Page, IPageContext
     public event Action<SettingsCategory>? CategoryShown;
 
     /// <summary>Asks the user; tests answer instead of a message box.</summary>
-    internal Ask Prompt { get; set; } = (text, caption, buttons, icon) =>
-        MessageBox.Show(text, caption, buttons, icon,
-                        buttons == MessageBoxButton.YesNoCancel ? MessageBoxResult.Cancel : MessageBoxResult.No);
+    internal Ask Prompt { get; set; } = (text, caption, buttons, _) =>
+        buttons == MessageBoxButton.YesNoCancel
+            ? CompositionRoot.Get<IDialogService>().AskToSave(text, caption) switch
+              {
+                  DialogAnswer.Yes => MessageBoxResult.Yes,
+                  DialogAnswer.No  => MessageBoxResult.No,
+                  _                => MessageBoxResult.Cancel,
+              }
+            : CompositionRoot.Get<IDialogService>().Confirm(text, caption) ? MessageBoxResult.Yes : MessageBoxResult.No;
 
     /// <summary>The category on screen.</summary>
     public SettingsCategory Category => _category;

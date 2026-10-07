@@ -1,10 +1,12 @@
+using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Alerts' verdict (#150): the active alerts, the worst first, and whether alerts are raised at all.</summary>
-public sealed class AlertsViewModel(Action<Alert> investigate, Action activeOnly) : PageViewModel
+public sealed class AlertsViewModel(INavigator navigator, Action activeOnly) : PageViewModel
 {
     private Alert? _worst;
 
@@ -15,12 +17,13 @@ public sealed class AlertsViewModel(Action<Alert> investigate, Action activeOnly
         _worst  = AlertsVerdict.Worst(alerts)?.Alert;
     }
 
-    protected override void OnAction(VerdictAction action)
+    protected override Task OnActionAsync(VerdictAction action)
     {
         switch (action.Key)
         {
-            case AlertsVerdict.Investigate when _worst is { } alert: investigate(alert); break;
-            case AlertsVerdict.ActiveOnly:                           activeOnly();       break;
+            case AlertsVerdict.Investigate when _worst is { } alert: return navigator.InvestigateAsync(alert, ActivitySources.AlertsPage);
+            case AlertsVerdict.ActiveOnly:                           activeOnly(); break;
         }
+        return Task.CompletedTask;
     }
 }

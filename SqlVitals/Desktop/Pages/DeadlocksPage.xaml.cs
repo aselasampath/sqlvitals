@@ -3,7 +3,6 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Microsoft.Win32;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -262,25 +261,24 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
     {
         if (Selected is not { } report) return;
 
-        var dlg = new SaveFileDialog
+        var path = CompositionRoot.Get<IFileDialogs>().Save(new FileDialogOptions(
+            "Save Deadlock Graph", "Deadlock graph (*.xdl)|*.xdl|XML file (*.xml)|*.xml")
         {
-            Title    = "Save Deadlock Graph",
-            Filter   = "Deadlock graph (*.xdl)|*.xdl|XML file (*.xml)|*.xml",
             FileName = $"Deadlock_{report.Time:yyyyMMdd_HHmmss}",
-        };
-        if (dlg.ShowDialog() != true) return;
+        });
+        if (path is null) return;
 
+        var dialogs = CompositionRoot.Get<IDialogService>();
         try
         {
-            File.WriteAllText(dlg.FileName, report.Xml, Encoding.UTF8);
-            MessageBox.Show(
+            File.WriteAllText(path, report.Xml, Encoding.UTF8);
+            dialogs.Inform(
                 "Deadlock graph saved.\nOpen it in SSMS (File → Open → File…) to see the processes and resources drawn as a graph.",
-                "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                "Saved");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to save the file:\n{ex.Message}",
-                "Save Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            dialogs.Error($"Failed to save the file:\n{ex.Message}", "Save Failed");
         }
     }
 

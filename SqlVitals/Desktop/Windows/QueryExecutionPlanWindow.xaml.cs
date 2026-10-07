@@ -2,8 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Xml.Linq;
-using Microsoft.Win32;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.ExecutionPlans;
 
 namespace SqlVitals.Desktop.Windows;
@@ -14,6 +14,8 @@ public partial class QueryExecutionPlanWindow : Window
         "No execution plan available — the plan may have been evicted from cache.";
 
     private readonly string? _planXml;
+    private readonly IDialogService _dialogs = CompositionRoot.Get<IDialogService>();
+    private readonly IFileDialogs   _files   = CompositionRoot.Get<IFileDialogs>();
     private bool _xmlShown;
 
     public QueryExecutionPlanWindow(string? planXml, string? queryText)
@@ -60,27 +62,19 @@ public partial class QueryExecutionPlanWindow : Window
     {
         if (!PlanView.HasDiagram) return;
 
-        var dlg = new SaveFileDialog
-        {
-            Title = "Export Execution Plan Diagram",
-            Filter = "PNG image (*.png)|*.png",
-            FileName = "ExecutionPlan"
-        };
-
-        if (dlg.ShowDialog() != true) return;
+        var path = _files.Save(new FileDialogOptions("Export Execution Plan Diagram", "PNG image (*.png)|*.png") { FileName = "ExecutionPlan" });
+        if (path is null) return;
 
         try
         {
             // Rendering needs the diagram laid out, which it isn't while the XML tab shows.
             GraphicalTab.IsSelected = true;
             PlanView.UpdateLayout();
-            PlanView.ExportPng(dlg.FileName);
+            PlanView.ExportPng(path);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"Failed to export the diagram:\n{ex.Message}",
-                "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"Failed to export the diagram:\n{ex.Message}", "Export Failed");
         }
     }
 
@@ -94,27 +88,18 @@ public partial class QueryExecutionPlanWindow : Window
     {
         if (string.IsNullOrWhiteSpace(_planXml)) return;
 
-        var dlg = new SaveFileDialog
-        {
-            Title = "Save Execution Plan",
-            Filter = "SQL Server Execution Plan (*.sqlplan)|*.sqlplan|XML File (*.xml)|*.xml",
-            FileName = "ExecutionPlan"
-        };
-
-        if (dlg.ShowDialog() != true) return;
+        var path = _files.Save(new FileDialogOptions(
+            "Save Execution Plan", "SQL Server Execution Plan (*.sqlplan)|*.sqlplan|XML File (*.xml)|*.xml") { FileName = "ExecutionPlan" });
+        if (path is null) return;
 
         try
         {
-            File.WriteAllText(dlg.FileName, _planXml, System.Text.Encoding.UTF8);
-            MessageBox.Show(
-                "Plan saved successfully.\nIt can also be opened in SSMS or Azure Data Studio.",
-                "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            File.WriteAllText(path, _planXml, System.Text.Encoding.UTF8);
+            _dialogs.Inform("Plan saved successfully.\nIt can also be opened in SSMS or Azure Data Studio.", "Saved");
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"Failed to save the file:\n{ex.Message}",
-                "Save Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"Failed to save the file:\n{ex.Message}", "Save Failed");
         }
     }
 

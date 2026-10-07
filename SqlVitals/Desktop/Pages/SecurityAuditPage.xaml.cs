@@ -5,7 +5,6 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Security;
@@ -221,14 +220,11 @@ public partial class SecurityAuditPage : Page, IRefreshable, IPageContext, IDeta
         if (_findings?.FixScript(_serverName, DateTime.Now) is not { } script) return;
 
         var fixes = _findings.Findings.Count(f => f.IsRisk && f.FixScript is not null);
-        new SqlScriptWindow(
+        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
             "Security Fixes",
             $"Review before running. {fixes:N0} change{(fixes == 1 ? "" : "s")}, one per risk. Removing access can stop an " +
             "application or a person from working, so check first who uses each login. SqlVitals does not run this script.",
             script,
-            $"SecurityFixes_{DateTime.Now:yyyyMMdd_HHmm}.sql")
-        {
-            Owner = Window.GetWindow(this)
-        }.ShowDialog();
+            $"SecurityFixes_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 }

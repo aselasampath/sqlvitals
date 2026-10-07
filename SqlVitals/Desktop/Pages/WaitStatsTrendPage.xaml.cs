@@ -119,7 +119,9 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
 
     // ── constructor ───────────────────────────────────────────────────────────
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null)
+    /// <param name="navigator">Where the verdict's Top Waits goes; the app's (#182) when null.</param>
+    public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null,
+                              INavigator? navigator = null)
     {
         _repo    = repo;
         _history = history;
@@ -130,16 +132,10 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         _statusMain  = TxtStatus.Text;
         _timer.Tick += Timer_Tick;
 
-        ViewModel = new WaitStatsTrendViewModel(openTopWaits: OpenTopWaits);
+        ViewModel = new WaitStatsTrendViewModel(navigator ?? CompositionRoot.Get<INavigator>());
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         UpdateVerdict();
-    }
-
-    private async void OpenTopWaits()
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenPageAsync("TopWaits");
     }
 
     // ── verdict ───────────────────────────────────────────────────────────────
