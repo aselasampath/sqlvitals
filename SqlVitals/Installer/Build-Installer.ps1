@@ -4,7 +4,7 @@
     and the portable zip:   artifacts\SqlVitals-<version>-win-x64-portable.zip
 
 .DESCRIPTION
-    1. Publishes SqlVitals.Desktop self-contained for win-x64 (the .NET 8 runtime is bundled,
+    1. Publishes SqlVitals.Desktop self-contained for win-x64 (the .NET 10 runtime is bundled,
        so users don't install anything else).
     2. Zips the published app into a SqlVitals-<version> folder for users who don't want to run
        Setup: unzip anywhere and run SqlVitals.Desktop.exe.

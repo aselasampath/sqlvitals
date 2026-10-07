@@ -47,7 +47,7 @@ public sealed class RequirementInput
 
 public static class SystemRequirements
 {
-    // .NET 8 (bundled with the app) supports Windows 10 1607 (build 14393) and later.
+    // .NET 10 (bundled with the app) supports Windows 10 1607 (build 14393) and later.
     internal const int MinimumWindowsBuild = 14393;
 
     public static IReadOnlyList<RequirementResult> Evaluate(RequirementInput input) => new[]
@@ -101,7 +101,7 @@ public static class SystemRequirements
                 "Download SqlVitals Setup again from your official SqlVitals release page and run the new copy.");
     }
 
-    /// <summary>The .NET 8 runtime ships inside the package, so the user never installs it separately.</summary>
+    /// <summary>The .NET 10 runtime ships inside the package, so the user never installs it separately.</summary>
     internal static RequirementResult CheckRuntime(PayloadManifest? manifest)
     {
         const string name = ".NET runtime";
@@ -115,7 +115,7 @@ public static class SystemRequirements
         return bundled
             ? new RequirementResult(name, CheckStatus.Passed, "Included with SqlVitals — nothing extra to install.")
             : new RequirementResult(name, CheckStatus.Failed,
-                "This package doesn't include the .NET 8 desktop runtime SqlVitals needs.",
+                "This package doesn't include the .NET 10 desktop runtime SqlVitals needs.",
                 "This Setup was built incorrectly. Download the official SqlVitals Setup and run it instead.");
     }
 

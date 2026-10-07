@@ -4,10 +4,10 @@
 
 ## Prerequisites
 
-- **.NET SDK 9.0.200 or later** (.NET 10 works too). The projects target .NET 8, but the `.slnx` solution format needs a 9.0.200+ SDK. With only the .NET 8 SDK, build projects one by one, as CI does: `dotnet build SqlVitals\Desktop`.
+- **.NET 10 SDK**. The app, Engine and their tests target .NET 10 (#163); CI builds with the 10.0 SDK.
 - **Windows 10/11**. WPF is Windows-only, and the Installer tests run on .NET Framework 4.7.2.
 - A SQL Server or Azure SQL to point at, with `VIEW SERVER STATE` / `VIEW DATABASE STATE`.
-- Optional: **Visual Studio 2022 17.14+** (for `.slnx`).
+- Optional: **Visual Studio 2026** (Visual Studio 2022 can't target .NET 10).
 
 ## Build, test, run
 
@@ -35,7 +35,7 @@ dotnet test SqlVitals\Installer.Tests
 ```powershell
 Get-Process -Name "SqlVitals.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
 dotnet build SqlVitals\Desktop --nologo
-Start-Process "SqlVitals\Desktop\bin\Debug\net8.0-windows\SqlVitals.Desktop.exe"
+Start-Process "SqlVitals\Desktop\bin\Debug\net10.0-windows\SqlVitals.Desktop.exe"
 ```
 
 **Visual Studio:** open `SqlVitalsDashboard.slnx`, set `SqlVitals.Desktop` as the startup project, press **F5**.

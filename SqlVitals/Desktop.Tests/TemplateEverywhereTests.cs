@@ -164,7 +164,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         // Show the slow files: only those, the slowest in the drawer.
         Press(page.Shell.VerdictView, 0);
         Assert.Equal(1, page.CmbFilter.SelectedIndex);
-        Assert.Equal("SalesDb", ((FileLatency)Assert.Single(page.FilesGrid.Items)).DatabaseName);
+        Assert.Equal("SalesDb", Assert.IsType<FileLatency>(Assert.Single(page.FilesGrid.Items)).DatabaseName);
         Assert.Equal("SalesDb · SalesDb", page.Details.Title);
         Assert.Contains("Volume: D:\\", page.DetailsView!.RowTexts);
         Assert.False(page.DetailsView.TextShown);
@@ -426,7 +426,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         page.CmbFilter.SelectedIndex = 2;   // server settings: still lists it
         page.ChecksGrid.SelectedItem = null;
         Press(page.Shell.VerdictView, 0);
-        Assert.Equal(ConfigCheckKind.MaxServerMemory, ((ConfigCheck)page.ChecksGrid.SelectedItem).Kind);
+        Assert.Equal(ConfigCheckKind.MaxServerMemory, Assert.IsType<ConfigCheck>(page.ChecksGrid.SelectedItem).Kind);
         Assert.Equal("Max server memory · Server", page.Details.Title);
         Assert.Equal("EXEC sp_configure 'max server memory (MB)', 28672;", page.DetailsView!.Text);
         Assert.Contains("Recommended: 28,672 MB", page.DetailsView.RowTexts);

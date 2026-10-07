@@ -4,10 +4,10 @@
 
 ## The big picture
 
-SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **directly**, in-process. There's no web server, background service or HTTP hop.
+SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **directly**, in-process. There's no web server, background service or HTTP hop.
 
 ```text
-┌───────────────────────────── SqlVitals.Desktop (WPF, net8.0-windows) ─────────────────────────────┐
+┌──────────────────────────── SqlVitals.Desktop (WPF, net10.0-windows) ─────────────────────────────┐
 │                                                                                                    │
 │  MainWindow ── sidebar, TopBar ── Frame → Pages (IRefreshable, IPageContext)  Controls / Helpers  │
 │      │                              │                                                              │
@@ -18,7 +18,7 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 │  ExportService                 │ samples       ChatNotificationService ─► Slack / Teams (HTTPS)    │
 └────────────────────────────────┼───────────────────────────────────────────────────────────────────┘
                                  │ project reference (no HTTP)
-┌────────────────────────────────▼──────────────── SqlVitals.Engine (net8.0 library) ───────────────┐
+┌────────────────────────────────▼─────────────── SqlVitals.Engine (net10.0 library) ───────────────┐
 │  Repositories/  WaitStatsRepository, SpTrace-, TempDb-, PlanCacheHealth-, History-, Configuration-,│
 │                 QueryRegression-, Deadlock-, AgentJob-, Backup-, FileIo-, SecurityAudit-           │
 │                 QueryStore-                                                                        │
@@ -55,10 +55,10 @@ SqlVitals is a **WPF desktop app (.NET 8)** that queries SQL Server DMVs **direc
 
 | Project | Framework | Role |
 |---|---|---|
-| `SqlVitals.Desktop` | `net8.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
-| `SqlVitals.Engine` | `net8.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
-| `SqlVitals.Engine.Tests` | `net8.0` | xUnit tests for Engine |
-| `SqlVitals.Desktop.Tests` | `net8.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)), the services view models ask for and the verdict actions that open pages (`UiServicesTests`, `VerdictNavigationTests`, with the fakes in `Fakes/`) |
+| `SqlVitals.Desktop` | `net10.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
+| `SqlVitals.Engine` | `net10.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
+| `SqlVitals.Engine.Tests` | `net10.0` | xUnit tests for Engine |
+| `SqlVitals.Desktop.Tests` | `net10.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)), the services view models ask for and the verdict actions that open pages (`UiServicesTests`, `VerdictNavigationTests`, with the fakes in `Fakes/`) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
 | `SqlVitals.Installer.Tests` | `net472` | xUnit tests for `Installer/Core` |
 
@@ -356,13 +356,14 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 
 | Package | Version | Used in | Purpose |
 |---|---|---|---|
-| Dapper | 2.1.72 | Engine | Micro-ORM |
-| Microsoft.Data.SqlClient | 5.2.2 | Engine | SQL Server / Azure SQL driver |
-| Microsoft.Data.Sqlite | 8.0.31 | Engine | History file |
-| Microsoft.AspNetCore.OpenApi / Swashbuckle | 8.0.23 / 6.6.2 | Engine | Swagger (API mode only) |
-| LiveChartsCore.SkiaSharpView.WPF | 2.0.0-rc4.5 | Desktop | Charts |
-| System.Security.Cryptography.ProtectedData | 8.0.0 | Desktop | DPAPI |
+| Dapper | 2.1.89 | Engine | Micro-ORM |
+| Microsoft.Data.SqlClient | 7.1.1 | Engine | SQL Server / Azure SQL driver |
+| Microsoft.Data.SqlClient.Extensions.Azure | 7.1.1 | Engine | Entra MFA sign-in (split out of SqlClient in 7.0) |
+| Microsoft.Data.Sqlite | 10.0.12 | Engine | History file |
+| Swashbuckle.AspNetCore | 6.6.2 | Engine | Swagger (API mode only; #165 removes it) |
+| LiveChartsCore.SkiaSharpView.WPF | 2.0.5 | Desktop | Charts |
+| System.Security.Cryptography.ProtectedData | in .NET 10 | Desktop | DPAPI |
 | CommunityToolkit.Mvvm | 8.4.2 | Desktop | View models: `ObservableObject`, `[ObservableProperty]`, `[RelayCommand]` |
-| Microsoft.Extensions.DependencyInjection | 8.0 (ASP.NET Core shared framework) | Desktop | The composition root (#182) |
+| Microsoft.Extensions.DependencyInjection | 10.0 (ASP.NET Core shared framework) | Desktop | The composition root (#182) |
 | xunit | 2.9.3 | Tests | Unit tests |
-| Microsoft.CodeAnalysis.CSharp | 4.14.0 | Desktop.Tests | The MVVM guard tests read the app's sources (#181) |
+| Microsoft.CodeAnalysis.CSharp | 5.9.0 | Desktop.Tests | The MVVM guard tests read the app's sources (#181) |

@@ -32,10 +32,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Set up .NET 8
+      - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       # Fails before building anything if the tag and the project disagree, so the tag,
       # the Setup file name and the version shown in Settings → Apps always match.
