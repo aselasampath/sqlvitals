@@ -59,7 +59,12 @@ public partial class App : System.Windows.Application
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
             Services.AppLog.Error("Unobserved task exception", args.Exception);
 
-        new MainWindow().Show();
+        // Entra MFA prompts through Windows' account broker, which needs a window to belong to.
+        var mainWindow = new MainWindow();
+        Services.EntraSignIn.MainWindow = new System.Windows.Interop.WindowInteropHelper(mainWindow).EnsureHandle();
+        if (!Services.EntraSignIn.Install())
+            Services.AppLog.Info("Entra MFA sign-in: SqlClient's provider isn't registered, so sign-in prompts may fail.");
+        mainWindow.Show();
     }
 
     private const int AsfwAny = -1;

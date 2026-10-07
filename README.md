@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows" alt="Platform: Windows 10 | 11">
-  <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet" alt=".NET 8.0">
+  <img src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet" alt=".NET 10.0">
   <img src="https://img.shields.io/badge/SQL%20Server%20%7C%20Azure%20SQL-supported-CC2927?logo=microsoftsqlserver" alt="SQL Server and Azure SQL">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
   <a href="https://github.com/aselasampath/sqlvitals/actions/workflows/pr-setup.yml"><img src="https://github.com/aselasampath/sqlvitals/actions/workflows/pr-setup.yml/badge.svg" alt="PR build"></a>
@@ -118,8 +118,8 @@ Everything else is in the **[wiki](docs/Home.md)**:
 
 ## Build from source
 
-Needs Windows 10/11 and the [.NET SDK](https://dotnet.microsoft.com/download) 9.0.200 or later (the projects target
-.NET 8; the `.slnx` solution needs the newer SDK).
+Needs Windows 10/11 and the [.NET 10 SDK](https://dotnet.microsoft.com/download) (the projects target
+.NET 10).
 
 ```powershell
 git clone https://github.com/aselasampath/sqlvitals.git

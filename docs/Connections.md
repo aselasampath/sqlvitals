@@ -43,7 +43,7 @@ To delete a connection, open it and choose **⋯ → Remove connection…**. Its
 |---|---|---|
 | **Windows Authentication** | Your Windows account has access (on-premises, domain-joined) | No password stored |
 | **SQL Server Authentication** | You have a SQL login and password | Password stored only if *Remember password* is ticked |
-| **Microsoft Entra MFA** | Azure SQL with your organisation's Microsoft account | A sign-in window appears. Background monitoring for it starts only after you've switched to it once per session, so you never get surprise sign-in windows. |
+| **Microsoft Entra MFA** | Azure SQL with your organisation's Microsoft account | A Windows sign-in window appears over SqlVitals (from 0.67.0; before, the browser opened), and can offer the account you're signed in to Windows with. Background monitoring for it starts only after you've switched to it once per session, so you never get surprise sign-in windows. |
 
 ## Switching connections
 

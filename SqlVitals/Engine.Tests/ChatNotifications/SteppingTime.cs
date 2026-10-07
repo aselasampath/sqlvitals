@@ -11,13 +11,13 @@ namespace SqlVitals.Engine.Tests.ChatNotifications;
 /// </summary>
 internal sealed class SteppingTime() : FakeTimeProvider(new DateTimeOffset(2026, 9, 30, 10, 42, 0, TimeSpan.Zero))
 {
-    public static readonly DateTimeOffset Start = new(2026, 9, 30, 10, 42, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset T0 = new(2026, 9, 30, 10, 42, 0, TimeSpan.Zero);
 
     /// <summary>Every wait asked for, in order.</summary>
     public ConcurrentQueue<TimeSpan> Waits { get; } = new();
 
-    /// <summary>How long after <see cref="Start"/> it is now.</summary>
-    public TimeSpan Elapsed => GetUtcNow() - Start;
+    /// <summary>How long after <see cref="T0"/> it is now.</summary>
+    public TimeSpan Elapsed => GetUtcNow() - T0;
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {

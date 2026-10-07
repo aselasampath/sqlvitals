@@ -110,7 +110,7 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE') AS CanRea
 
 ### Under the hood
 
-- Setup (`SqlVitals.Setup.exe`) targets .NET Framework 4.7.2, which ships with Windows 10 1803+ and Windows 11, so it runs on a clean PC. The app it installs is **self-contained**: the .NET 8 runtime is bundled.
+- Setup (`SqlVitals.Setup.exe`) targets .NET Framework 4.7.2, which ships with Windows 10 1803+ and Windows 11, so it runs on a clean PC. The app it installs is **self-contained**: the .NET 10 runtime is bundled.
 - Nothing is downloaded during install. The package is a zip embedded in the Setup exe, with a manifest of every file's size and SHA-256 hash.
 - **Transactional install:** files are unpacked to `.setup-staging`, verified against the manifest, then swapped in. Each replaced file is moved to `.setup-backup` first, so a cancel restores the previous version.
 - Only files listed in `install-manifest.txt` are replaced or removed on upgrade and uninstall. Manifest paths are validated so no file can land outside the install folder.
