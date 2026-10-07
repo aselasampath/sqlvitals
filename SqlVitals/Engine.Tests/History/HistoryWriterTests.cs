@@ -20,8 +20,13 @@ public sealed class HistoryWriterTests : IDisposable
 
     private string DbPath => Path.Combine(_dir, "history.db");
 
+    /// <summary>
+    /// The writer's clock starts at <see cref="HistoryStoreTests.T0"/>, the time the records carry.
+    /// On the real clock its retention purge would delete them once T0 is 14 days in the past.
+    /// </summary>
     private HistoryWriter Create(string? path = null, TimeProvider? time = null) =>
-        new(path ?? DbPath, (message, _) => _errors.Enqueue(message), TimeSpan.FromDays(14), time)
+        new(path ?? DbPath, (message, _) => _errors.Enqueue(message), TimeSpan.FromDays(14),
+            time ?? new ManualTime(new DateTimeOffset(T0)))
         {
             DisposeWait = DisposeWait,
         };
