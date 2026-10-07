@@ -42,21 +42,21 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **dire
 │  Regressions/   RegressionWindows, QueryRegressionDetector                                          │
 │  QueryStore/    QueryStorePeriod, time slots, CombinedStdDev, QueryStoreChecks, metrics            │
 │  Scripting/     CREATE / DROP / ALTER INDEX / UPDATE STATISTICS generators                          │
-│  Filtering/  Export/  Models/  Errors/      Controllers/ + ApiHost (optional REST, unused)           │
+│  Filtering/  Export/  Models/  Errors/                                                               │
 └───────────────┬──────────────────────────────────────────────────────┬─────────────────────────────┘
                 │ Dapper + Microsoft.Data.SqlClient                    │ Microsoft.Data.Sqlite
                 ▼                                                      ▼
       SQL Server / Azure SQL                          %LocalAppData%\SqlVitals\history.db
 ```
 
-**Key decision:** Desktop references Engine as a **project reference**. There's zero network latency and nothing extra to deploy. Engine also contains `Program.cs` / `ApiHost.cs` and `Controllers/` to run as a standalone REST API in future, but the desktop app doesn't use them. `TODO/wait-stats-ui/` is a parked React web UI and isn't part of the solution.
+**Key decision:** Desktop references Engine as a **project reference**. There's zero network latency and nothing extra to deploy. Engine is a plain class library (`Microsoft.NET.Sdk`): no web host, no ASP.NET Core. Until 0.68.0 (#165) it was a web project with an unused REST API and a parked React UI; a future host, such as an MCP server, would be a new project over Engine's services. `appsettings.json` belongs to Desktop, which reads it in `RepositoryFactory`.
 
 ## Projects
 
 | Project | Framework | Role |
 |---|---|---|
 | `SqlVitals.Desktop` | `net10.0-windows` (WPF; WinForms only for `NotifyIcon`) | The app users run. Its `<Version>` is the release number, and the title bar shows it. |
-| `SqlVitals.Engine` | `net10.0` (`Microsoft.NET.Sdk.Web`) | Models, repositories, history, regressions, scripting, filtering, export; optional REST host |
+| `SqlVitals.Engine` | `net10.0` (class library) | Models, repositories, history, regressions, scripting, filtering, export. No version of its own: it ships inside the app. |
 | `SqlVitals.Engine.Tests` | `net10.0` | xUnit tests for Engine |
 | `SqlVitals.Desktop.Tests` | `net10.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)), the services view models ask for and the verdict actions that open pages (`UiServicesTests`, `VerdictNavigationTests`, with the fakes in `Fakes/`) |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
@@ -361,10 +361,11 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | Microsoft.Data.SqlClient | 7.1.1 | Engine | SQL Server / Azure SQL driver |
 | Microsoft.Data.SqlClient.Extensions.Azure | 7.1.1 | Engine | Entra MFA sign-in (split out of SqlClient in 7.0). It prompts through Windows' account manager (WAM), which needs a parent window: `Services/EntraSignIn` gives it the app's, set in `App.OnStartup` |
 | Microsoft.Data.Sqlite | 10.0.12 | Engine | History file |
-| Swashbuckle.AspNetCore | 6.6.2 | Engine | Swagger (API mode only; #165 removes it) |
+| Microsoft.Extensions.Configuration.Binder | 10.0.12 | Engine | Repositories read their settings through `IConfiguration` |
 | LiveChartsCore.SkiaSharpView.WPF | 2.0.5 | Desktop | Charts |
 | System.Security.Cryptography.ProtectedData | in .NET 10 | Desktop | DPAPI |
 | CommunityToolkit.Mvvm | 8.4.2 | Desktop | View models: `ObservableObject`, `[ObservableProperty]`, `[RelayCommand]` |
-| Microsoft.Extensions.DependencyInjection | 10.0 (ASP.NET Core shared framework) | Desktop | The composition root (#182) |
+| Microsoft.Extensions.Configuration.Json | 10.0.12 | Desktop | `appsettings.json`, under the saved connection (`RepositoryFactory`) |
+| Microsoft.Extensions.DependencyInjection | 10.0.12 | Desktop | The composition root (#182) |
 | xunit | 2.9.3 | Tests | Unit tests |
 | Microsoft.CodeAnalysis.CSharp | 5.9.0 | Desktop.Tests | The MVVM guard tests read the app's sources (#181) |

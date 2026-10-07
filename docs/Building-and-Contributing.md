@@ -15,7 +15,7 @@
 git clone https://github.com/aselasampath/sqlvitals.git
 cd sqlvitals
 
-dotnet build SqlVitalsDashboard.slnx     # all six projects
+dotnet build SqlVitals.slnx              # all six projects
 dotnet test                              # Engine.Tests + Desktop.Tests + Installer.Tests
 dotnet run --project SqlVitals\Desktop   # start the app
 ```
@@ -51,24 +51,24 @@ dotnet build SqlVitals\Desktop --nologo
 Start-Process "SqlVitals\Desktop\bin\Debug\net10.0-windows\SqlVitals.Desktop.exe"
 ```
 
-**Visual Studio:** open `SqlVitalsDashboard.slnx`, set `SqlVitals.Desktop` as the startup project, press **F5**.
+**Visual Studio:** open `SqlVitals.slnx`, set `SqlVitals.Desktop` as the startup project, press **F5**.
 
 **Only one SqlVitals runs per Windows session**, whichever exe it is. If an installed copy is running (perhaps hidden in the notification area), starting your dev build just brings the installed copy to the front and exits. Exit the installed copy first. They share `settings.dat` and `history.db`, which is why they can't run side by side.
 
 ## Repository layout
 
 ```text
-SqlVitalsDashboard.slnx
+SqlVitals.slnx
 .github/workflows/pr-setup.yml   CI: tests + coverage + Setup build on every PR to main
 .github/workflows/release.yml    Release: tag vX.Y.Z → tests, Setup build, GitHub Release
 .github/scripts/Test-WithCoverage.ps1   Both workflows' test step: tests, coverlet, ReportGenerator
 Directory.Build.props            Build rules for every project: warnings are errors, analyzers on
 .editorconfig                    Code style; which rules fail the build
-TODO/wait-stats-ui/              Parked React UI (not in the solution)
 SqlVitals/
   Desktop/          WPF app: Pages/, ViewModels/, Controls/, Windows/, Helpers/, Services/, Styles/
+                    (+ appsettings.json)
   Engine/           Models/, Repositories/, History/, Regressions/, Scripting/, Export/,
-                    Filtering/, Monitoring/, Errors/, Controllers/ (+ appsettings.json)
+                    Filtering/, Monitoring/, Errors/ (a class library)
   Engine.Tests/     xUnit
   Desktop.Tests/    xUnit for the app's services (settings file, monitoring), pages,
                     and the MVVM guard tests over the app's sources

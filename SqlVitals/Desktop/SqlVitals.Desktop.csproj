@@ -10,7 +10,7 @@
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.67.2</Version>
+    <Version>0.68.0</Version>
     <!-- The name Windows shows on notifications and in Task Manager. -->
     <AssemblyTitle>SqlVitals</AssemblyTitle>
     <Product>SqlVitals</Product>
@@ -51,12 +51,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>
 
-  <!-- Copy appsettings.json beside the exe -->
+  <!-- Defaults the repositories read (RepositoryFactory); copied beside the exe. -->
   <ItemGroup>
-    <None Update="..\Engine\appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>appsettings.json</Link>
-    </None>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
