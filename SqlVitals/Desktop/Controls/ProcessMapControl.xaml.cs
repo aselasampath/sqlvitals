@@ -232,8 +232,8 @@ namespace SqlVitals.Desktop.Controls
                     Height          = 24,
                     Padding         = new Thickness(8, 0, 8, 0),
                     Margin          = new Thickness(0, 0, 6, 0),
-                    Background      = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0x80, 0x00)),
-                    BorderBrush     = new SolidColorBrush(Color.FromRgb(0xFF, 0x80, 0x00)),
+                    Background      = ThemeResources.Wash(ProcessStates.ColorOf(BlockingChains.HeadBlocker), 0x26),
+                    BorderBrush     = ProcessStates.BrushOf(BlockingChains.HeadBlocker),
                     BorderThickness = new Thickness(1),
                     FontFamily      = new FontFamily("Segoe UI"),
                     FontSize        = 11,
@@ -302,7 +302,7 @@ namespace SqlVitals.Desktop.Controls
                     Y1 = parentPt.Y + BallRadius,
                     X2 = childPt.X  + BallRadius,
                     Y2 = childPt.Y  + BallRadius,
-                    Stroke = new SolidColorBrush(Color.FromArgb(180, 255, 80, 80)),
+                    Stroke = ThemeResources.Wash(ProcessStates.ColorOf(BlockingChains.Active), 180),
                     StrokeThickness = 1.8,
                     StrokeDashArray = new DoubleCollection { 4, 3 }
                 };
@@ -635,7 +635,7 @@ namespace SqlVitals.Desktop.Controls
                 var head = new TextBlock
                 {
                     Text       = blocked > 0 ? $"HEAD · {blocked}" : "HEAD",
-                    Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x80, 0x00)),
+                    Foreground = ProcessStates.BrushOf(BlockingChains.HeadBlocker),
                     FontFamily = new FontFamily("Segoe UI"),
                     FontSize   = 10,
                     FontWeight = FontWeights.Bold,
@@ -662,40 +662,17 @@ namespace SqlVitals.Desktop.Controls
             ProcessCanvas.Children.Add(lbl);
         }
 
-        private static (Brush fill, Color stroke) ProcessBallStyle(string state) => state switch
+        // A ball lit from the top left: the state's colour, lighter at the highlight and darker at the rim.
+        private static (Brush fill, Color stroke) ProcessBallStyle(string state)
         {
-            "Active" => (
-                new RadialGradientBrush(new GradientStopCollection
-                {
-                    new(Color.FromRgb(0xFF, 0x80, 0x80), 0.0),
-                    new(Color.FromRgb(0xCC, 0x00, 0x00), 1.0)
-                }) { GradientOrigin = new Point(0.35, 0.35) },
-                Color.FromRgb(0xFF, 0x40, 0x40)),
-
-            "HeadBlocker" => (
-                new RadialGradientBrush(new GradientStopCollection
-                {
-                    new(Color.FromRgb(0xFF, 0xA0, 0x40), 0.0),
-                    new(Color.FromRgb(0xC0, 0x40, 0x00), 1.0)
-                }) { GradientOrigin = new Point(0.35, 0.35) },
-                Color.FromRgb(0xFF, 0x80, 0x00)),
-
-            "Blocked" => (
-                new RadialGradientBrush(new GradientStopCollection
-                {
-                    new(Color.FromRgb(0x90, 0x90, 0xFF), 0.0),
-                    new(Color.FromRgb(0x00, 0x00, 0xCC), 1.0)
-                }) { GradientOrigin = new Point(0.35, 0.35) },
-                Color.FromRgb(0x60, 0x60, 0xFF)),
-
-            _ => (
-                new RadialGradientBrush(new GradientStopCollection
-                {
-                    new(Color.FromRgb(0x60, 0xAA, 0xFF), 0.0),
-                    new(Color.FromRgb(0x22, 0x44, 0xAA), 1.0)
-                }) { GradientOrigin = new Point(0.35, 0.35) },
-                Color.FromRgb(0x44, 0x88, 0xFF))
-        };
+            var color = ProcessStates.ColorOf(state);
+            var fill  = new RadialGradientBrush(new GradientStopCollection
+            {
+                new(ThemeResources.Mix(color, Colors.White, 0.35), 0.0),
+                new(ThemeResources.Mix(color, Colors.Black, 0.3), 1.0),
+            }) { GradientOrigin = new Point(0.35, 0.35) };
+            return (fill, color);
+        }
 
         private ToolTip BuildProcessTooltip(ProcessNode node)
         {
@@ -706,12 +683,8 @@ namespace SqlVitals.Desktop.Controls
             string cmd      = string.IsNullOrWhiteSpace(node.CommandText) ? ""
                 : $"\n{node.CommandText[..Math.Min(200, node.CommandText.Length)]}";
 
-            var tip = new ToolTip
-            {
-                Background  = new SolidColorBrush(Color.FromArgb(240, 20, 20, 40)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(80, 80, 120)),
-                Foreground  = Brushes.White
-            };
+            // The app's usual tooltip, like every other one.
+            var tip = new ToolTip();
             var sp = new StackPanel { Margin = new Thickness(6, 4, 6, 4) };
             sp.Children.Add(new TextBlock
             {
@@ -719,7 +692,6 @@ namespace SqlVitals.Desktop.Controls
                 FontWeight = FontWeights.Bold,
                 FontFamily = new FontFamily("Segoe UI"),
                 FontSize   = 12,
-                Foreground = Brushes.White
             });
             sp.Children.Add(new TextBlock
             {
@@ -728,7 +700,6 @@ namespace SqlVitals.Desktop.Controls
                                $"\nStatus: {node.Status}  Open tran: {node.OpenTran}{head}{blocker}{waitInfo}{cmd}",
                 FontFamily   = new FontFamily("Segoe UI"),
                 FontSize     = 11,
-                Foreground   = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
                 TextWrapping = TextWrapping.Wrap,
                 MaxWidth     = 360
             });

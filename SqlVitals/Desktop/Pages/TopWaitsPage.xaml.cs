@@ -63,7 +63,7 @@ public partial class TopWaitsPage : System.Windows.Controls.Page, IRefreshable, 
             {
                 Values      = values,
                 Name        = "Wait Time (sec)",
-                Fill        = new SolidColorPaint(SKColor.Parse("#7C3AED")),
+                Fill        = new SolidColorPaint(ChartTheme.Of("AccentColor")),
                 Stroke      = null,
                 MaxBarWidth = 30,
                 Padding     = 1,

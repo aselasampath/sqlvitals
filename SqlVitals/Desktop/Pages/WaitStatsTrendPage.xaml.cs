@@ -69,15 +69,6 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
     private const int MaxPoints = 60;
     private const int MaxSeries = 12;
 
-    // ── colour palette (12 distinct shades) ──────────────────────────────────
-    private static readonly SKColor[] Palette =
-    {
-        SKColor.Parse("#7C3AED"), SKColor.Parse("#E11D48"), SKColor.Parse("#2563EB"),
-        SKColor.Parse("#D97706"), SKColor.Parse("#059669"), SKColor.Parse("#DB2777"),
-        SKColor.Parse("#0891B2"), SKColor.Parse("#65A30D"), SKColor.Parse("#9333EA"),
-        SKColor.Parse("#EA580C"), SKColor.Parse("#0284C7"), SKColor.Parse("#16A34A"),
-    };
-
     // ── fields ────────────────────────────────────────────────────────────────
     private readonly IWaitStatsRepository _repo;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -542,7 +533,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
 
         var series = toShow.Select((item, idx) =>
         {
-            var colour = Palette[idx % Palette.Length];
+            var colour = ChartTheme.Series(idx);
             return (ISeries)new LineSeries<DateTimePoint>
             {
                 Values         = buffers[idx],
@@ -574,7 +565,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
 
             if (shown is { } s)
                 series.AddRange(toShow.Select((item, idx) => (ISeries)BaselineSeries.Line(
-                    BuildBaselineWindow(baseline, item.WaitType, s.From, s.To), item.WaitType, Palette[idx % Palette.Length])));
+                    BuildBaselineWindow(baseline, item.WaitType, s.From, s.To), item.WaitType, ChartTheme.Series(idx))));
         }
 
         TrendChart.Series = series;

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows.Data;
 using System.Windows.Media;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
@@ -14,14 +15,16 @@ internal static class ProcessStates
 {
     public static readonly string[] All = [BlockingChains.HeadBlocker, BlockingChains.Blocked, BlockingChains.Active, BlockingChains.Sleeping];
 
-    /// <summary>The map's ball outline for the state; the grid's dot next to its name.</summary>
-    public static Color ColorOf(string state) => state switch
+    /// <summary>The theme brush for the state: the map's ball outline, the grid's dot next to its name.</summary>
+    public static string KeyOf(string state) => state switch
     {
-        BlockingChains.Active      => Color.FromRgb(0xFF, 0x40, 0x40),
-        BlockingChains.HeadBlocker => Color.FromRgb(0xFF, 0x80, 0x00),
-        BlockingChains.Blocked     => Color.FromRgb(0x60, 0x60, 0xFF),
-        _                          => Color.FromRgb(0x44, 0x88, 0xFF),
+        BlockingChains.Active      => "ProcessActive",
+        BlockingChains.HeadBlocker => "ProcessHeadBlocker",
+        BlockingChains.Blocked     => "ProcessBlocked",
+        _                          => "ProcessSleeping",
     };
+
+    public static Color ColorOf(string state) => ThemeResources.ColorOf(KeyOf(state) + "Color");
 
     public static string Label(string state) => state switch
     {
@@ -40,14 +43,7 @@ internal static class ProcessStates
         _                          => 3,
     };
 
-    private static readonly Dictionary<string, Brush> Brushes = All.ToDictionary(s => s, s =>
-    {
-        var brush = new SolidColorBrush(ColorOf(s));
-        brush.Freeze();
-        return (Brush)brush;
-    });
-
-    public static Brush BrushOf(string state) => Brushes.TryGetValue(state, out var b) ? b : Brushes[BlockingChains.Sleeping];
+    public static Brush BrushOf(string state) => ThemeResources.BrushOf(KeyOf(state));
 }
 
 /// <summary>One session in the Processes grid (#116), from the same snapshot the map draws.</summary>

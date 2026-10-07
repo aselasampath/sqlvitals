@@ -179,21 +179,21 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
     private ProcessMapControl? _activeProcessMap;
 
     // ?? SkiaSharp colours ?????????????????????????????????????????????
-    private static readonly SKColor ColCpu   = SKColor.Parse("#FF4444");
-    private static readonly SKColor ColIo    = SKColor.Parse("#FFA62B");
-    private static readonly SKColor ColLock  = SKColor.Parse("#FF4560");
-    private static readonly SKColor ColMem   = SKColor.Parse("#9B59B6");
-    private static readonly SKColor ColNet   = SKColor.Parse("#00D9FF");
-    private static readonly SKColor ColOther = SKColor.Parse("#26E7A6");
-    private static readonly SKColor ColBatch = SKColor.Parse("#26E7A6");
-    private static readonly SKColor ColComp  = SKColor.Parse("#FF6B6B");
-    private static readonly SKColor ColRec   = SKColor.Parse("#7B68EE");
-    private static readonly SKColor ColTxn   = SKColor.Parse("#FFC107");
-    private static readonly SKColor ColPhysR = SKColor.Parse("#26E7A6");
-    private static readonly SKColor ColPhysW = SKColor.Parse("#FF6B6B");
-    private static readonly SKColor ColPle   = SKColor.Parse("#7C3AED");
-    private static readonly SKColor ColMgP   = SKColor.Parse("#FF4444");
-    private static readonly SKColor ColBuf   = SKColor.Parse("#22C55E");
+    private static SKColor ColCpu   => ChartTheme.Of("WaitCpuColor");
+    private static SKColor ColIo    => ChartTheme.Of("WaitIoColor");
+    private static SKColor ColLock  => ChartTheme.Of("WaitLockColor");
+    private static SKColor ColMem   => ChartTheme.Of("WaitMemoryColor");
+    private static SKColor ColNet   => ChartTheme.Of("WaitNetworkColor");
+    private static SKColor ColOther => ChartTheme.Of("WaitOtherColor");
+    private static SKColor ColBatch => ChartTheme.Of("MetricBatchesColor");
+    private static SKColor ColComp  => ChartTheme.Of("MetricCompilationsColor");
+    private static SKColor ColRec   => ChartTheme.Of("MetricRecompilationsColor");
+    private static SKColor ColTxn   => ChartTheme.Of("MetricTransactionsColor");
+    private static SKColor ColPhysR => ChartTheme.Of("MetricReadsColor");
+    private static SKColor ColPhysW => ChartTheme.Of("MetricWritesColor");
+    private static SKColor ColPle   => ChartTheme.Of("MetricPleColor");
+    private static SKColor ColMgP   => ChartTheme.Of("DangerColor");
+    private static SKColor ColBuf   => ChartTheme.Of("SuccessColor");
 
     // Named in the health score's breakdown.
     private readonly string               _connectionName;
@@ -1244,12 +1244,12 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
                 Content = def.Label,
                 IsChecked = _waitsShown[i],
                 Margin = new Thickness(6,0,0,0),
-                Foreground = new SolidColorBrush(Color.FromRgb(0xAA,0xBB,0xCC)),
                 FontSize = 11,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand
             };
+            cb.SetResourceReference(ForegroundProperty, "TextMuted");
             cb.Checked += RebuildSeries;
             cb.Unchecked += RebuildSeries;
             checkBoxes.Add(cb);

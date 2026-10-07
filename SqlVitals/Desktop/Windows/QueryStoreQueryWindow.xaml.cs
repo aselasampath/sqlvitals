@@ -21,13 +21,6 @@ namespace SqlVitals.Desktop.Windows;
 /// </summary>
 public partial class QueryStoreQueryWindow : Window
 {
-    private static readonly SKColor[] Palette =
-    [
-        SKColor.Parse("#26E7A6"), SKColor.Parse("#FF6B6B"), SKColor.Parse("#7C3AED"), SKColor.Parse("#FFA62B"),
-        SKColor.Parse("#00D9FF"), SKColor.Parse("#FF4560"), SKColor.Parse("#FFC107"), SKColor.Parse("#9B59B6"),
-        SKColor.Parse("#1ABC9C"), SKColor.Parse("#3498DB"),
-    ];
-
     private readonly IWaitStatsRepository _repo;
     private readonly long                 _queryId;
     private readonly QueryStorePeriod     _period;
@@ -120,7 +113,7 @@ public partial class QueryStoreQueryWindow : Window
             .OrderBy(g => g.Key)
             .Select((g, index) =>
             {
-                var color    = Palette[index % Palette.Length];
+                var color    = ChartTheme.Series(index);
                 var isForced = forced.Contains(g.Key);
                 return (ISeries)new LineSeries<DateTimePoint>
                 {

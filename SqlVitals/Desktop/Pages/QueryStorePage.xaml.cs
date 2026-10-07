@@ -120,14 +120,6 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
     private const int VariationTop   = 50;
     private const int WaitQueriesTop = 25;
 
-    // Same colours as the trend pages' lines.
-    private static readonly SKColor[] Palette =
-    [
-        SKColor.Parse("#26E7A6"), SKColor.Parse("#FF6B6B"), SKColor.Parse("#7C3AED"), SKColor.Parse("#FFA62B"),
-        SKColor.Parse("#00D9FF"), SKColor.Parse("#FF4560"), SKColor.Parse("#FFC107"), SKColor.Parse("#9B59B6"),
-        SKColor.Parse("#1ABC9C"), SKColor.Parse("#3498DB"),
-    ];
-
     /// <summary>Whether a tab has been read for what's on screen now, and which read is the latest.</summary>
     private sealed class TabState
     {
@@ -373,7 +365,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         var h = status.Health;
         if (h is null)
         {
-            AddCard("Query Store", "Not supported", "#94A3B8", "Query Store came with SQL Server 2016.");
+            AddCard("Query Store", "Not supported", "TextMuted", "Query Store came with SQL Server 2016.");
             ChecksList.ItemsSource = null;
             HealthSection.FoldedSummary = "Not supported: Query Store came with SQL Server 2016";
             TxtDataFrom.Text = string.Empty;
@@ -383,27 +375,27 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         var checks = QueryStoreChecks.Run(h);
         var worst  = QueryStoreChecks.Worst(checks);
 
-        AddCard("State", h.ActualState, h.IsEnabled ? (h.ActualState == "READ_WRITE" ? "#22C55E" : "#FBBF24") : "#EF4444",
+        AddCard("State", h.ActualState, h.IsEnabled ? (h.ActualState == "READ_WRITE" ? "Success" : "Warning") : "Danger",
                 h.ReadOnlyReason is { } why ? $"Set to {h.DesiredState}; read-only because {why}." : $"Set to {h.DesiredState}.");
-        AddCard("Storage used", $"{h.CurrentStorageSizeMB:N0} MB", h.StorageUsedPct > 90 ? "#EF4444" : h.StorageUsedPct > 75 ? "#FBBF24" : "#22C55E",
+        AddCard("Storage used", $"{h.CurrentStorageSizeMB:N0} MB", h.StorageUsedPct > 90 ? "Danger" : h.StorageUsedPct > 75 ? "Warning" : "Success",
                 $"Of MAX_STORAGE_SIZE_MB = {h.MaxStorageSizeMB:N0}.");
-        AddCard("Storage %", $"{h.StorageUsedPct:N1} %", h.StorageUsedPct > 90 ? "#EF4444" : "#7C3AED",
+        AddCard("Storage %", $"{h.StorageUsedPct:N1} %", h.StorageUsedPct > 90 ? "Danger" : "Accent",
                 "Size-based cleanup (when AUTO) starts at 90 %; at 100 % Query Store turns read-only.");
-        AddCard("Queries", $"{h.TotalQueries:N0}", "#7C3AED", "Queries Query Store holds.");
-        AddCard("Plans", $"{h.TotalPlans:N0}", "#7C3AED", $"Plans Query Store holds; at most {h.MaxPlansPerQuery:N0} per query.");
-        AddCard("Forced plans", $"{h.ForcedPlans:N0}", h.ForcedPlans > 0 ? "#FBBF24" : "#94A3B8",
+        AddCard("Queries", $"{h.TotalQueries:N0}", "Accent", "Queries Query Store holds.");
+        AddCard("Plans", $"{h.TotalPlans:N0}", "Accent", $"Plans Query Store holds; at most {h.MaxPlansPerQuery:N0} per query.");
+        AddCard("Forced plans", $"{h.ForcedPlans:N0}", h.ForcedPlans > 0 ? "Warning" : "TextMuted",
                 "Plans forced by hand or by automatic plan correction. Click to open the Forced Plans tab.",
                 () => Tabs.SelectedItem = TabForced);
-        AddCard("Capture mode", h.CaptureMode, h.CaptureMode == "ALL" ? "#60A5FA" : "#94A3B8",
+        AddCard("Capture mode", h.CaptureMode, h.CaptureMode == "ALL" ? "Info" : "TextMuted",
                 "Which queries Query Store records: ALL, AUTO (skips trivial ad hoc queries), CUSTOM or NONE.");
-        AddCard("Size cleanup", h.SizeCleanupMode, h.SizeCleanupMode == "OFF" ? "#FBBF24" : "#94A3B8",
+        AddCard("Size cleanup", h.SizeCleanupMode, h.SizeCleanupMode == "OFF" ? "Warning" : "TextMuted",
                 "AUTO removes the oldest, cheapest queries as Query Store nears its maximum size.");
-        AddCard("Stale after", $"{h.StaleQueryThresholdDays:N0} days", "#94A3B8", "How long Query Store keeps a query that hasn't run (STALE_QUERY_THRESHOLD_DAYS).");
-        AddCard("Interval", $"{h.IntervalLengthMin:N0} min", "#94A3B8", "How long each runtime statistics interval is (INTERVAL_LENGTH_MINUTES).");
+        AddCard("Stale after", $"{h.StaleQueryThresholdDays:N0} days", "TextMuted", "How long Query Store keeps a query that hasn't run (STALE_QUERY_THRESHOLD_DAYS).");
+        AddCard("Interval", $"{h.IntervalLengthMin:N0} min", "TextMuted", "How long each runtime statistics interval is (INTERVAL_LENGTH_MINUTES).");
         if (h.WaitStatsCaptureMode is { } waits)
-            AddCard("Wait stats capture", waits, waits == "OFF" ? "#60A5FA" : "#94A3B8", "Whether Query Store records waits per query (SQL Server 2017+).");
+            AddCard("Wait stats capture", waits, waits == "OFF" ? "Info" : "TextMuted", "Whether Query Store records waits per query (SQL Server 2017+).");
         AddCard("Status", worst switch { QueryStoreCheckLevel.Warning => "Warning", QueryStoreCheckLevel.Info => "Info", _ => "OK" },
-                worst switch { QueryStoreCheckLevel.Warning => "#FBBF24", QueryStoreCheckLevel.Info => "#60A5FA", _ => "#22C55E" },
+                worst switch { QueryStoreCheckLevel.Warning => "Warning", QueryStoreCheckLevel.Info => "Info", _ => "Success" },
                 "The worst of the settings checks listed below the cards.");
 
         ChecksList.ItemsSource = checks;
@@ -434,7 +426,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         TxtDataFrom.Text = text;
     }
 
-    private void AddCard(string label, string value, string hexColor, string tooltip, Action? onClick = null)
+    private void AddCard(string label, string value, string brushKey, string tooltip, Action? onClick = null)
     {
         var card = new Border
         {
@@ -452,9 +444,8 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         sp.Children.Add(new TextBlock
         {
             Text = value, Style = (Style)Application.Current.FindResource("KpiValue"), FontSize = 16,
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor)),
             TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+        }.WithForeground(brushKey));
         sp.Children.Add(new TextBlock { Text = label, Style = (Style)Application.Current.FindResource("KpiLabel") });
         card.Child = sp;
 
@@ -698,7 +689,7 @@ public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPa
         var index = 0;
         foreach (var item in items.Where(i => i.IsChecked))
         {
-            var color  = Palette[index++ % Palette.Length];
+            var color  = ChartTheme.Series(index++);
             var metric = item.Info.Metric;
             var values = starts.Select(t => new DateTimePoint(t.ToLocalTime(),
                 bySlot.TryGetValue(t, out var s) ? s.Totals.Total(metric) : null)).ToList();

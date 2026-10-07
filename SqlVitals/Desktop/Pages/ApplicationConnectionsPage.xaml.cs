@@ -64,10 +64,10 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageConte
         KpiPanel.Children.Clear();
         if (data.Count > 0)
         {
-            AddKpiCard("Applications",      $"{data.Count}",                                    "#7C3AED", "Distinct applications connected (grouped by program_name).");
-            AddKpiCard("Total Connections",  $"{data.Sum(d => d.CurrentConnections):N0}",        "#06B6D4", "Total user sessions currently connected.");
-            AddKpiCard("Active Requests",    $"{data.Sum(d => d.ActiveRequests):N0}",             "#10B981", "Sessions with an actively executing request right now.");
-            AddKpiCard("Total CPU (ms)",     $"{data.Sum(d => d.TotalCpuTimeMs):N0}",             "#F59E0B", "Cumulative CPU time across all connected sessions.");
+            AddKpiCard("Applications",      $"{data.Count}",                                    "Accent", "Distinct applications connected (grouped by program_name).");
+            AddKpiCard("Total Connections",  $"{data.Sum(d => d.CurrentConnections):N0}",        "Info", "Total user sessions currently connected.");
+            AddKpiCard("Active Requests",    $"{data.Sum(d => d.ActiveRequests):N0}",             "Success", "Sessions with an actively executing request right now.");
+            AddKpiCard("Total CPU (ms)",     $"{data.Sum(d => d.TotalCpuTimeMs):N0}",             "Warning", "Cumulative CPU time across all connected sessions.");
         }
 
         // ── DataGrid ─────────────────────────────────────────────────
@@ -86,7 +86,7 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageConte
                 {
                     Values      = top.Select(d => d.CurrentConnections).ToArray(),
                     Name        = "Connections",
-                    Fill        = new SolidColorPaint(SKColor.Parse("#7C3AED")),
+                    Fill        = new SolidColorPaint(ChartTheme.Of("AccentColor")),
                     Stroke      = null,
                     MaxBarWidth = 48,
                     Padding     = 2,
@@ -110,9 +110,8 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageConte
         }
     }
 
-    private void AddKpiCard(string label, string value, string hexColor, string? tooltip = null)
+    private void AddKpiCard(string label, string value, string brushKey, string? tooltip = null)
     {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor));
         var card  = new Border
         {
             Style  = (Style)Application.Current.FindResource("KpiCard"),
@@ -127,7 +126,7 @@ public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageConte
             ToolTipService.SetToolTip(card, new ToolTip { Content = sp });
         }
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = value, Style = (Style)Application.Current.FindResource("KpiValue"), Foreground = brush });
+        panel.Children.Add(new TextBlock { Text = value, Style = (Style)Application.Current.FindResource("KpiValue") }.WithForeground(brushKey));
         panel.Children.Add(new TextBlock { Text = label, Style = (Style)Application.Current.FindResource("KpiLabel") });
         card.Child = panel;
         KpiPanel.Children.Add(card);

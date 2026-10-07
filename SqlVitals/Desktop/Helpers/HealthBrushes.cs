@@ -6,14 +6,14 @@ namespace SqlVitals.Desktop.Helpers;
 
 /// <summary>
 /// The health dot's colours, shared by the dot, the health score and its breakdown so they
-/// always match. The same in both themes.
+/// always match. The theme's Health keys, which are the same in both themes.
 /// </summary>
 public static class HealthBrushes
 {
-    public static readonly Brush Green = Frozen(0x22, 0xC5, 0x5E);
-    public static readonly Brush Amber = Frozen(0xFB, 0xBF, 0x24);
-    public static readonly Brush Red   = Frozen(0xEF, 0x44, 0x44);
-    public static readonly Brush Grey  = Frozen(0x94, 0xA3, 0xB8);
+    public static Brush Green => ThemeResources.BrushOf("HealthGood");
+    public static Brush Amber => ThemeResources.BrushOf("HealthWarning");
+    public static Brush Red   => ThemeResources.BrushOf("HealthCritical");
+    public static Brush Grey  => ThemeResources.BrushOf("HealthNone");
 
     public static Brush For(HealthLevel level) => level switch
     {
@@ -36,21 +36,9 @@ public static class HealthBrushes
     /// <summary>A pale wash of a status's colour, behind its label, readable in either theme.</summary>
     public static Brush Tint(TileStatus status) => status switch
     {
-        TileStatus.Unreachable or TileStatus.Critical => RedTint,
-        TileStatus.Warning                            => AmberTint,
-        TileStatus.Healthy                            => GreenTint,
-        _                                             => GreyTint,
+        TileStatus.Unreachable or TileStatus.Critical => ThemeResources.BrushOf("HealthCriticalTint"),
+        TileStatus.Warning                            => ThemeResources.BrushOf("HealthWarningTint"),
+        TileStatus.Healthy                            => ThemeResources.BrushOf("HealthGoodTint"),
+        _                                             => ThemeResources.BrushOf("HealthNoneTint"),
     };
-
-    private static readonly Brush RedTint   = Frozen(0xEF, 0x44, 0x44, 0x33);
-    private static readonly Brush AmberTint = Frozen(0xFB, 0xBF, 0x24, 0x40);
-    private static readonly Brush GreenTint = Frozen(0x22, 0xC5, 0x5E, 0x33);
-    private static readonly Brush GreyTint  = Frozen(0x94, 0xA3, 0xB8, 0x33);
-
-    private static Brush Frozen(byte r, byte g, byte b, byte a = 0xFF)
-    {
-        var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-        brush.Freeze();
-        return brush;
-    }
 }
