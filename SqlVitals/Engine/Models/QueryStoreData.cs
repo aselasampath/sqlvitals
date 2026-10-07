@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Scripting;
 
@@ -102,6 +103,7 @@ public sealed record QueryStoreStatus(string DatabaseName, QueryStoreHealth? Hea
 /// <summary>A tab's rows, or why it has none: a view or column this version lacks (error 208 or 207).</summary>
 public sealed record QueryStoreRows<T>(IReadOnlyList<T> Rows, string? Unavailable = null)
 {
+    [SuppressMessage("Design", "CA1000", Justification = "A factory for this type; callers name the row type anyway")]
     public static QueryStoreRows<T> Missing(string why) => new([], why);
 }
 

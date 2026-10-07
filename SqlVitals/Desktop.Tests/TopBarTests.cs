@@ -276,10 +276,10 @@ public sealed class TopBarTests
         Assert.Same(tools, bar.ToolsRow.Content);
         Assert.True(host.ActualHeight > 52);
         // The server's name is shown in full.
-        var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b).StartsWith("PROD-SQL01"));
+        var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b).StartsWith("PROD-SQL01", StringComparison.Ordinal));
         Assert.True(server.RenderSize.Width >= server.DesiredSize.Width - 0.5);
         Assert.True(bar.Crumbs.Spare >= 0, $"{bar.Crumbs.Spare} px short");
-        Assert.Empty(bar.Crumbs.Dropped.Where(d => !CrumbPanel.GetCanDrop(d)));
+        Assert.DoesNotContain(bar.Crumbs.Dropped, d => !CrumbPanel.GetCanDrop(d));
         // Still said: the badge's tooltip and spoken name carry the detail.
         Assert.Contains("as of 14:02:30", (string)bar.Badge.ToolTip);
 
@@ -305,7 +305,7 @@ public sealed class TopBarTests
         {
             Layout(host, width);
             var state = (bar.ToolsWrapped, bar.TxtDetail.Visibility, bar.BtnAskAi.Visibility, Dropped: string.Join("|", bar.Crumbs.Dropped.Select(AutomationProperties.GetName)));
-            var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b).StartsWith("PROD-SQL01"));
+            var server = UiThread.Find<Button>(bar.Crumbs).Single(b => AutomationProperties.GetName(b).StartsWith("PROD-SQL01", StringComparison.Ordinal));
             Assert.True(server.RenderSize.Width >= server.DesiredSize.Width - 0.5, $"At {width} px the server is cut");
             Assert.DoesNotContain("PROD-SQL01", state.Dropped);
 

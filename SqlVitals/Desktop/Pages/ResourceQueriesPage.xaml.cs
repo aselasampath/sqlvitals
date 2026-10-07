@@ -227,7 +227,7 @@ public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFo
                     }
                     else
                     {
-                        sb.Append("\t");
+                        sb.Append('\t');
                     }
                 }
                 sb.AppendLine();

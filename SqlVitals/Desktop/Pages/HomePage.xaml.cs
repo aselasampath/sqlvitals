@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -63,8 +64,8 @@ public partial class HomePage : Page, IRefreshable, IPageContext
             Margin    = new Thickness(0, 0, 14, 14),
             MinHeight = 236,
             ToolTip   = "Opens Settings to add a SQL Server connection",
+            Style     = (Style)Resources["AddTile"],
         };
-        _addTile.Style = (Style)Resources["AddTile"];
         _addTile.Click += (_, _) => AddConnectionRequested?.Invoke();
         Tiles.ItemsSource = new CompositeCollection
         {
@@ -449,6 +450,7 @@ public sealed class HomeTile : INotifyPropertyChanged
         }
     }
 
+    [SuppressMessage("Performance", "CA1822", Justification = "Bound in XAML; a binding needs an instance member")]
     public string TrendToolTip => "Health score over the last hour";
 
     public event PropertyChangedEventHandler? PropertyChanged;

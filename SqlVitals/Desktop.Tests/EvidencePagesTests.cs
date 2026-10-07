@@ -199,9 +199,9 @@ public sealed class EvidencePagesTests : IDisposable
             return proxy;
         }
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            _results.TryGetValue(method!.Name, out var result)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            _results.TryGetValue(targetMethod!.Name, out var result)
                 ? result
-                : throw new NotSupportedException($"{method.Name} isn't faked in this test.");
+                : throw new NotSupportedException($"{targetMethod.Name} isn't faked in this test.");
     }
 }

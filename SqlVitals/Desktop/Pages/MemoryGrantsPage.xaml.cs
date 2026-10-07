@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -193,7 +194,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
     private void AppendSnapshot(MemorySnapshot s)
     {
         var t = s.CaptureTime;
-        double toGB(long kb) => Math.Round(kb / 1_048_576.0, 3);
+        static double toGB(long kb) => Math.Round(kb / 1_048_576.0, 3);
 
         Append(_winTotal,  t, toGB(s.TotalServerMemoryKB));
         Append(_winTarget, t, toGB(s.TargetServerMemoryKB));
@@ -231,7 +232,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
 
         MemChart.XAxes = new[]
         {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss"))
+            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString("HH:mm:ss", CultureInfo.CurrentCulture))
             {
                 LabelsPaint     = new SolidColorPaint(axisColor),
                 SeparatorsPaint = new SolidColorPaint(gridColor) { StrokeThickness = 1 },

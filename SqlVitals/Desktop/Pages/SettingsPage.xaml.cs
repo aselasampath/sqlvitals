@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -194,8 +195,7 @@ public partial class SettingsPage : Page, IPageContext
     private void UpdateCount()
     {
         var count = _context.Service.Load().Connections.Count;
-        if (_connectionsCount is not null)
-            _connectionsCount.Text = count.ToString();
+        _connectionsCount?.Text = count.ToString(CultureInfo.CurrentCulture);
         AutomationProperties.SetName(_items[SettingsCategory.Connections],
             count == 1 ? "Connections, 1 saved" : $"Connections, {count} saved");
     }

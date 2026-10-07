@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
@@ -418,11 +419,11 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
         {
             var row = (IDictionary<string, object>)r;
             object? Get(string k) => row.TryGetValue(k, out var v) && v is not DBNull ? v : null;
-            static int    ToInt(object? v)   => v is null ? 0   : Convert.ToInt32(v);
-            static long   ToLong(object? v)  => v is null ? 0L  : Convert.ToInt64(v);
-            static bool   ToBool(object? v)  => v is not null && Convert.ToBoolean(v);
-            static int?   ToIntN(object? v)  => v is null ? (int?)null   : Convert.ToInt32(v);
-            static double? ToDblN(object? v) => v is null ? (double?)null : Convert.ToDouble(v);
+            static int    ToInt(object? v)   => v is null ? 0   : Convert.ToInt32(v, CultureInfo.InvariantCulture);
+            static long   ToLong(object? v)  => v is null ? 0L  : Convert.ToInt64(v, CultureInfo.InvariantCulture);
+            static bool   ToBool(object? v)  => v is not null && Convert.ToBoolean(v, CultureInfo.InvariantCulture);
+            static int?   ToIntN(object? v)  => v is null ? null : Convert.ToInt32(v, CultureInfo.InvariantCulture);
+            static double? ToDblN(object? v) => v is null ? null : Convert.ToDouble(v, CultureInfo.InvariantCulture);
 
             long granted = ToLong(Get("GrantedMemoryKB"));
             bool pending = Get("GrantTime") is null;
@@ -434,7 +435,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
                 ToInt(Get("SchedulerId")),
                 ToInt(Get("DegreeOfParallelism")),
                 (DateTime)row["RequestTime"],
-                Get("GrantTime") is DateTime gt ? gt : (DateTime?)null,
+                Get("GrantTime") is DateTime gt ? gt : null,
                 ToInt(Get("WaitForGrantMs")),
                 ToLong(Get("RequestedMemoryKB")),
                 granted,
@@ -810,10 +811,10 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             object? Get(string k) => row.TryGetValue(k, out var v) && v is not DBNull ? v : null;
             return new IndexFragmentation(
                 (string)r.SchemaName, (string)r.TableName, (string?)r.IndexName, (string)r.IndexType,
-                Convert.ToDouble(Get("FragmentationPercent") ?? 0.0),
-                Convert.ToInt64(Get("PageCount") ?? 0L),
-                Convert.ToDouble(Get("AvgPageSpaceUsed") ?? 0.0),
-                Convert.ToInt64(Get("RecordCount") ?? 0L),
+                Convert.ToDouble(Get("FragmentationPercent") ?? 0.0, CultureInfo.InvariantCulture),
+                Convert.ToInt64(Get("PageCount") ?? 0L, CultureInfo.InvariantCulture),
+                Convert.ToDouble(Get("AvgPageSpaceUsed") ?? 0.0, CultureInfo.InvariantCulture),
+                Convert.ToInt64(Get("RecordCount") ?? 0L, CultureInfo.InvariantCulture),
                 (string)r.DatabaseName, (string)r.RecommendedAction, (DateTime)r.CaptureTime);
         });
     }
@@ -973,8 +974,8 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             (string)r.LogicalFileName,
             r.PhysicalPath == null || r.PhysicalPath is DBNull ? "" : (string)r.PhysicalPath,
             Convert.ToDecimal(r.FileSizeMB),
-            r.SpaceUsedMB is null or DBNull ? (decimal?)null : Convert.ToDecimal(r.SpaceUsedMB),
-            r.FreeSpaceMB is null or DBNull ? (decimal?)null : Convert.ToDecimal(r.FreeSpaceMB),
+            r.SpaceUsedMB is null or DBNull ? null : Convert.ToDecimal(r.SpaceUsedMB),
+            r.FreeSpaceMB is null or DBNull ? null : Convert.ToDecimal(r.FreeSpaceMB),
             Convert.ToDecimal(r.MaxSizeMB),
             (string)r.AutoGrowth));
 
@@ -1290,8 +1291,7 @@ public class WaitStatsRepository(IConfiguration configuration) : BaseRepository(
             _liveIsAzureSqlDb = edition is not null && Convert.ToInt32(edition.Edition) == 5;
         }
 
-        var r = await QFirst(conn, LiveMetricsSql(_liveIsAzureSqlDb.Value));
-        if (r is null) throw new InvalidOperationException("Failed to capture metrics");
+        var r = await QFirst(conn, LiveMetricsSql(_liveIsAzureSqlDb.Value)) ?? throw new InvalidOperationException("Failed to capture metrics");
         return ToLiveMetricSnapshot(r);
     }
 

@@ -1,0 +1,15 @@
+<Project>
+
+  <!--
+    Build rules for every project in the repository (#164).
+    A warning fails the build: fix it, or suppress that one diagnostic next to the code with the reason.
+    Style rules live in .editorconfig; EnforceCodeStyleInBuild makes its IDE rules part of the build.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>

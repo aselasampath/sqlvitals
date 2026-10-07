@@ -1,3 +1,4 @@
+using System.Globalization;
 using SqlVitals.Engine.Home;
 
 namespace SqlVitals.Engine.Tests.Home;
@@ -76,7 +77,7 @@ public sealed class ScoreTrendTests
         var today = new[] { At(0, 100), At(5, 100), At(52, 70), At(53, 80), At(54, 80) };
 
         Assert.Equal("Was 70 at 20:52 · lowest today 70 at 20:52",
-                     ScoreTrend.Context(today, current: 80, t => t.ToString("HH:mm")));
+                     ScoreTrend.Context(today, current: 80, t => t.ToString("HH:mm", CultureInfo.InvariantCulture)));
     }
 
     [Fact]
@@ -84,8 +85,8 @@ public sealed class ScoreTrendTests
     {
         var today = new[] { At(0, 100), At(5, 100) };
 
-        Assert.Equal("Lowest today 100", ScoreTrend.Context(today, current: 100, t => t.ToString("HH:mm")));
-        Assert.Equal("", ScoreTrend.Context([], current: 100, t => t.ToString("HH:mm")));
+        Assert.Equal("Lowest today 100", ScoreTrend.Context(today, current: 100, t => t.ToString("HH:mm", CultureInfo.InvariantCulture)));
+        Assert.Equal("", ScoreTrend.Context([], current: 100, t => t.ToString("HH:mm", CultureInfo.InvariantCulture)));
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public sealed class ScoreTrendTests
         var today = new[] { At(1, 60), At(2, 100), At(3, 60), At(4, 100) };
 
         Assert.Equal("Was 60 at 20:03 · lowest today 60 at 20:03",
-                     ScoreTrend.Context(today, current: 100, t => t.ToString("HH:mm")));
+                     ScoreTrend.Context(today, current: 100, t => t.ToString("HH:mm", CultureInfo.InvariantCulture)));
     }
 
     [Fact]
@@ -104,7 +105,7 @@ public sealed class ScoreTrendTests
 
         // An hour from 20:07: every quarter of an hour, from the first one in it.
         Assert.Equal(new[] { "20:15", "20:30", "20:45", "21:00" },
-                     ScoreTrend.Ticks(from, from.AddHours(1), TimeSpan.Zero).Select(t => t.ToString("HH:mm")));
+                     ScoreTrend.Ticks(from, from.AddHours(1), TimeSpan.Zero).Select(t => t.ToString("HH:mm", CultureInfo.InvariantCulture)));
 
         // A day from 20:07 UTC, shown at UTC+05:30: whole local six hours, not whole UTC ones.
         var india = TimeSpan.FromHours(5.5);

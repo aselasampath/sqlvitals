@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -23,6 +25,7 @@ using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Pages;
 
+[SuppressMessage("Design", "CA1001", Justification = "A Page isn't IDisposable; Page_Unloaded disposes _adHoc")]
 public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext, IFocusPage
 {
     // ── An alert's window (#145) ──────────────────────────────────────────
@@ -104,7 +107,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
     private readonly MonitoringSession?   _adHoc;          // when there is no saved connection
     private MonitoringSession?            _session;        // null while not monitored
     private readonly DispatcherTimer      _timer    = new();
-    private bool                          _itemsReady = false;
+    private readonly bool                 _itemsReady;
     private DateTime?                     _lastPlotted;
     private bool                          _refreshingMap;
 
@@ -330,8 +333,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
 
         // The session outlives the page; don't let it keep this page alive.
         Unsubscribe(_session);
-        if (_monitoring is not null)
-            _monitoring.SessionStateChanged -= Monitoring_SessionStateChanged;
+        _monitoring?.SessionStateChanged -= Monitoring_SessionStateChanged;
 
         _adHoc?.Dispose();
     }
@@ -376,6 +378,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
     }
 
     // Time range
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range = range;
@@ -478,6 +483,9 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
     }
 
     // ── Baseline ────────────────────────────────────────────────────────────
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_BaselineChanged(object? sender, bool on)
     {
         _baseline?.Clear();
@@ -611,7 +619,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
     {
         var score = IsMonitoring ? _session!.Score : null;
         var brush = score is null ? HealthBrushes.Grey : HealthBrushes.For(score.Level);
-        RunHealthScore.Text        = score?.Value.ToString() ?? "—";
+        RunHealthScore.Text        = score?.Value.ToString(CultureInfo.CurrentCulture) ?? "—";
         RunHealthScore.Foreground  = brush;
         BtnHealthScore.BorderBrush = brush;
         BtnHealthScore.Opacity     = IsMonitoring ? 1 : 0.6;
@@ -1040,7 +1048,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
         foreach (var key in PanelOrder)
         {
             if (key == tag) break;
-            if (_panels.ContainsKey(key) && ChartGrid.Children.Contains(_panels[key]))
+            if (_panels.TryGetValue(key, out var panel) && ChartGrid.Children.Contains(panel))
                 idx++;
         }
         return idx;
@@ -1089,7 +1097,7 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
 
     // Labels follow the range on screen: seconds while live, dates on ranges over a day.
     private DateTimeAxis TimeAxis() =>
-        new(TimeSpan.FromSeconds(1), dt => dt.ToString(_axisFormat))
+        new(TimeSpan.FromSeconds(1), dt => dt.ToString(_axisFormat, CultureInfo.CurrentCulture))
         {
             LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
             SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
@@ -1178,8 +1186,8 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
         var seconds = Intervals[CmbInterval.SelectedIndex];
         if (_connectionId is { } id && _monitoring is not null)
             _monitoring.SetInterval(id, seconds);
-        else if (_adHoc is not null)
-            _adHoc.IntervalSeconds = seconds;
+        else
+            _adHoc?.IntervalSeconds = seconds;
         UpdateCountdown();
     }
 
@@ -1197,11 +1205,11 @@ public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext
         // Keep definition order for stacking
         var definitions = new[]
         {
-            (Series: (ISeries)sCpu, Label: "CPU"),
-            (Series: (ISeries)sIo, Label: "I/O"),
-            (Series: (ISeries)sLock, Label: "Locks"),
-            (Series: (ISeries)sMem, Label: "Mem"),
-            (Series: (ISeries)sNet, Label: "Net"),
+            (Series: sCpu, Label: "CPU"),
+            (Series: sIo, Label: "I/O"),
+            (Series: sLock, Label: "Locks"),
+            (Series: sMem, Label: "Mem"),
+            (Series: sNet, Label: "Net"),
             (Series: (ISeries)sOther, Label: "Other")
         };
 

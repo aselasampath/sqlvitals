@@ -134,7 +134,7 @@ public class SessionDetailsTests
         Assert.Equal(new DetailRow("Failed", "3", Warning: true), rows["Failed"]);
         Assert.Equal("2,310.0 ms", rows["Avg duration"].Value);
         Assert.Equal("Plan 902", rows["Forced plan"].Value);
-        Assert.Equal((4183L, (long?)902, "SELECT 1"), QueryStoreDetails.QueryOf(row));
+        Assert.Equal((4183L, 902, "SELECT 1"), QueryStoreDetails.QueryOf(row));
         Assert.Empty(QueryStoreDetails.Rows("not a row", "Last hour"));
         Assert.Null(QueryStoreDetails.QueryOf(null));
     }

@@ -82,8 +82,8 @@ public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPag
     // ?? Auto-refresh ??????????????????????????????????????????????????
     private readonly DispatcherTimer _timer = new();
     private int _intervalSec   = ConnectionStore.DefaultProcessesRefreshSeconds;
-    private int _remainingSec  = 0;
-    private bool _refreshing   = false;
+    private int _remainingSec;
+    private bool _refreshing;
     private bool _restoring    = true;   // no saving while the saved choice is applied, or while leaving
 
     // Interval choices: 5 s increments up to 120 s

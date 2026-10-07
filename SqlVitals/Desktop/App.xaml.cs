@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace SqlVitals.Desktop;
 
 public partial class App : System.Windows.Application
@@ -9,6 +11,7 @@ public partial class App : System.Windows.Application
     private const string ShowEventName     = @"Local\SqlVitals.Desktop.Show";
 
     // Held for the life of the process; Windows releases it when the process ends.
+    [SuppressMessage("CodeQuality", "IDE0052", Justification = "Holding it is the point: it keeps the single-instance mutex alive")]
     private static System.Threading.Mutex? _instanceMutex;
 
     /// <summary>

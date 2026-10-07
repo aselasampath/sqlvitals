@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace SqlVitals.Engine.Deadlocks;
 
 /// <summary>A lock one process holds on, or waits for, a deadlock resource.</summary>
@@ -111,14 +113,14 @@ public sealed record DeadlockReport(
         Victims.Select(v => v.Statement ?? v.InputBuffer).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))) ?? string.Empty;
 
     /// <summary>Distinct sessions; a parallel query shows up as several processes of one SPID.</summary>
-    public int SessionCount => Processes.Select(p => p.SessionId?.ToString() ?? p.Id).Distinct().Count();
+    public int SessionCount => Processes.Select(p => p.SessionId?.ToString(CultureInfo.InvariantCulture) ?? p.Id).Distinct().Count();
 
     /// <summary>How many deadlocks in the range shown have the same pattern; set by the page.</summary>
     public int TimesSeen { get; init; } = 1;
 
     private static string Describe(IEnumerable<DeadlockProcess> processes) => string.Join("; ", processes
         // A parallel query's worker processes share the SPID; list the session once.
-        .GroupBy(p => p.SessionId?.ToString() ?? p.Id)
+        .GroupBy(p => p.SessionId?.ToString(CultureInfo.InvariantCulture) ?? p.Id)
         .Select(g => g.First())
         .Select(p => string.Join(" · ", new[] { p.SessionText, p.LoginName, p.CodeText }
             .Where(s => !string.IsNullOrWhiteSpace(s)))));

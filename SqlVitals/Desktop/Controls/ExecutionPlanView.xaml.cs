@@ -363,7 +363,7 @@ public partial class ExecutionPlanView : UserControl
 
     // ── Arrows ───────────────────────────────────────────────────────────
 
-    private void AddArrow(Canvas canvas, Point parent, Point child, PlanOperator childOp)
+    private static void AddArrow(Canvas canvas, Point parent, Point child, PlanOperator childOp)
     {
         var rows = childOp.HasActuals ? childOp.ActualRows!.Value : childOp.EstimatedRowsAllExecutions;
         var thickness = ArrowThickness(rows);

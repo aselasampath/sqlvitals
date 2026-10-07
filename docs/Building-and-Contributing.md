@@ -20,7 +20,19 @@ dotnet test                              # Engine.Tests + Desktop.Tests + Instal
 dotnet run --project SqlVitals\Desktop   # start the app
 ```
 
-A few `NU1701` warnings from LiveCharts' SkiaSharp/OpenTK dependencies are expected and harmless.
+**A warning fails the build** (#164). `Directory.Build.props` sets `TreatWarningsAsErrors`, `AnalysisLevel` *latest-recommended* (the .NET code-quality analyzers) and `EnforceCodeStyleInBuild` for every project, and `.editorconfig` holds the code style. When the build stops on a warning:
+
+- **Fix it.** Most have a quick fix (Ctrl+. in Visual Studio).
+- **Or suppress that one finding, next to the code, with the reason:** `[SuppressMessage("Design", "CA1001", Justification = "…")]` on the member, or `#pragma warning disable` / `restore` around the line with a comment. Never in a project file or for the whole codebase.
+- `.editorconfig` turns a rule down only when it doesn't fit a whole kind of code, and says why: underscores in test names (`Method_Scenario_Result`), and CA1859's concrete types, which would replace the read-only interfaces the code keeps on purpose. Style rules the code doesn't follow everywhere yet (braces, `var`, expression bodies, collection expressions, primary constructors) are suggestions: the IDE hints, the build doesn't stop.
+- The two LiveCharts projects (Desktop and Desktop.Tests) set `NoWarn` for `NU1701`: SkiaSharp.Views.WPF and OpenTK only ship .NET Framework builds, and they run fine on .NET 10.
+
+**Coverage**, as CI measures it:
+
+```powershell
+.\.github\scripts\Test-WithCoverage.ps1    # all three test projects, with coverlet
+# artifacts\coverage\report\SummaryGithub.md: line and branch coverage per class
+```
 
 One test project at a time:
 
@@ -46,8 +58,11 @@ Start-Process "SqlVitals\Desktop\bin\Debug\net10.0-windows\SqlVitals.Desktop.exe
 
 ```text
 SqlVitalsDashboard.slnx
-.github/workflows/pr-setup.yml   CI: tests + Setup build on every PR to main
+.github/workflows/pr-setup.yml   CI: tests + coverage + Setup build on every PR to main
 .github/workflows/release.yml    Release: tag vX.Y.Z → tests, Setup build, GitHub Release
+.github/scripts/Test-WithCoverage.ps1   Both workflows' test step: tests, coverlet, ReportGenerator
+Directory.Build.props            Build rules for every project: warnings are errors, analyzers on
+.editorconfig                    Code style; which rules fail the build
 TODO/wait-stats-ui/              Parked React UI (not in the solution)
 SqlVitals/
   Desktop/          WPF app: Pages/, ViewModels/, Controls/, Windows/, Helpers/, Services/, Styles/
@@ -81,10 +96,11 @@ The script publishes `SqlVitals.Desktop` **self-contained** for win-x64 and zips
 `.github/workflows/pr-setup.yml` runs on every pull request to `main` (opened, pushed to, reopened, ready for review) on `windows-latest`:
 
 1. Reads the version from the Desktop `.csproj`.
-2. Runs `Installer.Tests`, `Engine.Tests`, then `Desktop.Tests` (Release).
-3. Builds an **unsigned** Setup and portable zip with `Build-Installer.ps1`.
-4. Posts the file names, sizes, SHA-256 hashes and commit to the run summary.
-5. Uploads `SqlVitals-Setup-<version>-pr<N>` and `SqlVitals-<version>-win-x64-portable-pr<N>` as artifacts, kept for **14 days** (Actions tab → run → *Artifacts*).
+2. Runs `Installer.Tests`, `Engine.Tests`, then `Desktop.Tests` (Release) with coverlet, through `.github/scripts/Test-WithCoverage.ps1`. A build warning fails this step.
+3. Posts the coverage, line and branch per assembly, as a comment on the PR, and updates that same comment on every later run. The run summary lists every class. Nothing fails on a low number yet.
+4. Builds an **unsigned** Setup and portable zip with `Build-Installer.ps1`.
+5. Posts the file names, sizes, SHA-256 hashes and commit to the run summary.
+6. Uploads `SqlVitals-Setup-<version>-pr<N>` and `SqlVitals-<version>-win-x64-portable-pr<N>` as artifacts, kept for **14 days** (Actions tab → run → *Artifacts*).
 
 A new push cancels the build still running for the previous one. PR builds are unsigned, so Windows SmartScreen may ask to confirm (*More info → Run anyway*).
 
@@ -108,7 +124,7 @@ Releases are built by `.github/workflows/release.yml` when a version tag is push
 What the workflow does:
 
 1. Checks that the tag is `v` + `<Version>`. If it isn't, it stops before building anything, so the tag, the Setup file name and the version in *Settings → Apps* always agree.
-2. Runs `Installer.Tests` and `Engine.Tests` (Release).
+2. Runs `Installer.Tests`, `Engine.Tests` and `Desktop.Tests` (Release) with coverage, which goes to the run summary.
 3. Builds Setup and the portable zip with `Build-Installer.ps1`.
 4. Uploads `SqlVitals-Setup-<version>` (the `.exe` and `.sha256`) and `SqlVitals-<version>-win-x64-portable` (the `.zip` and `.sha256`) as run artifacts, kept for **90 days**.
 5. Creates the GitHub Release **as a draft**, titled *SqlVitals &lt;version&gt;*, with install and portable sections (each with its SHA-256) followed by notes generated from the PRs merged since the previous tag. It attaches all four files and checks that each arrived at full size.
@@ -129,6 +145,8 @@ Releases are **unsigned** for now. Code signing and an in-app update check are t
 
 - Work is tracked in [issues](https://github.com/aselasampath/sqlvitals/issues). Branches are named `<issue>-<short-slug>`, e.g. `33-configure-health-thresholds-in-settings`.
 - Open a PR to `main`. CI must pass, and reviewers can download the PR's Setup from the run's artifacts.
+- **Keep a PR under about 800 changed lines** (added plus removed). Split bigger work into PRs that each build and pass on their own, for example the plumbing first and the screens that use it next. A mechanical change (a rename, a reformat) can go over if it's in a PR of its own.
+- **Review before merging:** a person, or a `/code-review` pass in Claude Code. Fix what it confirms, with a test, and list the findings in the PR.
 - Squash-merge titles follow `<Title> (#<issue>) (#<PR>)`.
 - Bump `<Version>` in `SqlVitals.Desktop.csproj` when a change ships a feature. It reaches users when that version is tagged (see [Release a new version](#release-a-new-version)).
 - Document what users see in this wiki: a feature's page, the sidebar, Home's feature map and the reference pages it touches. The README stays a short front page (what SqlVitals is, features in a line each, getting started, how it compares, links here); only touch it when one of those changes.

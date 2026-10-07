@@ -15,6 +15,8 @@
 
 ![Export / AI: the verdict says what an export will write, above the sections and the output file](images/page-template/export.png)
 
+Numbers and dates in the file are written the same way on every PC (`1,234.5`, `2026-10-07 14:30`), whatever the Windows region (from 0.67.1).
+
 5. Open the file, copy it, and paste it into your AI assistant with a question, for example:
 
    > *"This is a diagnostic report from a SQL Server that users say is slow in the afternoons. What are the most likely causes, and what should I check first?"*

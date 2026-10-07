@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using SqlVitals.Engine.Models;
 
@@ -16,8 +17,8 @@ public static class UnusedIndexDropScript
 
         sb.AppendLine("/*");
         sb.AppendLine("  SqlVitals — DROP script for unused indexes");
-        sb.AppendLine($"  Generated: {generatedAt:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"  Indexes:   {list.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Generated: {generatedAt:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Indexes:   {list.Count}");
         sb.AppendLine();
         sb.AppendLine("  REVIEW BEFORE RUNNING:");
         sb.AppendLine("  - Usage stats reset when SQL Server restarts (or the database goes offline). An index");
@@ -45,7 +46,7 @@ public static class UnusedIndexDropScript
         foreach (var db in list.GroupBy(i => i.DatabaseName))
         {
             sb.AppendLine();
-            sb.AppendLine($"USE {QuoteName(db.Key)};");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"USE {QuoteName(db.Key)};");
             sb.AppendLine("GO");
 
             foreach (var ix in db)
@@ -59,7 +60,7 @@ public static class UnusedIndexDropScript
 
                 sb.AppendLine();
                 sb.AppendLine(ScriptText.Comment($"{table}.{QuoteName(ix.IndexName)}  ({ix.IndexType}{(ix.IsUnique ? ", UNIQUE" : "")})"));
-                sb.AppendLine($"-- Reads: {ix.TotalReads:N0}  Writes: {ix.UserUpdates:N0}  Rows: {ix.TableRows:N0}");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"-- Reads: {ix.TotalReads:N0}  Writes: {ix.UserUpdates:N0}  Rows: {ix.TableRows:N0}");
 
                 if (ix.IsUnique)
                 {

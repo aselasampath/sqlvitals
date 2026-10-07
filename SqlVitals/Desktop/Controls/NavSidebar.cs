@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -214,7 +215,7 @@ internal sealed class NavSidebar
     public void SetCount(string tag, int count, string toolTip)
     {
         var (badge, text) = _counts[tag];
-        text.Text = count.ToString();
+        text.Text = count.ToString(CultureInfo.CurrentCulture);
         badge.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
         var page = NavMenu.AllPages.First(p => p.Tag == tag);
         AutomationProperties.SetName(Button(tag), count == 0 ? page.Label : $"{page.Label} ({count} active)");

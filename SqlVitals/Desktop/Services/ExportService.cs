@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using SqlVitals.Engine.Models;
@@ -13,27 +14,27 @@ namespace SqlVitals.Desktop.Services;
 public class ExportService(IWaitStatsRepository repo)
 {
     // ── Public counter group names (match checkboxes in ExportPage) ───
-    public const string G_TOP_WAITS        = "Top Wait Types";
-    public const string G_ACTIVE_WAITS     = "Active Waits (live)";
-    public const string G_SIGNAL_VS_RES    = "Signal vs Resource Wait";
-    public const string G_TEMPDB           = "TempDB Pressure";
-    public const string G_MEMORY_GRANTS    = "Memory Grants";
-    public const string G_QUERY_STORE      = "Query Store Health";
-    public const string G_INDEX_HEALTH     = "Missing / Unused Indexes";
-    public const string G_RESOURCE_QUERIES = "Resource-Intensive Queries";
-    public const string G_INDEX_USAGE      = "Index Usage Patterns";
-    public const string G_INDEX_FRAG       = "Index Fragmentation";
-    public const string G_IMPLICIT_CONV    = "Implicit Conversions";
-    public const string G_STALE_STATS      = "Stale Statistics";
-    public const string G_DB_STORAGE       = "Database Storage & Configuration";
-    public const string G_SP_TRACE         = "Stored Procedure Activity";
+    public const string GroupTopWaits         = "Top Wait Types";
+    public const string GroupActiveWaits      = "Active Waits (live)";
+    public const string GroupSignalVsRes      = "Signal vs Resource Wait";
+    public const string GroupTempdb           = "TempDB Pressure";
+    public const string GroupMemoryGrants     = "Memory Grants";
+    public const string GroupQueryStore       = "Query Store Health";
+    public const string GroupIndexHealth      = "Missing / Unused Indexes";
+    public const string GroupResourceQueries  = "Resource-Intensive Queries";
+    public const string GroupIndexUsage       = "Index Usage Patterns";
+    public const string GroupIndexFrag        = "Index Fragmentation";
+    public const string GroupImplicitConv     = "Implicit Conversions";
+    public const string GroupStaleStats       = "Stale Statistics";
+    public const string GroupDbStorage        = "Database Storage & Configuration";
+    public const string GroupSpTrace          = "Stored Procedure Activity";
 
     public static readonly string[] AllGroups =
     [
-        G_TOP_WAITS, G_ACTIVE_WAITS,
-        G_SIGNAL_VS_RES, G_TEMPDB, G_MEMORY_GRANTS,
-        G_QUERY_STORE, G_INDEX_HEALTH, G_RESOURCE_QUERIES, G_INDEX_USAGE,
-        G_INDEX_FRAG, G_IMPLICIT_CONV, G_STALE_STATS, G_DB_STORAGE, G_SP_TRACE,
+        GroupTopWaits, GroupActiveWaits,
+        GroupSignalVsRes, GroupTempdb, GroupMemoryGrants,
+        GroupQueryStore, GroupIndexHealth, GroupResourceQueries, GroupIndexUsage,
+        GroupIndexFrag, GroupImplicitConv, GroupStaleStats, GroupDbStorage, GroupSpTrace,
     ];
 
     // ── Entry point ────────────────────────────────────────────────────
@@ -48,20 +49,20 @@ public class ExportService(IWaitStatsRepository repo)
         // Fire all selected queries concurrently
         var tasks = new List<(string Group, Task<string> Work)>();
 
-        if (groups.Contains(G_TOP_WAITS))        tasks.Add((G_TOP_WAITS,        FetchTopWaits()));
-        if (groups.Contains(G_ACTIVE_WAITS))     tasks.Add((G_ACTIVE_WAITS,     FetchActiveWaits()));
-        if (groups.Contains(G_SIGNAL_VS_RES))    tasks.Add((G_SIGNAL_VS_RES,    FetchSignalVsResource()));
-        if (groups.Contains(G_TEMPDB))           tasks.Add((G_TEMPDB,           FetchTempDb()));
-        if (groups.Contains(G_MEMORY_GRANTS))    tasks.Add((G_MEMORY_GRANTS,    FetchMemoryGrants()));
-        if (groups.Contains(G_QUERY_STORE))      tasks.Add((G_QUERY_STORE,      FetchQueryStore()));
-        if (groups.Contains(G_INDEX_HEALTH))     tasks.Add((G_INDEX_HEALTH,     FetchIndexHealth()));
-        if (groups.Contains(G_RESOURCE_QUERIES)) tasks.Add((G_RESOURCE_QUERIES, FetchResourceQueries()));
-        if (groups.Contains(G_INDEX_USAGE))      tasks.Add((G_INDEX_USAGE,      FetchIndexUsage()));
-        if (groups.Contains(G_INDEX_FRAG))       tasks.Add((G_INDEX_FRAG,       FetchIndexFrag()));
-        if (groups.Contains(G_IMPLICIT_CONV))    tasks.Add((G_IMPLICIT_CONV,    FetchImplicitConv()));
-        if (groups.Contains(G_STALE_STATS))      tasks.Add((G_STALE_STATS,      FetchStaleStats()));
-        if (groups.Contains(G_DB_STORAGE))       tasks.Add((G_DB_STORAGE,       FetchDatabaseStorage()));
-        if (groups.Contains(G_SP_TRACE))         tasks.Add((G_SP_TRACE,         FetchSpActivity()));
+        if (groups.Contains(GroupTopWaits))         tasks.Add((GroupTopWaits,         FetchTopWaits()));
+        if (groups.Contains(GroupActiveWaits))      tasks.Add((GroupActiveWaits,      FetchActiveWaits()));
+        if (groups.Contains(GroupSignalVsRes))      tasks.Add((GroupSignalVsRes,      FetchSignalVsResource()));
+        if (groups.Contains(GroupTempdb))           tasks.Add((GroupTempdb,           FetchTempDb()));
+        if (groups.Contains(GroupMemoryGrants))     tasks.Add((GroupMemoryGrants,     FetchMemoryGrants()));
+        if (groups.Contains(GroupQueryStore))       tasks.Add((GroupQueryStore,       FetchQueryStore()));
+        if (groups.Contains(GroupIndexHealth))      tasks.Add((GroupIndexHealth,      FetchIndexHealth()));
+        if (groups.Contains(GroupResourceQueries))  tasks.Add((GroupResourceQueries,  FetchResourceQueries()));
+        if (groups.Contains(GroupIndexUsage))       tasks.Add((GroupIndexUsage,       FetchIndexUsage()));
+        if (groups.Contains(GroupIndexFrag))        tasks.Add((GroupIndexFrag,        FetchIndexFrag()));
+        if (groups.Contains(GroupImplicitConv))     tasks.Add((GroupImplicitConv,     FetchImplicitConv()));
+        if (groups.Contains(GroupStaleStats))       tasks.Add((GroupStaleStats,       FetchStaleStats()));
+        if (groups.Contains(GroupDbStorage))        tasks.Add((GroupDbStorage,        FetchDatabaseStorage()));
+        if (groups.Contains(GroupSpTrace))          tasks.Add((GroupSpTrace,          FetchSpActivity()));
 
         await Task.WhenAll(tasks.Select(t => t.Work));
 
@@ -80,7 +81,7 @@ public class ExportService(IWaitStatsRepository repo)
     {
         sb.AppendLine("=============================================================");
         sb.AppendLine("  SQL SERVER PERFORMANCE DIAGNOSTIC REPORT");
-        sb.AppendLine($"  Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine("  Tool: SQL Database Monitor");
         sb.AppendLine("=============================================================");
         sb.AppendLine();
@@ -133,14 +134,14 @@ public class ExportService(IWaitStatsRepository repo)
                 sb.Append("  " + (cols[i].Value(row)?.ToString() ?? "").PadRight(widths[i]) + "  ");
             sb.AppendLine();
         }
-        if (rows.Count > 50) sb.AppendLine($"  ... ({rows.Count - 50} more rows truncated)");
+        if (rows.Count > 50) sb.AppendLine(CultureInfo.InvariantCulture, $"  ... ({rows.Count - 50} more rows truncated)");
         return sb.ToString();
     }
 
     // ── Fetch methods ──────────────────────────────────────────────────
     private async Task<string> FetchTopWaits()
     {
-        var sb = new StringBuilder(Section(G_TOP_WAITS));
+        var sb = new StringBuilder(Section(GroupTopWaits));
         try
         {
             var rows = (await repo.GetTopWaitTypesAsync()).ToList();
@@ -148,34 +149,34 @@ public class ExportService(IWaitStatsRepository repo)
                 ("Rank",        r => r.WaitRank),
                 ("Wait Type",   r => r.WaitType),
                 ("Category",    r => r.WaitCategory),
-                ("Wait Sec",    r => r.WaitTimeSec.ToString("N1")),
-                ("Avg ms/Task", r => r.AvgWaitMsPerTask.ToString("N2")),
-                ("Signal %",    r => r.SignalWaitPct.ToString("N1")),
-                ("% of Total",  r => r.PctOfTotal.ToString("N1")),
-                ("Cum %",       r => r.CumulativePct.ToString("N1"))));
+                ("Wait Sec",    r => r.WaitTimeSec.ToString("N1", CultureInfo.InvariantCulture)),
+                ("Avg ms/Task", r => r.AvgWaitMsPerTask.ToString("N2", CultureInfo.InvariantCulture)),
+                ("Signal %",    r => r.SignalWaitPct.ToString("N1", CultureInfo.InvariantCulture)),
+                ("% of Total",  r => r.PctOfTotal.ToString("N1", CultureInfo.InvariantCulture)),
+                ("Cum %",       r => r.CumulativePct.ToString("N1", CultureInfo.InvariantCulture))));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchActiveWaits()
     {
-        var sb = new StringBuilder(Section(G_ACTIVE_WAITS));
+        var sb = new StringBuilder(Section(GroupActiveWaits));
         try
         {
             var rows = (await repo.GetActiveWaitsAsync()).ToList();
             if (rows.Count == 0) { sb.AppendLine("  (no active waits)"); return sb.ToString(); }
             sb.Append(Table(rows,
                 ("Session", r => r.SessionId),
-                ("Blocking", r => r.BlockingSessionId > 0 ? r.BlockingSessionId.ToString() : ""),
+                ("Blocking", r => r.BlockingSessionId > 0 ? r.BlockingSessionId.ToString(CultureInfo.InvariantCulture) : ""),
                 ("Wait Type", r => r.WaitType),
-                ("Wait Sec",  r => r.WaitTimeSec.ToString("N1")),
+                ("Wait Sec",  r => r.WaitTimeSec.ToString("N1", CultureInfo.InvariantCulture)),
                 ("Category",  r => r.WaitCategory),
                 ("DB",        r => r.DatabaseName),
                 ("Login",     r => r.LoginName),
                 ("Query",     r => r.QueryText?.Substring(0, Math.Min(80, r.QueryText?.Length ?? 0)))));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
@@ -183,7 +184,7 @@ public class ExportService(IWaitStatsRepository repo)
     // a one-shot snapshot with no baseline to difference against.
     private async Task<string> FetchSpActivity()
     {
-        var sb = new StringBuilder(Section(G_SP_TRACE));
+        var sb = new StringBuilder(Section(GroupSpTrace));
         try
         {
             var rows = (await repo.GetProcedureStatsTotalsAsync(25)).ToList();
@@ -193,41 +194,41 @@ public class ExportService(IWaitStatsRepository repo)
             sb.AppendLine();
             sb.Append(Table(rows,
                 ("Procedure",  r => r.FullName),
-                ("Executions", r => r.ExecCount.ToString("N0")),
-                ("Avg ms",     r => r.AvgDurationMs.ToString("N1")),
-                ("Total ms",   r => r.TotalDurationMs.ToString("N0")),
-                ("Max ms",     r => r.MaxDurationMs.ToString("N0")),
-                ("Avg CPU ms", r => r.AvgCpuMs.ToString("N1")),
-                ("Avg Reads",  r => r.AvgLogicalReads.ToString("N0")),
-                ("Last Run",   r => r.LastExecutionTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "")));
+                ("Executions", r => r.ExecCount.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Avg ms",     r => r.AvgDurationMs.ToString("N1", CultureInfo.InvariantCulture)),
+                ("Total ms",   r => r.TotalDurationMs.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Max ms",     r => r.MaxDurationMs.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Avg CPU ms", r => r.AvgCpuMs.ToString("N1", CultureInfo.InvariantCulture)),
+                ("Avg Reads",  r => r.AvgLogicalReads.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Last Run",   r => r.LastExecutionTime?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "")));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchSignalVsResource()
     {
-        var sb = new StringBuilder(Section(G_SIGNAL_VS_RES));
+        var sb = new StringBuilder(Section(GroupSignalVsRes));
         try
         {
             var r = await repo.GetSignalVsResourceAsync();
             if (r is null) { sb.AppendLine("  (no data)"); return sb.ToString(); }
             sb.AppendLine(Kv("CPU Pressure Level",      r.CPUPressureLevel, r.CPUPressureLevel != "NORMAL" ? "ALERT" : null));
             sb.AppendLine(Kv("CPU Pressure Description", r.CPUPressureDescription));
-            sb.AppendLine(Kv("Total Wait (sec)",         r.TotalWaitSec.ToString("N1")));
-            sb.AppendLine(Kv("Signal Wait (CPU) %",      r.ServerSignalWaitPct.ToString("N1"), r.ServerSignalWaitPct > 25 ? "CRITICAL: >25%" : r.ServerSignalWaitPct > 10 ? "WARNING: >10%" : null));
-            sb.AppendLine(Kv("Resource Wait (I/O) %",    r.ServerResourceWaitPct.ToString("N1")));
-            sb.AppendLine(Kv("Signal Wait (sec)",        r.TotalSignalSec.ToString("N1")));
-            sb.AppendLine(Kv("Resource Wait (sec)",      r.TotalResourceSec.ToString("N1")));
-            sb.AppendLine(Kv("Server Start Time",        r.ServerStartTime.ToString("yyyy-MM-dd HH:mm")));
+            sb.AppendLine(Kv("Total Wait (sec)",         r.TotalWaitSec.ToString("N1", CultureInfo.InvariantCulture)));
+            sb.AppendLine(Kv("Signal Wait (CPU) %",      r.ServerSignalWaitPct.ToString("N1", CultureInfo.InvariantCulture), r.ServerSignalWaitPct > 25 ? "CRITICAL: >25%" : r.ServerSignalWaitPct > 10 ? "WARNING: >10%" : null));
+            sb.AppendLine(Kv("Resource Wait (I/O) %",    r.ServerResourceWaitPct.ToString("N1", CultureInfo.InvariantCulture)));
+            sb.AppendLine(Kv("Signal Wait (sec)",        r.TotalSignalSec.ToString("N1", CultureInfo.InvariantCulture)));
+            sb.AppendLine(Kv("Resource Wait (sec)",      r.TotalResourceSec.ToString("N1", CultureInfo.InvariantCulture)));
+            sb.AppendLine(Kv("Server Start Time",        r.ServerStartTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchTempDb()
     {
-        var sb = new StringBuilder(Section(G_TEMPDB));
+        var sb = new StringBuilder(Section(GroupTempdb));
         try
         {
             var (files, sessions, counters) = await repo.GetTempDbPressureAsync();
@@ -239,18 +240,18 @@ public class ExportService(IWaitStatsRepository repo)
             sb.Append(Table(files.ToList(),
                 ("File",         f => (object?)f.FileName),
                 ("Type",         f => (object?)f.FileType),
-                ("Size MB",      f => (object?)f.FileSizeMB.ToString("N0")),
-                ("Used MB",      f => (object?)f.SpaceUsedMB.ToString("N0")),
-                ("Free MB",      f => (object?)f.FreeSpaceMB.ToString("N0")),
-                ("% Used",       f => (object?)f.UsedPct.ToString("N1"))));
+                ("Size MB",      f => (object?)f.FileSizeMB.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Used MB",      f => (object?)f.SpaceUsedMB.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Free MB",      f => (object?)f.FreeSpaceMB.ToString("N0", CultureInfo.InvariantCulture)),
+                ("% Used",       f => (object?)f.UsedPct.ToString("N1", CultureInfo.InvariantCulture))));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchMemoryGrants()
     {
-        var sb = new StringBuilder(Section(G_MEMORY_GRANTS));
+        var sb = new StringBuilder(Section(GroupMemoryGrants));
         try
         {
             var (grants, clerks, counters) = await repo.GetMemoryGrantsAsync();
@@ -264,21 +265,21 @@ public class ExportService(IWaitStatsRepository repo)
                 sb.AppendLine("  -- Active Grants --");
                 sb.Append(Table(gl,
                     ("Session",      g => (object?)g.SessionId),
-                    ("DB",           g => (object?)g.DatabaseName),
+                    ("DB",           g => g.DatabaseName),
                     ("Req KB",       g => (object?)g.RequestedMemoryKB),
                     ("Granted KB",   g => (object?)g.GrantedMemoryKB),
                     ("Used KB",      g => (object?)g.UsedMemoryKB),
                     ("Wait ms",      g => (object?)g.WaitTimeMs),
-                    ("Status",       g => (object?)g.RequestStatus)));
+                    ("Status",       g => g.RequestStatus)));
             }
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchQueryStore()
     {
-        var sb = new StringBuilder(Section(G_QUERY_STORE));
+        var sb = new StringBuilder(Section(GroupQueryStore));
         try
         {
             var (health, topQueries) = await repo.GetQueryStoreAsync();
@@ -288,7 +289,7 @@ public class ExportService(IWaitStatsRepository repo)
                 sb.AppendLine(Kv("State",          health.ActualState, health.ActualState != health.DesiredState ? $"set to {health.DesiredState}" : null));
                 sb.AppendLine(Kv("Storage Used MB", health.CurrentStorageSizeMB));
                 sb.AppendLine(Kv("Storage Max MB",  health.MaxStorageSizeMB));
-                sb.AppendLine(Kv("Storage %",       health.StorageUsedPct.ToString("N1")));
+                sb.AppendLine(Kv("Storage %",       health.StorageUsedPct.ToString("N1", CultureInfo.InvariantCulture)));
                 sb.AppendLine(Kv("Queries",         health.TotalQueries));
                 sb.AppendLine(Kv("Plans",           health.TotalPlans));
                 sb.AppendLine(Kv("Forced Plans",    health.ForcedPlans));
@@ -301,18 +302,18 @@ public class ExportService(IWaitStatsRepository repo)
                 sb.AppendLine();
 
                 var checks = QueryStoreChecks.Run(health);
-                sb.AppendLine($"  -- Settings Checks: {QueryStoreChecks.Worst(checks)} --");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  -- Settings Checks: {QueryStoreChecks.Worst(checks)} --");
                 if (checks.Count == 0)
                     sb.AppendLine("  (no findings)");
                 foreach (var c in checks)
-                    sb.AppendLine($"  {c.LevelText,-8} {c.Title}: {c.Reason}");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"  {c.LevelText,-8} {c.Title}: {c.Reason}");
                 sb.AppendLine();
 
                 // On its own, so a failure here still leaves the top queries below.
                 if (health.IsEnabled)
                 {
                     try { await AppendQueryStoreProblemsAsync(sb, health); }
-                    catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); sb.AppendLine(); }
+                    catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); sb.AppendLine(); }
                 }
             }
             var tq = topQueries.ToList();
@@ -322,12 +323,12 @@ public class ExportService(IWaitStatsRepository repo)
                 sb.Append(Table(tq,
                     ("Query ID",     q => (object?)q.QueryId),
                     ("Executions",   q => (object?)q.TotalExecutions),
-                    ("Total CPU ms", q => (object?)q.TotalCpuMs.ToString("N0")),
-                    ("Avg CPU ms",   q => (object?)q.AvgCpuMs.ToString("N2")),
+                    ("Total CPU ms", q => (object?)q.TotalCpuMs.ToString("N0", CultureInfo.InvariantCulture)),
+                    ("Avg CPU ms",   q => (object?)q.AvgCpuMs.ToString("N2", CultureInfo.InvariantCulture)),
                     ("Forced Plan",  q => (object?)(q.IsForcedPlan ? "YES" : ""))));
             }
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
@@ -358,14 +359,14 @@ public class ExportService(IWaitStatsRepository repo)
         else
             sb.Append(Table(waits,
                 ("Category",  w => (object?)w.Name),
-                ("Wait ms",   w => (object?)w.WaitMs.ToString("N0")),
-                ("% of All",  w => (object?)w.PctOfAll.ToString("N1"))));
+                ("Wait ms",   w => (object?)w.WaitMs.ToString("N0", CultureInfo.InvariantCulture)),
+                ("% of All",  w => (object?)w.PctOfAll.ToString("N1", CultureInfo.InvariantCulture))));
         sb.AppendLine();
     }
 
     private async Task<string> FetchIndexHealth()
     {
-        var sb = new StringBuilder(Section(G_INDEX_HEALTH));
+        var sb = new StringBuilder(Section(GroupIndexHealth));
         try
         {
             var (missing, unused) = await repo.GetIndexHealthAsync();
@@ -375,7 +376,7 @@ public class ExportService(IWaitStatsRepository repo)
                 sb.AppendLine("  -- Missing Indexes --");
                 sb.Append(Table(ml,
                     ("Table",        m => m.TableName),
-                    ("Impact Score", m => m.ImpactScore.ToString("N0")),
+                    ("Impact Score", m => m.ImpactScore.ToString("N0", CultureInfo.InvariantCulture)),
                     ("Seeks",        m => m.UserSeeks),
                     ("Severity",     m => m.Severity),
                     ("Eq Cols",      m => m.EqualityColumns),
@@ -394,13 +395,13 @@ public class ExportService(IWaitStatsRepository repo)
                     ("Scans",     u => u.UserScans)));
             }
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchResourceQueries()
     {
-        var sb = new StringBuilder(Section(G_RESOURCE_QUERIES));
+        var sb = new StringBuilder(Section(GroupResourceQueries));
         try
         {
             var (byReads, byCpu, byHighestReads) = await repo.GetResourceIntensiveQueriesAsync();
@@ -414,7 +415,7 @@ public class ExportService(IWaitStatsRepository repo)
                 ("Avg Reads",    r => r.AvgLogicalReads),
                 ("Avg CPU µs",   r => r.AvgCPUTime),
                 ("Avg Elapsed µs", r => r.AvgElapsedTime),
-                ("Last Exec",    r => r.LastExecutionTime.ToString("yyyy-MM-dd HH:mm")),
+                ("Last Exec",    r => r.LastExecutionTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
                 ("Query",        r => r.QueryText?.Substring(0, Math.Min(60, r.QueryText?.Length ?? 0)))));
 
             sb.AppendLine();
@@ -444,13 +445,13 @@ public class ExportService(IWaitStatsRepository repo)
                 ("Avg Elapsed µs", r => r.AvgElapsedTime),
                 ("Query",        r => r.QueryText?.Substring(0, Math.Min(60, r.QueryText?.Length ?? 0)))));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchIndexUsage()
     {
-        var sb = new StringBuilder(Section(G_INDEX_USAGE));
+        var sb = new StringBuilder(Section(GroupIndexUsage));
         try
         {
             var rows = (await repo.GetIndexUsagePatternsAsync()).ToList();
@@ -464,13 +465,13 @@ public class ExportService(IWaitStatsRepository repo)
                 ("Updates",  r => r.UserUpdates),
                 ("Health",   r => r.IndexHealth)));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchIndexFrag()
     {
-        var sb = new StringBuilder(Section(G_INDEX_FRAG));
+        var sb = new StringBuilder(Section(GroupIndexFrag));
         try
         {
             var rows = (await repo.GetIndexFragmentationAsync()).ToList();
@@ -478,18 +479,18 @@ public class ExportService(IWaitStatsRepository repo)
             sb.Append(Table(rows,
                 ("Table",     r => r.TableName),
                 ("Index",     r => r.IndexName),
-                ("Frag %",    r => r.FragmentationPercent.ToString("F1")),
+                ("Frag %",    r => r.FragmentationPercent.ToString("F1", CultureInfo.InvariantCulture)),
                 ("Pages",     r => r.PageCount),
-                ("Density %", r => r.AvgPageSpaceUsed.ToString("F1")),
+                ("Density %", r => r.AvgPageSpaceUsed.ToString("F1", CultureInfo.InvariantCulture)),
                 ("Action",    r => r.RecommendedAction)));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchImplicitConv()
     {
-        var sb = new StringBuilder(Section(G_IMPLICIT_CONV));
+        var sb = new StringBuilder(Section(GroupImplicitConv));
         try
         {
             var rows = (await repo.GetImplicitConversionsAsync()).ToList();
@@ -501,13 +502,13 @@ public class ExportService(IWaitStatsRepository repo)
                 ("Plan KB",  r => r.PlanSizeKB),
                 ("Query",    r => r.QueryText?.Substring(0, Math.Min(80, r.QueryText?.Length ?? 0)))));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchStaleStats()
     {
-        var sb = new StringBuilder(Section(G_STALE_STATS));
+        var sb = new StringBuilder(Section(GroupStaleStats));
         try
         {
             var rows = (await repo.GetStaleStatisticsAsync()).ToList();
@@ -515,19 +516,19 @@ public class ExportService(IWaitStatsRepository repo)
             sb.Append(Table(rows,
                 ("Table",         r => r.TableName),
                 ("Statistics",    r => r.StatisticsName),
-                ("Last Updated",  r => r.LastUpdated?.ToString("yyyy-MM-dd") ?? "Never"),
+                ("Last Updated",  r => r.LastUpdated?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "Never"),
                 ("Days Old",      r => r.DaysOld),
                 ("Rows",          r => r.RowsInTable),
                 ("Modifications", r => r.ModificationsSinceLastUpdate),
-                ("Sample %",      r => r.SamplePct.ToString("F1"))));
+                ("Sample %",      r => r.SamplePct.ToString("F1", CultureInfo.InvariantCulture))));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 
     private async Task<string> FetchDatabaseStorage()
     {
-        var sb = new StringBuilder(Section(G_DB_STORAGE));
+        var sb = new StringBuilder(Section(GroupDbStorage));
         try
         {
             var (config, files, tempFiles, tables) = await repo.GetDatabaseStorageAsync();
@@ -557,10 +558,10 @@ public class ExportService(IWaitStatsRepository repo)
                 ("Database",   r => (object?)r.Database),
                 ("Recovery",   r => (object?)r.Recovery),
                 ("Compat",     r => (object?)r.Compat),
-                ("Data MB",    r => (object?)r.DataMB.ToString("N2")),
-                ("Log MB",     r => (object?)r.LogMB.ToString("N2")),
-                ("Other MB",   r => (object?)r.OtherMB.ToString("N2")),
-                ("Total MB",   r => (object?)r.TotalMB.ToString("N2")),
+                ("Data MB",    r => (object?)r.DataMB.ToString("N2", CultureInfo.InvariantCulture)),
+                ("Log MB",     r => (object?)r.LogMB.ToString("N2", CultureInfo.InvariantCulture)),
+                ("Other MB",   r => (object?)r.OtherMB.ToString("N2", CultureInfo.InvariantCulture)),
+                ("Total MB",   r => (object?)r.TotalMB.ToString("N2", CultureInfo.InvariantCulture)),
                 ("QS On",      r => (object?)r.QS),
                 ("Encrypted",  r => (object?)r.Encrypted)));
             sb.AppendLine();
@@ -571,9 +572,9 @@ public class ExportService(IWaitStatsRepository repo)
             sb.Append(Table(tempList,
                 ("File",     t => (object?)t.FileName),
                 ("Type",     t => (object?)t.FileType),
-                ("Size MB",  t => (object?)t.SizeMB.ToString("N2")),
-                ("Used MB",  t => (object?)t.UsedMB.ToString("N2")),
-                ("Free MB",  t => (object?)t.FreeMB.ToString("N2"))));
+                ("Size MB",  t => (object?)t.SizeMB.ToString("N2", CultureInfo.InvariantCulture)),
+                ("Used MB",  t => (object?)t.UsedMB.ToString("N2", CultureInfo.InvariantCulture)),
+                ("Free MB",  t => (object?)t.FreeMB.ToString("N2", CultureInfo.InvariantCulture))));
             sb.AppendLine();
 
             // ── Top tables ────────────────────────────────────────────
@@ -582,14 +583,14 @@ public class ExportService(IWaitStatsRepository repo)
             sb.Append(Table(tbl,
                 ("Schema",    r => (object?)r.SchemaName),
                 ("Table",     r => (object?)r.TableName),
-                ("Rows",      r => (object?)r.RowCount.ToString("N0")),
-                ("Data MB",   r => (object?)r.DataSizeMB.ToString("N3")),
-                ("Index MB",  r => (object?)r.IndexSizeMB.ToString("N3")),
-                ("Total MB",  r => (object?)r.TotalSizeMB.ToString("N3")),
+                ("Rows",      r => (object?)r.RowCount.ToString("N0", CultureInfo.InvariantCulture)),
+                ("Data MB",   r => (object?)r.DataSizeMB.ToString("N3", CultureInfo.InvariantCulture)),
+                ("Index MB",  r => (object?)r.IndexSizeMB.ToString("N3", CultureInfo.InvariantCulture)),
+                ("Total MB",  r => (object?)r.TotalSizeMB.ToString("N3", CultureInfo.InvariantCulture)),
                 ("Indexes",   r => (object?)r.IndexCount),
                 ("Type",      r => (object?)r.TableType)));
         }
-        catch (Exception ex) { sb.AppendLine($"  ERROR: {ex.Message}"); }
+        catch (Exception ex) { sb.AppendLine(CultureInfo.InvariantCulture, $"  ERROR: {ex.Message}"); }
         return sb.ToString();
     }
 }

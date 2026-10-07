@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -256,6 +258,9 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
     }
 
     // ── history ──────────────────────────────────────────────────────────────
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range = range;
@@ -367,6 +372,9 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
     }
 
     // ── baseline ─────────────────────────────────────────────────────────────
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_BaselineChanged(object? sender, bool on)
     {
         _baseline?.Clear();
@@ -572,7 +580,7 @@ public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
         TrendChart.Series = series;
         TrendChart.XAxes  = new[]
         {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString(axisFormat))
+            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString(axisFormat, CultureInfo.CurrentCulture))
             {
                 LabelsPaint     = new SolidColorPaint(axisColor),
                 SeparatorsPaint = new SolidColorPaint(gridColor) { StrokeThickness = 1 },

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace SqlVitals.Desktop.Services;
 
 /// <summary>
@@ -12,6 +14,7 @@ public interface IThemeService
     event EventHandler? Changed;
 
     /// <summary>Switches every page to <paramref name="theme"/>; nothing when it is already the theme.</summary>
+    [SuppressMessage("Naming", "CA1716", Justification = "Only C# calls it; Set is a keyword in Visual Basic")]
     void Set(AppTheme theme);
 }
 

@@ -8,6 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- NU1701: LiveCharts' .NET Framework-only dependencies, as in SqlVitals.Desktop.csproj. -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
 
   <!-- As in the app: WPF code, so keep WinForms types out of every file's scope. -->
@@ -17,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.1.0" />
     <!-- FakeTimeProvider: the chat queues' pacing and retries (#122) without waiting in real time. -->
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
     <!-- Roslyn: the MVVM guard tests (#181) read the app's sources with their symbols. -->

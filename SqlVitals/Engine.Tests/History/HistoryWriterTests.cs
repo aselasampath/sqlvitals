@@ -74,7 +74,7 @@ public sealed class HistoryWriterTests : IDisposable
         using (var writer = Create(Path.Combine(blocker, "history.db")))
             writer.Enqueue(new MetricSampleRecord(Conn, T0, Sample(1)));
 
-        Assert.Contains(_errors, e => e.StartsWith("Could not open the monitoring history file"));
+        Assert.Contains(_errors, e => e.StartsWith("Could not open the monitoring history file", StringComparison.Ordinal));
     }
 
     [Fact]

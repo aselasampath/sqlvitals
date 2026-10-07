@@ -137,8 +137,7 @@ public sealed class MonitoringSession : IDisposable
         get => _alerts?.Samples ?? AlertSettings.DefaultSamples;
         set
         {
-            if (_alerts is not null)
-                _alerts.Samples = Math.Max(1, value);
+            _alerts?.Samples = Math.Max(1, value);
         }
     }
 

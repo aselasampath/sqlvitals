@@ -239,7 +239,7 @@ public sealed class HistoryReaderTests : IDisposable
         Assert.True(still.IsActive);
         Assert.Null(still.EndReason);
         var ended = mine[0].Alert;
-        Assert.Equal((HealthIndicator.Cpu, HealthLevel.Warning, 82.0, (double?)75.0, "CPU 82%", AlertEndReason.Recovered),
+        Assert.Equal((HealthIndicator.Cpu, HealthLevel.Warning, 82.0, 75.0, "CPU 82%", AlertEndReason.Recovered),
                      (ended.Indicator, ended.Severity, ended.Value, ended.Threshold, ended.Detail, ended.EndReason));
         Assert.Equal(DateTimeKind.Utc, ended.EndedUtc!.Value.Kind);
 

@@ -29,6 +29,6 @@ public class RateLimitedReporterTests
     {
         var reporter = new RateLimitedReporter((_, _) => throw new IOException("log locked"), _time);
 
-        reporter.Report("anything", new Exception());   // must not throw
+        reporter.Report("anything", new InvalidOperationException());   // must not throw
     }
 }

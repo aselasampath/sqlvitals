@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -243,7 +244,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void Perfmon_OpensWithTheCountersPastTheirLimit() => UiThread.Run(() =>
     {
-        PerfmonCounter Counter(string name, long value, int type = 65792) => new("SQLServer:Memory Manager", name, "", value, type, Now);
+        static PerfmonCounter Counter(string name, long value, int type = 65792) => new("SQLServer:Memory Manager", name, "", value, type, Now);
         var page = new PerfmonPage(Repo(new()
         {
             [nameof(IWaitStatsRepository.GetPerfmonCountersAsync)] = Task.FromResult<IEnumerable<PerfmonCounter>>(
@@ -320,8 +321,8 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void StaleStats_OpensWithTheMostChangedStatistic() => UiThread.Run(() =>
     {
-        StaleStatistic Stat(string table, string name, long rows, long changes, int days) =>
-            new("dbo", table, name, Now.AddDays(-days), days, rows, rows / 4, 25, changes, false, name.StartsWith("_WA"), false, "SalesDb", Now);
+        static StaleStatistic Stat(string table, string name, long rows, long changes, int days) =>
+            new("dbo", table, name, Now.AddDays(-days), days, rows, rows / 4, 25, changes, false, name.StartsWith("_WA", StringComparison.Ordinal), false, "SalesDb", Now);
         var settings = Settings();
         var page = new StaleStatisticsPage(Repo(new()
         {
@@ -348,7 +349,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     private static AgentJob Job(string name, JobOutcome? last, TimeSpan? runningFor = null, string? message = null) =>
         new(Guid.NewGuid(), name, true, "Database Maintenance", "sa", $"{name}, nightly.", last, Now.AddHours(-6), TimeSpan.FromMinutes(12), message,
             30, last == JobOutcome.Failed ? 2 : 0, 28, TimeSpan.FromMinutes(12), runningFor is null ? null : Now - runningFor, runningFor,
-            Now.AddHours(18), Now.AddHours(18).ToString("yyyy-MM-dd HH:mm"));
+            Now.AddHours(18), Now.AddHours(18).ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture));
 
     [Fact]
     public void AgentJobs_OpensWithTheFailedAndLongRunningJobs() => UiThread.Run(() =>
@@ -359,7 +360,7 @@ public sealed class TemplateEverywhereTests : IDisposable
             Job("Reindex SalesDb", JobOutcome.Succeeded, runningFor: TimeSpan.FromMinutes(55)),
             Job("Purge history", JobOutcome.Succeeded),
         ]);
-        JobStepRun Step(int id, string name, JobOutcome outcome, string message) => new(id, name, outcome, Now.AddHours(-6), TimeSpan.FromMinutes(3), message);
+        static JobStepRun Step(int id, string name, JobOutcome outcome, string message) => new(id, name, outcome, Now.AddHours(-6), TimeSpan.FromMinutes(3), message);
         // The first job's runs are read at once; another's never come back, as on a slow msdb.
         var runReads = 0;
         IReadOnlyList<JobRun> runs = [new(Now.AddHours(-6), JobOutcome.Failed, TimeSpan.FromMinutes(6), "The job failed.",
@@ -476,7 +477,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         // (not monitored in the background), so not named as off.
         var calls = new ConcurrentQueue<(string, string)>();
         var settings = Settings();
-        ConnectionSettings Conn(string server, string name) => new() { Server = server, Name = name, Database = "Sales", Authentication = SqlAuthMode.Windows };
+        static ConnectionSettings Conn(string server, string name) => new() { Server = server, Name = name, Database = "Sales", Authentication = SqlAuthMode.Windows };
         var (hot, quiet) = (Conn("hot", "Hot"), Conn("quiet", "Quiet"));
         settings.Upsert(hot);
         settings.Upsert(quiet);
@@ -519,7 +520,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         page.TxtFilePath.Text = @"C:\Reports";
         Hosted(page, () => Task.CompletedTask, "export.png", () => AssertLaidOut(page.Shell, page.GroupList, minDetail: 150));
 
-        var count = ExportService.AllGroups.Count();
+        var count = ExportService.AllGroups.Length;
         Assert.Equal((VerdictLevel.Info, $"Ready to export {count} of {count} sections"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
         Assert.Equal(@"To C:\Reports\SqlVitals_Report.txt: plain UTF-8 text with labelled sections and tables, read from the open server now.", page.Shell.Verdict.Why);
 

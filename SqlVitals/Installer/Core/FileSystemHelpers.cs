@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -11,7 +12,7 @@ internal static class FileSystemHelpers
     {
         using var sha    = SHA256.Create();
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920);
-        return string.Concat(sha.ComputeHash(stream).Select(b => b.ToString("x2")));
+        return string.Concat(sha.ComputeHash(stream).Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
     }
 
     /// <summary>

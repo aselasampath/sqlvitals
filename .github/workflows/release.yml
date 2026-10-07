@@ -53,14 +53,10 @@ jobs:
           "prerelease=$(($version -like '*-*').ToString().ToLower())" >> $env:GITHUB_OUTPUT
           Write-Host "Release number: $version"
 
-      - name: Test installer logic
-        run: dotnet test SqlVitals/Installer.Tests/SqlVitals.Installer.Tests.csproj -c Release
-
-      - name: Test engine
-        run: dotnet test SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj -c Release
-
-      - name: Test app services
-        run: dotnet test SqlVitals/Desktop.Tests/SqlVitals.Desktop.Tests.csproj -c Release
+      # Coverage goes to the run summary; a release has no PR to comment on.
+      - name: Test with coverage
+        shell: pwsh
+        run: ./.github/scripts/Test-WithCoverage.ps1
 
       # Unsigned until a signing certificate is set up (#49).
       - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}

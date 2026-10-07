@@ -11,7 +11,7 @@ namespace SqlVitals.Installer.Tests;
 /// Runs the file steps (unpack → verify → commit) against a scratch folder. Registry and
 /// shortcut steps touch the real machine and are left to manual testing.
 /// </summary>
-public class InstallStepsTests : IDisposable
+public sealed class InstallStepsTests : IDisposable
 {
     private readonly TempDir _dir = new();
     private readonly string  _setupExe;

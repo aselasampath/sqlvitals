@@ -45,20 +45,20 @@ public partial class ExportPage : Page, IRefreshable, IPageContext
     // Friendly one-line descriptions for each group
     private static readonly Dictionary<string, string> Descriptions = new()
     {
-        [ExportService.G_TOP_WAITS]        = "Top 25 wait types by total wait time",
-        [ExportService.G_ACTIVE_WAITS]     = "Currently waiting sessions",
-        [ExportService.G_SIGNAL_VS_RES]    = "Signal (CPU) vs resource wait split",
-        [ExportService.G_TEMPDB]           = "TempDB contention & space usage",
-        [ExportService.G_MEMORY_GRANTS]    = "Pending / executing memory grant requests",
-        [ExportService.G_QUERY_STORE]      = "Query Store plan forcing & health",
-        [ExportService.G_INDEX_HEALTH]     = "Missing index DMV suggestions + unused indexes",
-        [ExportService.G_RESOURCE_QUERIES] = "Top queries by reads & CPU",
-        [ExportService.G_INDEX_USAGE]      = "Seeks / scans / lookups per index",
-        [ExportService.G_INDEX_FRAG]       = "Fragmentation % for indexes > 1 000 pages",
-        [ExportService.G_IMPLICIT_CONV]    = "Implicit type conversions causing scans",
-        [ExportService.G_STALE_STATS]      = "Statistics with high modification counters",
-        [ExportService.G_DB_STORAGE]       = "DB / log / tempdb sizes, server config, top tables",
-        [ExportService.G_SP_TRACE]         = "Stored procedure execution counts, duration & reads",
+        [ExportService.GroupTopWaits]         = "Top 25 wait types by total wait time",
+        [ExportService.GroupActiveWaits]      = "Currently waiting sessions",
+        [ExportService.GroupSignalVsRes]      = "Signal (CPU) vs resource wait split",
+        [ExportService.GroupTempdb]           = "TempDB contention & space usage",
+        [ExportService.GroupMemoryGrants]     = "Pending / executing memory grant requests",
+        [ExportService.GroupQueryStore]       = "Query Store plan forcing & health",
+        [ExportService.GroupIndexHealth]      = "Missing index DMV suggestions + unused indexes",
+        [ExportService.GroupResourceQueries]  = "Top queries by reads & CPU",
+        [ExportService.GroupIndexUsage]       = "Seeks / scans / lookups per index",
+        [ExportService.GroupIndexFrag]        = "Fragmentation % for indexes > 1 000 pages",
+        [ExportService.GroupImplicitConv]     = "Implicit type conversions causing scans",
+        [ExportService.GroupStaleStats]       = "Statistics with high modification counters",
+        [ExportService.GroupDbStorage]        = "DB / log / tempdb sizes, server config, top tables",
+        [ExportService.GroupSpTrace]          = "Stored procedure execution counts, duration & reads",
     };
 
     // The page template's verdict (#150): what an export will write and where, or what the last one did.

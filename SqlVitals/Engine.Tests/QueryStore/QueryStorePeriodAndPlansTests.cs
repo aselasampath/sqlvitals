@@ -81,7 +81,7 @@ public class QueryStorePeriodAndPlansTests
     public void The_plans_grid_sums_each_plans_intervals_and_keeps_an_unused_forced_plan()
     {
         var t0 = new DateTime(2026, 9, 28, 8, 0, 0, DateTimeKind.Utc);
-        QueryStorePlanInterval Interval(DateTime start, long plan, long n, double durationUs, long failed = 0) =>
+        static QueryStorePlanInterval Interval(DateTime start, long plan, long n, double durationUs, long failed = 0) =>
             new(start, plan, failed, QueryStoreTotals.Zero with { Executions = n, DurationUs = durationUs }, start.AddMinutes(5), start.AddMinutes(50));
 
         var rows = QueryStorePlanSummaries.From(

@@ -194,7 +194,7 @@ public partial class GridFilterBox : UserControl
             .Where(c => c.Visibility == Visibility.Visible && c.ClipboardContentBinding is not null)
             .Select(c => RowFilter.CellText(
                 c.OnCopyingCellClipboardContent(item),
-                (c as DataGridBoundColumn)?.Binding is Binding b ? b.StringFormat : null,
+                c is DataGridBoundColumn { Binding: Binding b } ? b.StringFormat : null,
                 culture));
         if (ExtraRowText?.Invoke(item) is { Length: > 0 } extra)
             cells = cells.Append(extra);

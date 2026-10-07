@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,6 +15,7 @@ using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop;
 
+[SuppressMessage("Design", "CA1001", Justification = "A Window isn't IDisposable; OnClosing disposes _tray, Monitoring and Chat")]
 public partial class MainWindow : Window
 {
     // Replaced whenever the active connection changes, so pages created after that point
@@ -312,11 +314,9 @@ public partial class MainWindow : Window
     // A new page: the drawer shows its details, or says it has none; it stays open or closed.
     private void ShowDetailsOf(object page)
     {
-        if (_detailsSource is not null)
-            _detailsSource.DetailsChanged -= OnDetailsChanged;
+        _detailsSource?.DetailsChanged -= OnDetailsChanged;
         _detailsSource = page as IDetailsSource;
-        if (_detailsSource is not null)
-            _detailsSource.DetailsChanged += OnDetailsChanged;
+        _detailsSource?.DetailsChanged += OnDetailsChanged;
         Details.Show(_detailsSource?.Details ?? DrawerContent.None);
     }
 

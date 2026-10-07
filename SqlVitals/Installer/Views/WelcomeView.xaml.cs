@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Installer.Core;
@@ -62,5 +63,6 @@ public partial class WelcomeView : UserControl
     /// Always true: even a Setup without its files goes on to the system check, which explains the
     /// problem and how to fix it rather than leaving a disabled button.
     /// </summary>
+    [SuppressMessage("Performance", "CA1822", Justification = "Read like the other views' CanContinue")]
     public bool CanContinue => true;
 }

@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write   # the coverage comment
 
 # A new push to the PR supersedes the build still running for the previous one.
 concurrency:
@@ -44,15 +45,25 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           Write-Host "Release number: $version"
 
-      # Tests run before the payload exists, so they don't carry the ~80 MB package.
-      - name: Test installer logic
-        run: dotnet test SqlVitals/Installer.Tests/SqlVitals.Installer.Tests.csproj -c Release
+      # Tests run before the payload exists, so they don't carry the ~80 MB package. The build treats
+      # warnings as errors (Directory.Build.props), so a new warning fails here too.
+      - name: Test with coverage
+        shell: pwsh
+        run: ./.github/scripts/Test-WithCoverage.ps1
 
-      - name: Test engine
-        run: dotnet test SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj -c Release
-
-      - name: Test app services
-        run: dotnet test SqlVitals/Desktop.Tests/SqlVitals.Desktop.Tests.csproj -c Release
+      # One comment per PR, updated by each run; found by the marker on its first line.
+      - name: Post coverage on the PR
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          $repo = '${{ github.repository }}'
+          $id = gh api "repos/$repo/issues/$env:PR/comments" --paginate `
+                  --jq '.[] | select(.body | startswith("<!-- sqlvitals-coverage -->")) | .id' | Select-Object -Last 1
+          if ($id) { gh api -X PATCH "repos/$repo/issues/comments/$id" -F body=@artifacts/coverage/comment.md | Out-Null }
+          else     { gh pr comment $env:PR --body-file artifacts/coverage/comment.md }
 
       # Unsigned: signing secrets aren't available to pull requests (and never to forks).
       - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}

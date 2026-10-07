@@ -370,8 +370,8 @@ public sealed class ChatNotificationServiceTests
         // Tried at 0, 2, 12 and 42 s.
         Assert.Equal(new DateTime(2026, 9, 30, 10, 42, 42, DateTimeKind.Utc), chat.Status(channel.Id).FailingSinceUtc);
         Assert.Single(notices);
-        Assert.Contains(_log, l => l.EndsWith("alert on Sales-Prod server error (503); retry 1 of 3 in 2 s"));
-        Assert.Contains(_log, l => l.EndsWith("alert on Sales-Prod server error (503); not sent after 4 tries"));
+        Assert.Contains(_log, l => l.EndsWith("alert on Sales-Prod server error (503); retry 1 of 3 in 2 s", StringComparison.Ordinal));
+        Assert.Contains(_log, l => l.EndsWith("alert on Sales-Prod server error (503); not sent after 4 tries", StringComparison.Ordinal));
     }
 
     [Fact]

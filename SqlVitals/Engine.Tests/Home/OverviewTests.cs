@@ -130,8 +130,8 @@ public sealed class OverviewTests
                      headlines.Select(h => h.Kind));
         Assert.Equal(("92 %", HealthLevel.Critical, "Warning ≥ 75 % · critical ≥ 90 %"), (headlines[0].ValueText, headlines[0].Level, headlines[0].Note));
         Assert.Equal([40.0, 92.0], headlines[0].Trend);
-        Assert.Equal(("1,500", (HealthLevel?)null, "No threshold"), (headlines[1].ValueText, headlines[1].Level, headlines[1].Note));
-        Assert.Equal(("7", (HealthLevel?)null), (headlines[2].ValueText, headlines[2].Level));
+        Assert.Equal(("1,500", null, "No threshold"), (headlines[1].ValueText, headlines[1].Level, headlines[1].Note));
+        Assert.Equal(("7", null), (headlines[2].ValueText, headlines[2].Level));
         Assert.Equal([2.0, 7.0], headlines[2].Trend);
         Assert.Equal(("250 s", HealthLevel.Warning, "Warning < 300 s"), (headlines[3].ValueText, headlines[3].Level, headlines[3].Note));
     }
@@ -150,10 +150,10 @@ public sealed class OverviewTests
     public void Headlines_WithoutASample_OrAFigureTheServerDoesntReport()
     {
         var none = Headlines.From([], HealthThresholds.Default);
-        Assert.All(none, h => Assert.Equal(("—", (HealthLevel?)null), (h.ValueText, h.Level)));
+        Assert.All(none, h => Assert.Equal(("—", null), (h.ValueText, h.Level)));
 
         var ple = Headlines.From([ServerTileTests.Sample(ple: 0)], HealthThresholds.Default)[3];
-        Assert.Equal(("Not reported", (HealthLevel?)null), (ple.ValueText, ple.Level));
+        Assert.Equal(("Not reported", null), (ple.ValueText, ple.Level));
         Assert.Empty(ple.Trend);
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Repositories;
@@ -24,6 +25,7 @@ public interface IDialogService
     void Warn(string message, string caption);
 
     /// <summary>Something failed: a file that couldn't be written.</summary>
+    [SuppressMessage("Naming", "CA1716", Justification = "Only C# calls it; Error is a keyword in Visual Basic")]
     void Error(string message, string caption);
 
     /// <summary>A generated script to review, copy or save; SqlVitals never runs it.</summary>

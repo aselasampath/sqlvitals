@@ -55,45 +55,45 @@ public sealed class CrumbPanel : Panel
 
     private double SeparatorWidth => SeparatorText().Width + 2 * Gap;
 
-    protected override Size MeasureOverride(Size available)
+    protected override Size MeasureOverride(Size availableSize)
     {
         var children = InternalChildren.Cast<UIElement>().ToList();
         foreach (var child in children)
-            child.Measure(new Size(double.PositiveInfinity, available.Height));
+            child.Measure(new Size(double.PositiveInfinity, availableSize.Height));
 
         _shown.Clear();
         _shown.AddRange(children);
         var separator = SeparatorWidth;
         double Width() => _shown.Sum(c => c.DesiredSize.Width) + separator * Math.Max(0, _shown.Count - 1);
 
-        while (Width() > available.Width && _shown.Take(_shown.Count - 1).FirstOrDefault(GetCanDrop) is { } drop)
+        while (Width() > availableSize.Width && _shown.Take(_shown.Count - 1).FirstOrDefault(GetCanDrop) is { } drop)
             _shown.Remove(drop);
 
         var kept = children.Where(c => !GetCanDrop(c)).ToList();
         KeptWidth = kept.Sum(c => c.DesiredSize.Width) + separator * Math.Max(0, kept.Count - 1);
-        Spare = available.Width - KeptWidth;
+        Spare = availableSize.Width - KeptWidth;
 
         // Each part in turn takes its width while there is room; the one that reaches the end
         // trims to what is left, and any after it go.
         double x = 0;
         for (var i = 0; i < _shown.Count; i++)
         {
-            var left = available.Width - x - (i > 0 ? separator : 0);
+            var left = availableSize.Width - x - (i > 0 ? separator : 0);
             if (left < 1)
             {
                 _shown.RemoveRange(i, _shown.Count - i);
                 break;
             }
             if (_shown[i].DesiredSize.Width > left)
-                _shown[i].Measure(new Size(left, available.Height));
+                _shown[i].Measure(new Size(left, availableSize.Height));
             x += (i > 0 ? separator : 0) + _shown[i].DesiredSize.Width;
         }
 
         var height = children.Count == 0 ? 0 : children.Max(c => c.DesiredSize.Height);
-        return new Size(Math.Min(Width(), double.IsInfinity(available.Width) ? Width() : available.Width), height);
+        return new Size(Math.Min(Width(), double.IsInfinity(availableSize.Width) ? Width() : availableSize.Width), height);
     }
 
-    protected override Size ArrangeOverride(Size final)
+    protected override Size ArrangeOverride(Size finalSize)
     {
         _separators.Clear();
         var separator = SeparatorWidth;
@@ -110,12 +110,12 @@ public sealed class CrumbPanel : Panel
                 _separators.Add(x + Gap);
                 x += separator;
             }
-            var width = Math.Min(child.DesiredSize.Width, Math.Max(0, final.Width - x));
-            child.Arrange(new Rect(x, (final.Height - child.DesiredSize.Height) / 2, width, child.DesiredSize.Height));
+            var width = Math.Min(child.DesiredSize.Width, Math.Max(0, finalSize.Width - x));
+            child.Arrange(new Rect(x, (finalSize.Height - child.DesiredSize.Height) / 2, width, child.DesiredSize.Height));
             x += width;
         }
         InvalidateVisual();
-        return final;
+        return finalSize;
     }
 
     protected override void OnRender(DrawingContext dc)

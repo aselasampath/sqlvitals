@@ -34,7 +34,7 @@ internal partial class AppearanceCategory : UserControl, ISettingsCategory
     }
 
     // While the saved density is put on the buttons, which isn't a change.
-    private bool _showingDensity;
+    private readonly bool _showingDensity;
 
     private void ShowDensity(GridDensity density) =>
         TxtDensity.Text = density == GridDensity.Compact
