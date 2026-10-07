@@ -231,7 +231,7 @@ public class ConfigurationChecksTests
         Assert.Equal(ConfigCheckStatus.Warn, check.Status);
         Assert.Equal("2 data files", check.Current);
         Assert.Equal("8 (then 4 more at a time if needed)", check.Recommended);
-        var adds = check.FixScript!.Split('\n').Where(l => l.StartsWith("ALTER DATABASE tempdb ADD FILE")).ToList();
+        var adds = check.FixScript!.Split('\n').Where(l => l.StartsWith("ALTER DATABASE tempdb ADD FILE", StringComparison.Ordinal)).ToList();
         Assert.Equal(6, adds.Count);
         Assert.Contains(@"NAME = N'tempdev2', FILENAME = N'T:\TempDB\tempdev2.ndf', SIZE = 4096MB, FILEGROWTH = 256MB", adds[0]);
     }

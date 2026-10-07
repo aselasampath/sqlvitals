@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -9,7 +10,11 @@ using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
+// Block-scoped on purpose for now: converting re-indents the whole file. Convert it in a change that
+// rewrites the file anyway.
+#pragma warning disable IDE0161
 namespace SqlVitals.Desktop.Controls
+#pragma warning restore IDE0161
 {
     public partial class ProcessMapControl : UserControl
     {
@@ -644,7 +649,7 @@ namespace SqlVitals.Desktop.Controls
 
             var lbl = new TextBlock
             {
-                Text       = node.SessionId.ToString(),
+                Text       = node.SessionId.ToString(CultureInfo.CurrentCulture),
                 Foreground = Brushes.White,
                 FontFamily = new FontFamily("Segoe UI"),
                 FontSize   = 10,
@@ -786,7 +791,7 @@ namespace SqlVitals.Desktop.Controls
                     StyleBall(ball, node, id == _selected);
         }
 
-        private void StyleBall(Ellipse ball, ProcessNode node, bool selected)
+        private static void StyleBall(Ellipse ball, ProcessNode node, bool selected)
         {
             if (selected)
             {

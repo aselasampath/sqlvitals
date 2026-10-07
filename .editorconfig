@@ -1,0 +1,111 @@
+# Code style for SqlVitals (#164). Directory.Build.props turns on EnforceCodeStyleInBuild and
+# TreatWarningsAsErrors, so every rule set to "warning" here fails the build.
+#   warning    = the code already follows it everywhere; keep it that way.
+#   suggestion = the preferred style for new code, but existing code is mixed, so the IDE only hints.
+# To silence one finding, suppress it next to the code with the reason. Only turn a rule down here
+# when it doesn't fit a whole kind of code (as for the tests at the end), and say why.
+
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,ps1,xaml}]
+indent_size = 4
+
+[*.{csproj,props,targets,slnx,manifest,json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+
+# ── Layout ──────────────────────────────────────────────────────────
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:warning
+# Braces are optional on one-line ifs, and the code uses both forms.
+csharp_prefer_braces = when_multiline:silent
+csharp_new_line_before_open_brace = all
+
+# ── Names and modifiers ─────────────────────────────────────────────
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_style_predefined_type_for_member_access = true:warning
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+csharp_preferred_modifier_order = public,private,protected,internal,file,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,required,volatile,async:warning
+dotnet_style_readonly_field = true:warning
+
+# Private fields are _camelCase.
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# ── Expressions ─────────────────────────────────────────────────────
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_implicit_object_creation_when_type_is_apparent = true:warning
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_prefer_simple_using_statement = true:warning
+csharp_prefer_static_local_function = true:warning
+csharp_style_pattern_matching_over_as_with_null_check = true:warning
+csharp_style_pattern_matching_over_is_with_cast_check = true:warning
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_inlined_variable_declaration = true:warning
+csharp_style_throw_expression = true:warning
+csharp_style_conditional_delegate_call = true:warning
+csharp_style_prefer_null_check_over_type_check = true:warning
+dotnet_style_coalesce_expression = true:warning
+dotnet_style_null_propagation = true:warning
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:warning
+dotnet_style_object_initializer = true:warning
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_prefer_collection_expression = when_types_loosely_match:suggestion
+csharp_style_unused_value_assignment_preference = discard_variable:warning
+csharp_style_unused_value_expression_statement_preference = discard_variable:silent
+dotnet_code_quality_unused_parameters = all:warning
+
+# ── Rules with no option to set a severity on ───────────────────────
+dotnet_diagnostic.IDE0001.severity = warning   # simplify name
+dotnet_diagnostic.IDE0002.severity = warning   # simplify member access
+dotnet_diagnostic.IDE0004.severity = warning   # redundant cast
+dotnet_diagnostic.IDE0035.severity = warning   # unreachable code
+dotnet_diagnostic.IDE0043.severity = warning   # invalid format string
+dotnet_diagnostic.IDE0051.severity = warning   # unused private member
+dotnet_diagnostic.IDE0052.severity = warning   # unread private member
+dotnet_diagnostic.IDE0100.severity = warning   # redundant equality
+dotnet_diagnostic.IDE0110.severity = warning   # unnecessary discard
+dotnet_diagnostic.IDE0280.severity = warning   # nameof
+dotnet_diagnostic.IDE1005.severity = warning   # ?.Invoke for delegates
+# Collection expressions: [..] where the type allows it. Suggestions, as above.
+dotnet_diagnostic.IDE0300.severity = suggestion
+dotnet_diagnostic.IDE0301.severity = warning
+dotnet_diagnostic.IDE0305.severity = suggestion
+dotnet_diagnostic.IDE0306.severity = warning
+
+# ── Quality rules (AnalysisLevel latest-recommended) turned down for the whole codebase ──
+# CA1859 wants concrete types (List, Dictionary, SolidColorBrush) on private members. The code
+# keeps read-only interfaces and base types there on purpose; the speed-up doesn't matter here.
+dotnet_diagnostic.CA1859.severity = suggestion
+
+# ── Test projects ───────────────────────────────────────────────────
+# Rules that don't fit tests. Each is still on for the code under test.
+[SqlVitals/{Engine.Tests,Desktop.Tests,Installer.Tests}/**.cs]
+# Test names are Method_Scenario_Result.
+dotnet_diagnostic.CA1707.severity = none
+# Inline expected arrays read better than static fields, and a test runs once.
+dotnet_diagnostic.CA1861.severity = none

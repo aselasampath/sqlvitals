@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
@@ -6,6 +8,7 @@ namespace SqlVitals.Desktop.Tests;
 /// once can corrupt, so these run one class at a time.
 /// </summary>
 [CollectionDefinition(Name)]
+[SuppressMessage("Naming", "CA1711", Justification = "xUnit's naming for a collection definition")]
 public sealed class PresentationSourceCollection
 {
     public const string Name = "Presentation sources";

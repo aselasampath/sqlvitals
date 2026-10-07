@@ -278,7 +278,7 @@ public sealed class QuickSwitcherTests
     [Fact]
     public void ARoute_IsDescribed_ByItsPageAndServer()
     {
-        string? Name(Guid id) => id == Prod01.Id ? "PROD-SQL01" : null;
+        static string? Name(Guid id) => id == Prod01.Id ? "PROD-SQL01" : null;
         Assert.Equal("Processes · PROD-SQL01", Breadcrumb.Describe(new Route("Processes", ConnectionId: Prod01.Id), Name));
         Assert.Equal("Overview · PROD-SQL01", Breadcrumb.Describe(Workspace.Overview(Prod01.Id), Name));
         Assert.Equal("Alerts · PROD-SQL01", Breadcrumb.Describe(new Route("Alerts", AlertsConnectionId: Prod01.Id), Name));

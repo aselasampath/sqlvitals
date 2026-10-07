@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -269,14 +271,12 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     // ── Page lifetime ────────────────────────────────────────────────────────
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        if (NavigationService != null)
-            NavigationService.Navigating += OnFrameNavigating;
+        NavigationService?.Navigating += OnFrameNavigating;
     }
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
-        if (NavigationService != null)
-            NavigationService.Navigating -= OnFrameNavigating;
+        NavigationService?.Navigating -= OnFrameNavigating;
         StopTimer();
     }
 
@@ -356,6 +356,9 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     }
 
     // ── History ──────────────────────────────────────────────────────────────
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range = range;
@@ -443,6 +446,9 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
         HistoryGaps.WithGaps(items, b => b.TimeUtc, bucket).Select(p => (p.Time.ToLocalTime(), p.Item));
 
     // ── Baseline ─────────────────────────────────────────────────────────────
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_BaselineChanged(object? sender, bool on)
     {
         _baseline?.Clear();
@@ -640,7 +646,7 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
         var axisFormat = history is null ? "HH:mm:ss" : ConnectionHistory.AxisFormat(history.Span);
         PerfmonChart.XAxes = new[]
         {
-            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString(axisFormat))
+            new DateTimeAxis(TimeSpan.FromSeconds(1), dt => dt.ToString(axisFormat, CultureInfo.CurrentCulture))
             {
                 LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
                 SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
@@ -667,15 +673,12 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
 
     private void UpdateChart()
     {
-        if (PerfmonChart.CoreChart is not null)
-        {
-            PerfmonChart.CoreChart.Update(
+        PerfmonChart.CoreChart?.Update(
                 new LiveChartsCore.Kernel.ChartUpdateParams
                 {
                     IsAutomaticUpdate = false,
                     Throttling        = false,
                 });
-        }
     }
 
     private static string ShortObjectName(string full)

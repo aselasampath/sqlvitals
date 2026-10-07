@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -43,7 +44,7 @@ internal static class TestPayload
     public static string Sha256(string content)
     {
         using var sha = SHA256.Create();
-        return string.Concat(sha.ComputeHash(Encoding.UTF8.GetBytes(content)).Select(b => b.ToString("x2")));
+        return string.Concat(sha.ComputeHash(Encoding.UTF8.GetBytes(content)).Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
     }
 }
 

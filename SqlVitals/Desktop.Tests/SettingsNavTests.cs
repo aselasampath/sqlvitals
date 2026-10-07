@@ -52,8 +52,8 @@ public sealed class SettingsNavTests
         var names    = snapshot.Settings.Select(s => s.Name.Split(':')[0]).Append("Theme").ToHashSet();
         var fields   = snapshot.Connections.SelectMany(c => c.Fields).Select(f => f.Name.Split(':')[0]).ToHashSet();
 
-        Assert.Empty(SettingsNav.AppSettings.Keys.Where(k => !names.Contains(k)));
-        Assert.Empty(SettingsNav.ConnectionSettings.Keys.Where(k => !fields.Contains(k)));
+        Assert.DoesNotContain(SettingsNav.AppSettings.Keys, k => !names.Contains(k));
+        Assert.DoesNotContain(SettingsNav.ConnectionSettings.Keys, k => !fields.Contains(k));
     }
 
     [Fact]

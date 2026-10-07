@@ -135,7 +135,7 @@ public sealed class SettingsDiffTests
     public void AChatChannelAddedOrRemoved_IsOneRowNamingIt_WithoutItsUrl()
     {
         var added = Assert.Single(SettingsDiff.Between(WithChannel(withChannel: false), WithChannel(), ActivitySources.Settings, Now));
-        Assert.Equal((ActivityEvents.ChatChannelAdded, "DBA team", (string?)null), (added.Event, added.Detail, added.ConnectionName));
+        Assert.Equal((ActivityEvents.ChatChannelAdded, "DBA team", null), (added.Event, added.Detail, added.ConnectionName));
 
         var removed = Assert.Single(SettingsDiff.Between(WithChannel(), WithChannel(withChannel: false), ActivitySources.Settings, Now));
         Assert.Equal((ActivityEvents.ChatChannelRemoved, "DBA team"), (removed.Event, removed.Detail));

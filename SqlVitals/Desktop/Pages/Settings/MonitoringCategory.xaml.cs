@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -35,7 +36,7 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
         var store = _context.Service.Load();
         ChkStartMonitoringAutomatically.IsChecked = store.StartMonitoringAutomatically;
         _savedTimeout   = store.CommandTimeoutSeconds;
-        TxtTimeout.Text = _savedTimeout.ToString();
+        TxtTimeout.Text = _savedTimeout.ToString(CultureInfo.CurrentCulture);
         LoadHistorySettings(store);
         UpdateHistorySize();
 

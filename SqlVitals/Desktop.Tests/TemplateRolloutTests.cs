@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Windows;
@@ -45,10 +46,10 @@ public sealed class TemplateRolloutTests : IDisposable
             return proxy;
         }
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            _results.TryGetValue(method!.Name, out var result)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            _results.TryGetValue(targetMethod!.Name, out var result)
                 ? result()
-                : throw new NotSupportedException($"{method.Name} isn't faked in this test.");
+                : throw new NotSupportedException($"{targetMethod.Name} isn't faked in this test.");
     }
 
     // ── Hosting and rendering ────────────────────────────────────────────
@@ -204,7 +205,7 @@ public sealed class TemplateRolloutTests : IDisposable
 
         Assert.Equal((VerdictLevel.Ok, "No deadlocks in the last hour"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
         Press(page.Shell.VerdictView, 0);
-        Assert.Equal(1, page.DeadlocksGrid.Items.Count);
+        Assert.Single(page.DeadlocksGrid.Items);
         Assert.Equal("1 deadlock in what system_health holds, on t", page.Shell.Verdict.Headline);
     });
 
@@ -382,7 +383,7 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Contains(true, opened);
         Assert.Equal("dbo.usp_GetOrderHistory", source.Details.Title);
         var view = Assert.IsType<RowDetailsView>(source.Details.Body);
-        Assert.Contains("Executions: " + 41_210.ToString("N0"), view.RowTexts);
+        Assert.Contains("Executions: " + 41_210.ToString("N0", CultureInfo.CurrentCulture), view.RowTexts);
         Assert.StartsWith("SELECT o.OrderId", view.Text);
         Assert.Equal(["Execution plan"], view.PlanHeadings);
 
@@ -558,7 +559,7 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Equal("dbo.usp_GetOrderHistory", source.Details.Title);
         var view = Assert.IsType<RowDetailsView>(source.Details.Body);
         Assert.StartsWith("EXEC dbo.usp_GetOrderHistory", view.Text);
-        Assert.Contains("Duration: " + 1_840.ToString("N0") + " ms", view.RowTexts);
+        Assert.Contains("Duration: " + 1_840.ToString("N0", CultureInfo.CurrentCulture) + " ms", view.RowTexts);
         Assert.Equal(["Cached plan of the procedure"], view.PlanHeadings);
         Assert.Equal(12, page.CallsGrid.Columns.Count);
         Assert.Equal(9, page.AggregateGrid.Columns.Count);

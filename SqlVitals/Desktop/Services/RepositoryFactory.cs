@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Repositories;
 
@@ -24,7 +25,7 @@ public static class RepositoryFactory
             overrides["ConnectionStrings:SqlServer"] = connectionString;
 
         if (commandTimeoutSeconds > 0)
-            overrides["QuerySettings:CommandTimeoutSeconds"] = commandTimeoutSeconds.ToString();
+            overrides["QuerySettings:CommandTimeoutSeconds"] = commandTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
 
         if (overrides.Count > 0)
             configBuilder.AddInMemoryCollection(overrides);

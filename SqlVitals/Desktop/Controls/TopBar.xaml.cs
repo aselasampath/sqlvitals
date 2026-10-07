@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
@@ -73,7 +74,7 @@ public partial class TopBar : UserControl
 
         var counted = shown == SidebarMode.Hidden && alerts > 0;
         SidebarBadge.Visibility = counted ? Visibility.Visible : Visibility.Collapsed;
-        TxtSidebarBadge.Text    = alerts > 99 ? "99+" : alerts.ToString();
+        TxtSidebarBadge.Text    = alerts > 99 ? "99+" : alerts.ToString(CultureInfo.CurrentCulture);
         var count = alerts == 1 ? "1 active alert" : $"{alerts} active alerts";
         BtnSidebar.ToolTip = counted ? $"{tip}\n{count}" : tip;
         AutomationProperties.SetName(BtnSidebar, counted ? $"{name} ({count})" : name);

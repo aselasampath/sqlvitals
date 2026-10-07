@@ -1,5 +1,6 @@
 using System.Collections;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -153,7 +154,7 @@ internal sealed class ProcessGroupHeader(string key) : INotifyPropertyChanged
     public void Update(ProcessGroup group)
     {
         Name           = group.Name;
-        Summary        = group.Summary();
+        Summary        = group.Summary(CultureInfo.CurrentCulture);
         HasHeadBlocker = group.HeadBlockers > 0;
         HasBlocked     = group.Blocked > 0;
     }

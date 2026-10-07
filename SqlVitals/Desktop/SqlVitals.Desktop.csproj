@@ -8,15 +8,18 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>SqlVitals.Desktop</AssemblyName>
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.67.0</Version>
+    <Version>0.67.1</Version>
     <!-- The name Windows shows on notifications and in Task Manager. -->
     <AssemblyTitle>SqlVitals</AssemblyTitle>
     <Product>SqlVitals</Product>
     <!-- Exe, taskbar and window icon. Regenerate with Branding/Build-Icon.ps1. -->
     <ApplicationIcon>..\Branding\SqlVitals.ico</ApplicationIcon>
+    <!-- NU1701: LiveCharts' SkiaSharp.Views.WPF, OpenTK and OpenTK.GLWpfControl only ship .NET Framework
+         builds. They run fine on .NET 10 (the chart render tests draw with them). NoWarn on the package
+         reference doesn't reach its dependencies, so it is set for the project. -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
 
   <!-- WPF code here; keep WinForms types out of every file's scope (Application, MessageBox…). -->

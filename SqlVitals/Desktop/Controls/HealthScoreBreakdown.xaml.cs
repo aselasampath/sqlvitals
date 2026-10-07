@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Desktop.Helpers;
@@ -60,7 +61,7 @@ public partial class HealthScoreBreakdown : UserControl
             return;
         }
 
-        RunScore.Text       = score.Value.ToString();
+        RunScore.Text       = score.Value.ToString(CultureInfo.CurrentCulture);
         RunScore.Foreground = HealthBrushes.For(score.Level);
         TxtSubtitle.Text    = $"{connectionName} · latest sample at {score.Time:HH:mm:ss}" +
                               (paused ? " · monitoring paused" : string.Empty);
@@ -82,7 +83,7 @@ public partial class HealthScoreBreakdown : UserControl
         {
             var lost = check.PointsLost > 0;
             var row  = AddRow(header: false, check.Level, check.Name, check.ValueText, check.WarningText, check.CriticalText,
-                              check.Weight.ToString(), lost ? $"−{check.PointsLost}" : "0");
+                              check.Weight.ToString(CultureInfo.CurrentCulture), lost ? $"−{check.PointsLost}" : "0");
             foreach (var cell in row)
             {
                 cell.ToolTip = check.Reading.Reason ?? HealthThresholds.Info(check.Indicator).Hint;
@@ -94,7 +95,7 @@ public partial class HealthScoreBreakdown : UserControl
             if (lost && OpenCheck is { } open)
                 AddLink(row[0], check.Indicator, open);
         }
-        AddRow(header: true, null, "Score", "", "", "", HealthScore.Max.ToString(), score.Value.ToString());
+        AddRow(header: true, null, "Score", "", "", "", HealthScore.Max.ToString(CultureInfo.CurrentCulture), score.Value.ToString(CultureInfo.CurrentCulture));
     }
 
     // "Blocking chain →" on a line of its own under the check's name. The name cell's tooltip

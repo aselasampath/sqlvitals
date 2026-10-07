@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
@@ -404,6 +405,9 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
     });
 
     // A past range, or Live again, from the top bar.
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range   = range;

@@ -58,7 +58,7 @@ public sealed class QuickSwitcherOverlayTests
         Route? opened = null;
         bool? intoPage = null;
         switcher.OpenRequested += (route, into) => (opened, intoPage) = (route, into);
-        Open(switcher, focused: page.Child as UIElement);
+        Open(switcher, focused: page.Child);
 
         switcher.SearchBox.Text = "temp";
         Layout(host);

@@ -90,7 +90,7 @@ public sealed class NavigationHistoryTests
         history.Visit(Page("Processes", ServerB));
         history.Visit(Page("Backups", ServerB));
         history.Visit(Page("Deadlocks", ServerA));
-        bool stillThere(Route r) => r.ConnectionId != ServerB;
+        static bool stillThere(Route r) => r.ConnectionId != ServerB;
 
         var back = history.PeekBack(stillThere);
         Assert.Equal(Page("TopWaits", ServerA), back);

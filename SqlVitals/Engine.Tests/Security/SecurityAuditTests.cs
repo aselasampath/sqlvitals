@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using SqlVitals.Engine.Security;
 
 namespace SqlVitals.Engine.Tests.Security;
@@ -27,7 +28,7 @@ public class SecurityAuditTests
         var bytes = new byte[8 + subs.Length * 4];
         bytes[0] = 1;
         bytes[1] = (byte)subs.Length;
-        bytes[7] = byte.Parse(parts[2]);
+        bytes[7] = byte.Parse(parts[2], CultureInfo.InvariantCulture);
         for (var i = 0; i < subs.Length; i++)
             BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8 + i * 4), subs[i]);
         return bytes;

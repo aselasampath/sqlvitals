@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using SqlVitals.Engine.Models;
 
@@ -40,15 +41,15 @@ public static class UpdateStatisticsScript
 
         sb.AppendLine("/*");
         sb.AppendLine("  SqlVitals — UPDATE STATISTICS script for stale statistics");
-        sb.AppendLine($"  Generated:  {generatedAt:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"  Statistics: {summary.Statistics} on {summary.Tables} table(s)");
-        sb.AppendLine($"  Sampling:   {(sampling == StatisticsSampling.FullScan ? "FULLSCAN — every row is read" : "default — SQL Server chooses the sample size")}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Generated:  {generatedAt:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Statistics: {summary.Statistics} on {summary.Tables} table(s)");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Sampling:   {(sampling == StatisticsSampling.FullScan ? "FULLSCAN — every row is read" : "default — SQL Server chooses the sample size")}");
         sb.AppendLine();
         sb.AppendLine("  REVIEW BEFORE RUNNING:");
         if (sampling == StatisticsSampling.FullScan)
         {
             sb.AppendLine("  - FULLSCAN reads the whole table once per statistic. On large tables that is a lot");
-            sb.AppendLine($"    of I/O (about {summary.RowsInTables:N0} rows in total here) — run it off-peak.");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    of I/O (about {summary.RowsInTables:N0} rows in total here) — run it off-peak.");
         }
         else
         {
@@ -78,7 +79,7 @@ public static class UpdateStatisticsScript
         foreach (var db in list.GroupBy(s => s.DatabaseName))
         {
             sb.AppendLine();
-            sb.AppendLine($"USE {UnusedIndexDropScript.QuoteName(db.Key)};");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"USE {UnusedIndexDropScript.QuoteName(db.Key)};");
             sb.AppendLine("GO");
 
             foreach (var st in db)
@@ -88,8 +89,8 @@ public static class UpdateStatisticsScript
 
                 sb.AppendLine();
                 sb.AppendLine(ScriptText.Comment($"{table}.{name}"));
-                sb.AppendLine($"-- Modifications: {st.ModificationsSinceLastUpdate:N0}  Rows: {(st.RowsInTable is { } rows ? rows.ToString("N0") : "unknown")}  " +
-                              $"Last updated: {(st.LastUpdated is { } d ? $"{d:yyyy-MM-dd} ({st.DaysOld:N0} days)" : "never")}  " +
+                sb.AppendLine(CultureInfo.InvariantCulture, $"-- Modifications: {st.ModificationsSinceLastUpdate:N0}  Rows: {(st.RowsInTable is { } rows ? rows.ToString("N0", CultureInfo.InvariantCulture) : "unknown")}  " +
+                              $"Last updated: {(st.LastUpdated is { } d ? string.Create(CultureInfo.InvariantCulture, $"{d:yyyy-MM-dd} ({st.DaysOld:N0} days)") : "never")}  " +
                               $"Last sample: {st.SamplePct:0.#}%");
 
                 if (sampling == StatisticsSampling.Default && st.SamplePct >= 100)
@@ -98,7 +99,7 @@ public static class UpdateStatisticsScript
                     sb.AppendLine("-- NOTE: incremental statistic — this updates every partition. WITH RESAMPLE ON PARTITIONS (...) refreshes only the ones that changed.");
 
                 sb.AppendLine(Guard(table, st.StatisticsName));
-                sb.AppendLine($"    UPDATE STATISTICS {table} ({name}){withClause};");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"    UPDATE STATISTICS {table} ({name}){withClause};");
             }
 
             sb.AppendLine("GO");

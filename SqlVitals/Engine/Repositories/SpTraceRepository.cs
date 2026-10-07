@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
@@ -13,6 +14,7 @@ namespace SqlVitals.Engine.Repositories;
 /// procedure-stats snapshot across polls. One instance lives for the app session, created
 /// by <see cref="WaitStatsRepository"/>.
 /// </remarks>
+[SuppressMessage("Design", "CA1001", Justification = "_gate never creates a wait handle, so there is nothing to dispose")]
 public partial class SpTraceRepository(IConfiguration configuration)
     : BaseRepository(configuration), ISpTraceRepository
 {

@@ -326,7 +326,7 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
             TxtChatName.Focus();
             return;
         }
-        if (store.ChatChannels.Any(c => c.Id != id && string.Equals(c.Name.Trim(), name, StringComparison.CurrentCultureIgnoreCase)))
+        if (store.ChatChannels.Any(c => c.Id != id && string.Equals(c.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)))
         {
             ShowChatFormMessage($"A channel named \"{name}\" already exists. Enter a different name.", success: false);
             TxtChatName.Focus();
@@ -451,8 +451,7 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
 
     private void ChatConnectionsChoice_Changed(object sender, RoutedEventArgs e)
     {
-        if (LstChatConnections is not null)
-            LstChatConnections.IsEnabled = RadChatChosenConnections.IsChecked == true;
+        LstChatConnections?.IsEnabled = RadChatChosenConnections.IsChecked == true;
     }
 
     /// <summary>A tick box under Connections in the channel form.</summary>

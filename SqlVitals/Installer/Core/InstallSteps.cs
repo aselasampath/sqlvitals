@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -85,7 +86,7 @@ internal sealed class ExtractPayloadStep : IInstallStep
     private static void PreserveLeftoverBackup(InstallContext context)
     {
         if (!Directory.Exists(context.BackupDir)) return;
-        var keep = context.BackupDir + "-" + DateTime.Now.ToString("yyyyMMddHHmmss");
+        var keep = context.BackupDir + "-" + DateTime.Now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
         Directory.Move(context.BackupDir, keep);
         SetupLog.Warn($"Found a backup from an interrupted run; kept it at {keep}");
     }

@@ -63,7 +63,7 @@ public sealed class PageTemplateTests : IDisposable
     {
         public readonly HashSet<string> Keys = [];
         public IReadOnlySet<string> Folded(string page) =>
-            Keys.Where(k => k.StartsWith(page + "/")).Select(k => k[(page.Length + 1)..]).ToHashSet();
+            Keys.Where(k => k.StartsWith(page + "/", StringComparison.Ordinal)).Select(k => k[(page.Length + 1)..]).ToHashSet();
         public void SetFolded(string page, string section, bool folded)
         {
             if (folded) Keys.Add($"{page}/{section}"); else Keys.Remove($"{page}/{section}");

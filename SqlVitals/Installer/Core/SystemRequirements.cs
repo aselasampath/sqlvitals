@@ -101,6 +101,9 @@ public static class SystemRequirements
                 "Download SqlVitals Setup again from your official SqlVitals release page and run the new copy.");
     }
 
+    // Files only a self-contained .NET desktop app carries.
+    private static readonly string[] RuntimeFiles = ["hostfxr.dll", "coreclr.dll", "wpfgfx_cor3.dll"];
+
     /// <summary>The .NET 10 runtime ships inside the package, so the user never installs it separately.</summary>
     internal static RequirementResult CheckRuntime(PayloadManifest? manifest)
     {
@@ -109,8 +112,7 @@ public static class SystemRequirements
             return new RequirementResult(name, CheckStatus.Failed, "Can't check: the installation package couldn't be read.",
                 "Download SqlVitals Setup again and run the new copy.");
 
-        var bundled = new[] { "hostfxr.dll", "coreclr.dll", "wpfgfx_cor3.dll" }
-            .All(dll => manifest.Files.Any(f => string.Equals(Path.GetFileName(f.Path), dll, StringComparison.OrdinalIgnoreCase)));
+        var bundled = RuntimeFiles.All(dll => manifest.Files.Any(f => string.Equals(Path.GetFileName(f.Path), dll, StringComparison.OrdinalIgnoreCase)));
 
         return bundled
             ? new RequirementResult(name, CheckStatus.Passed, "Included with SqlVitals — nothing extra to install.")
@@ -231,7 +233,7 @@ public static class SystemRequirements
     /// <summary>Real OS version; Environment.OSVersion can be capped by compatibility shims.</summary>
     private static Version GetWindowsVersion()
     {
-        var info = new OsVersionInfoEx { dwOSVersionInfoSize = Marshal.SizeOf(typeof(OsVersionInfoEx)) };
+        var info = new OsVersionInfoEx { dwOSVersionInfoSize = Marshal.SizeOf<OsVersionInfoEx>() };
         return RtlGetVersion(ref info) == 0
             ? new Version(info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber)
             : Environment.OSVersion.Version;

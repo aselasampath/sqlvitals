@@ -243,9 +243,9 @@ public sealed class ViewStateTests
         // The next read returns different numbers, and the rows in another order.
         public static void Bump() => _reads++;
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
-            switch (method!.Name)
+            switch (targetMethod!.Name)
             {
                 case nameof(IWaitStatsRepository.GetIndexHealthAsync):
                     var rows = new[] { Missing("Customers", 100 + _reads), Missing("Orders", 50 + _reads) };
@@ -257,7 +257,7 @@ public sealed class ViewStateTests
                     return Task.FromResult<IEnumerable<IndexFragmentation>>([]);
             }
 
-            var type = method.ReturnType;
+            var type = targetMethod.ReturnType;
             if (type == typeof(Task))
                 return Task.FromException(new InvalidOperationException("No server in tests."));
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>))

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace SqlVitals.Engine.ChatNotifications;
 
 /// <summary>
@@ -56,6 +58,7 @@ public sealed record ChannelReport(ChannelTarget Target, ChatMessage Message, We
 /// to retry never holds up another. Waits run on a <see cref="TimeProvider"/>, so tests don't wait
 /// in real time, and are measured on its timestamps, which the PC's clock changing doesn't move.
 /// </summary>
+[SuppressMessage("Naming", "CA1711", Justification = "It is a queue: one channel's messages, sent in order")]
 public sealed class ChannelQueue : IDisposable
 {
     /// <summary>Individual messages that may wait; the next ones are folded into a summary.</summary>

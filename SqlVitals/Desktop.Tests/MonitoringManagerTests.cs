@@ -205,7 +205,7 @@ public sealed class MonitoringManagerTests : IDisposable
                 (ActivityEvents.AppExited,         ActivitySources.AppExit),
             },
             rows.Select(r => (r.Event, r.Source)));
-        Assert.All(rows.Where(r => r.Event.StartsWith("Monitoring")), r => Assert.Equal(("Prod", (Guid?)active.Id), (r.ConnectionName, r.ConnectionId)));
+        Assert.All(rows.Where(r => r.Event.StartsWith("Monitoring", StringComparison.Ordinal)), r => Assert.Equal(("Prod", (Guid?)active.Id), (r.ConnectionName, r.ConnectionId)));
         Assert.All(rows, r => Assert.Equal(Environment.MachineName, r.Machine));
         Assert.All(rows, r => Assert.EndsWith(Environment.UserName, r.WindowsUser));
     }
@@ -294,7 +294,11 @@ public sealed class MonitoringManagerTests : IDisposable
         monitoring.AllStopped   += chat.OnAllStopped;
         monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
         Pump(TimeSpan.FromSeconds(1.5));
+        // Pump drives this thread's dispatcher and the chat queue finishes on the thread pool, so the
+        // wait can't deadlock; an await would leave the dispatcher thread.
+#pragma warning disable xUnit1031
         chat.WhenIdleAsync().Wait(TimeSpan.FromSeconds(10));
+#pragma warning restore xUnit1031
 
         chat.BeginExit();
         monitoring.Dispose();
@@ -332,12 +336,12 @@ public sealed class MonitoringManagerTests : IDisposable
             return proxy;
         }
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            method!.Name == nameof(IWaitStatsRepository.GetLiveMetricsAsync)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            targetMethod!.Name == nameof(IWaitStatsRepository.GetLiveMetricsAsync)
                 ? Task.FromResult(new LiveMetricSnapshot(DateTime.UtcNow, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 99,
                                                          PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
                                                          0, 0, 0, 0, 0, 0, 0))
-                : base.Invoke(method, args);
+                : base.Invoke(targetMethod, args);
     }
 
     /// <summary>An IWaitStatsRepository that records every call and fails it, as an unreachable server would.</summary>
@@ -359,10 +363,10 @@ public sealed class MonitoringManagerTests : IDisposable
             _calls  = calls;
         }
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
-            _calls.Enqueue((_server, method!.Name));
-            var type = method.ReturnType;
+            _calls.Enqueue((_server, targetMethod!.Name));
+            var type = targetMethod.ReturnType;
             if (type == typeof(Task))
                 return Task.FromException(new InvalidOperationException("No server in tests."));
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>))

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Engine.Models;
@@ -27,7 +28,7 @@ public sealed class DatabaseFileVm
     public decimal FileSizeMB         => _m.FileSizeMB;
     public decimal? SpaceUsedMB       => _m.SpaceUsedMB;
     public decimal? FreeSpaceMB       => _m.FreeSpaceMB;
-    public string  MaxSizeMBDisplay   => _m.MaxSizeMB == -1 ? "Unlimited" : _m.MaxSizeMB.ToString("N2");
+    public string  MaxSizeMBDisplay   => _m.MaxSizeMB == -1 ? "Unlimited" : _m.MaxSizeMB.ToString("N2", CultureInfo.CurrentCulture);
     public string  AutoGrowth         => _m.AutoGrowth;
     public string  AutoShrinkDisplay  => _m.AutoShrink   ? "YES" : "";
     public string  QueryStoreOnDisplay=> _m.QueryStoreOn ? "YES" : "";
@@ -160,8 +161,8 @@ public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFo
 
         var maxDop  = configList.FirstOrDefault(c => c.ParameterName == "max degree of parallelism");
         var costThr = configList.FirstOrDefault(c => c.ParameterName == "cost threshold for parallelism");
-        KpiMaxDop.Text        = maxDop  != null ? maxDop.CurrentValue.ToString()  : "—";
-        KpiCostThreshold.Text = costThr != null ? costThr.CurrentValue.ToString() : "—";
+        KpiMaxDop.Text        = maxDop  != null ? maxDop.CurrentValue.ToString(CultureInfo.CurrentCulture)  : "—";
+        KpiCostThreshold.Text = costThr != null ? costThr.CurrentValue.ToString(CultureInfo.CurrentCulture) : "—";
 
         // Folded, the sizes say it in one line (#150).
         SizesSection.FoldedSummary = $"{FormatMB(totalMB)} in all · data {FormatMB(dataMB)} · log {FormatMB(logMB)} · TempDB {FormatMB(tempDbMB)} · " +

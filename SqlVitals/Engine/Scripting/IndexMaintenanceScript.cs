@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using SqlVitals.Engine.Models;
 
@@ -80,15 +81,15 @@ public static class IndexMaintenanceScript
 
         sb.AppendLine("/*");
         sb.AppendLine("  SqlVitals — index maintenance script (REORGANIZE / REBUILD)");
-        sb.AppendLine($"  Generated: {generatedAt:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"  Indexes:   {plan.Count} — {summary.Rebuild} to rebuild, " +
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Generated: {generatedAt:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Indexes:   {plan.Count} — {summary.Rebuild} to rebuild, " +
                       $"{summary.Reorganize} to reorganize, {summary.Skipped} skipped");
         sb.AppendLine();
         sb.AppendLine("  Thresholds used:");
-        sb.AppendLine($"  - REORGANIZE from {options.ReorganizeThresholdPercent:0.##}% fragmentation");
-        sb.AppendLine($"  - REBUILD from {options.RebuildThresholdPercent:0.##}%");
-        sb.AppendLine($"  - Indexes under {options.MinPageCount:N0} pages are skipped");
-        sb.AppendLine($"  - ONLINE = ON: {(options.OnlineRebuild ? "yes, on rowstore rebuilds" : "no")}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  - REORGANIZE from {options.ReorganizeThresholdPercent:0.##}% fragmentation");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  - REBUILD from {options.RebuildThresholdPercent:0.##}%");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  - Indexes under {options.MinPageCount:N0} pages are skipped");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  - ONLINE = ON: {(options.OnlineRebuild ? "yes, on rowstore rebuilds" : "no")}");
         sb.AppendLine();
         sb.AppendLine("  REVIEW BEFORE RUNNING:");
         sb.AppendLine("  - Run this in a maintenance window. A REBUILD without ONLINE = ON holds a schema");
@@ -114,7 +115,7 @@ public static class IndexMaintenanceScript
         foreach (var db in plan.GroupBy(p => p.Index.DatabaseName))
         {
             sb.AppendLine();
-            sb.AppendLine($"USE {UnusedIndexDropScript.QuoteName(db.Key)};");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"USE {UnusedIndexDropScript.QuoteName(db.Key)};");
             sb.AppendLine("GO");
 
             foreach (var (ix, action) in db)
@@ -123,7 +124,7 @@ public static class IndexMaintenanceScript
 
                 sb.AppendLine();
                 sb.AppendLine(ScriptText.Comment($"{table}.{(string.IsNullOrEmpty(ix.IndexName) ? "(heap)" : UnusedIndexDropScript.QuoteName(ix.IndexName))}  ({ix.IndexType})"));
-                sb.AppendLine($"-- Fragmentation: {ix.FragmentationPercent:N1}%  Pages: {ix.PageCount:N0}  " +
+                sb.AppendLine(CultureInfo.InvariantCulture, $"-- Fragmentation: {ix.FragmentationPercent:N1}%  Pages: {ix.PageCount:N0}  " +
                               $"Page density: {ix.AvgPageSpaceUsed:N1}%  Rows: {ix.RecordCount:N0}");
 
                 switch (action)
@@ -135,18 +136,18 @@ public static class IndexMaintenanceScript
                         break;
 
                     case Action.SkipSmall:
-                        sb.AppendLine($"-- SKIPPED: {ix.PageCount:N0} pages is below the {options.MinPageCount:N0} page minimum — small");
+                        sb.AppendLine(CultureInfo.InvariantCulture, $"-- SKIPPED: {ix.PageCount:N0} pages is below the {options.MinPageCount:N0} page minimum — small");
                         sb.AppendLine("--          indexes sit in mixed extents and cannot be meaningfully defragmented.");
                         break;
 
                     case Action.SkipBelowThreshold:
-                        sb.AppendLine($"-- SKIPPED: {ix.FragmentationPercent:N1}% is below the " +
+                        sb.AppendLine(CultureInfo.InvariantCulture, $"-- SKIPPED: {ix.FragmentationPercent:N1}% is below the " +
                                       $"{options.ReorganizeThresholdPercent:0.##}% reorganize threshold.");
                         break;
 
                     case Action.Reorganize:
                         sb.AppendLine(Guard(table, ix.IndexName!));
-                        sb.AppendLine($"    ALTER INDEX {UnusedIndexDropScript.QuoteName(ix.IndexName!)} ON {table} REORGANIZE;");
+                        sb.AppendLine(CultureInfo.InvariantCulture, $"    ALTER INDEX {UnusedIndexDropScript.QuoteName(ix.IndexName!)} ON {table} REORGANIZE;");
                         break;
 
                     case Action.Rebuild:

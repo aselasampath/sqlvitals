@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -107,7 +108,7 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
 
         // Keep the same deadlock selected when only the range changed; otherwise the newest.
         DeadlocksGrid.SelectedItem = reports.FirstOrDefault(r => selected is not null && SameDeadlock(r, selected))
-                                     ?? reports.FirstOrDefault();
+                                     ?? (reports.Count > 0 ? reports[0] : null);
 
         TxtCount.Text = reports.Count switch
         {
@@ -153,11 +154,11 @@ public partial class DeadlocksPage : Page, IRefreshable, IPageContext
 
         var text = new StringBuilder(source);
         if (history.Deadlocks.Count > 0)
-            text.Append($" Oldest deadlock held: {history.Deadlocks[^1].Time:yyyy-MM-dd HH:mm}.");
+            text.Append(CultureInfo.CurrentCulture, $" Oldest deadlock held: {history.Deadlocks[^1].Time:yyyy-MM-dd HH:mm}.");
         if (history.TotalFound > history.Deadlocks.Count)
-            text.Append($" Showing the newest {history.Deadlocks.Count:N0} of {history.TotalFound:N0}.");
+            text.Append(CultureInfo.CurrentCulture, $" Showing the newest {history.Deadlocks.Count:N0} of {history.TotalFound:N0}.");
         if (history.Unreadable > 0)
-            text.Append($" {history.Unreadable:N0} report{(history.Unreadable == 1 ? "" : "s")} could not be read.");
+            text.Append(CultureInfo.CurrentCulture, $" {history.Unreadable:N0} report{(history.Unreadable == 1 ? "" : "s")} could not be read.");
         return text.ToString();
     }
 

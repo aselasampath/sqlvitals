@@ -491,7 +491,7 @@ public static class ConfigurationChecks
         var growth = model.Growth == 0 || model.IsPercentGrowth ? "64MB" : $"{model.Growth.ToString(CultureInfo.InvariantCulture)}MB";
 
         var sb = new StringBuilder();
-        sb.AppendLine($"-- Each new file is {model.SizeMb:N0} MB, like the largest now; check the drive has room for them.");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"-- Each new file is {model.SizeMb:N0} MB, like the largest now; check the drive has room for them.");
         if (folder is null)
             sb.AppendLine("-- Replace <folder> with the folder TempDB's files are in.");
 
@@ -507,7 +507,7 @@ public static class ConfigurationChecks
             } while (names.Contains(name) || paths.Contains(path));
             names.Add(name);
 
-            sb.AppendLine($"ALTER DATABASE tempdb ADD FILE (NAME = N'{Escape(name)}', FILENAME = N'{Escape(path)}', " +
+            sb.AppendLine(CultureInfo.InvariantCulture, $"ALTER DATABASE tempdb ADD FILE (NAME = N'{Escape(name)}', FILENAME = N'{Escape(path)}', " +
                           $"SIZE = {model.SizeMb.ToString(CultureInfo.InvariantCulture)}MB, FILEGROWTH = {growth});");
         }
         return sb.ToString().TrimEnd();
@@ -529,7 +529,7 @@ public static class ConfigurationChecks
             if (f.IsPercentGrowth || f.Growth != growthMb)
                 parts.Add($"FILEGROWTH = {growthMb.ToString(CultureInfo.InvariantCulture)}MB");
             if (parts.Count > 1)
-                sb.AppendLine($"ALTER DATABASE tempdb MODIFY FILE ({string.Join(", ", parts)});");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"ALTER DATABASE tempdb MODIFY FILE ({string.Join(", ", parts)});");
         }
         return sb.ToString().TrimEnd();
     }

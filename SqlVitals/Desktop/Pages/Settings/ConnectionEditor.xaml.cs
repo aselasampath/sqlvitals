@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -111,7 +112,7 @@ internal partial class ConnectionEditor : UserControl
             CmbDatabase.Text                    = settings.Database;
             SelectByTag(CmbEncrypt, settings.Encrypt.ToString());
             ChkTrustServerCertificate.IsChecked = settings.TrustServerCertificate;
-            TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString();
+            TxtConnectTimeout.Text              = settings.ConnectTimeoutSeconds.ToString(CultureInfo.CurrentCulture);
             TxtAdditionalParameters.Text        = settings.AdditionalParameters;
             ChkMonitorInBackground.IsChecked    = settings.MonitorInBackground;
             ChkNotify.IsChecked                 = _id is not { } id || _store.NotifiesFor(id);
@@ -381,7 +382,7 @@ internal partial class ConnectionEditor : UserControl
 
         var store = _context.Service.Load();
         var duplicate = store.Connections.FirstOrDefault(c =>
-            c.Id != settings.Id && string.Equals(c.DisplayName, settings.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+            c.Id != settings.Id && string.Equals(c.DisplayName, settings.DisplayName, StringComparison.OrdinalIgnoreCase));
         if (duplicate is not null)
         {
             SelectTab(ConnectionTab.Connection);

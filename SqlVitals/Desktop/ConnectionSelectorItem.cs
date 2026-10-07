@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
@@ -31,7 +32,7 @@ public sealed class ConnectionSelectorItem : INotifyPropertyChanged
     /// <summary>The latest health score (#36); null while not monitored or before the first sample.</summary>
     public HealthScore? Score { get; private set; }
 
-    public string ScoreText => Score?.Value.ToString() ?? string.Empty;
+    public string ScoreText => Score?.Value.ToString(CultureInfo.CurrentCulture) ?? string.Empty;
 
     public Brush ScoreBrush => Score is { } score ? HealthBrushes.For(score.Level) : HealthBrushes.Grey;
 

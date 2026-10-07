@@ -34,7 +34,7 @@ public partial class QueryStoreQueryWindow : Window
     private readonly QueryStoreStatus     _status;
 
     private QueryStoreQueryDetails? _details;
-    private bool _ready;
+    private readonly bool _ready;
 
     public QueryStoreQueryWindow(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status)
     {

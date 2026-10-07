@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -44,6 +45,7 @@ public sealed class MetricChart : FrameworkElement
     /// <summary>Said in the middle when no series has a value in the range.</summary>
     public string EmptyText { get; set; } = "Nothing recorded in this range.";
 
+    [SuppressMessage("Naming", "CA1725", Justification = "dc is the usual WPF name; renaming touches every drawing call")]
     protected override void OnRender(DrawingContext dc)
     {
         var size = new Size(ActualWidth, ActualHeight);
@@ -211,6 +213,7 @@ public sealed class Sparkline : FrameworkElement
         set => SetValue(LineBrushProperty, value);
     }
 
+    [SuppressMessage("Naming", "CA1725", Justification = "dc is the usual WPF name; renaming touches every drawing call")]
     protected override void OnRender(DrawingContext dc)
     {
         if (Values is not { Count: > 0 } values || ActualWidth < 4 || ActualHeight < 4)

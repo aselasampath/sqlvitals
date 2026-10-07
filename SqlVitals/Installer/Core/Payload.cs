@@ -75,17 +75,15 @@ public sealed class Payload : IDisposable
             var target = FileSystemHelpers.SafeCombine(targetDir, file.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
-            using (var input  = entry.Open())
-            using (var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
+            using var input = entry.Open();
+            using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
+            int read;
+            while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
             {
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    output.Write(buffer, 0, read);
-                    done += read;
-                    progress?.Report((double)done / total);
-                }
+                ct.ThrowIfCancellationRequested();
+                output.Write(buffer, 0, read);
+                done += read;
+                progress?.Report((double)done / total);
             }
         }
     }

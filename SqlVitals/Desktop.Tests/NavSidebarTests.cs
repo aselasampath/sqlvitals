@@ -149,7 +149,7 @@ public sealed class NavSidebarTests
         // A global page leaves the groups as they are.
         sidebar.Highlight("Alerts");
         Assert.Same(panel.FindResource("NavButtonActive"), sidebar.Button("Alerts").Style);
-        Assert.Empty(NavMenu.Groups.Where(g => NavGroupState.GetHoldsCurrentPage(sidebar.Group(g.Id))));
+        Assert.DoesNotContain(NavMenu.Groups, g => NavGroupState.GetHoldsCurrentPage(sidebar.Group(g.Id)));
     });
 
     [Theory, MemberData(nameof(Themes))]

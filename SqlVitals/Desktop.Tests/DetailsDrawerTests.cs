@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -193,7 +194,7 @@ public sealed class DetailsDrawerTests : IDisposable
         Assert.Equal("Session 87", source.Details.Title);
         var view = Assert.IsType<SessionDetailsView>(source.Details.Body);
         Assert.Contains("Blocking: 1 session · longest 4.1 min", view.RowTexts);
-        Assert.Contains("Transaction open: 4 min · since " + Now.AddMinutes(-4).AddSeconds(-12).ToString("HH:mm:ss"), view.RowTexts);
+        Assert.Contains("Transaction open: 4 min · since " + Now.AddMinutes(-4).AddSeconds(-12).ToString("HH:mm:ss", CultureInfo.CurrentCulture), view.RowTexts);
         Assert.StartsWith("BEGIN TRANSACTION;", view.Statement);
 
         // The KILL script, to review.

@@ -101,7 +101,7 @@ public class HistoryRecorderTests
 
         await Create().CollectDetailIfDueAsync();
 
-        Assert.Equal(((DateTime?)null, HistoryRecorder.BaselineQueryLimit), Assert.Single(_repo.DetailCalls));
+        Assert.Equal((null, HistoryRecorder.BaselineQueryLimit), Assert.Single(_repo.DetailCalls));
         Assert.Empty(_sink.Records);
     }
 

@@ -124,7 +124,7 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
             Convert.ToInt32(r.HasAccess) == 1,
             Convert.ToInt32(r.IsTrustworthy) == 1,
             (string?)r.Owner,
-            r.OwnerIsSysadmin is null ? (bool?)null : Convert.ToInt32(r.OwnerIsSysadmin) == 1)).ToList();
+            r.OwnerIsSysadmin is null ? null : Convert.ToInt32(r.OwnerIsSysadmin) == 1)).ToList();
 
         var connectedSids = (await Q(conn, LoginTokenSql))
             .Select(r => Convert.ToHexString((byte[])r.Sid))
@@ -141,7 +141,7 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
                 (DateTime?)r.CreateDate,
                 (byte[]?)r.Sid,
                 Convert.ToInt32(r.IsSa) == 1,
-                r.PolicyChecked is null ? (bool?)null : Convert.ToInt32(r.PolicyChecked) == 1,
+                r.PolicyChecked is null ? null : Convert.ToInt32(r.PolicyChecked) == 1,
                 Convert.ToInt32(r.ViaControlServer) == 1)).ToList();
 
             orphans = await ScanForOrphansAsync(conn, databases);

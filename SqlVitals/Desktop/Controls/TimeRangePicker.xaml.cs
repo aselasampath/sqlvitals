@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -127,9 +128,9 @@ public partial class TimeRangePicker : UserControl
         var to   = toUtc.ToLocalTime();
 
         FromDate.SelectedDate = from.Date;
-        FromTime.Text         = from.ToString("HH:mm");
+        FromTime.Text         = from.ToString("HH:mm", CultureInfo.CurrentCulture);
         ToDate.SelectedDate   = to.Date;
-        ToTime.Text           = to.ToString("HH:mm");
+        ToTime.Text           = to.ToString("HH:mm", CultureInfo.CurrentCulture);
         TxtError.Visibility   = Visibility.Collapsed;
         CustomPopup.IsOpen    = true;
         FromTime.Focus();

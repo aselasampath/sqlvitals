@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using SqlVitals.Engine.Models;
 
@@ -19,8 +20,8 @@ public static class MissingIndexCreateScript
 
         sb.AppendLine("/*");
         sb.AppendLine("  SqlVitals — CREATE script for missing-index suggestions");
-        sb.AppendLine($"  Generated: {generatedAt:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"  Indexes:   {list.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Generated: {generatedAt:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  Indexes:   {list.Count}");
         sb.AppendLine();
         sb.AppendLine("  REVIEW BEFORE RUNNING:");
         sb.AppendLine("  - These come from the optimizer's missing-index DMVs. SQL Server does not compare them");
@@ -50,7 +51,7 @@ public static class MissingIndexCreateScript
             var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             sb.AppendLine();
-            sb.AppendLine($"USE {UnusedIndexDropScript.QuoteName(db.Key)};");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"USE {UnusedIndexDropScript.QuoteName(db.Key)};");
             sb.AppendLine("GO");
 
             foreach (var ix in db)
@@ -69,9 +70,9 @@ public static class MissingIndexCreateScript
                 var name  = UniqueName(IndexName(ix), $"{ix.SchemaName}.{ix.TableName}", usedNames);
 
                 sb.AppendLine(ScriptText.Comment($"{table}  ({ix.Severity})"));
-                sb.AppendLine($"-- Impact score: {ix.ImpactScore:N1}  Avg impact: {ix.AvgUserImpact:N1}%  Seeks: {ix.UserSeeks:N0}  Scans: {ix.UserScans:N0}");
-                sb.AppendLine($"IF OBJECT_ID({Literal(table)}) IS NOT NULL");
-                sb.AppendLine($"   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID({Literal(table)}) AND name = {Literal(name)})");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"-- Impact score: {ix.ImpactScore:N1}  Avg impact: {ix.AvgUserImpact:N1}%  Seeks: {ix.UserSeeks:N0}  Scans: {ix.UserScans:N0}");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"IF OBJECT_ID({Literal(table)}) IS NOT NULL");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID({Literal(table)}) AND name = {Literal(name)})");
                 var create = $"    CREATE NONCLUSTERED INDEX {UnusedIndexDropScript.QuoteName(name)} ON {table} ({keyColumns})";
                 if (string.IsNullOrWhiteSpace(ix.IncludedColumns))
                 {
@@ -80,7 +81,7 @@ public static class MissingIndexCreateScript
                 else
                 {
                     sb.AppendLine(create);
-                    sb.AppendLine($"    INCLUDE ({ix.IncludedColumns.Trim()});");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"    INCLUDE ({ix.IncludedColumns.Trim()});");
                 }
             }
 

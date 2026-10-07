@@ -1,5 +1,7 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Windows;
@@ -15,6 +17,7 @@ namespace SqlVitals.Installer;
 /// Install:   Welcome → License → System check → Options → Review → Installing → Finish
 /// Uninstall: (Welcome →) Confirm → Uninstalling → Finish
 /// </summary>
+[SuppressMessage("Design", "CA1001", Justification = "A Window isn't IDisposable; the run disposes _runCts when it ends")]
 public partial class MainWindow : Window
 {
     private enum Page { Welcome, License, Requirements, Options, Review, ConfirmUninstall, Progress, Finish }
@@ -307,7 +310,7 @@ public partial class MainWindow : Window
                 BorderThickness = new Thickness(1),
                 Child = new TextBlock
                 {
-                    Text = done ? "✓" : (i + 1).ToString(),
+                    Text = done ? "✓" : (i + 1).ToString(CultureInfo.InvariantCulture),
                     FontSize = 11, FontWeight = FontWeights.SemiBold,
                     HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                     Foreground = active ? Brushes.White : (Brush)FindResource(done ? "Success" : "TextMuted"),

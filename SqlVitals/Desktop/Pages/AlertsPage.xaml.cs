@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -342,6 +343,7 @@ public partial class AlertsPage : Page, IRefreshable, IPageContext, IDetailsSour
         public string    ThresholdText  => AlertText.Threshold(Alert.Indicator, Alert.Threshold);
         public string    EndReasonText  => AlertText.EndReason(Alert.EndReason);
         public string    Detail         => Alert.Detail;
+        [SuppressMessage("Performance", "CA1822", Justification = "Bound in XAML; a binding needs an instance member")]
         public string    InvestigateText => "Investigate →";
         public string    InvestigateToolTip => $"Open {EvidenceRoutes.For(Alert.Indicator).Text} on {ConnectionName}, " +
                                                (IsActive ? "filtered to this alert" : "set to this alert's time");

@@ -106,7 +106,7 @@ public sealed class NavMenuTests : IDisposable
         Assert.Equal(("Processes", server), (Create().Load().LastPage, Create().Load().LastServerId));
 
         Create().SetLastPage("Home", null);
-        Assert.Equal(("Home", (Guid?)null), (Create().Load().LastPage, Create().Load().LastServerId));
+        Assert.Equal(("Home", null), (Create().Load().LastPage, Create().Load().LastServerId));
     }
 
     [Fact]

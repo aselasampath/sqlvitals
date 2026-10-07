@@ -331,22 +331,22 @@ public sealed class OverviewPageTests : IDisposable
             return proxy;
         }
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
-            switch (method!.Name)
+            switch (targetMethod!.Name)
             {
                 case nameof(IWaitStatsRepository.GetLiveMetricsAsync):
-                    base.Invoke(method, args);
+                    base.Invoke(targetMethod, args);
                     return Task.FromResult(new LiveMetricSnapshot(DateTime.Now, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 12,
                                                                   PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
                                                                   0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4));
                 case nameof(IWaitStatsRepository.GetDeadlockHistoryAsync):
-                    base.Invoke(method, args);
+                    base.Invoke(targetMethod, args);
                     return Task.FromResult(new DeadlockHistory(
                         [Deadlock(DateTime.UtcNow.AddHours(-1)), Deadlock(DateTime.UtcNow.AddHours(-5))],
                         DeadlockSource.RingBuffer, 2, 0, null, null));
                 case nameof(IWaitStatsRepository.GetAgentJobsAsync):
-                    base.Invoke(method, args);
+                    base.Invoke(targetMethod, args);
                     var now = DateTime.Now;   // the server is on this PC's clock
                     return Task.FromResult(new AgentJobList(
                     [
@@ -355,7 +355,7 @@ public sealed class OverviewPageTests : IDisposable
                         Job("Backups",       JobOutcome.Succeeded, now.AddMinutes(-20)),
                     ], AgentServiceState.Running, now, null));
                 default:
-                    return base.Invoke(method, args);
+                    return base.Invoke(targetMethod, args);
             }
         }
 

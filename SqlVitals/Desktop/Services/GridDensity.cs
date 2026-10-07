@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 
 namespace SqlVitals.Desktop.Services;
@@ -35,6 +36,7 @@ public static class GridDensityResources
         density == GridDensity.Compact ? new Thickness(6, 3, 6, 3) : new Thickness(8, 6, 8, 6);
 
     /// <summary>12 px in both: compact takes room from around the text, not from the text.</summary>
+    [SuppressMessage("Style", "IDE0060", Justification = "Same shape as PaddingOf, for when the densities' sizes differ")]
     public static double FontSizeOf(GridDensity density) => 12;
 
     /// <summary>Puts a density's values in a dictionary, the application's in the app.</summary>

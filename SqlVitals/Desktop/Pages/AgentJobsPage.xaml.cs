@@ -310,7 +310,7 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext, IDetailsS
         TxtRunsLabel.Text    = runs.Count == 0
             ? "msdb keeps no runs of this job"
             : $"{runs.Count:N0} run{(runs.Count == 1 ? "" : "s")} msdb keeps, newest first";
-        RunsGrid.SelectedItem = (keepRun is null ? null : runs.FirstOrDefault(r => r.Start == keepRun)) ?? runs.FirstOrDefault();
+        RunsGrid.SelectedItem = (keepRun is null ? null : runs.FirstOrDefault(r => r.Start == keepRun)) ?? (runs.Count > 0 ? runs[0] : null);
     }
 
     // Under the job's name: why its runs aren't listed, when they couldn't be read.
@@ -331,7 +331,7 @@ public partial class AgentJobsPage : Page, IRefreshable, IPageContext, IDetailsS
 
         StepsGrid.ItemsSource  = run.Steps;
         // The failing step is the one to read; otherwise the last step that ran.
-        StepsGrid.SelectedItem = run.FailedStep ?? run.Steps.LastOrDefault();
+        StepsGrid.SelectedItem = run.FailedStep ?? (run.Steps.Count > 0 ? run.Steps[^1] : null);
         ShowJobDetails(open: false);
     }
 

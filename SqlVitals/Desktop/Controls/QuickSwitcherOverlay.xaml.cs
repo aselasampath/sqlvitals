@@ -223,8 +223,14 @@ public partial class QuickSwitcherOverlay : UserControl
             dock.Children.Add(name);
         }
 
-        var row = new Border { Child = dock, CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 8, 10, 8), Background = Brushes.Transparent };
-        row.Cursor = item.CanOpen ? Cursors.Hand : Cursors.Arrow;
+        var row = new Border
+        {
+            Child = dock,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Background = Brushes.Transparent,
+            Cursor = item.CanOpen ? Cursors.Hand : Cursors.Arrow
+        };
         AutomationProperties.SetName(row, Spoken(item, server));
         if (item.CanOpen)
         {
@@ -278,8 +284,7 @@ public partial class QuickSwitcherOverlay : UserControl
         _selected = index;
         if (index < 0)
             return;
-
-        var (item, row, enterKey) = _rows[index];
+        var (_, row, enterKey) = _rows[index];
         row.Background = Tint("AccentColor", 0x2E);
         enterKey.Visibility = Visibility.Visible;
         row.BringIntoView();

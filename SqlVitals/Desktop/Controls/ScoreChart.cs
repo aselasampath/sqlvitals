@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -58,6 +59,7 @@ public sealed class ScoreChart : FrameworkElement
     private DateTime _fromUtc, _toUtc;
     private TimeSpan _bucket = TimeSpan.FromMinutes(1);
 
+    [SuppressMessage("Naming", "CA1725", Justification = "dc is the usual WPF name; renaming touches every drawing call")]
     protected override void OnRender(DrawingContext dc)
     {
         var size = new Size(ActualWidth, ActualHeight);
