@@ -638,7 +638,7 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
     private Brush Reads        => Theme("MetricReads");
     private Brush Writes       => Theme("MetricWrites");
 
-    private Brush Theme(string key) => TryFindResource(key) as Brush ?? Brushes.Gray;
+    private Brush Theme(string brushKey) => (Brush)FindResource(brushKey);
 
     private Brush Accent => TryFindResource("Accent") as Brush ?? Brushes.MediumPurple;
 

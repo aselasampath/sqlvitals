@@ -65,7 +65,7 @@
     <Color x:Key="WaitLockColor">#FFEC4899</Color>
     <Color x:Key="WaitMemoryColor">#FF8B5CF6</Color>
     <Color x:Key="WaitNetworkColor">#FF06B6D4</Color>
-    <Color x:Key="WaitOtherColor">#FF94A3B8</Color>
+    <Color x:Key="WaitOtherColor">#FF26E7A6</Color>
     <Color x:Key="MetricBatchesColor">#FF10B981</Color>
     <Color x:Key="MetricTransactionsColor">#FFF59E0B</Color>
     <Color x:Key="MetricCompilationsColor">#FFFF6B6B</Color>
@@ -99,9 +99,9 @@
     <Color x:Key="ChartSeries6Color">#FFFFC107</Color>
     <Color x:Key="ChartSeries7Color">#FF9B59B6</Color>
     <Color x:Key="ChartSeries8Color">#FF1ABC9C</Color>
-    <Color x:Key="ChartSeries9Color">#FFE74C3C</Color>
-    <Color x:Key="ChartSeries10Color">#FF3498DB</Color>
-    <Color x:Key="ChartSeries11Color">#FFF39C12</Color>
+    <Color x:Key="ChartSeries9Color">#FF3498DB</Color>
+    <Color x:Key="ChartSeries10Color">#FFF39C12</Color>
+    <Color x:Key="ChartSeries11Color">#FFE74C3C</Color>
 
     <!-- The top bar's Live / Snapshot / History badge, and a snapshot's age once it is old (#140). -->
     <SolidColorBrush x:Key="LiveBadgeText" Color="#FF4ADE80" />

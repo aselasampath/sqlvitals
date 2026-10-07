@@ -44,11 +44,14 @@ public sealed class ColourGuardTests
 
     private static readonly string[] ThemeFiles = ["Styles/DarkTheme.xaml", "Styles/LightTheme.xaml"];
 
+    // The app's sources as the MVVM guard compiles them (parsed once), less the implicit usings.
+    private static IEnumerable<SyntaxTree> AppTrees => DesktopSource.Compilation.SyntaxTrees.Where(t => t.FilePath.Length > 0);
+
     [Fact]
     public void Code_NamesThemeKeys_NotColours()
     {
-        var found = DesktopSource.Files("*.cs")
-            .SelectMany(path => ColourRules.InCode(DesktopSource.Parse(File.ReadAllText(path), path), DesktopSource.Relative(path)))
+        var found = AppTrees
+            .SelectMany(tree => ColourRules.InCode(tree, DesktopSource.Relative(tree.FilePath)))
             .Select(o => $"{DesktopSource.Where(o.File, o.Line)}: {o.What}")
             .ToList();
 
@@ -92,16 +95,16 @@ public sealed class ColourGuardTests
     }
 
     [Fact]
-    public void Code_NamesKeysTheThemesHave()
+    public void Code_NamesKeysTheXamlHas()
     {
-        var keys    = ThemeKeys("Styles/LightTheme.xaml");
-        var missing = DesktopSource.Files("*.cs")
-            .SelectMany(path => ColourRules.KeysNamed(DesktopSource.Parse(File.ReadAllText(path), path), DesktopSource.Relative(path)))
+        var keys    = DesktopSource.Files("*.xaml").SelectMany(path => ThemeKeys(DesktopSource.Relative(path))).ToHashSet();
+        var missing = AppTrees
+            .SelectMany(tree => ColourRules.KeysNamed(DesktopSource.Compilation.GetSemanticModel(tree), DesktopSource.Relative(tree.FilePath)))
             .Where(o => !keys.Contains(o.Name))
             .Select(o => $"{DesktopSource.Where(o.File, o.Line)}: \"{o.Name}\"")
             .ToList();
 
-        Assert.True(missing.Count == 0, "No such key in Styles/*Theme.xaml:\n" + string.Join('\n', missing));
+        Assert.True(missing.Count == 0, "No resource with that key in the app's XAML:\n" + string.Join('\n', missing));
     }
 
     private static HashSet<string> ThemeKeys(string file) =>
@@ -141,6 +144,38 @@ public sealed class ColourGuardTests
 
         var expected = code.Split('\n').Select((line, i) => (line, i + 1)).Where(l => l.line.Contains("// ✗")).Select(l => l.Item2);
         Assert.Equal(expected, ColourRules.InCode(DesktopSource.Parse(code), "Snippet.cs").Select(o => o.Line));
+    }
+
+    [Fact]
+    public void KeysNamed_FindsKeyArguments_NotOtherStrings()
+    {
+        var code = """
+            using System.Windows;
+            using System.Windows.Controls;
+
+            class Page : UserControl
+            {
+                void Card(string label, string brushKey) { }
+                void State(string state) { }
+                void Show(TextBlock text, bool ok)
+                {
+                    Card("Queries", "Accent");                                        // ✗ Accent
+                    Card("State", ok ? "Success" : "Danger");                         // ✗ Success, Danger
+                    State("Blocked");
+                    text.SetResourceReference(TextBlock.ForegroundProperty, "Info");  // ✗ Info
+                    _ = TryFindResource("KpiCard");                                   // ✗ KpiCard
+                    Card($"Plans {1}", brushKey: "TextMuted");                        // ✗ TextMuted
+                }
+            }
+            """;
+        var tree     = DesktopSource.Parse(code, "Snippet.cs");
+        var model    = DesktopSource.Compile([tree]).GetSemanticModel(tree);
+        var expected = code.Split('\n')
+            .Select((line, i) => (Line: i + 1, Mark: line.Split("// ✗ ") is [_, var keys] ? keys.Trim() : null))
+            .Where(l => l.Mark is not null)
+            .SelectMany(l => l.Mark!.Split(", ").Select(key => $"{l.Line}: {key}"));
+
+        Assert.Equal(expected, ColourRules.KeysNamed(model, "Snippet.cs").Select(o => $"{o.Line}: {o.Name}"));
     }
 
     [Fact]
@@ -185,16 +220,49 @@ internal static partial class ColourRules
             new(file, at.GetLocation().GetLineSpan().StartLinePosition.Line + 1, what, what);
     }
 
-    private static readonly string[] KeyMethods = ["BrushOf", "ColorOf", "Of", "WithForeground"];
+    // Parameters that take a resource key, by name: ours (brushKey, colorKey) and WPF's (resourceKey).
+    private static readonly string[] KeyParameters = ["brushKey", "colorKey", "resourceKey"];
 
-    /// <summary>Theme keys named as a literal where code takes a colour by key: <c>ThemeResources.BrushOf("Info")</c>, <c>ChartTheme.Of("WaitCpuColor")</c>, <c>WithForeground("Success")</c>.</summary>
-    public static IEnumerable<Offence> KeysNamed(SyntaxTree tree, string file) =>
-        tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Where(call => KeyMethods.Contains(Name(call.Expression)))
-            .Select(call => call.ArgumentList.Arguments.LastOrDefault()?.Expression)
-            .OfType<LiteralExpressionSyntax>()
-            .Where(l => l.IsKind(SyntaxKind.StringLiteralExpression))
-            .Select(l => new Offence(file, l.GetLocation().GetLineSpan().StartLinePosition.Line + 1, l.Token.ValueText, "key"));
+    /// <summary>
+    /// Resource keys code names as literals: an argument for a <c>brushKey</c> or <c>colorKey</c>
+    /// parameter (<c>AddCard(…, "Success")</c>, <c>ChartTheme.Of("WaitCpuColor")</c>), WPF's
+    /// <c>FindResource</c>, and <c>SetResourceReference</c>, which goes by name because its element is
+    /// often a XAML field the compilation doesn't have. Both arms of <c>ok ? "Success" : "Danger"</c>
+    /// count, and a switch's.
+    /// </summary>
+    public static IEnumerable<Offence> KeysNamed(SemanticModel model, string file)
+    {
+        foreach (var call in model.SyntaxTree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var args = call.ArgumentList.Arguments;
+            IEnumerable<ArgumentSyntax> keyArgs = Name(call.Expression) switch
+            {
+                "SetResourceReference" when args.Count == 2 => [args[1]],
+                _ when model.GetSymbolInfo(call).Symbol is IMethodSymbol method
+                    => args.Where(a => KeyParameters.Contains(ParameterOf(method, a, args)?.Name)),
+                _ => [],
+            };
+
+            foreach (var literal in keyArgs.SelectMany(a => Results(a.Expression)))
+                yield return new Offence(file, literal.GetLocation().GetLineSpan().StartLinePosition.Line + 1, literal.Token.ValueText, "key");
+        }
+    }
+
+    // The string literals an expression can evaluate to: itself, either arm of ?:, a switch's arms.
+    // Not a condition's strings, and not a key built with + (that one is only known at run time).
+    private static IEnumerable<LiteralExpressionSyntax> Results(ExpressionSyntax e) => e switch
+    {
+        LiteralExpressionSyntax l when l.IsKind(SyntaxKind.StringLiteralExpression) => [l],
+        ParenthesizedExpressionSyntax p => Results(p.Expression),
+        ConditionalExpressionSyntax c   => Results(c.WhenTrue).Concat(Results(c.WhenFalse)),
+        SwitchExpressionSyntax s        => s.Arms.SelectMany(arm => Results(arm.Expression)),
+        _                               => [],
+    };
+
+    private static IParameterSymbol? ParameterOf(IMethodSymbol method, ArgumentSyntax arg, SeparatedSyntaxList<ArgumentSyntax> args) =>
+        arg.NameColon is { } named
+            ? method.Parameters.FirstOrDefault(p => p.Name == named.Name.Identifier.ValueText)
+            : method.Parameters.ElementAtOrDefault(args.IndexOf(arg));
 
     /// <summary>Hex colours in a XAML file: attribute values and element content (<c>&lt;Color&gt;#FF22C55E&lt;/Color&gt;</c>).</summary>
     public static int InXaml(string xaml) => XamlColour().Count(xaml);

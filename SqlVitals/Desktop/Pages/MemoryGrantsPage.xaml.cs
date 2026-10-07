@@ -73,7 +73,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
 
     // ── chart series colours ─────────────────────────────────────────
     private static SKColor ColTotal  => ChartTheme.Series(4);   // cyan
-    private static SKColor ColTarget => ChartTheme.Series(10);  // blue
+    private static SKColor ColTarget => ChartTheme.Series(9);   // blue
     private static SKColor ColBuffer => ChartTheme.Series(0);   // green
     private static SKColor ColGrants => ChartTheme.Series(6);   // amber
 

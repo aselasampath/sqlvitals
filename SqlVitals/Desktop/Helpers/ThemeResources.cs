@@ -12,14 +12,28 @@ namespace SqlVitals.Desktop.Helpers;
 /// </summary>
 internal static class ThemeResources
 {
-    public static Brush BrushOf(string key) => (Brush)Application.Current.Resources[key];
+    public static Brush BrushOf(string brushKey) => (Brush)Resources[brushKey];
 
-    public static Color ColorOf(string key) => (Color)Application.Current.Resources[key];
+    public static Color ColorOf(string colorKey) => (Color)Resources[colorKey];
 
-    /// <summary>Colours <paramref name="text"/> with the theme brush <paramref name="key"/>, following a theme switch.</summary>
-    public static TextBlock WithForeground(this TextBlock text, string key)
+    // The app's theme on its own thread. Before there is an app, or on another thread (a model built
+    // in a test), the light theme on its own, frozen so any thread can use it.
+    private static ResourceDictionary Resources =>
+        Application.Current is { } app && app.Dispatcher.CheckAccess() ? app.Resources : Standalone.Value;
+
+    private static readonly Lazy<ResourceDictionary> Standalone = new(() =>
     {
-        text.SetResourceReference(TextBlock.ForegroundProperty, key);
+        var theme = (ResourceDictionary)Application.LoadComponent(new Uri("/SqlVitals.Desktop;component/Styles/LightTheme.xaml", UriKind.Relative));
+        foreach (var value in theme.Values)
+            if (value is Freezable { CanFreeze: true } freezable)
+                freezable.Freeze();
+        return theme;
+    });
+
+    /// <summary>Colours <paramref name="text"/> with the theme brush <paramref name="brushKey"/>, following a theme switch.</summary>
+    public static TextBlock WithForeground(this TextBlock text, string brushKey)
+    {
+        text.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
         return text;
     }
 
