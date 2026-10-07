@@ -54,6 +54,7 @@ jobs:
       # One comment per PR, updated by each run; found by the marker on its first line.
       - name: Post coverage on the PR
         if: github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true   # a GitHub API hiccup mustn't cost the PR its Setup build
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,7 +62,7 @@ jobs:
         run: |
           $repo = '${{ github.repository }}'
           $id = gh api "repos/$repo/issues/$env:PR/comments" --paginate `
-                  --jq '.[] | select(.body | startswith("<!-- sqlvitals-coverage -->")) | .id' | Select-Object -Last 1
+                  --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- sqlvitals-coverage -->"))) | .id' | Select-Object -Last 1
           if ($id) { gh api -X PATCH "repos/$repo/issues/comments/$id" -F body=@artifacts/coverage/comment.md | Out-Null }
           else     { gh pr comment $env:PR --body-file artifacts/coverage/comment.md }
 

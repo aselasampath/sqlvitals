@@ -16,7 +16,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Set-Location (Resolve-Path "$PSScriptRoot/../..")
+Push-Location (Resolve-Path "$PSScriptRoot/../..")
+try {
 
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 
@@ -35,9 +36,11 @@ foreach ($name in $projects.Keys) {
 }
 
 # ReportGenerator merges the three Cobertura files; generated XAML code (*.g.cs) isn't ours to cover.
-$tools = "$OutDir/tools"
-dotnet tool install dotnet-reportgenerator-globaltool --version 5.* --tool-path $tools | Out-Null
-if ($LASTEXITCODE) { throw 'Could not install ReportGenerator.' }
+$tools = 'artifacts/tools'
+if (-not (Test-Path "$tools/reportgenerator*")) {
+    dotnet tool install dotnet-reportgenerator-globaltool --version 5.* --tool-path $tools | Out-Null
+    if ($LASTEXITCODE) { throw 'Could not install ReportGenerator.' }
+}
 & "$tools/reportgenerator" "-reports:$OutDir/*/*/coverage.cobertura.xml" "-targetdir:$OutDir/report" `
     '-reporttypes:MarkdownSummaryGithub;MarkdownAssembliesSummary' '-filefilters:-*.g.cs;-*.g.i.cs' '-verbosity:Warning'
 if ($LASTEXITCODE) { throw 'ReportGenerator failed.' }
@@ -57,3 +60,6 @@ if ($env:GITHUB_STEP_SUMMARY) {
     Get-Content "$OutDir/report/SummaryGithub.md" -Raw | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 }
 Write-Host "Coverage summary: $OutDir/report/SummaryGithub.md"
+
+}
+finally { Pop-Location }

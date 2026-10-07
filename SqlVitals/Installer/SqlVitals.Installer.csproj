@@ -19,7 +19,6 @@
     <AssemblyName>SqlVitals.Setup</AssemblyName>
     <RootNamespace>SqlVitals.Installer</RootNamespace>
     <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>

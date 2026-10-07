@@ -8,7 +8,6 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>SqlVitals.Desktop</AssemblyName>
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
     <Version>0.67.1</Version>

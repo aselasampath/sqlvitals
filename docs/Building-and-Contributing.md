@@ -26,6 +26,7 @@ dotnet run --project SqlVitals\Desktop   # start the app
 - **Or suppress that one finding, next to the code, with the reason:** `[SuppressMessage("Design", "CA1001", Justification = "…")]` on the member, or `#pragma warning disable` / `restore` around the line with a comment. Never in a project file or for the whole codebase.
 - `.editorconfig` turns a rule down only when it doesn't fit a whole kind of code, and says why: underscores in test names (`Method_Scenario_Result`), and CA1859's concrete types, which would replace the read-only interfaces the code keeps on purpose. Style rules the code doesn't follow everywhere yet (braces, `var`, expression bodies, collection expressions, primary constructors) are suggestions: the IDE hints, the build doesn't stop.
 - The two LiveCharts projects (Desktop and Desktop.Tests) set `NoWarn` for `NU1701`: SkiaSharp.Views.WPF and OpenTK only ship .NET Framework builds, and they run fine on .NET 10.
+- NuGet's vulnerability warnings (`NU1901`–`NU1904`) stay warnings: an advisory against a dependency shows in the build, but doesn't stop an unrelated fix from shipping. Update the package in its own PR.
 
 **Coverage**, as CI measures it:
 
