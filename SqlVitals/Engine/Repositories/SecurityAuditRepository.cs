@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Scripting;
 using SqlVitals.Engine.Security;

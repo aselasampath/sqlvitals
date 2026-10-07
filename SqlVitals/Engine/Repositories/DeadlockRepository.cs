@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.Errors;
 
