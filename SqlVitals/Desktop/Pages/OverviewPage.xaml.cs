@@ -626,21 +626,19 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
 
     // ── Charts ────────────────────────────────────────────────────────────────
 
-    private static readonly Brush WaitCpu     = Frozen(0xEF, 0x44, 0x44);
-    private static readonly Brush WaitIo      = Frozen(0xF5, 0x9E, 0x0B);
-    private static readonly Brush WaitLock    = Frozen(0xEC, 0x48, 0x99);
-    private static readonly Brush WaitMemory  = Frozen(0x8B, 0x5C, 0xF6);
-    private static readonly Brush WaitNetwork = Frozen(0x06, 0xB6, 0xD4);
-    private static readonly Brush Batches     = Frozen(0x10, 0xB9, 0x81);
-    private static readonly Brush Reads       = Frozen(0x10, 0xB9, 0x81);
-    private static readonly Brush Writes      = Frozen(0xEF, 0x44, 0x44);
+    // The theme's colours by meaning, the same as Live charts' (#164).
+    private Brush WaitCpu      => Theme("WaitCpu");
+    private Brush WaitIo       => Theme("WaitIo");
+    private Brush WaitLock     => Theme("WaitLock");
+    private Brush WaitMemory   => Theme("WaitMemory");
+    private Brush WaitNetwork  => Theme("WaitNetwork");
+    private Brush Batches      => Theme("MetricBatches");
+    private Brush Transactions => Theme("MetricTransactions");
+    private Brush Ple          => Theme("MetricPle");
+    private Brush Reads        => Theme("MetricReads");
+    private Brush Writes       => Theme("MetricWrites");
 
-    private static Brush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
+    private Brush Theme(string key) => TryFindResource(key) as Brush ?? Brushes.Gray;
 
     private Brush Accent => TryFindResource("Accent") as Brush ?? Brushes.MediumPurple;
 
@@ -650,8 +648,8 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
         Legend(LegendCpu, "CPU (%)", ("SQL Server", Accent));
         // Other leaves out what the categories don't cover, as Live charts does by default (#136).
         Legend(LegendWaits, "Waits (ms/s)", ("CPU", WaitCpu), ("I/O", WaitIo), ("Locks", WaitLock), ("Memory", WaitMemory), ("Network", WaitNetwork));
-        Legend(LegendThroughput, "Throughput (/s)", ("Batch requests", Batches), ("Transactions", WaitIo));
-        Legend(LegendPle, "Page life expectancy (s)", ("PLE", WaitMemory));
+        Legend(LegendThroughput, "Throughput (/s)", ("Batch requests", Batches), ("Transactions", Transactions));
+        Legend(LegendPle, "Page life expectancy (s)", ("PLE", Ple));
         Legend(LegendIo, "Physical I/O (pages/s)", ("Reads", Reads), ("Writes", Writes));
     }
 
@@ -701,9 +699,9 @@ public partial class OverviewPage : Page, IRefreshable, IPageContext
         ChartThroughput.Data = new MetricChartData(
         [
             Series("Batch requests", Batches, s => s.BatchRequestsPerSec),
-            Series("Transactions",   WaitIo,  s => s.TransactionsPerSec),
+            Series("Transactions",   Transactions, s => s.TransactionsPerSec),
         ], fromUtc, toUtc, bucket, markers);
-        ChartPle.Data = new MetricChartData([Series("Page life expectancy", WaitMemory, s => s.PageLifeExpectancySec)], fromUtc, toUtc, bucket, markers);
+        ChartPle.Data = new MetricChartData([Series("Page life expectancy", Ple, s => s.PageLifeExpectancySec)], fromUtc, toUtc, bucket, markers);
         ChartIo.Data  = new MetricChartData(
         [
             Series("Reads",  Reads,  s => s.PhysicalReadsPerSec),

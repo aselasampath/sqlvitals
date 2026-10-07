@@ -30,6 +30,79 @@
     <SolidColorBrush x:Key="Success"       Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="Warning"       Color="{StaticResource WarningColor}" />
     <SolidColorBrush x:Key="Danger"        Color="{StaticResource DangerColor}" />
+
+    <!-- ── Colours by meaning (#164) ──────────────────────────────────
+         Code picks these by key (SetResourceReference, ThemeResources, ChartTheme); no hex in .cs files. -->
+    <!-- Information: a neutral fact, neither good nor bad. -->
+    <Color x:Key="InfoColor">#FF2563EB</Color>
+    <SolidColorBrush x:Key="Info" Color="{StaticResource InfoColor}" />
+    <!-- Health: the dot, the score, a Home tile. The same in both themes, so a colour always means the same level. -->
+    <Color x:Key="HealthGoodColor">#FF22C55E</Color>
+    <Color x:Key="HealthWarningColor">#FFFBBF24</Color>
+    <Color x:Key="HealthCriticalColor">#FFEF4444</Color>
+    <Color x:Key="HealthNoneColor">#FF94A3B8</Color>
+    <SolidColorBrush x:Key="HealthGood"     Color="{StaticResource HealthGoodColor}" />
+    <SolidColorBrush x:Key="HealthWarning"  Color="{StaticResource HealthWarningColor}" />
+    <SolidColorBrush x:Key="HealthCritical" Color="{StaticResource HealthCriticalColor}" />
+    <SolidColorBrush x:Key="HealthNone"     Color="{StaticResource HealthNoneColor}" />
+    <!-- A pale wash of a health colour, behind its label. -->
+    <SolidColorBrush x:Key="HealthGoodTint"     Color="#3322C55E" />
+    <SolidColorBrush x:Key="HealthWarningTint"  Color="#40FBBF24" />
+    <SolidColorBrush x:Key="HealthCriticalTint" Color="#33EF4444" />
+    <SolidColorBrush x:Key="HealthNoneTint"     Color="#3394A3B8" />
+    <!-- Process states: the blocking map's balls and the Processes grid's dots. -->
+    <Color x:Key="ProcessHeadBlockerColor">#FFFF8000</Color>
+    <Color x:Key="ProcessBlockedColor">#FF6060FF</Color>
+    <Color x:Key="ProcessActiveColor">#FFFF4040</Color>
+    <Color x:Key="ProcessSleepingColor">#FF4488FF</Color>
+    <SolidColorBrush x:Key="ProcessHeadBlocker" Color="{StaticResource ProcessHeadBlockerColor}" />
+    <SolidColorBrush x:Key="ProcessBlocked"     Color="{StaticResource ProcessBlockedColor}" />
+    <SolidColorBrush x:Key="ProcessActive"      Color="{StaticResource ProcessActiveColor}" />
+    <SolidColorBrush x:Key="ProcessSleeping"    Color="{StaticResource ProcessSleepingColor}" />
+    <!-- Wait categories and server metrics: the same colour on every chart (Overview, Live charts). -->
+    <Color x:Key="WaitCpuColor">#FFEF4444</Color>
+    <Color x:Key="WaitIoColor">#FFF59E0B</Color>
+    <Color x:Key="WaitLockColor">#FFEC4899</Color>
+    <Color x:Key="WaitMemoryColor">#FF8B5CF6</Color>
+    <Color x:Key="WaitNetworkColor">#FF06B6D4</Color>
+    <Color x:Key="WaitOtherColor">#FF94A3B8</Color>
+    <Color x:Key="MetricBatchesColor">#FF10B981</Color>
+    <Color x:Key="MetricTransactionsColor">#FFF59E0B</Color>
+    <Color x:Key="MetricCompilationsColor">#FFFF6B6B</Color>
+    <Color x:Key="MetricRecompilationsColor">#FF7B68EE</Color>
+    <Color x:Key="MetricReadsColor">#FF10B981</Color>
+    <Color x:Key="MetricWritesColor">#FFEF4444</Color>
+    <Color x:Key="MetricPleColor">#FF8B5CF6</Color>
+    <SolidColorBrush x:Key="WaitCpu"              Color="{StaticResource WaitCpuColor}" />
+    <SolidColorBrush x:Key="WaitIo"               Color="{StaticResource WaitIoColor}" />
+    <SolidColorBrush x:Key="WaitLock"             Color="{StaticResource WaitLockColor}" />
+    <SolidColorBrush x:Key="WaitMemory"           Color="{StaticResource WaitMemoryColor}" />
+    <SolidColorBrush x:Key="WaitNetwork"          Color="{StaticResource WaitNetworkColor}" />
+    <SolidColorBrush x:Key="WaitOther"            Color="{StaticResource WaitOtherColor}" />
+    <SolidColorBrush x:Key="MetricBatches"        Color="{StaticResource MetricBatchesColor}" />
+    <SolidColorBrush x:Key="MetricTransactions"   Color="{StaticResource MetricTransactionsColor}" />
+    <SolidColorBrush x:Key="MetricCompilations"   Color="{StaticResource MetricCompilationsColor}" />
+    <SolidColorBrush x:Key="MetricRecompilations" Color="{StaticResource MetricRecompilationsColor}" />
+    <SolidColorBrush x:Key="MetricReads"          Color="{StaticResource MetricReadsColor}" />
+    <SolidColorBrush x:Key="MetricWrites"         Color="{StaticResource MetricWritesColor}" />
+    <SolidColorBrush x:Key="MetricPle"            Color="{StaticResource MetricPleColor}" />
+    <!-- A connection's role in Settings → Connections: the one open now, or monitored in the background. -->
+    <SolidColorBrush x:Key="ConnectionActiveTint"     Color="#337C3AED" />
+    <SolidColorBrush x:Key="ConnectionBackgroundTint" Color="#333B82F6" />
+    <!-- Chart lines with no meaning of their own (counters, wait types, plans): ChartTheme.Series(i) takes them in order. -->
+    <Color x:Key="ChartSeries0Color">#FF26E7A6</Color>
+    <Color x:Key="ChartSeries1Color">#FFFF6B6B</Color>
+    <Color x:Key="ChartSeries2Color">#FF7C3AED</Color>
+    <Color x:Key="ChartSeries3Color">#FFFFA62B</Color>
+    <Color x:Key="ChartSeries4Color">#FF00D9FF</Color>
+    <Color x:Key="ChartSeries5Color">#FFFF4560</Color>
+    <Color x:Key="ChartSeries6Color">#FFFFC107</Color>
+    <Color x:Key="ChartSeries7Color">#FF9B59B6</Color>
+    <Color x:Key="ChartSeries8Color">#FF1ABC9C</Color>
+    <Color x:Key="ChartSeries9Color">#FFE74C3C</Color>
+    <Color x:Key="ChartSeries10Color">#FF3498DB</Color>
+    <Color x:Key="ChartSeries11Color">#FFF39C12</Color>
+
     <!-- The top bar's Live / Snapshot / History badge, and a snapshot's age once it is old (#140). -->
     <SolidColorBrush x:Key="LiveBadgeText" Color="#FF15803D" />
     <SolidColorBrush x:Key="LiveBadgeFill" Color="#1A22C55E" />

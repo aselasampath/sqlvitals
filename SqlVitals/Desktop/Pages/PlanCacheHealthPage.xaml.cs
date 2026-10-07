@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -48,21 +49,21 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, IRefres
         KpiStrip.Children.Clear();
 
         string cacheStatus     = summary.PlanCacheErasedRecently ? "ERASED" : "OK";
-        string cacheColor      = summary.PlanCacheErasedRecently ? "#EF4444" : "#22C55E";
+        string cacheColor      = summary.PlanCacheErasedRecently ? "Danger" : "Success";
         string severityColor   = summary.Severity switch
         {
-            "CRITICAL" => "#EF4444",
-            "WARNING"  => "#FBBF24",
-            _          => "#22C55E"
+            "CRITICAL" => "Danger",
+            "WARNING"  => "Warning",
+            _          => "Success"
         };
 
         AddKpi("Plan Cache",        cacheStatus,                               cacheColor,
                "Whether DBCC FREEPROCCACHE was run recently or the server restarted in the last 24 hours. ERASED means historical plan data may be missing — wait for plans to repopulate before investigating.");
-        AddKpi("Total Plans",       $"{summary.TotalCachedPlans:N0}",          "#7C3AED",
+        AddKpi("Total Plans",       $"{summary.TotalCachedPlans:N0}",          "Accent",
                "Total number of plans currently in the procedure cache (sys.dm_exec_cached_plans). Very high counts (> 100k) may indicate hash bucket pressure. Use 'Optimize for Ad-hoc Workloads' to reduce single-use plan accumulation.");
-        AddKpi("Multi-Plan Queries",$"{summary.MultiPlanQueryCount:N0}",       summary.MultiPlanQueryCount > 3 ? "#FBBF24" : "#22C55E",
+        AddKpi("Multi-Plan Queries",$"{summary.MultiPlanQueryCount:N0}",       summary.MultiPlanQueryCount > 3 ? "Warning" : "Success",
                "Number of query hashes that have more than 5 distinct cached plans. Each extra plan represents a separate compilation — a sign of ad-hoc SQL or forced recompilation. Target: 0.");
-        AddKpi("Plan Guides",       $"{summary.PlanGuidesEnabled:N0}",         summary.PlanGuidesEnabled > 0 ? "#FBBF24" : "#22C55E",
+        AddKpi("Plan Guides",       $"{summary.PlanGuidesEnabled:N0}",         summary.PlanGuidesEnabled > 0 ? "Warning" : "Success",
                "Number of active plan guides in sys.plan_guides. Plan guides freeze execution plans; they can become stale after schema changes, index changes, or SQL Server upgrades. Review all listed guides.");
         AddKpi("Severity",          summary.Severity,                          severityColor,
                "Overall plan cache health signal: CRITICAL = cache was erased or > 10 multi-plan queries; WARNING = multi-plan queries detected or plan guides present; OK = no issues found.");
@@ -86,9 +87,8 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, IRefres
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
-    private void AddKpi(string label, string value, string hexColor, string tooltip)
+    private void AddKpi(string label, string value, string brushKey, string tooltip)
     {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor));
         var card  = new Border
         {
             Style  = (Style)Application.Current.FindResource("KpiCard"),
@@ -97,7 +97,7 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, IRefres
         };
         ToolTipService.SetToolTip(card, MakeTooltip(label, tooltip));
         var sp = new StackPanel();
-        sp.Children.Add(new TextBlock { Text = value, Style = (Style)Application.Current.FindResource("KpiValue"), Foreground = brush });
+        sp.Children.Add(new TextBlock { Text = value, Style = (Style)Application.Current.FindResource("KpiValue") }.WithForeground(brushKey));
         sp.Children.Add(new TextBlock { Text = label, Style = (Style)Application.Current.FindResource("KpiLabel") });
         card.Child = sp;
         KpiStrip.Children.Add(card);

@@ -65,24 +65,13 @@ internal sealed class SettingsContext(
             false => "✗  " + message,
             null  => message,
         };
-        target.Foreground = success switch
+        target.SetResourceReference(TextBlock.ForegroundProperty, success switch
         {
-            true  => Green,
-            false => Red,
-            null  => Muted,
-        };
+            true  => "Success",
+            false => "Danger",
+            null  => "TextMuted",
+        });
     }
 
     public static string Redact(string message) => ConnectionSettingsService.RedactSecrets(message);
-
-    private static readonly Brush Green = Frozen(0x22, 0xC5, 0x5E);
-    private static readonly Brush Red   = Frozen(0xEF, 0x44, 0x44);
-    private static readonly Brush Muted = Frozen(0x94, 0xA3, 0xB8);
-
-    private static Brush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
 }

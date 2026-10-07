@@ -6,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Controls;
@@ -256,7 +257,7 @@ public partial class QuickSwitcherOverlay : UserControl
 
     // A theme colour, see-through: the selection is the accent showing through.
     private SolidColorBrush Tint(string colorKey, byte alpha) =>
-        TryFindResource(colorKey) is Color c ? new SolidColorBrush(Color.FromArgb(alpha, c.R, c.G, c.B)) : new SolidColorBrush(Color.FromArgb(alpha, 0x80, 0x80, 0x80));
+        ThemeResources.Wash(TryFindResource(colorKey) is Color c ? c : Colors.Gray, alpha);
 
     // "TempDB, Resources", "PROD-SQL02, health score 96", "Agent Jobs, not available: …"
     private static string Spoken(SwitcherItem item, ConnectionSelectorItem? server)

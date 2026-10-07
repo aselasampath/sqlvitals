@@ -161,23 +161,6 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
     // everything else        →  instantaneous / absolute
     private const int RateCntrType = WaitStatsRepository.PerfmonRateCounterType;
 
-    // Colour palette for series lines
-    private static readonly SKColor[] Palette =
-    [
-        SKColor.Parse("#26E7A6"),
-        SKColor.Parse("#FF6B6B"),
-        SKColor.Parse("#7C3AED"),
-        SKColor.Parse("#FFA62B"),
-        SKColor.Parse("#00D9FF"),
-        SKColor.Parse("#FF4560"),
-        SKColor.Parse("#FFC107"),
-        SKColor.Parse("#9B59B6"),
-        SKColor.Parse("#1ABC9C"),
-        SKColor.Parse("#E74C3C"),
-        SKColor.Parse("#3498DB"),
-        SKColor.Parse("#F39C12"),
-    ];
-
     // ── State ────────────────────────────────────────────────────────────────
     private readonly IWaitStatsRepository _repo;
     private readonly DispatcherTimer      _timer       = new();
@@ -611,7 +594,7 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
 
         var series = selected.Select((item, idx) =>
         {
-            var color  = Palette[idx % Palette.Length];
+            var color  = ChartTheme.Series(idx);
             var window = windows[item.CounterName];
             return (ISeries)new LineSeries<DateTimePoint>
             {
@@ -637,7 +620,7 @@ public partial class PerfmonPage : Page, IRefreshable, IPageContext
 
             if (shown is { } s)
                 series.AddRange(selected.Select((item, idx) => (ISeries)BaselineSeries.Line(
-                    BuildBaselineWindow(baseline, item.CounterName, s.From, s.To), item.CounterName, Palette[idx % Palette.Length])));
+                    BuildBaselineWindow(baseline, item.CounterName, s.From, s.To), item.CounterName, ChartTheme.Series(idx))));
         }
 
         PerfmonChart.Series = series;

@@ -72,10 +72,10 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
     private const int MaxPoints = 60;
 
     // ── chart series colours ─────────────────────────────────────────
-    private static readonly SKColor ColTotal   = SKColor.Parse("#38BDF8"); // light blue
-    private static readonly SKColor ColTarget  = SKColor.Parse("#60A5FA"); // blue
-    private static readonly SKColor ColBuffer  = SKColor.Parse("#34D399"); // green
-    private static readonly SKColor ColGrants  = SKColor.Parse("#FCD34D"); // amber
+    private static SKColor ColTotal  => ChartTheme.Series(4);   // cyan
+    private static SKColor ColTarget => ChartTheme.Series(10);  // blue
+    private static SKColor ColBuffer => ChartTheme.Series(0);   // green
+    private static SKColor ColGrants => ChartTheme.Series(6);   // amber
 
     // ── rolling windows (values in GB) ───────────────────────────────
     private readonly ObservableCollection<DateTimePoint> _winTotal  = new();
@@ -177,17 +177,12 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
                                        $"buffer pool {FormatKB(s.DatabaseCacheMemoryKB)} · plan cache {FormatKB(s.SqlCacheMemoryKB)} · {s.SystemMemoryState}";
 
         // Colour system state text
-        KpiMemState.Foreground = s.SystemMemoryState switch
+        KpiMemState.SetResourceReference(TextBlock.ForegroundProperty, s.SystemMemoryState switch
         {
-            var v when v.StartsWith("Available", StringComparison.OrdinalIgnoreCase) =>
-                new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(52, 211, 153)),   // green
-            var v when v.Contains("Low", StringComparison.OrdinalIgnoreCase) =>
-                new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(239, 68,  68)),   // red
-            _ => new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(253, 186, 116))   // orange
-        };
+            var v when v.StartsWith("Available", StringComparison.OrdinalIgnoreCase) => "Success",
+            var v when v.Contains("Low", StringComparison.OrdinalIgnoreCase)         => "Danger",
+            _                                                                        => "Warning",
+        });
     }
 
     // ── append point to rolling windows ──────────────────────────────
@@ -279,7 +274,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshab
             new ColumnSeries<double>
             {
                 Values      = clerks.Select(c => (double)c.TotalPagesMB).ToArray(),
-                Fill        = new SolidColorPaint(SKColor.Parse("#7C3AED")),
+                Fill        = new SolidColorPaint(ChartTheme.Of("AccentColor")),
                 Stroke      = null,
                 MaxBarWidth = 48,
                 Padding     = 2,

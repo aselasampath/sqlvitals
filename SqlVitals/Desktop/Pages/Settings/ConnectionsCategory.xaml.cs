@@ -264,8 +264,8 @@ public sealed class ConnectionCardItem : INotifyPropertyChanged
 
     public Brush RoleTint => Card.Role switch
     {
-        ConnectionRole.Active     => ActiveTint,
-        ConnectionRole.Background => BackgroundTint,
+        ConnectionRole.Active     => ThemeResources.BrushOf("ConnectionActiveTint"),
+        ConnectionRole.Background => ThemeResources.BrushOf("ConnectionBackgroundTint"),
         _                         => HealthBrushes.Tint(TileStatus.Off),
     };
 
@@ -299,15 +299,5 @@ public sealed class ConnectionCardItem : INotifyPropertyChanged
         _testing        = success is null;
         _testShownUntil = DateTime.UtcNow + TestShownFor;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-    }
-
-    private static readonly Brush ActiveTint     = Frozen(0x7C, 0x3A, 0xED, 0x33);
-    private static readonly Brush BackgroundTint = Frozen(0x3B, 0x82, 0xF6, 0x33);
-
-    private static Brush Frozen(byte r, byte g, byte b, byte a)
-    {
-        var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-        brush.Freeze();
-        return brush;
     }
 }

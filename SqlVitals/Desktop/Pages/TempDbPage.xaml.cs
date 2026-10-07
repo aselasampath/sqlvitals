@@ -71,9 +71,9 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
         foreach (var c in counterList)
         {
             double val = c.CounterValue;
-            string hexColor = c.CounterName.Contains("Version") && val > 0 ? "#EF4444"
-                            : c.CounterName.Contains("Free")    && val < 1_000_000 ? "#FBBF24" // < ~1 GB free (counter is in KB)
-                            : "#7C3AED";
+            string brushKey = c.CounterName.Contains("Version") && val > 0 ? "Danger"
+                            : c.CounterName.Contains("Free")    && val < 1_000_000 ? "Warning" // < ~1 GB free (counter is in KB)
+                            : "Accent";
             string tip = c.CounterName switch
             {
                 var n when n.Contains("Version Store Size")          => "Size (KB) of the version store in TempDB used by snapshot/RCSI isolation. Rapid growth indicates long-running read-committed snapshot transactions that keep row versions alive. The Performance Counters page charts how fast versions are generated and cleaned up.",
@@ -83,7 +83,7 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
                 var n when n.Contains("Temp Tables For Destruction") => "Temporary tables waiting for the cleanup thread to drop them. A number that keeps climbing means cleanup can't keep up.",
                 _                                                     => $"TempDB performance counter from sys.dm_os_performance_counters: {c.CounterName}."
             };
-            AddKpiCard(c.CounterName, $"{val:N0}", hexColor, tip);
+            AddKpiCard(c.CounterName, $"{val:N0}", brushKey, tip);
         }
 
         // ── File space bar chart ───────────────────────────────────────
@@ -102,7 +102,7 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
                 {
                     Values      = usedVals,
                     Name        = "Used MB",
-                    Fill        = new SolidColorPaint(SKColor.Parse("#EF4444")),
+                    Fill        = new SolidColorPaint(ChartTheme.Of("DangerColor")),
                     Stroke      = null,
                     MaxBarWidth = 60,
                     Padding     = 4,
@@ -111,7 +111,7 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
                 {
                     Values      = freeVals,
                     Name        = "Free MB",
-                    Fill        = new SolidColorPaint(SKColor.Parse("#22C55E")),
+                    Fill        = new SolidColorPaint(ChartTheme.Of("SuccessColor")),
                     Stroke      = null,
                     MaxBarWidth = 60,
                     Padding     = 4,
@@ -136,9 +136,8 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
         SessionsGrid.ItemsSource = sessionList.OrderByDescending(s => s.InternalObjAllocKB + s.UserObjAllocKB);
     }
 
-    private void AddKpiCard(string label, string value, string hexColor, string? tooltip = null)
+    private void AddKpiCard(string label, string value, string brushKey, string? tooltip = null)
     {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor));
         var card  = new Border
         {
             Style  = (Style)Application.Current.FindResource("KpiCard"),
@@ -148,7 +147,7 @@ public partial class TempDbPage : System.Windows.Controls.Page, IRefreshable, IP
         if (tooltip is not null)
             ToolTipService.SetToolTip(card, MakeTooltip(label, tooltip));
         var sp = new StackPanel();
-        sp.Children.Add(new TextBlock { Text = value, Style = (Style)Application.Current.FindResource("KpiValue"), Foreground = brush });
+        sp.Children.Add(new TextBlock { Text = value, Style = (Style)Application.Current.FindResource("KpiValue") }.WithForeground(brushKey));
         sp.Children.Add(new TextBlock { Text = label, Style = (Style)Application.Current.FindResource("KpiLabel") });
         card.Child = sp;
         CounterGrid.Children.Add(card);

@@ -166,9 +166,7 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSou
     private async void BtnTrace_Checked(object sender, RoutedEventArgs e)
     {
         BtnTrace.Content     = "■ Stop Trace";
-        BtnTrace.Foreground  = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
-        BtnTrace.BorderBrush = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
-        BtnTrace.Background  = new SolidColorBrush(Color.FromArgb(0x1A, 0xF5, 0x9E, 0x0B));
+        PaintTraceButton("Warning");
         BtnTrace.IsEnabled   = false;
 
         try
@@ -197,9 +195,7 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSou
     private async void BtnTrace_Unchecked(object sender, RoutedEventArgs e)
     {
         BtnTrace.Content     = "● Start Trace";
-        BtnTrace.Foreground  = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E));
-        BtnTrace.BorderBrush = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E));
-        BtnTrace.Background  = new SolidColorBrush(Color.FromArgb(0x1A, 0x22, 0xC5, 0x5E));
+        PaintTraceButton("Success");
 
         StopTimer();
 
@@ -498,14 +494,14 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSou
     {
         if (!_status.IsRunning)
         {
-            SetBadge("Idle", "#38BDF8");
+            SetBadge("Idle", "Info");
             TxtTraceStatus.Text = "Trace is not running. Press Start Trace to begin capturing stored-procedure calls.";
             return;
         }
 
         if (_status.Mode == TraceMode.ExtendedEvents)
         {
-            SetBadge("Extended Events", "#22C55E");
+            SetBadge("Extended Events", "Success");
 
             var text = $"Capturing live calls via session '{_status.SessionName}' — {_status.EventsCaptured:N0} captured.";
 
@@ -521,19 +517,26 @@ public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSou
         }
         else
         {
-            SetBadge("DMV fallback", "#F59E0B");
+            SetBadge("DMV fallback", "Warning");
             TxtTraceStatus.Text = _status.Reason
                 ?? "Per-call tracing is unavailable; showing per-procedure aggregates from DMV counters.";
         }
     }
 
-    private void SetBadge(string text, string hexColor)
+    private void SetBadge(string text, string brushKey)
     {
-        var color = (Color)ColorConverter.ConvertFromString(hexColor);
-        TxtModeBadge.Text       = text;
-        TxtModeBadge.Foreground = new SolidColorBrush(color);
-        ModeBadge.BorderBrush   = new SolidColorBrush(color);
-        ModeBadge.Background    = new SolidColorBrush(Color.FromArgb(0x1A, color.R, color.G, color.B));
+        TxtModeBadge.Text = text;
+        TxtModeBadge.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
+        ModeBadge.SetResourceReference(Border.BorderBrushProperty, brushKey);
+        ModeBadge.Background = ThemeResources.Wash((Color)FindResource(brushKey + "Color"), 0x1A);
+    }
+
+    // Start is green, Stop amber: the colour, its outline and a wash of it behind.
+    private void PaintTraceButton(string brushKey)
+    {
+        BtnTrace.SetResourceReference(Control.ForegroundProperty, brushKey);
+        BtnTrace.SetResourceReference(Control.BorderBrushProperty, brushKey);
+        BtnTrace.Background = ThemeResources.Wash((Color)FindResource(brushKey + "Color"), 0x1A);
     }
 
     private int ReadMinDurationMs() =>
