@@ -358,7 +358,7 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 |---|---|---|---|
 | Dapper | 2.1.89 | Engine | Micro-ORM |
 | Microsoft.Data.SqlClient | 7.1.1 | Engine | SQL Server / Azure SQL driver |
-| Microsoft.Data.SqlClient.Extensions.Azure | 7.1.1 | Engine | Entra MFA sign-in (split out of SqlClient in 7.0) |
+| Microsoft.Data.SqlClient.Extensions.Azure | 7.1.1 | Engine | Entra MFA sign-in (split out of SqlClient in 7.0). It prompts through Windows' account manager (WAM), which needs a parent window: `Services/EntraSignIn` gives it the app's, set in `App.OnStartup` |
 | Microsoft.Data.Sqlite | 10.0.12 | Engine | History file |
 | Swashbuckle.AspNetCore | 6.6.2 | Engine | Swagger (API mode only; #165 removes it) |
 | LiveChartsCore.SkiaSharpView.WPF | 2.0.5 | Desktop | Charts |
