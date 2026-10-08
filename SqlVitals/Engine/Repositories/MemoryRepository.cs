@@ -13,96 +13,20 @@ public class MemoryRepository(IConfiguration configuration) : BaseRepository(con
         // SQL Server 2016+ (ProductMajorVersion >= 13) and Azure SQL have queue_id,
         // wait_order, is_next_candidate, wait_time_ms in sys.dm_exec_query_memory_grants.
         // Older on-prem versions (2014/2012) lack those columns — use NULL/0 placeholders.
-        const string grantsSqlFull = """
-            SELECT TOP 25
-                mg.session_id AS SessionId, mg.request_id AS RequestId,
-                mg.scheduler_id AS SchedulerId, mg.dop AS DegreeOfParallelism,
-                mg.request_time AS RequestTime, mg.grant_time AS GrantTime,
-                DATEDIFF(ms,mg.request_time,ISNULL(mg.grant_time,GETDATE())) AS WaitForGrantMs,
-                mg.requested_memory_kb AS RequestedMemoryKB,
-                ISNULL(mg.granted_memory_kb,0) AS GrantedMemoryKB,
-                ISNULL(mg.used_memory_kb,0) AS UsedMemoryKB,
-                ISNULL(mg.max_used_memory_kb,0) AS MaxUsedMemoryKB,
-                CASE WHEN ISNULL(mg.granted_memory_kb,0)>0
-                     THEN CAST(ISNULL(mg.used_memory_kb,0)*100.0/NULLIF(mg.granted_memory_kb,0) AS DECIMAL(10,1))
-                     ELSE NULL END AS MemGrantUsedPct,
-                mg.ideal_memory_kb AS IdealMemoryKB,
-                mg.required_memory_kb AS RequiredMemoryKB,
-                mg.queue_id AS QueueId, mg.wait_order AS WaitOrder,
-                CAST(mg.is_next_candidate AS BIT) AS IsNextCandidate,
-                ISNULL(mg.wait_time_ms,0) AS WaitTimeMs,
-                s.login_name AS LoginName, s.host_name AS HostName,
-                s.program_name AS ProgramName,
-                DB_NAME(r.database_id) AS DatabaseName,
-                r.status AS RequestStatus, r.wait_type AS WaitType,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(qt.text,''),CHAR(13),' '),CHAR(10),' '),1,500) AS QueryText,
-                GETDATE() AS CaptureTime
-            FROM sys.dm_exec_query_memory_grants mg
-            JOIN sys.dm_exec_sessions s ON mg.session_id = s.session_id
-            LEFT JOIN sys.dm_exec_requests r ON mg.session_id = r.session_id
-            OUTER APPLY sys.dm_exec_sql_text(mg.plan_handle) qt
-            ORDER BY ISNULL(mg.granted_memory_kb,mg.requested_memory_kb) DESC
-            """;
+        var grantsSqlFull = SqlScripts.Get("Memory/GrantsFull");
 
         // Compatible query for SQL Server 2014 and earlier (ProductMajorVersion <= 12):
         // queue_id, wait_order, is_next_candidate, wait_time_ms did not exist yet.
-        const string grantsSqlCompat = """
-            SELECT TOP 25
-                mg.session_id AS SessionId, mg.request_id AS RequestId,
-                mg.scheduler_id AS SchedulerId, mg.dop AS DegreeOfParallelism,
-                mg.request_time AS RequestTime, mg.grant_time AS GrantTime,
-                DATEDIFF(ms,mg.request_time,ISNULL(mg.grant_time,GETDATE())) AS WaitForGrantMs,
-                mg.requested_memory_kb AS RequestedMemoryKB,
-                ISNULL(mg.granted_memory_kb,0) AS GrantedMemoryKB,
-                ISNULL(mg.used_memory_kb,0) AS UsedMemoryKB,
-                ISNULL(mg.max_used_memory_kb,0) AS MaxUsedMemoryKB,
-                CASE WHEN ISNULL(mg.granted_memory_kb,0)>0
-                     THEN CAST(ISNULL(mg.used_memory_kb,0)*100.0/NULLIF(mg.granted_memory_kb,0) AS DECIMAL(10,1))
-                     ELSE NULL END AS MemGrantUsedPct,
-                mg.ideal_memory_kb AS IdealMemoryKB,
-                mg.required_memory_kb AS RequiredMemoryKB,
-                NULL AS QueueId, NULL AS WaitOrder,
-                CAST(0 AS BIT) AS IsNextCandidate,
-                0 AS WaitTimeMs,
-                s.login_name AS LoginName, s.host_name AS HostName,
-                s.program_name AS ProgramName,
-                DB_NAME(r.database_id) AS DatabaseName,
-                r.status AS RequestStatus, r.wait_type AS WaitType,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(qt.text,''),CHAR(13),' '),CHAR(10),' '),1,500) AS QueryText,
-                GETDATE() AS CaptureTime
-            FROM sys.dm_exec_query_memory_grants mg
-            JOIN sys.dm_exec_sessions s ON mg.session_id = s.session_id
-            LEFT JOIN sys.dm_exec_requests r ON mg.session_id = r.session_id
-            OUTER APPLY sys.dm_exec_sql_text(mg.plan_handle) qt
-            ORDER BY ISNULL(mg.granted_memory_kb,mg.requested_memory_kb) DESC
-            """;
+        var grantsSqlCompat = SqlScripts.Get("Memory/GrantsCompat");
 
         // Select the right variant based on SQL Server version.
         // Azure SQL DB (5) and MI (8) always support the full column set.
-        const string sqlMeta = "SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) AS MajorVersion, CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition";
+        var sqlMeta = SqlScripts.Get("Memory/ServerVersion");
         var grantsSql = grantsSqlFull; // resolved after meta query below
 
-        const string clerksSql = """
-            SELECT TOP 15 mc.type AS ClerkType, mc.name AS ClerkName,
-                SUM(mc.pages_kb) AS TotalPagesKB,
-                SUM(mc.pages_kb)/1024 AS TotalPagesMB,
-                CAST(SUM(mc.pages_kb)*100.0/NULLIF((SELECT SUM(pages_kb) FROM sys.dm_os_memory_clerks),0) AS DECIMAL(10,2)) AS PctOfTotalMemory,
-                GETDATE() AS CaptureTime
-            FROM sys.dm_os_memory_clerks mc
-            GROUP BY mc.type, mc.name ORDER BY TotalPagesKB DESC
-            """;
+        var clerksSql = SqlScripts.Get("Memory/Clerks");
 
-        const string countersSql = """
-            SELECT counter_name AS CounterName, cntr_value AS CounterValue, GETDATE() AS CaptureTime
-            FROM sys.dm_os_performance_counters
-            WHERE object_name LIKE '%Memory Manager%'
-              AND counter_name IN (
-                  'Memory Grants Outstanding','Memory Grants Pending',
-                  'Maximum Workspace Memory (KB)','Target Server Memory (KB)',
-                  'Total Server Memory (KB)','Stolen Server Memory (KB)',
-                  'Free Memory (KB)','Database Cache Memory (KB)')
-            ORDER BY counter_name
-            """;
+        var countersSql = SqlScripts.Get("Memory/Counters");
 
         using var conn = CreateConnection();
 
@@ -181,13 +105,7 @@ public class MemoryRepository(IConfiguration configuration) : BaseRepository(con
     // Azure SQL DB (EngineEdition 5): sys.dm_os_sys_memory not exposed → counters only.
 
     /// <summary>The edition, and whether sys.dm_os_sys_info has sql_memory_model_desc.</summary>
-    internal const string MemorySnapshotProbeSql = """
-        SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition,
-               CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns
-                                 WHERE object_id = OBJECT_ID(N'sys.dm_os_sys_info')
-                                   AND name = N'sql_memory_model_desc')
-                    THEN 1 ELSE 0 END                   AS HasMemoryModel
-        """;
+    internal static readonly string MemorySnapshotProbeSql = SqlScripts.Get("Memory/MemorySnapshotProbe");
 
     private const string MemoryModelColumnSql = "osi.sql_memory_model_desc";
     private const string MemoryModelUnknownSql = "N'N/A'";
@@ -204,69 +122,11 @@ public class MemoryRepository(IConfiguration configuration) : BaseRepository(con
 
     // The memory model is aggregated, not grouped by, so the GROUP BY stays the same
     // whichever expression replaces the placeholder. osi has one row.
-    private const string MemorySnapshotOnPremSqlTemplate = """
-            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-            SELECT
-                osi.physical_memory_kb                                                                    AS PhysicalMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Total Server Memory (KB)'      THEN pc.cntr_value ELSE 0 END) AS TotalServerMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Target Server Memory (KB)'     THEN pc.cntr_value ELSE 0 END) AS TargetServerMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Database Cache Memory (KB)'    THEN pc.cntr_value ELSE 0 END) AS DatabaseCacheMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'SQL Cache Memory (KB)'         THEN pc.cntr_value ELSE 0 END) AS SqlCacheMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Granted Workspace Memory (KB)' THEN pc.cntr_value ELSE 0 END) AS GrantedWorkspaceMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Free Memory (KB)'              THEN pc.cntr_value ELSE 0 END) AS FreeMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Memory Grants Pending'         THEN pc.cntr_value ELSE 0 END) AS MemoryGrantsPending,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Memory Grants Outstanding'     THEN pc.cntr_value ELSE 0 END) AS MemoryGrantsOutstanding,
-                osm.available_physical_memory_kb                                                          AS AvailablePhysicalKB,
-                ISNULL(osm.total_page_file_kb, 0)                                                         AS TotalPageFileKB,
-                ISNULL(osm.available_page_file_kb, 0)                                                     AS AvailablePageFileKB,
-                ISNULL(osm.system_memory_state_desc, N'Unknown')                                          AS SystemMemoryState,
-                ISNULL(MAX(/*MEMORY_MODEL*/), N'N/A')                                                     AS MemoryModel,
-                GETDATE()                                                                                 AS CaptureTime
-            FROM sys.dm_os_sys_info osi
-            CROSS JOIN sys.dm_os_sys_memory osm
-            CROSS JOIN sys.dm_os_performance_counters pc
-            WHERE RTRIM(pc.object_name) LIKE N'%Memory Manager%'
-              AND RTRIM(pc.counter_name) IN (
-                N'Total Server Memory (KB)', N'Target Server Memory (KB)',
-                N'Database Cache Memory (KB)', N'SQL Cache Memory (KB)',
-                N'Granted Workspace Memory (KB)',
-                N'Free Memory (KB)', N'Memory Grants Pending', N'Memory Grants Outstanding'
-              )
-            GROUP BY
-                osi.physical_memory_kb,
-                osm.available_physical_memory_kb, osm.total_page_file_kb,
-                osm.available_page_file_kb, osm.system_memory_state_desc;
-            """;
+    private static readonly string MemorySnapshotOnPremSqlTemplate = SqlScripts.Get("Memory/MemorySnapshotOnPrem");
 
     // Azure SQL DB: sys.dm_os_sys_memory, sys.dm_os_process_memory and host memory
     // columns on sys.dm_os_sys_info are not exposed. Use counters only.
-    private const string MemorySnapshotAzureSql = """
-            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-            SELECT
-                CAST(0 AS BIGINT)                                                                         AS PhysicalMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Total Server Memory (KB)'      THEN pc.cntr_value ELSE 0 END) AS TotalServerMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Target Server Memory (KB)'     THEN pc.cntr_value ELSE 0 END) AS TargetServerMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Database Cache Memory (KB)'    THEN pc.cntr_value ELSE 0 END) AS DatabaseCacheMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'SQL Cache Memory (KB)'         THEN pc.cntr_value ELSE 0 END) AS SqlCacheMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Granted Workspace Memory (KB)' THEN pc.cntr_value ELSE 0 END) AS GrantedWorkspaceMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Free Memory (KB)'              THEN pc.cntr_value ELSE 0 END) AS FreeMemoryKB,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Memory Grants Pending'         THEN pc.cntr_value ELSE 0 END) AS MemoryGrantsPending,
-                MAX(CASE WHEN RTRIM(pc.counter_name) = 'Memory Grants Outstanding'     THEN pc.cntr_value ELSE 0 END) AS MemoryGrantsOutstanding,
-                CAST(0 AS BIGINT)                                                                         AS AvailablePhysicalKB,
-                CAST(0 AS BIGINT)                                                                         AS TotalPageFileKB,
-                CAST(0 AS BIGINT)                                                                         AS AvailablePageFileKB,
-                N'N/A'                                                                                    AS SystemMemoryState,
-                N'N/A'                                                                                    AS MemoryModel,
-                GETDATE()                                                                                 AS CaptureTime
-            FROM sys.dm_os_performance_counters pc
-            WHERE RTRIM(pc.object_name) LIKE N'%Memory Manager%'
-              AND RTRIM(pc.counter_name) IN (
-                N'Total Server Memory (KB)', N'Target Server Memory (KB)',
-                N'Database Cache Memory (KB)', N'SQL Cache Memory (KB)',
-                N'Granted Workspace Memory (KB)',
-                N'Free Memory (KB)', N'Memory Grants Pending', N'Memory Grants Outstanding'
-              );
-            """;
+    private static readonly string MemorySnapshotAzureSql = SqlScripts.Get("Memory/MemorySnapshotAzure");
 
     public async Task<MemorySnapshot> GetMemorySnapshotAsync()
     {

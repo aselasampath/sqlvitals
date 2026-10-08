@@ -12,7 +12,7 @@ public class ServerRepository(IConfiguration configuration) : BaseRepository(con
     public async Task<bool> IsAzureSqlDatabaseAsync()
     {
         using var conn = CreateConnection();
-        var row = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
+        var row = await QFirst(conn, SqlScripts.Get("Server/Edition"));
         return row?.Edition == 5;
     }
 
@@ -21,7 +21,7 @@ public class ServerRepository(IConfiguration configuration) : BaseRepository(con
     public async Task<bool> SupportsOnlineIndexRebuildAsync()
     {
         using var conn = CreateConnection();
-        var row = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
+        var row = await QFirst(conn, SqlScripts.Get("Server/Edition"));
         return row is not null && IndexMaintenanceScript.EditionSupportsOnlineRebuild(Convert.ToInt32(row.Edition));
     }
 }

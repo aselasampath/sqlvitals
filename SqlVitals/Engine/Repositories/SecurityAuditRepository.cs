@@ -14,91 +14,29 @@ namespace SqlVitals.Engine.Repositories;
 /// </summary>
 public class SecurityAuditRepository(IConfiguration configuration) : BaseRepository(configuration), ISecurityAuditRepository
 {
-    internal const string ServerSql = """
-        SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT)                                  AS Edition,
-               CAST(ISNULL(SERVERPROPERTY('IsIntegratedSecurityOnly'), 0) AS INT)            AS WindowsAuthenticationOnly,
-               CAST(ISNULL(HAS_PERMS_BY_NAME(NULL, NULL, N'VIEW ANY DEFINITION'), 0) AS INT) AS CanViewDefinitions
-        """;
+    internal static readonly string ServerSql = SqlScripts.Get("SecurityAudit/Server");
 
     // By SID, so a renamed sa is still found.
-    internal const string SaSql = """
-        SELECT name AS Name, CAST(is_disabled AS INT) AS IsDisabled
-        FROM sys.server_principals
-        WHERE sid = 0x01
-        """;
+    internal static readonly string SaSql = SqlScripts.Get("SecurityAudit/Sa");
 
     // Members of sysadmin, then whoever holds CONTROL SERVER, which is as good as sysadmin.
-    internal const string SysadminSql = """
-        SELECT p.name                                          AS Name,
-               p.type                                          AS Type,
-               CAST(p.is_disabled AS INT)                      AS IsDisabled,
-               p.create_date                                   AS CreateDate,
-               p.sid                                           AS Sid,
-               CASE WHEN p.sid = 0x01 THEN 1 ELSE 0 END        AS IsSa,
-               CAST(sl.is_policy_checked AS INT)               AS PolicyChecked,
-               0                                               AS ViaControlServer
-        FROM sys.server_role_members rm
-        JOIN sys.server_principals r ON r.principal_id = rm.role_principal_id
-        JOIN sys.server_principals p ON p.principal_id = rm.member_principal_id
-        LEFT JOIN sys.sql_logins sl  ON sl.principal_id = p.principal_id
-        WHERE r.name = N'sysadmin'
-        UNION ALL
-        SELECT p.name, p.type, CAST(p.is_disabled AS INT), p.create_date, p.sid,
-               CASE WHEN p.sid = 0x01 THEN 1 ELSE 0 END,
-               CAST(sl.is_policy_checked AS INT),
-               1
-        FROM sys.server_permissions sp
-        JOIN sys.server_principals p ON p.principal_id = sp.grantee_principal_id
-        LEFT JOIN sys.sql_logins sl  ON sl.principal_id = p.principal_id
-        WHERE sp.permission_name = N'CONTROL SERVER' AND sp.state IN ('G', 'W')
-        """;
+    internal static readonly string SysadminSql = SqlScripts.Get("SecurityAudit/Sysadmin");
 
     // Snapshots take their users and settings from their source database. IS_SRVROLEMEMBER is
     // given the owner only when it has a name: given NULL, it answers for the caller.
-    internal const string DatabasesSql = """
-        SELECT d.name                                          AS Name,
-               d.state_desc                                    AS State,
-               CAST(ISNULL(HAS_DBACCESS(d.name), 0) AS INT)    AS HasAccess,
-               CAST(d.is_trustworthy_on AS INT)                AS IsTrustworthy,
-               SUSER_SNAME(d.owner_sid)                        AS Owner,
-               CASE WHEN d.owner_sid = 0x01 THEN 1
-                    WHEN SUSER_SNAME(d.owner_sid) IS NULL THEN NULL
-                    ELSE IS_SRVROLEMEMBER(N'sysadmin', SUSER_SNAME(d.owner_sid)) END AS OwnerIsSysadmin
-        FROM sys.databases d
-        WHERE d.source_database_id IS NULL
-        ORDER BY d.name
-        """;
+    internal static readonly string DatabasesSql = SqlScripts.Get("SecurityAudit/Databases");
 
     // SQL users made for a login (authentication_type 1) whose SID no login has. Users without a
     // login, contained users with a password, Windows users (who may get in through a group) and
     // dbo, guest, INFORMATION_SCHEMA and sys (principal_id 1 to 4) are left out. {db} is the
     // database's quoted name.
-    internal const string OrphanedUsersSql = """
-        SELECT dp.name                                         AS Name,
-               dp.sid                                          AS Sid,
-               dp.create_date                                  AS CreateDate,
-               (SELECT COUNT(*) FROM {db}.sys.schemas s WHERE s.principal_id = dp.principal_id) AS OwnedSchemas
-        FROM {db}.sys.database_principals dp
-        WHERE dp.type = 'S'
-          AND dp.authentication_type = 1
-          AND dp.principal_id > 4
-          AND dp.sid IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM sys.server_principals sp WHERE sp.sid = dp.sid)
-        """;
+    internal static readonly string OrphanedUsersSql = SqlScripts.Get("SecurityAudit/OrphanedUsers");
 
-    internal const string SqlLoginsSql = """
-        SELECT name AS Name
-        FROM sys.server_principals
-        WHERE type = 'S'
-        """;
+    internal static readonly string SqlLoginsSql = SqlScripts.Get("SecurityAudit/SqlLogins");
 
     // Who SqlVitals is connected as: its login, and the Windows groups and server roles it gets
     // permissions through. Any login can read its own token.
-    internal const string LoginTokenSql = """
-        SELECT sid AS Sid
-        FROM sys.login_token
-        WHERE usage = N'GRANT OR DENY' AND sid IS NOT NULL
-        """;
+    internal static readonly string LoginTokenSql = SqlScripts.Get("SecurityAudit/LoginToken");
 
     /// <summary>The orphaned-user query for one database.</summary>
     internal static string OrphanedUsersIn(string database) =>

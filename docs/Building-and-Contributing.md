@@ -178,36 +178,40 @@ public record YourFeatureRow(
 
 ### 3. Add the interface method
 
-`SqlVitals/Engine/Repositories/IWaitStatsRepository.cs`:
+Add it to its area's interface, for example `SqlVitals/Engine/Repositories/IIndexRepository.cs`, and hand it on in `WaitStatsRepository.cs` (`=> _indexes.GetYourFeatureAsync();`). A feature that is an area of its own gets its own `IYourFeatureRepository` and `YourFeatureRepository`: add the interface to `IWaitStatsRepository`'s list and a field to `WaitStatsRepository`.
 
 ```csharp
 Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync();
 ```
 
-### 4. Implement it
+### 4. Write the query and implement it
 
-In `WaitStatsRepository.cs`:
+The query is a file of its own, `SqlVitals/Engine/Sql/Index/YourFeature.sql` (the folder is the repository's area), which the build embeds:
+
+```sql
+SELECT some_column AS SomeColumn,
+       another_col AS AnotherColumn,
+       CAST(value_pages * 8.0 / 1024 AS DECIMAL(18,2)) AS ValueMB
+FROM sys.some_dmv
+ORDER BY ValueMB DESC
+```
+
+In `IndexRepository.cs`:
 
 ```csharp
 // ── Your feature ──────────────────────────────────────────────────
 public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 {
-    const string sql = """
-        SELECT some_column AS SomeColumn,
-               another_col AS AnotherColumn,
-               CAST(value_pages * 8.0 / 1024 AS DECIMAL(18,2)) AS ValueMB
-        FROM sys.some_dmv
-        ORDER BY ValueMB DESC
-        """;
-
     using var conn = CreateConnection();
-    return (await Q(conn, sql)).Select(r => new YourFeatureRow(
+    return (await Q(conn, SqlScripts.Get("Index/YourFeature"))).Select(r => new YourFeatureRow(
         (string)r.SomeColumn,
         Convert.ToInt32(r.AnotherColumn),
         Convert.ToDecimal(r.ValueMB)));
 }
 ```
 
+> A part that depends on the server's version is a `/*MARKER*/` in the file, filled with `Replace` (see [Architecture → Where the SQL lives](Architecture.md#where-the-sql-lives)). `SqlScriptsTests` fails for a name that has no file.
+>
 > Always `Q(conn, sql)`, never `conn.QueryAsync`. Always `Convert.To*` for numbers, never casts or `?? 0`. See [DBNull-safe mapping](Architecture.md#dbnull-safe-mapping).
 
 ### 5. Create the page

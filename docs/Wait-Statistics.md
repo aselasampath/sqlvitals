@@ -89,6 +89,6 @@ This figure appears in the [Export for AI](Export-for-AI.md) report (*Signal vs 
 ### Under the hood
 
 - **Source:** `sys.dm_os_wait_stats`, which is cumulative since the last restart or since someone cleared it with `DBCC SQLPERF('sys.dm_os_wait_stats', CLEAR)`.
-- **Categories** are assigned in SQL by a `CASE` on `wait_type` in `WaitStatsRepository.GetCumulativeWaitsAsync`. The Benign/Idle list is also excluded from the *% of Total* denominator. Category colours come from `CategoryColor()`.
+- **Categories** are assigned in SQL by a `CASE` on `wait_type` in `Engine/Sql/Waits/CumulativeWaits.sql`, which `WaitsRepository.GetCumulativeWaitsAsync` runs. The Benign/Idle list is also excluded from the *% of Total* denominator. Category colours come from `WaitsRepository.CategoryColor()`.
 - **Wait Trend live** computes per-second rates from the difference between successive reads. **Wait Trend history** reads the `wait_deltas` table, which holds per-type changes per detail snapshot (5 minutes by default). Idle waits are not stored there. For that reason, a past range starts on the range's own top waits if none of your selected types were recorded.
 - The Live charts stacked chart (and the Overview's waits chart) plots per-category wait ms/sec from the live sample (`metric_samples`), not per type.

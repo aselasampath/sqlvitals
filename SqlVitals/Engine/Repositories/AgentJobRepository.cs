@@ -17,96 +17,19 @@ public class AgentJobRepository(IConfiguration configuration) : BaseRepository(c
     private const int AzureSqlDatabaseEdition = 5;
 
     // Kept to what every edition has, so Azure SQL Database gets its message rather than an error.
-    internal const string ServerSql = """
-        SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition,
-               SYSDATETIME() AS ServerNow
-        """;
+    internal static readonly string ServerSql = SqlScripts.Get("AgentJob/Server");
 
     // Agent turns this option on as it starts and off as it stops.
-    internal const string AgentXpsSql = """
-        SELECT CAST(value_in_use AS INT) AS AgentXps
-        FROM sys.configurations
-        WHERE name = N'Agent XPs'
-        """;
+    internal static readonly string AgentXpsSql = SqlScripts.Get("AgentJob/AgentXps");
 
     // Needs VIEW SERVER STATE; without it the Agent XPs option above is used.
-    internal const string AgentServiceSql = """
-        SELECT TOP (1) status_desc AS Status
-        FROM sys.dm_server_services
-        WHERE servicename LIKE N'SQL Server Agent%'
-        """;
+    internal static readonly string AgentServiceSql = SqlScripts.Get("AgentJob/AgentService");
 
     // One row per job. Step 0 rows in sysjobhistory are the job's outcome; run_duration is hhmmss.
     // sysjobactivity is read for the newest Agent session only: older sessions' rows are history.
-    internal const string JobsSql = """
-        SELECT j.job_id                    AS JobId,
-               j.name                      AS Name,
-               CAST(j.enabled AS INT)      AS Enabled,
-               c.name                      AS Category,
-               SUSER_SNAME(j.owner_sid)    AS Owner,
-               j.description               AS Description,
-               lr.run_status               AS LastRunStatus,
-               lr.run_date                 AS LastRunDate,
-               lr.run_time                 AS LastRunTime,
-               lr.run_duration             AS LastRunDuration,
-               lr.message                  AS LastMessage,
-               st.Runs,
-               ISNULL(st.FailedRuns, 0)    AS FailedRuns,
-               ISNULL(st.SucceededRuns, 0) AS SucceededRuns,
-               st.AverageSeconds,
-               a.start_execution_date      AS StartExecution,
-               a.stop_execution_date       AS StopExecution,
-               a.next_scheduled_run_date   AS ActivityNextRun,
-               ISNULL(sc.NextRun, 0)             AS ScheduleNextRun,
-               sc.EnabledSchedules,
-               ISNULL(sc.AgentStartSchedules, 0) AS AgentStartSchedules,
-               ISNULL(sc.IdleSchedules, 0)       AS IdleSchedules
-        FROM msdb.dbo.sysjobs j
-        LEFT JOIN msdb.dbo.syscategories c ON c.category_id = j.category_id
-        OUTER APPLY (
-            SELECT TOP (1) h.run_status, h.run_date, h.run_time, h.run_duration, h.message
-            FROM msdb.dbo.sysjobhistory h
-            WHERE h.job_id = j.job_id AND h.step_id = 0
-            ORDER BY h.instance_id DESC) lr
-        OUTER APPLY (
-            SELECT COUNT(*) AS Runs,
-                   SUM(CASE WHEN h.run_status = 0 THEN 1 ELSE 0 END) AS FailedRuns,
-                   SUM(CASE WHEN h.run_status = 1 THEN 1 ELSE 0 END) AS SucceededRuns,
-                   AVG(CASE WHEN h.run_status = 1
-                            THEN CAST(CASE WHEN h.run_duration > 0
-                                           THEN h.run_duration / 10000 * 3600 + h.run_duration / 100 % 100 * 60 + h.run_duration % 100
-                                           ELSE 0 END AS FLOAT)
-                       END) AS AverageSeconds
-            FROM msdb.dbo.sysjobhistory h
-            WHERE h.job_id = j.job_id AND h.step_id = 0) st
-        LEFT JOIN msdb.dbo.sysjobactivity a
-               ON a.job_id = j.job_id
-              AND a.session_id = (SELECT MAX(s.session_id) FROM msdb.dbo.syssessions s)
-        OUTER APPLY (
-            SELECT MIN(CASE WHEN js.next_run_date > 0
-                            THEN CAST(js.next_run_date AS BIGINT) * 1000000 + js.next_run_time END) AS NextRun,
-                   COUNT(*) AS EnabledSchedules,
-                   SUM(CASE WHEN s.freq_type = 64  THEN 1 ELSE 0 END) AS AgentStartSchedules,
-                   SUM(CASE WHEN s.freq_type = 128 THEN 1 ELSE 0 END) AS IdleSchedules
-            FROM msdb.dbo.sysjobschedules js
-            JOIN msdb.dbo.sysschedules s ON s.schedule_id = js.schedule_id
-            WHERE js.job_id = j.job_id AND s.enabled = 1) sc
-        """;
+    internal static readonly string JobsSql = SqlScripts.Get("AgentJob/Jobs");
 
-    internal const string RunsSql = """
-        SELECT TOP (@maxRows)
-               h.instance_id  AS InstanceId,
-               h.step_id      AS StepId,
-               h.step_name    AS StepName,
-               h.run_status   AS RunStatus,
-               h.run_date     AS RunDate,
-               h.run_time     AS RunTime,
-               h.run_duration AS RunDuration,
-               h.message      AS Message
-        FROM msdb.dbo.sysjobhistory h
-        WHERE h.job_id = @jobId
-        ORDER BY h.instance_id DESC
-        """;
+    internal static readonly string RunsSql = SqlScripts.Get("AgentJob/Runs");
 
     public async Task<AgentJobList> GetAgentJobsAsync()
     {

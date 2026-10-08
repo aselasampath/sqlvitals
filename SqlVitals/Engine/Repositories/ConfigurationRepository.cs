@@ -15,60 +15,24 @@ public class ConfigurationRepository(IConfiguration configuration) : BaseReposit
     // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022) is missing.
     private static readonly int[] PermissionErrors = [297, 300];
 
-    internal const string ServerSql = """
-        SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT)             AS Edition,
-               CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128)) AS ProductVersion
-        """;
+    internal static readonly string ServerSql = SqlScripts.Get("Configuration/Server");
 
     // value_in_use is what the server runs with; value differs until RECONFIGURE.
-    internal const string OptionsSql = """
-        SELECT name AS Name, CAST(value AS BIGINT) AS Value, CAST(value_in_use AS BIGINT) AS ValueInUse
-        FROM sys.configurations
-        WHERE name IN (N'max degree of parallelism', N'cost threshold for parallelism', N'max server memory (MB)')
-        """;
+    internal static readonly string OptionsSql = SqlScripts.Get("Configuration/Options");
 
     // Snapshots take their options from their source database.
-    internal const string DatabasesSql = """
-        SELECT name                                           AS Name,
-               CAST(compatibility_level AS INT)               AS CompatibilityLevel,
-               CAST(is_auto_shrink_on AS INT)                 AS AutoShrink,
-               ISNULL(page_verify_option_desc, N'')           AS PageVerify,
-               CASE WHEN name = DB_NAME() THEN 1 ELSE 0 END   AS IsCurrent
-        FROM sys.databases
-        WHERE source_database_id IS NULL
-        """;
+    internal static readonly string DatabasesSql = SqlScripts.Get("Configuration/Databases");
 
     // Visible online schedulers are the processors SQL Server can use, after affinity and the
     // edition's limits. sys.dm_os_nodes has soft-NUMA's nodes; node 64 is the DAC's.
-    internal const string HardwareSql = """
-        SELECT (SELECT COUNT(*) FROM sys.dm_os_schedulers WHERE status = N'VISIBLE ONLINE')     AS LogicalProcessors,
-               (SELECT COUNT(*) FROM sys.dm_os_nodes
-                WHERE node_state_desc NOT LIKE N'%DAC%' AND online_scheduler_count > 0)        AS NumaNodes,
-               (SELECT MAX(online_scheduler_count) FROM sys.dm_os_nodes
-                WHERE node_state_desc NOT LIKE N'%DAC%')                                       AS ProcessorsPerNumaNode,
-               (SELECT physical_memory_kb / 1024 FROM sys.dm_os_sys_info)                      AS PhysicalMemoryMb
-        """;
+    internal static readonly string HardwareSql = SqlScripts.Get("Configuration/Hardware");
 
     // tempdb.sys.database_files has the files' current sizes (sys.master_files has the sizes
     // TempDB starts at). Every login can read it: guest is enabled in tempdb.
-    internal const string TempDbSql = """
-        SELECT name                                      AS Name,
-               physical_name                             AS PhysicalName,
-               CAST(size AS BIGINT) * 8 / 1024           AS SizeMb,
-               CAST(is_percent_growth AS INT)            AS IsPercentGrowth,
-               CASE WHEN is_percent_growth = 1 THEN CAST(growth AS BIGINT)
-                    ELSE CAST(growth AS BIGINT) * 8 / 1024 END AS Growth
-        FROM tempdb.sys.database_files
-        WHERE type = 0
-        ORDER BY file_id
-        """;
+    internal static readonly string TempDbSql = SqlScripts.Get("Configuration/TempDb");
 
     // Azure SQL Database sets MAXDOP per database.
-    internal const string DatabaseMaxDopSql = """
-        SELECT CAST(value AS INT) AS Value
-        FROM sys.database_scoped_configurations
-        WHERE name = N'MAXDOP'
-        """;
+    internal static readonly string DatabaseMaxDopSql = SqlScripts.Get("Configuration/DatabaseMaxDop");
 
     public async Task<ConfigCheckList> GetConfigurationChecksAsync()
     {

@@ -18,33 +18,18 @@ public class DeadlockRepository(IConfiguration configuration) : BaseRepository(c
     // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022) is missing.
     private static readonly int[] PermissionErrors = [297, 300];
 
-    internal const string TargetsSql = """
-        SELECT t.target_name AS TargetName,
-               CASE WHEN t.target_name = N'event_file' THEN CAST(t.target_data AS NVARCHAR(MAX)) END AS TargetData
-        FROM sys.dm_xe_sessions s
-        JOIN sys.dm_xe_session_targets t ON t.event_session_address = s.address
-        WHERE s.name = N'system_health'
-        """;
+    internal static readonly string TargetsSql = SqlScripts.Get("Deadlock/Targets");
 
     // The server filters by event name only; the rest of each event is read in C#.
-    internal const string EventFileSql = """
-        SELECT event_data AS EventData
-        FROM sys.fn_xe_file_target_read_file(@pattern, NULL, NULL, NULL)
-        WHERE object_name = N'xml_deadlock_report'
-        """;
+    internal static readonly string EventFileSql = SqlScripts.Get("Deadlock/EventFile");
 
-    internal const string RingBufferSql = """
-        SELECT CAST(t.target_data AS NVARCHAR(MAX)) AS TargetData
-        FROM sys.dm_xe_sessions s
-        JOIN sys.dm_xe_session_targets t ON t.event_session_address = s.address
-        WHERE s.name = N'system_health' AND t.target_name = N'ring_buffer'
-        """;
+    internal static readonly string RingBufferSql = SqlScripts.Get("Deadlock/RingBuffer");
 
     public async Task<DeadlockHistory> GetDeadlockHistoryAsync()
     {
         using var conn = CreateConnection();
 
-        var edition = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
+        var edition = await QFirst(conn, SqlScripts.Get("Server/Edition"));
         if (edition is not null && Convert.ToInt32(edition.Edition) == 5)
             return DeadlockHistory.Unavailable(
                 "Azure SQL Database has no system_health session to read. Deadlocks there are kept in the master " +

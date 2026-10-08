@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
@@ -59,7 +60,7 @@ public partial class SpTraceRepository(IConfiguration configuration)
 
             using var conn = CreateConnection();
 
-            var editionRow = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
+            var editionRow = await QFirst(conn, SqlScripts.Get("Server/Edition"));
             _isAzureSqlDb = editionRow is not null && Convert.ToInt32(editionRow.Edition) == 5;
 
             if (!await CanCreateEventSessionAsync(conn))
@@ -239,8 +240,8 @@ public partial class SpTraceRepository(IConfiguration configuration)
     private async Task<bool> CanCreateEventSessionAsync(System.Data.IDbConnection conn)
     {
         var sql = _isAzureSqlDb
-            ? "SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'ALTER ANY DATABASE EVENT SESSION') AS HasPerm"
-            : "SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER ANY EVENT SESSION') AS HasPerm";
+            ? SqlScripts.Get("SpTrace/CanCreateSessionInDatabase")
+            : SqlScripts.Get("SpTrace/CanCreateSessionOnServer");
 
         try
         {
@@ -275,7 +276,7 @@ public partial class SpTraceRepository(IConfiguration configuration)
         // DB_ID() cannot appear inside an event predicate, so resolve it first.
         if (dbPredicate.Length > 0)
         {
-            var dbIdRow = await QFirst(conn, "SELECT DB_ID() AS DbId");
+            var dbIdRow = await QFirst(conn, SqlScripts.Get("SpTrace/DatabaseId"));
             var dbId = dbIdRow is null ? 0 : Convert.ToInt32(dbIdRow.DbId);
             dbPredicate = dbId > 0 ? $" AND sqlserver.database_id = {dbId}" : string.Empty;
         }
@@ -296,19 +297,14 @@ public partial class SpTraceRepository(IConfiguration configuration)
                 ? $"duration >= {minDurationUs} AND object_type = 8272{dbPredicate}"
                 : $"duration >= {minDurationUs}{dbPredicate}";
 
-            return $"""
-                CREATE EVENT SESSION [{_sessionName}] ON {scope}
-                ADD EVENT sqlserver.rpc_completed (
-                    ACTION ({actions})
-                    WHERE (duration >= {minDurationUs}{dbPredicate})),
-                ADD EVENT sqlserver.module_end (
-                    SET collect_statement = 1
-                    ACTION ({actions})
-                    WHERE ({modulePredicate}))
-                ADD TARGET package0.ring_buffer (
-                    SET max_memory = {maxMemoryKb}, max_events_limit = {maxEvents})
-                WITH (MAX_DISPATCH_LATENCY = 2 SECONDS, STARTUP_STATE = OFF, TRACK_CAUSALITY = ON);
-                """;
+            return SqlScripts.Get("SpTrace/CreateSession")
+                .Replace("/*SESSION*/", _sessionName)
+                .Replace("/*SCOPE*/", scope)
+                .Replace("/*ACTIONS*/", actions)
+                .Replace("/*RPC_PREDICATE*/", $"duration >= {minDurationUs}{dbPredicate}")
+                .Replace("/*MODULE_PREDICATE*/", modulePredicate)
+                .Replace("/*MAX_MEMORY_KB*/", maxMemoryKb.ToString(CultureInfo.InvariantCulture))
+                .Replace("/*MAX_EVENTS*/", maxEvents.ToString(CultureInfo.InvariantCulture));
         }
 
         try
@@ -325,7 +321,7 @@ public partial class SpTraceRepository(IConfiguration configuration)
             _filterModulesClientSide = true;
         }
 
-        await Exec(conn, $"ALTER EVENT SESSION [{_sessionName}] ON {scope} STATE = START;");
+        await Exec(conn, SqlScripts.Get("SpTrace/StartSession").Replace("/*SESSION*/", _sessionName).Replace("/*SCOPE*/", scope));
     }
 
     private async Task DropSessionAsync(System.Data.IDbConnection conn)
@@ -334,10 +330,9 @@ public partial class SpTraceRepository(IConfiguration configuration)
         var catalog = _isAzureSqlDb ? "sys.database_event_sessions" : "sys.server_event_sessions";
 
         // DROP EVENT SESSION has no IF EXISTS form, hence the catalog guard.
-        await Exec(conn, $"""
-            IF EXISTS (SELECT 1 FROM {catalog} WHERE name = @name)
-                DROP EVENT SESSION [{_sessionName}] ON {scope};
-            """, new { name = _sessionName });
+        var sql = SqlScripts.Get("SpTrace/DropSession")
+            .Replace("/*CATALOG*/", catalog).Replace("/*SESSION*/", _sessionName).Replace("/*SCOPE*/", scope);
+        await Exec(conn, sql, new { name = _sessionName });
     }
 
     private async Task<string?> ReadRingBufferXmlAsync(System.Data.IDbConnection conn)
@@ -345,12 +340,8 @@ public partial class SpTraceRepository(IConfiguration configuration)
         var sessions = _isAzureSqlDb ? "sys.dm_xe_database_sessions"        : "sys.dm_xe_sessions";
         var targets  = _isAzureSqlDb ? "sys.dm_xe_database_session_targets" : "sys.dm_xe_session_targets";
 
-        var row = await QFirst(conn, $"""
-            SELECT CAST(t.target_data AS NVARCHAR(MAX)) AS TargetData
-            FROM {sessions} s
-            JOIN {targets} t ON t.event_session_address = s.address
-            WHERE s.name = @name AND t.target_name = 'ring_buffer'
-            """, new { name = _sessionName });
+        var sql = SqlScripts.Get("SpTrace/RingBuffer").Replace("/*SESSIONS*/", sessions).Replace("/*TARGETS*/", targets);
+        var row = await QFirst(conn, sql, new { name = _sessionName });
 
         return row?.TargetData is null or DBNull ? null : (string)row.TargetData;
     }
@@ -362,25 +353,7 @@ public partial class SpTraceRepository(IConfiguration configuration)
     {
         var dbFilter = currentDatabaseOnly ? "WHERE ps.database_id = DB_ID()" : "";
 
-        var sql = $"""
-            SELECT
-                ps.database_id                                       AS DatabaseId,
-                ps.object_id                                         AS ObjectId,
-                ps.cached_time                                       AS CachedTime,
-                ISNULL(DB_NAME(ps.database_id), '')                  AS DatabaseName,
-                ISNULL(OBJECT_SCHEMA_NAME(ps.object_id, ps.database_id), '') AS SchemaName,
-                ISNULL(OBJECT_NAME(ps.object_id, ps.database_id), '') AS ProcedureName,
-                ps.execution_count                                   AS ExecutionCount,
-                ps.total_worker_time                                 AS TotalWorkerTimeUs,
-                ps.total_elapsed_time                                AS TotalElapsedTimeUs,
-                ps.max_elapsed_time                                  AS MaxElapsedTimeUs,
-                ps.total_logical_reads                               AS TotalLogicalReads,
-                ps.total_logical_writes                              AS TotalLogicalWrites,
-                ps.total_physical_reads                              AS TotalPhysicalReads,
-                ps.last_execution_time                               AS LastExecutionTime
-            FROM sys.dm_exec_procedure_stats ps
-            {dbFilter}
-            """;
+        var sql = SqlScripts.Get("SpTrace/ProcedureStats").Replace("/*DB_FILTER*/", dbFilter);
 
         var rows = await Q(conn, sql);
         var result = new Dictionary<ProcStatsKey, ProcStatsSnapshot>();

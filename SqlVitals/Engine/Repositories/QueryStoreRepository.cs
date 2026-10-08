@@ -29,19 +29,8 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
     // A view or column's presence is asked of sys.all_columns, as for plan_type_desc (#109): naming
     // a missing one fails the whole query. A missing view has no OBJECT_ID, so it has no columns.
 
-    private static string Has(string view, string column) =>
-        $"CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'{view}') AND name = N'{column}') THEN 1 ELSE 0 END";
-
-    /// <summary>Every probe in one round trip. The names are constants, never user input.</summary>
-    internal static readonly string FeaturesSql = $"""
-        SELECT {Has("sys.query_store_wait_stats", "wait_category")}                          AS WaitStats,
-               {Has("sys.database_query_store_options", "wait_stats_capture_mode_desc")}     AS WaitStatsCaptureMode,
-               {Has("sys.query_store_runtime_stats", "avg_log_bytes_used")}                  AS LogBytes,
-               {Has("sys.query_store_runtime_stats", "avg_tempdb_space_used")}               AS TempDb,
-               {Has("sys.query_store_plan", "plan_forcing_type_desc")}                       AS ForcingType,
-               {Has("sys.query_store_plan", "plan_type_desc")}                               AS PlanType,
-               {Has("sys.query_store_query_hints", "query_hint_text")}                       AS Hints
-        """;
+    /// <summary>Every probe in one round trip.</summary>
+    internal static readonly string FeaturesSql = SqlScripts.Get("QueryStore/Features");
 
     private async Task<QueryStoreFeatures> FeaturesAsync(IDbConnection conn)
     {
@@ -61,28 +50,7 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
     internal static string HealthSql(bool hasWaitStatsCaptureMode) =>
         HealthSqlTemplate.Replace("/*WAIT_STATS_CAPTURE*/", hasWaitStatsCaptureMode ? "wait_stats_capture_mode_desc" : "CAST(NULL AS nvarchar(60))");
 
-    private const string HealthSqlTemplate = """
-        SELECT DB_NAME()                    AS DatabaseName,
-               actual_state_desc            AS ActualState,
-               desired_state_desc           AS DesiredState,
-               readonly_reason              AS ReadOnlyReason,
-               current_storage_size_mb      AS CurrentStorageSizeMB,
-               max_storage_size_mb          AS MaxStorageSizeMB,
-               CAST(current_storage_size_mb * 100.0 / NULLIF(max_storage_size_mb, 0) AS DECIMAL(10,1)) AS StorageUsedPct,
-               flush_interval_seconds       AS FlushIntervalSec,
-               interval_length_minutes      AS IntervalLengthMin,
-               stale_query_threshold_days   AS StaleQueryThresholdDays,
-               size_based_cleanup_mode_desc AS SizeCleanupMode,
-               query_capture_mode_desc      AS CaptureMode,
-               /*WAIT_STATS_CAPTURE*/ AS WaitStatsCaptureMode,
-               max_plans_per_query          AS MaxPlansPerQuery,
-               (SELECT COUNT(*) FROM sys.query_store_query)                         AS TotalQueries,
-               (SELECT COUNT(*) FROM sys.query_store_plan)                          AS TotalPlans,
-               (SELECT COUNT(*) FROM sys.query_store_plan WHERE is_forced_plan = 1) AS ForcedPlans,
-               (SELECT MIN(start_time) FROM sys.query_store_runtime_stats_interval) AS DataFrom,
-               GETDATE()                    AS CaptureTime
-        FROM sys.database_query_store_options
-        """;
+    private static readonly string HealthSqlTemplate = SqlScripts.Get("QueryStore/Health");
 
     public async Task<QueryStoreStatus> GetQueryStoreStatusAsync()
     {
@@ -99,7 +67,7 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
             // SQL Server 2014 and earlier: no Query Store catalog views at all.
         }
 
-        var db = Row(await QFirst(conn, "SELECT DB_NAME() AS DatabaseName"));
+        var db = Row(await QFirst(conn, SqlScripts.Get("QueryStore/DatabaseName")));
         return new QueryStoreStatus(db is null ? string.Empty : Str(db, "DatabaseName"), null, features);
     }
 
@@ -163,66 +131,16 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
         return (status.Health, queries);
     }
 
-    private const string QueryStoreTopQueriesSqlTemplate = """
-            ;WITH PlanAgg AS (
-                SELECT rs.plan_id,
-                    SUM(rs.avg_cpu_time*rs.count_executions) AS TotalCpuUs,
-                    SUM(rs.avg_duration*rs.count_executions) AS TotalDurationUs,
-                    SUM(rs.avg_logical_io_reads*rs.count_executions) AS TotalLogicalReads,
-                    SUM(rs.avg_logical_io_writes*rs.count_executions) AS TotalLogicalWrites,
-                    SUM(rs.avg_physical_io_reads*rs.count_executions) AS TotalPhysicalReads,
-                    SUM(rs.avg_query_max_used_memory*rs.count_executions) AS TotalMemoryPages,
-                    SUM(rs.count_executions) AS TotalExecutions,
-                    MAX(rs.last_execution_time) AS LastExecutionTime
-                FROM sys.query_store_runtime_stats rs
-                WHERE rs.last_execution_time >= DATEADD(HOUR,-24,GETUTCDATE())
-                GROUP BY rs.plan_id
-            ),
-            Ranked AS (
-                SELECT p.query_id, pa.plan_id, pa.TotalCpuUs, pa.TotalDurationUs,
-                    pa.TotalLogicalReads, pa.TotalLogicalWrites, pa.TotalPhysicalReads,
-                    pa.TotalMemoryPages, pa.TotalExecutions, pa.LastExecutionTime,
-                    p.is_forced_plan, /*PLAN_TYPE*/ AS plan_type_desc,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalCpuUs/pa.TotalExecutions ELSE 0 END AS AvgCpuUs,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalDurationUs/pa.TotalExecutions ELSE 0 END AS AvgDurationUs,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalLogicalReads/pa.TotalExecutions ELSE 0 END AS AvgLogicalReads,
-                    CASE WHEN pa.TotalExecutions>0 THEN pa.TotalMemoryPages*8/pa.TotalExecutions ELSE 0 END AS AvgMemoryKB,
-                    ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY pa.TotalCpuUs DESC) AS rn
-                FROM PlanAgg pa JOIN sys.query_store_plan p ON pa.plan_id=p.plan_id
-                WHERE p.query_plan IS NOT NULL
-            )
-            SELECT TOP 20 r.query_id AS QueryId, r.plan_id AS PlanId,
-                qt.query_sql_text AS QueryText,
-                r.TotalExecutions,
-                r.TotalCpuUs/1000.0 AS TotalCpuMs, r.AvgCpuUs/1000.0 AS AvgCpuMs,
-                r.TotalDurationUs/1000.0 AS TotalDurationMs, r.AvgDurationUs/1000.0 AS AvgDurationMs,
-                r.TotalLogicalReads, r.AvgLogicalReads,
-                r.TotalLogicalWrites, r.TotalPhysicalReads,
-                r.TotalMemoryPages*8/1024.0 AS TotalMemoryMB, r.AvgMemoryKB*1.0 AS AvgMemoryKB,
-                r.is_forced_plan AS IsForcedPlan, r.plan_type_desc AS PlanType,
-                r.LastExecutionTime AS LastExecutionTimeUtc, GETDATE() AS CaptureTime
-            FROM Ranked r
-            JOIN sys.query_store_query q ON r.query_id=q.query_id
-            JOIN sys.query_store_query_text qt ON q.query_text_id=qt.query_text_id
-            WHERE r.rn=1 ORDER BY r.TotalCpuUs DESC OPTION (LOOP JOIN)
-            """;
+    private static readonly string QueryStoreTopQueriesSqlTemplate = SqlScripts.Get("QueryStore/OverviewTopQueries");
 
     // ── The period ────────────────────────────────────────────────────────
     // A preset ends at the server's now (@minutes back); a custom period is fixed (@fromUtc, @toUtc).
     // Each interval counts in the period its start falls in, as on Query Regressions, so a period
     // counts whole intervals.
 
-    internal const string PeriodSql = """
-        DECLARE @periodTo   datetimeoffset = ISNULL(@toUtc,   SYSDATETIMEOFFSET());
-        DECLARE @periodFrom datetimeoffset = ISNULL(@fromUtc, DATEADD(MINUTE, -@minutes, @periodTo));
-        """;
+    internal static readonly string PeriodSql = SqlScripts.Get("QueryStore/Period");
 
-    private const string RuntimeInPeriod = """
-        FROM sys.query_store_runtime_stats_interval i
-        JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = i.runtime_stats_interval_id
-        JOIN sys.query_store_plan p           ON p.plan_id = rs.plan_id
-        WHERE i.start_time >= @periodFrom AND i.start_time < @periodTo
-        """;
+    private static readonly string RuntimeInPeriod = SqlScripts.Get("QueryStore/RuntimeInPeriod");
 
     // The procedure, function or trigger a statement is in; NULL for ad hoc SQL (object_id 0).
     private const string ObjectNameSql =
@@ -275,61 +193,7 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
             .Replace("/*OBJECT_NAME*/", ObjectNameSql);
     }
 
-    private const string TopQueriesSqlTemplate = """
-        /*PERIOD*/
-        ;WITH per_plan AS (
-            SELECT p.query_id, rs.plan_id,
-                   SUM(rs.count_executions)                                                   AS n,
-                   SUM(CASE WHEN rs.execution_type <> 0 THEN rs.count_executions ELSE 0 END) AS failed,
-                   SUM(rs.avg_cpu_time         * rs.count_executions)                        AS cpu_us,
-                   SUM(rs.avg_duration         * rs.count_executions)                        AS duration_us,
-                   SUM(rs.avg_logical_io_reads * rs.count_executions)                        AS logical_reads,
-                   /*METRIC_SUMS*/,
-                   MAX(rs.last_execution_time)                                               AS last_execution
-            /*RUNTIME_IN_PERIOD*/
-            GROUP BY p.query_id, rs.plan_id
-        ),
-        per_query AS (
-            SELECT query_id,
-                   COUNT(*)            AS plans,
-                   SUM(n)              AS n,
-                   SUM(failed)         AS failed,
-                   SUM(cpu_us)         AS cpu_us,
-                   SUM(duration_us)    AS duration_us,
-                   SUM(logical_reads)  AS logical_reads,
-                   SUM(m_sum)          AS m_sum,
-                   SUM(m_sum_sq)       AS m_sum_sq,
-                   MAX(m_max)          AS m_max,
-                   MAX(last_execution) AS last_execution,
-                   MAX(CASE WHEN plan_rank = 1 THEN plan_id END) AS top_plan_id
-            FROM /*RANKED_PLANS*/
-            GROUP BY query_id
-        ),
-        top_queries AS (
-            SELECT TOP (@top) *, /*RANK*/ AS metric_value
-            FROM per_query
-            ORDER BY metric_value DESC
-        )
-        SELECT t.query_id          AS QueryId,
-               q.object_id         AS ObjectId,
-               /*OBJECT_NAME*/     AS ObjectName,
-               qt.query_sql_text   AS QueryText,
-               t.plans             AS Plans,
-               t.n                 AS Executions,
-               t.failed            AS Failed,
-               t.metric_value      AS MetricValue,
-               t.cpu_us            AS CpuUs,
-               t.duration_us       AS DurationUs,
-               t.logical_reads     AS LogicalReads,
-               (SELECT MAX(fp.plan_id) FROM sys.query_store_plan fp
-                WHERE fp.query_id = t.query_id AND fp.is_forced_plan = 1) AS ForcedPlanId,
-               t.top_plan_id       AS TopPlanId,
-               t.last_execution    AS LastExecution
-        FROM top_queries t
-        JOIN sys.query_store_query q       ON q.query_id = t.query_id
-        JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-        ORDER BY t.metric_value DESC
-        """;
+    private static readonly string TopQueriesSqlTemplate = SqlScripts.Get("QueryStore/TopQueries");
 
     public Task<QueryStoreRows<QueryStoreQueryRow>> GetQueryStoreTopQueriesAsync(
         QueryStorePeriod period, QueryStoreMetric metric, QueryStoreStatistic statistic, int top) =>
@@ -361,19 +225,9 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
     // ── Over Time and Query details: every metric's total ─────────────────
 
     /// <summary>Σ(avg × count) of every metric; the SQL Server 2017+ ones only where they exist.</summary>
-    internal static string TotalsSql(bool hasLogBytes, bool hasTempDb) => $"""
-        SUM(rs.count_executions)                                                   AS Executions,
-               SUM(CASE WHEN rs.execution_type <> 0 THEN rs.count_executions ELSE 0 END) AS Failed,
-               SUM(rs.avg_cpu_time              * rs.count_executions)             AS CpuUs,
-               SUM(rs.avg_duration              * rs.count_executions)             AS DurationUs,
-               SUM(rs.avg_logical_io_reads      * rs.count_executions)             AS LogicalReads,
-               SUM(rs.avg_logical_io_writes     * rs.count_executions)             AS LogicalWrites,
-               SUM(rs.avg_physical_io_reads     * rs.count_executions)             AS PhysicalReads,
-               SUM(rs.avg_query_max_used_memory * rs.count_executions)             AS MemoryPages,
-               SUM(rs.avg_rowcount              * rs.count_executions)             AS ReturnedRows,
-               {(hasLogBytes ? "SUM(rs.avg_log_bytes_used * rs.count_executions)" : "CAST(0 AS float)")} AS LogBytes,
-               {(hasTempDb ? "SUM(rs.avg_tempdb_space_used * rs.count_executions)" : "CAST(0 AS float)")} AS TempDbPages
-        """;
+    internal static string TotalsSql(bool hasLogBytes, bool hasTempDb) => SqlScripts.Get("QueryStore/Totals")
+        .Replace("/*LOG_BYTES*/", hasLogBytes ? "SUM(rs.avg_log_bytes_used * rs.count_executions)" : "CAST(0 AS float)")
+        .Replace("/*TEMPDB*/", hasTempDb ? "SUM(rs.avg_tempdb_space_used * rs.count_executions)" : "CAST(0 AS float)");
 
     private static QueryStoreTotals ReadTotals(IDictionary<string, object> r) => new(
         Long(r, "Executions"), Dbl(r, "CpuUs"), Dbl(r, "DurationUs"), Dbl(r, "LogicalReads"), Dbl(r, "LogicalWrites"),
@@ -383,19 +237,9 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
     /// The database's totals per slot: slot n starts at @origin + n × @slotMinutes. Integer division
     /// of the minutes since @origin puts each interval in exactly one slot.
     /// </summary>
-    internal static string OverTimeSql(bool hasLogBytes, bool hasTempDb) => $"""
-        {PeriodSql}
-        SELECT rs.slot AS Slot,
-               {TotalsSql(hasLogBytes, hasTempDb)}
-        FROM (
-            SELECT DATEDIFF(MINUTE, @origin, i.start_time) / @slotMinutes AS slot, r.*
-            FROM sys.query_store_runtime_stats_interval i
-            JOIN sys.query_store_runtime_stats r ON r.runtime_stats_interval_id = i.runtime_stats_interval_id
-            WHERE i.start_time >= @periodFrom AND i.start_time < @periodTo
-        ) rs
-        GROUP BY rs.slot
-        ORDER BY rs.slot
-        """;
+    internal static string OverTimeSql(bool hasLogBytes, bool hasTempDb) => SqlScripts.Get("QueryStore/OverTime")
+        .Replace("/*PERIOD*/", PeriodSql)
+        .Replace("/*TOTALS*/", TotalsSql(hasLogBytes, hasTempDb));
 
     public Task<QueryStoreRows<QueryStoreSlot>> GetQueryStoreOverTimeAsync(QueryStorePeriod period, TimeSpan slotLength, DateTimeOffset origin) =>
         ReadAsync(async conn =>
@@ -424,54 +268,7 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
             .Replace("/*COLUMN*/", column);
     }
 
-    private const string HighVariationSqlTemplate = """
-        /*PERIOD*/
-        ;WITH per_plan AS (
-            SELECT p.query_id, rs.plan_id,
-                   SUM(rs.count_executions)                                                                  AS n,
-                   SUM(rs.avg_/*COLUMN*/ * rs.count_executions)                                             AS m_sum,
-                   SUM(rs.count_executions * (SQUARE(rs.stdev_/*COLUMN*/) + SQUARE(rs.avg_/*COLUMN*/)))    AS m_sum_sq,
-                   MIN(CAST(rs.min_/*COLUMN*/ AS float))                                                    AS m_min,
-                   MAX(CAST(rs.max_/*COLUMN*/ AS float))                                                    AS m_max
-            /*RUNTIME_IN_PERIOD*/
-            GROUP BY p.query_id, rs.plan_id
-        ),
-        per_query AS (
-            SELECT query_id,
-                   COUNT(*)      AS plans,
-                   SUM(n)        AS n,
-                   SUM(m_sum)    AS m_sum,
-                   SUM(m_sum_sq) AS m_sum_sq,
-                   MIN(m_min)    AS m_min,
-                   MAX(m_max)    AS m_max,
-                   MAX(CASE WHEN plan_rank = 1 THEN plan_id END) AS top_plan_id
-            FROM /*RANKED_PLANS*/
-            GROUP BY query_id
-            HAVING SUM(n) >= @minExecutions
-        ),
-        top_queries AS (
-            SELECT TOP (@top) *,
-                   m_sum / NULLIF(n, 0) AS m_avg,
-                   /*STDEV*/            AS m_stdev
-            FROM per_query
-            ORDER BY m_stdev DESC
-        )
-        SELECT t.query_id        AS QueryId,
-               q.object_id       AS ObjectId,
-               /*OBJECT_NAME*/   AS ObjectName,
-               qt.query_sql_text AS QueryText,
-               t.plans           AS Plans,
-               t.n               AS Executions,
-               t.m_avg           AS AvgValue,
-               t.m_min           AS MinValue,
-               t.m_max           AS MaxValue,
-               t.m_stdev         AS StdDevValue,
-               t.top_plan_id     AS TopPlanId
-        FROM top_queries t
-        JOIN sys.query_store_query q       ON q.query_id = t.query_id
-        JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-        ORDER BY t.m_stdev DESC
-        """;
+    private static readonly string HighVariationSqlTemplate = SqlScripts.Get("QueryStore/HighVariation");
 
     public Task<QueryStoreRows<QueryStoreVariationRow>> GetQueryStoreHighVariationAsync(
         QueryStorePeriod period, QueryStoreMetric metric, int minExecutions, int top) =>
@@ -495,18 +292,8 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
 
     // ── Waits (SQL Server 2017+ and Azure SQL) ────────────────────────────
 
-    internal static readonly string WaitCategoriesSql = $"""
-        {PeriodSql}
-        SELECT ws.wait_category                 AS Category,
-               MAX(ws.wait_category_desc)       AS CategoryName,
-               SUM(ws.total_query_wait_time_ms) AS WaitMs
-        FROM sys.query_store_runtime_stats_interval i
-        JOIN sys.query_store_wait_stats ws ON ws.runtime_stats_interval_id = i.runtime_stats_interval_id
-        WHERE i.start_time >= @periodFrom AND i.start_time < @periodTo
-        GROUP BY ws.wait_category
-        HAVING SUM(ws.total_query_wait_time_ms) > 0
-        ORDER BY WaitMs DESC
-        """;
+    internal static readonly string WaitCategoriesSql = SqlScripts.Get("QueryStore/WaitCategories")
+        .Replace("/*PERIOD*/", PeriodSql);
 
     public Task<QueryStoreRows<QueryStoreWaitCategory>> GetQueryStoreWaitCategoriesAsync(QueryStorePeriod period) =>
         ReadAsync(async conn =>
@@ -524,47 +311,11 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
 
     // The category's total is summed before TOP, over every query that waited in it. Executions
     // come from the runtime stats, for the listed queries only.
-    internal static readonly string WaitQueriesSql = $"""
-        {PeriodSql}
-        ;WITH waits AS (
-            SELECT p.query_id, SUM(ws.total_query_wait_time_ms) AS wait_ms
-            FROM sys.query_store_runtime_stats_interval i
-            JOIN sys.query_store_wait_stats ws ON ws.runtime_stats_interval_id = i.runtime_stats_interval_id
-            JOIN sys.query_store_plan p        ON p.plan_id = ws.plan_id
-            WHERE i.start_time >= @periodFrom AND i.start_time < @periodTo
-              AND ws.wait_category = @category
-            GROUP BY p.query_id
-        ),
-        top_queries AS (
-            SELECT TOP (@top) query_id, wait_ms, SUM(wait_ms) OVER () AS category_ms
-            FROM waits
-            ORDER BY wait_ms DESC
-        ),
-        per_plan AS (
-            SELECT p.query_id, rs.plan_id, SUM(rs.count_executions) AS n
-            {RuntimeInPeriod}
-              AND p.query_id IN (SELECT query_id FROM top_queries)
-            GROUP BY p.query_id, rs.plan_id
-        ),
-        executions AS (
-            SELECT query_id, SUM(n) AS n, MAX(CASE WHEN plan_rank = 1 THEN plan_id END) AS top_plan_id
-            FROM {RankedPlans}
-            GROUP BY query_id
-        )
-        SELECT t.query_id        AS QueryId,
-               q.object_id       AS ObjectId,
-               {ObjectNameSql} AS ObjectName,
-               qt.query_sql_text AS QueryText,
-               t.wait_ms         AS WaitMs,
-               t.category_ms     AS CategoryMs,
-               ISNULL(e.n, 0)    AS Executions,
-               e.top_plan_id     AS TopPlanId
-        FROM top_queries t
-        JOIN sys.query_store_query q       ON q.query_id = t.query_id
-        JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-        LEFT JOIN executions e             ON e.query_id = t.query_id
-        ORDER BY t.wait_ms DESC
-        """;
+    internal static readonly string WaitQueriesSql = SqlScripts.Get("QueryStore/WaitQueries")
+        .Replace("/*PERIOD*/", PeriodSql)
+        .Replace("/*RUNTIME_IN_PERIOD*/", RuntimeInPeriod)
+        .Replace("/*RANKED_PLANS*/", RankedPlans)
+        .Replace("/*OBJECT_NAME*/", ObjectNameSql);
 
     public Task<QueryStoreRows<QueryStoreWaitQuery>> GetQueryStoreWaitQueriesAsync(QueryStorePeriod period, int category, int top) =>
         ReadAsync(async conn =>
@@ -593,47 +344,10 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
             .Replace("/*OBJECT_NAME*/", ObjectNameSql)
             .Replace("/*FORCING_TYPE*/", hasForcingType ? "p.plan_forcing_type_desc" : "N'MANUAL'");
 
-    private const string ForcedPlansSqlTemplate = """
-        /*PERIOD*/
-        SELECT p.query_id                     AS QueryId,
-               p.plan_id                      AS PlanId,
-               q.object_id                    AS ObjectId,
-               /*OBJECT_NAME*/                AS ObjectName,
-               qt.query_sql_text              AS QueryText,
-               /*FORCING_TYPE*/               AS ForcingType,
-               p.force_failure_count          AS ForceFailures,
-               p.last_force_failure_reason_desc AS LastFailureReason,
-               p.last_execution_time          AS LastExecution,
-               s.n                            AS Executions,
-               s.duration_us                  AS DurationUs
-        FROM sys.query_store_plan p
-        JOIN sys.query_store_query q       ON q.query_id = p.query_id
-        JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-        OUTER APPLY (
-            SELECT SUM(rs.count_executions)                    AS n,
-                   SUM(rs.avg_duration * rs.count_executions)  AS duration_us
-            FROM sys.query_store_runtime_stats rs
-            JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id
-            WHERE rs.plan_id = p.plan_id
-              AND i.start_time >= @periodFrom AND i.start_time < @periodTo
-        ) s
-        WHERE p.is_forced_plan = 1
-        ORDER BY p.force_failure_count DESC, p.query_id, p.plan_id
-        """;
+    private static readonly string ForcedPlansSqlTemplate = SqlScripts.Get("QueryStore/ForcedPlans");
 
     /// <summary>Query Store hints: SQL Server 2022+ and Azure SQL only.</summary>
-    internal const string HintsSql = """
-        SELECT h.query_id                            AS QueryId,
-               h.query_hint_text                     AS HintText,
-               h.source_desc                         AS Source,
-               h.query_hint_failure_count            AS Failures,
-               h.last_query_hint_failure_reason_desc AS LastFailureReason,
-               qt.query_sql_text                     AS QueryText
-        FROM sys.query_store_query_hints h
-        LEFT JOIN sys.query_store_query q       ON q.query_id = h.query_id
-        LEFT JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-        ORDER BY h.query_hint_failure_count DESC, h.query_id
-        """;
+    internal static readonly string HintsSql = SqlScripts.Get("QueryStore/Hints");
 
     // Reading the hints needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on 2022+); a denied
     // SELECT on the view is 229.
@@ -690,33 +404,15 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
 
     // ── Query details ─────────────────────────────────────────────────────
 
-    internal static readonly string QueryInfoSql = $"""
-        SELECT q.query_id AS QueryId, q.object_id AS ObjectId, {ObjectNameSql} AS ObjectName, qt.query_sql_text AS QueryText
-        FROM sys.query_store_query q
-        JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-        WHERE q.query_id = @queryId
-        """;
+    internal static readonly string QueryInfoSql = SqlScripts.Get("QueryStore/QueryInfo").Replace("/*OBJECT_NAME*/", ObjectNameSql);
 
-    internal const string QueryPlansSql = """
-        SELECT plan_id AS PlanId, is_forced_plan AS IsForced, force_failure_count AS ForceFailures,
-               last_force_failure_reason_desc AS LastFailureReason
-        FROM sys.query_store_plan
-        WHERE query_id = @queryId
-        """;
+    internal static readonly string QueryPlansSql = SqlScripts.Get("QueryStore/QueryPlans");
 
     /// <summary>One query's executions per interval and plan in the period, with every metric's total.</summary>
-    internal static string QueryIntervalsSql(bool hasLogBytes, bool hasTempDb) => $"""
-        {PeriodSql}
-        SELECT i.start_time AS StartTime,
-               rs.plan_id   AS PlanId,
-               {TotalsSql(hasLogBytes, hasTempDb)},
-               MIN(rs.first_execution_time) AS FirstExecution,
-               MAX(rs.last_execution_time)  AS LastExecution
-        {RuntimeInPeriod}
-          AND p.query_id = @queryId
-        GROUP BY i.start_time, rs.plan_id
-        ORDER BY i.start_time, rs.plan_id
-        """;
+    internal static string QueryIntervalsSql(bool hasLogBytes, bool hasTempDb) => SqlScripts.Get("QueryStore/QueryIntervals")
+        .Replace("/*PERIOD*/", PeriodSql)
+        .Replace("/*TOTALS*/", TotalsSql(hasLogBytes, hasTempDb))
+        .Replace("/*RUNTIME_IN_PERIOD*/", RuntimeInPeriod);
 
     public async Task<QueryStoreQueryDetails> GetQueryStoreQueryDetailsAsync(long queryId, QueryStorePeriod period)
     {

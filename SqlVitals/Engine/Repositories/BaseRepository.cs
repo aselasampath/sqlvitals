@@ -21,11 +21,8 @@ public abstract class BaseRepository(IConfiguration configuration)
     // connection: the major version can't always tell (some arrived in a service pack).
 
     /// <summary>1 when the view has the column, else 0. Both names are constants, never user input.</summary>
-    internal static string HasColumnSql(string view, string column) => $"""
-        SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns
-                                 WHERE object_id = OBJECT_ID(N'{view}') AND name = N'{column}')
-                    THEN 1 ELSE 0 END AS HasColumn
-        """;
+    internal static string HasColumnSql(string view, string column) =>
+        SqlScripts.Get("Server/HasColumn").Replace("/*VIEW*/", view).Replace("/*COLUMN*/", column);
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _columns = new();
 

@@ -1,0 +1,50 @@
+    SELECT
+        -- Throughput
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Batch Requests/sec') AS BatchRequestsPerSec,
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='SQL Compilations/sec') AS SQLCompilationsPerSec,
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='SQL Re-Compilations/sec') AS SQLRecompilationsPerSec,
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Transactions/sec' AND instance_name='_Total') AS TransactionsPerSec,
+        -- Physical I/O
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Page reads/sec' AND object_name LIKE '%Buffer Manager%') AS PhysicalReadsPerSec,
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Page writes/sec' AND object_name LIKE '%Buffer Manager%') AS PhysicalWritesPerSec,
+        -- Memory
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Page life expectancy' AND object_name LIKE '%Buffer Manager%') AS PageLifeExpectancy,
+        (SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name='Memory Grants Pending' AND object_name LIKE '%Memory Manager%') AS MemoryGrantsPending,
+        ISNULL((SELECT CAST(A.cntr_value * 100.0 / NULLIF(B.cntr_value,0) AS DECIMAL(10,2))
+                FROM sys.dm_os_performance_counters A
+                JOIN sys.dm_os_performance_counters B ON A.object_name = B.object_name
+                WHERE A.counter_name='Buffer cache hit ratio' AND B.counter_name='Buffer cache hit ratio base'
+                AND A.object_name LIKE '%Buffer Manager%'),0) AS BufferCacheHitRatio,
+        -- CPU: see RingBufferCpuSql / AzureSqlDbCpuSql
+        /*CPU*/ AS SqlCpuUtilizationPct,
+        -- Health indicators: blocking, the fullest log, TempDB data space
+        (SELECT COUNT(*) FROM sys.dm_exec_requests
+         WHERE blocking_session_id > 0 AND blocking_session_id <> session_id) AS BlockedSessions,
+        (SELECT MAX(wait_time) FROM sys.dm_exec_requests
+         WHERE blocking_session_id > 0 AND blocking_session_id <> session_id) AS LongestBlockMs,
+        (SELECT TOP (1) cntr_value FROM sys.dm_os_performance_counters
+         WHERE counter_name='Percent Log Used' AND object_name LIKE '%:Databases%'
+           AND instance_name NOT IN ('_Total','mssqlsystemresource')
+         ORDER BY cntr_value DESC, instance_name) AS LogUsedPct,
+        (SELECT TOP (1) RTRIM(instance_name) FROM sys.dm_os_performance_counters
+         WHERE counter_name='Percent Log Used' AND object_name LIKE '%:Databases%'
+           AND instance_name NOT IN ('_Total','mssqlsystemresource')
+         ORDER BY cntr_value DESC, instance_name) AS LogUsedDatabase,
+        (SELECT TOP (1) CAST(100.0 - f.cntr_value * 100.0 / NULLIF(s.cntr_value,0) AS DECIMAL(10,2))
+         FROM sys.dm_os_performance_counters f
+         CROSS JOIN sys.dm_os_performance_counters s
+         WHERE f.counter_name='Free Space in tempdb (KB)' AND f.object_name LIKE '%:Transactions%'
+           AND s.counter_name='Data File(s) Size (KB)' AND s.object_name LIKE '%:Databases%'
+           AND s.instance_name='tempdb') AS TempDbUsedPct,
+        -- User tasks waiting on anything right now (#143): the Overview's "Waiting tasks"
+        (SELECT COUNT(*) FROM sys.dm_os_waiting_tasks wt
+         JOIN sys.dm_exec_sessions es ON es.session_id = wt.session_id
+         WHERE es.is_user_process = 1) AS WaitingTasks,
+        -- Cumulative specific waits (caller will diff these)
+        (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('SOS_SCHEDULER_YIELD','THREADPOOL','CMEMTHREAD','CMEMPARTITIONED','EE_PMOLOCK','EXCHANGE','CXPACKET','CXCONSUMER','CXSYNC_PORT','CXSYNC_CONSUMER')) AS CpuWaitMs,
+        (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('ASYNC_IO_COMPLETION','IO_COMPLETION','PAGEIOLATCH_SH','PAGEIOLATCH_EX','PAGEIOLATCH_UP','PAGEIOLATCH_NL','PAGEIOLATCH_DT','PAGEIOLATCH_KP','WRITELOG','WRITE_COMPLETION','IO_QUEUE_LIMIT','IO_RETRY','BACKUPIO','BACKUPBUFFER','BACKUPTHREAD','LOGMGR','LOGMGR_QUEUE','LOGMGR_FLUSH','LOGMGR_RESERVE_APPEND','LOG_RATE_GOVERNOR')) AS IoWaitMs,
+        (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type LIKE 'LCK%') AS LockWaitMs,
+        (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('RESOURCE_SEMAPHORE','RESOURCE_SEMAPHORE_QUERY_COMPILE','RESOURCE_SEMAPHORE_MUTEX','PAGELATCH_SH','PAGELATCH_EX','PAGELATCH_UP','PAGELATCH_NL','PAGELATCH_DT','PAGELATCH_KP','LATCH_SH','LATCH_EX','LATCH_NL','LATCH_DT','LATCH_KP','LATCH_UP','MEMORY_ALLOCATION_EXT','MEMORY_GRANT_UPDATE','SOS_MEMORY_USAGE_ADJUSTMENT','SOS_VIRTUALMEMORY_LOW')) AS MemoryWaitMs,
+        (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type IN ('ASYNC_NETWORK_IO','NET_WAITFOR_PACKET','NETWORK_IO','OLEDB')) AS NetworkWaitMs,
+        (SELECT SUM(wait_time_ms) FROM sys.dm_os_wait_stats WHERE wait_type NOT IN ('SLEEP_TASK','SLEEP_SYSTEMTASK','SLEEP_DBSTARTUP','SLEEP_DBTASK','SLEEP_TEMPDBSTARTUP','SLEEP_MASTERDBREADY','SLEEP_MASTERMDREADY','SLEEP_MASTERUPGRADED','SLEEP_MSDBSTARTUP','WAITFOR','REQUEST_FOR_DEADLOCK_SEARCH','RESOURCE_QUEUE','SERVER_IDLE_CHECK','SQLTRACE_BUFFER_FLUSH','BROKER_TO_FLUSH','BROKER_TASK_STOP','DISPATCHER_QUEUE_SEMAPHORE','CHECKPOINT_QUEUE','XE_DISPATCHER_WAIT','XE_TIMER_EVENT','HADR_WORK_QUEUE','DIRTY_PAGE_POLL','ONDEMAND_TASK_QUEUE','QDS_PERSIST_TASK_MAIN_LOOP_SLEEP','QDS_ASYNC_QUEUE','QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP','DBMIRROR_EVENTS_QUEUED','DBMIRROR_WORKER_QUEUE','BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TRANSMITTER','CLR_AUTO_EVENT','CLR_MANUAL_EVENT','CLR_SYNCHRONIZE','FT_IFTS_SCHEDULER_IDLE_WAIT','SQLTRACE_INCREMENTAL_FLUSH_SLEEP','DEADLOCK_ENUM_MUTEX','WAIT_XTP_OFFLINE_CKPT_NEW_LOG','WAIT_XTP_RECOVERY','WAIT_XTP_HOST_WAIT','WAIT_XTP_CKPT_CLOSE','PARALLEL_REDO_DRAIN_WORKER','PARALLEL_REDO_LOG_CACHE','PARALLEL_REDO_TRAN_LIST','PARALLEL_REDO_WORKER_SYNC','PARALLEL_REDO_WORKER_WAIT_WORK','XE_DISPATCHER_JOIN','XE_DISPATCH_QUEUE_SEMAPHORE','SQLTRACE_WAIT_ENTRIES')) AS TotalWaitMs,
+        GETDATE() AS CaptureTime
