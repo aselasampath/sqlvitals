@@ -15,6 +15,31 @@ public abstract class BaseRepository(IConfiguration configuration)
     protected IDbConnection CreateConnection() =>
         new SqlConnection(configuration.GetConnectionString("SqlServer"));
 
+    // ── Version-dependent columns ─────────────────────────────────────
+    // Newer versions add columns to catalog views and DMVs, and naming a missing one fails the
+    // whole query with error 207. A column's presence is asked of sys.all_columns once per
+    // connection: the major version can't always tell (some arrived in a service pack).
+
+    /// <summary>1 when the view has the column, else 0. Both names are constants, never user input.</summary>
+    internal static string HasColumnSql(string view, string column) => $"""
+        SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns
+                                 WHERE object_id = OBJECT_ID(N'{view}') AND name = N'{column}')
+                    THEN 1 ELSE 0 END AS HasColumn
+        """;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _columns = new();
+
+    /// <summary>Whether the server's view has the column, asked once per repository instance (one per connection).</summary>
+    protected async Task<bool> HasColumnAsync(IDbConnection conn, string view, string column)
+    {
+        var key = view + "." + column;
+        if (_columns.TryGetValue(key, out var known))
+            return known;
+
+        var row = await QFirst(conn, HasColumnSql(view, column));
+        return _columns[key] = row is not null && Convert.ToInt32(row.HasColumn) == 1;
+    }
+
     protected async Task<IEnumerable<dynamic>> Q(
         IDbConnection conn,
         string sql,

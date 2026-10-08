@@ -9,7 +9,7 @@ public class LiveMetricsSqlTests
     public void AzureSqlDatabase_ReadsCpuFromResourceStats()
     {
         // Azure SQL Database has no scheduler monitor records: CPU read 0 % there.
-        var sql = WaitStatsRepository.LiveMetricsSql(isAzureSqlDb: true);
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb: true);
 
         Assert.Contains("sys.dm_db_resource_stats", sql);
         Assert.DoesNotContain("sys.dm_os_ring_buffers", sql);
@@ -20,7 +20,7 @@ public class LiveMetricsSqlTests
     public void OtherEditions_ReadCpuFromTheRingBuffer()
     {
         // sys.dm_db_resource_stats doesn't exist on SQL Server; naming it would fail the whole query.
-        var sql = WaitStatsRepository.LiveMetricsSql(isAzureSqlDb: false);
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb: false);
 
         Assert.Contains("sys.dm_os_ring_buffers", sql);
         Assert.DoesNotContain("sys.dm_db_resource_stats", sql);
@@ -29,8 +29,8 @@ public class LiveMetricsSqlTests
     [Fact]
     public void TheCpuPlaceholderIsAlwaysReplaced()
     {
-        Assert.DoesNotContain("/*CPU*/", WaitStatsRepository.LiveMetricsSql(true));
-        Assert.DoesNotContain("/*CPU*/", WaitStatsRepository.LiveMetricsSql(false));
+        Assert.DoesNotContain("/*CPU*/", LiveMetricsRepository.LiveMetricsSql(true));
+        Assert.DoesNotContain("/*CPU*/", LiveMetricsRepository.LiveMetricsSql(false));
     }
 
     [Theory]
@@ -38,7 +38,7 @@ public class LiveMetricsSqlTests
     [InlineData(false)]
     public void Parses_UnderSqlServer2012sAnd2022sGrammar(bool isAzureSqlDb)
     {
-        var sql = WaitStatsRepository.LiveMetricsSql(isAzureSqlDb);
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb);
         foreach (TSqlParser parser in new TSqlParser[] { new TSql110Parser(true), new TSql160Parser(true) })
         {
             parser.Parse(new StringReader(sql), out var errors);
@@ -50,7 +50,7 @@ public class LiveMetricsSqlTests
     public void CountsTheUserTasksWaitingNow()
     {
         // The Overview's "Waiting tasks" headline (#143).
-        var sql = WaitStatsRepository.LiveMetricsSql(isAzureSqlDb: false);
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb: false);
 
         Assert.Contains("sys.dm_os_waiting_tasks", sql);
         Assert.Contains("is_user_process = 1", sql);

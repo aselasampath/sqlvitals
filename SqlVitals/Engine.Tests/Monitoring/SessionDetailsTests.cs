@@ -95,8 +95,8 @@ public class SessionDetailsTests
 
     public static TheoryData<string, string> Statements => new()
     {
-        { "Processes", WaitStatsRepository.ProcessesSql },
-        { "Session plan", WaitStatsRepository.SessionPlanSql },
+        { "Processes", SessionRepository.ProcessesSql },
+        { "Session plan", SessionRepository.SessionPlanSql },
     };
 
     [Theory]
@@ -113,12 +113,12 @@ public class SessionDetailsTests
     [Fact]
     public void TheSessionPlan_IsWhatItRuns_ElseItsLastStatementsCachedPlan()
     {
-        var sql = WaitStatsRepository.SessionPlanSql;
+        var sql = SessionRepository.SessionPlanSql;
 
         Assert.Contains("FROM sys.dm_exec_requests r", sql);
         Assert.Contains("qs.sql_handle = c.most_recent_sql_handle", sql);
         Assert.Contains("ORDER BY x.Ord", sql);
-        Assert.Contains("tx.TransactionBegin", WaitStatsRepository.ProcessesSql);
+        Assert.Contains("tx.TransactionBegin", SessionRepository.ProcessesSql);
     }
 
     // ── Query Store rows ─────────────────────────────────────────────────

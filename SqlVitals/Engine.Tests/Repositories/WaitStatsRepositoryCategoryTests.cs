@@ -14,6 +14,6 @@ public class WaitStatsRepositoryCategoryTests
     [InlineData("SomeUnknownCategory", "#26E7A6")]
     public void CategoryColor_MapsKnownCategoriesToTheirColor(string category, string expectedColor)
     {
-        Assert.Equal(expectedColor, WaitStatsRepository.CategoryColor(category));
+        Assert.Equal(expectedColor, WaitsRepository.CategoryColor(category));
     }
 }

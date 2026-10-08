@@ -88,7 +88,7 @@ public class HistoryRepository(IConfiguration configuration) : BaseRepository(co
         const string countersSql = """
             SELECT RTRIM(counter_name) AS CounterName, cntr_value AS CntrValue, cntr_type AS CntrType
             FROM sys.dm_os_performance_counters
-            """ + "\n" + WaitStatsRepository.PerfmonCounterFilter;
+            """ + "\n" + LiveMetricsRepository.PerfmonCounterFilter;
 
         using var conn = CreateConnection();
 
@@ -132,7 +132,7 @@ public class HistoryRepository(IConfiguration configuration) : BaseRepository(co
         var counters = (await Q(conn, countersSql))
             .Select(r => new CounterTotals(
                 (string)r.CounterName, Convert.ToInt64(r.CntrValue),
-                Convert.ToInt32(r.CntrType) == WaitStatsRepository.PerfmonRateCounterType))
+                Convert.ToInt32(r.CntrType) == LiveMetricsRepository.PerfmonRateCounterType))
             .DistinctBy(c => c.CounterName)
             .ToList();
 

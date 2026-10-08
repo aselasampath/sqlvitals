@@ -11,7 +11,7 @@ public class StorageSqlTests
     [Fact]
     public void Tempdb_files_are_read_in_tempdbs_own_context()
     {
-        foreach (var sql in new[] { TempDbRepository.FilesSql, WaitStatsRepository.TempDbFilesSummarySql })
+        foreach (var sql in new[] { TempDbRepository.FilesSql, StorageRepository.TempDbFilesSummarySql })
         {
             Assert.StartsWith("EXEC tempdb.sys.sp_executesql", sql.TrimStart());
             Assert.Contains("FROM sys.database_files", sql);
@@ -22,7 +22,7 @@ public class StorageSqlTests
     [Fact]
     public void Every_databases_used_space_is_read_in_that_databases_context()
     {
-        var sql = WaitStatsRepository.DatabaseFilesSql(hasQueryStore: true);
+        var sql = StorageRepository.DatabaseFilesSql(hasQueryStore: true);
 
         Assert.Contains("QUOTENAME(@db) + N'.sys.sp_executesql'", sql);
         Assert.Contains("HAS_DBACCESS(name) = 1", sql);
@@ -68,7 +68,7 @@ public class StorageSqlTests
     [Fact]
     public void Top_tables_are_one_row_per_table()
     {
-        var sql = WaitStatsRepository.TopTablesSql;
+        var sql = StorageRepository.TopTablesSql;
         var groupBy = sql[sql.IndexOf("GROUP BY", StringComparison.Ordinal)..];
 
         // Grouping by p.rows split a partitioned table, or one with a filtered index, into rows.
