@@ -248,7 +248,8 @@ public sealed partial class YourFeatureViewModel(IWaitStatsRepository repo) : Pa
     [ObservableProperty]
     private IReadOnlyList<YourFeatureRow> _rows = [];
 
-    public async Task RefreshAsync() => Rows = (await repo.GetYourFeatureAsync()).ToList();
+    // Run when the page opens, on Refresh and F5, and every RefreshInterval if you set one.
+    protected override async Task LoadAsync(CancellationToken cancel) => Rows = (await repo.GetYourFeatureAsync()).ToList();
 
     protected override void OnAction(VerdictAction action) { }
 }
@@ -261,19 +262,21 @@ using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class YourFeaturePage : System.Windows.Controls.Page, IRefreshable
+public partial class YourFeaturePage : System.Windows.Controls.Page, IPageContext
 {
+    public PageKind Kind => PageKind.Snapshot;
+
     internal YourFeatureViewModel ViewModel { get; }
 
     public YourFeaturePage(YourFeatureViewModel viewModel)
     {
         InitializeComponent();
-        DataContext = ViewModel = viewModel;
+        ViewModel = viewModel;
     }
-
-    public Task RefreshAsync() => ViewModel.RefreshAsync();
 }
 ```
+
+The page factory makes the view model the page's `DataContext` and runs it: it loads when the page opens, reads again on Refresh, and is cancelled when the page is left (see [Architecture → The page lifecycle](Architecture.md#the-page-lifecycle)).
 
 Bind buttons to `[RelayCommand]` methods, not `Click=`. Add a `GridFilterBox` to filter the grid (see [Working with Grids](Working-with-Grids.md#under-the-hood)). Replacing `Rows` makes a new collection view, which drops the grid's sort and filter. Until the pilot (#184) settles how a bound grid keeps them, a page that needs them hands the view model's `Rows` to `DataGridRefresh.SetItemsSource` from code-behind instead of binding `ItemsSource`. Use theme brush keys, not hex colours.
 
@@ -289,13 +292,13 @@ new("Queries", "Queries", "Which queries cost the most, which got slower, and wh
 ]),
 ```
 
-Then open it in `MainWindow.xaml.cs`, in the `page` switch of `NavigateTo`:
+Then add its tag to `Desktop/Services/PageCatalog.cs`, and register it in `Desktop/Services/PageRegistrations.cs`, where the page factory finds it:
 
 ```csharp
-"YourFeature" => new YourFeaturePage(new YourFeatureViewModel(Repo)),
+.AddPage("YourFeature", (_, a) => new YourFeaturePage(new YourFeatureViewModel(a.Repo)), p => p.ViewModel)
 ```
 
-`Desktop.Tests/NavMenuTests.cs` lists every page and the groups' layout, so update it too. A tag `NavigateTo` is given with no button in `NavMenu` fails a `Debug.Assert`.
+`Desktop.Tests/NavMenuTests.cs` lists every page and the groups' layout, so update it too, and `PageFactoryTests` creates every page in `PageCatalog` through the factory. A tag `NavigateTo` is given with no button in `NavMenu` fails a `Debug.Assert`.
 
 If the page has nothing to show on Azure SQL Database, also add it to `PagesAzureSqlLacks` with the reason. Its button is then disabled on such a connection, dimmed and marked **N/A** by the `NavButton` style, with the reason as its tooltip.
 

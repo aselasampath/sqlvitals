@@ -32,7 +32,7 @@ public sealed class ExportGroupItem : INotifyPropertyChanged
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-public partial class ExportPage : Page, IRefreshable, IPageContext
+public partial class ExportPage : Page, ICodeBehindPage, IPageContext
 {
     // Builds a report to save or paste into an AI chat: not a view of the server's data (#140).
     public PageKind Kind => PageKind.None;

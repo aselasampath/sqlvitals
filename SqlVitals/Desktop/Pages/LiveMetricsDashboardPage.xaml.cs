@@ -22,12 +22,16 @@ using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
 [SuppressMessage("Design", "CA1001", Justification = "A Page isn't IDisposable; Page_Unloaded disposes _adHoc")]
-public partial class LiveMetricsDashboardPage : Page, IRefreshable, IPageContext, IFocusPage
+public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageContext, IFocusPage
 {
+    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
+    internal LiveMetricsDashboardViewModel ViewModel { get; } = new();
+
     // ── An alert's window (#145) ──────────────────────────────────────────
     // An alert that has ended opens the charts on its window, read from the monitoring history,
     // until Show all (or another range) goes back to live.

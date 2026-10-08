@@ -47,7 +47,7 @@ public sealed class WaitTypeItem : INotifyPropertyChanged
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-public partial class WaitStatsTrendPage : Page, IRefreshable, IPageContext
+public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
 {
     // Live, or History while a past range is picked; the range picker is in the top bar (#140).
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;

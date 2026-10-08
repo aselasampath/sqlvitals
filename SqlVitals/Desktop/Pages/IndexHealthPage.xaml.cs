@@ -14,7 +14,7 @@ using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class IndexHealthPage : System.Windows.Controls.Page, IRefreshable, IPageContext, IDetailsSource
+public partial class IndexHealthPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#150): the selected missing index ─────────────────
     // Its figures, its columns and its CREATE statement with Copy, which the grid's last column cuts short.

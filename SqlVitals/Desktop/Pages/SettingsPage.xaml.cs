@@ -6,6 +6,7 @@ using System.Windows.Input;
 using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -16,6 +17,9 @@ namespace SqlVitals.Desktop.Pages;
 /// </summary>
 public partial class SettingsPage : Page, IPageContext
 {
+    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
+    internal SettingsViewModel ViewModel { get; } = new();
+
     // The app's own settings, not a view of a server's data: no badge in the top bar (#140).
     public PageKind Kind => PageKind.None;
 

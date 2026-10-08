@@ -16,7 +16,7 @@ using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class MemoryGrantsPage : System.Windows.Controls.Page, IRefreshable, IPageContext, IFocusPage
+public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext, IFocusPage
 {
     // ── A memory grants alert's evidence (#145): the grants still waiting, until Show all ──
     private bool _pendingOnly;

@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Resource Queries' verdict (#149): the top query by CPU, and by reads.</summary>
-public sealed class ResourceQueriesViewModel(Action showCpu, Action showReads) : PageViewModel
+public sealed class ResourceQueriesViewModel(Action showCpu, Action showReads) : CodeBehindViewModel
 {
     public void Show(IReadOnlyList<ResourceIntensiveQuery> byCpu, IReadOnlyList<ResourceIntensiveQuery> byReads) =>
         Verdict = ResourceQueriesVerdict.From(byCpu, byReads);

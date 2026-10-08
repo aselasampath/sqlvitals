@@ -11,7 +11,7 @@ using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ResourceQueriesPage : Page, IRefreshable, IPageContext, IFocusPage, IDetailsSource
+public partial class ResourceQueriesPage : Page, ICodeBehindPage, IPageContext, IFocusPage, IDetailsSource
 {
     // ── The details drawer (#149): the selected query ─────────────────────────
     // A row selected on any tab: its figures, its text and its plan, drawn here or in a window as

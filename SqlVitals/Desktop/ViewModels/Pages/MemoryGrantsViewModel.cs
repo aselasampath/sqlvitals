@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Memory Grants' verdict (#150): queries waiting for memory, or how memory is used.</summary>
-public sealed class MemoryGrantsViewModel(Action showWaiting, Action showClerks) : PageViewModel
+public sealed class MemoryGrantsViewModel(Action showWaiting, Action showClerks) : CodeBehindViewModel
 {
     /// <param name="grants">The grants read with the snapshot; null for a trend reading, which reads only the snapshot.</param>
     public void Show(MemorySnapshot snapshot, IReadOnlyList<MemoryGrant>? grants) => Verdict = MemoryVerdict.From(snapshot, grants);

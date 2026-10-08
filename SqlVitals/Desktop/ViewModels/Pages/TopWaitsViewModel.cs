@@ -5,7 +5,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Top Waits' verdict (#149): the top wait category and what it means.</summary>
-public sealed class TopWaitsViewModel(INavigator navigator) : PageViewModel
+public sealed class TopWaitsViewModel(INavigator navigator) : CodeBehindViewModel
 {
     private string _category = string.Empty;
 

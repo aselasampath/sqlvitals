@@ -18,7 +18,7 @@ namespace SqlVitals.Desktop.Pages;
 /// Queries whose average duration or CPU rose past a threshold, recent period against a baseline
 /// (#32). Reads Query Store when the database has it on, the monitoring history otherwise.
 /// </summary>
-public partial class QueryRegressionsPage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class QueryRegressionsPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#149): the selected query ─────────────────────────
     // Its figures before and now, its text, and its plans now and before, drawn here or in a window

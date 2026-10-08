@@ -14,7 +14,7 @@ using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ApplicationConnectionsPage : Page, IRefreshable, IPageContext
+public partial class ApplicationConnectionsPage : Page, ICodeBehindPage, IPageContext
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;

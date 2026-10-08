@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Deadlocks' verdict (#149): how many in the range, and the object fought over most.</summary>
-public sealed class DeadlocksViewModel(Action openNewest, Action showRecurring, Action showAll) : PageViewModel
+public sealed class DeadlocksViewModel(Action openNewest, Action showRecurring, Action showAll) : CodeBehindViewModel
 {
     public void Show(DeadlockHistory history, IReadOnlyList<DeadlockReport> inRange, IReadOnlyList<DeadlockPattern> patterns, string during) =>
         Verdict = DeadlocksVerdict.From(history, inRange, patterns, during);

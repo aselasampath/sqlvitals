@@ -16,6 +16,7 @@ using SqlVitals.Engine.History;
 using SqlVitals.Engine.Home;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Regressions;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -27,8 +28,11 @@ namespace SqlVitals.Desktop.Pages;
 /// to check, and what happened (#130). Only "Blocking right now" and "Since you last looked" query
 /// the server, and only while it is monitored.
 /// </summary>
-public partial class OverviewPage : Page, IRefreshable, IPageContext
+public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
 {
+    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
+    internal OverviewViewModel ViewModel { get; } = new();
+
     // Live while the charts follow the samples, History while a past range is picked (#140).
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
 

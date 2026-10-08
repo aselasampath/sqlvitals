@@ -90,6 +90,39 @@ public sealed class MvvmGuardTests
         ["Pages/ProcessesPage.xaml.cs"]        = 1,
     };
 
+    /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
+    private static readonly string[] CodeBehindPagesAllowed =
+    [
+        "ActiveWaitsPage",
+        "AgentJobsPage",
+        "AlertsPage",
+        "ApplicationConnectionsPage",
+        "BackupsPage",
+        "ConfigChecksPage",
+        "DatabaseStoragePage",
+        "DeadlocksPage",
+        "ExportPage",
+        "FileIoPage",
+        "HomePage",
+        "ImplicitConversionsPage",
+        "IndexHealthPage",
+        "LiveMetricsDashboardPage",
+        "MemoryGrantsPage",
+        "OverviewPage",
+        "PerfmonPage",
+        "PlanCacheHealthPage",
+        "ProcessesPage",
+        "QueryRegressionsPage",
+        "QueryStorePage",
+        "ResourceQueriesPage",
+        "SecurityAuditPage",
+        "SpTracePage",
+        "StaleStatisticsPage",
+        "TempDbPage",
+        "TopWaitsPage",
+        "WaitStatsTrendPage",
+    ];
+
     // ── View models stay out of the view ─────────────────────────────────
 
     [Fact]
@@ -195,6 +228,34 @@ public sealed class MvvmGuardTests
 
         Fail(broken, "View models are one file each, named for their page (docs/Architecture.md, MVVM):");
     }
+
+    // ── Pages read through their view models ─────────────────────────────
+
+    [Fact]
+    public void CodeBehindPages_DoNotGrow()
+    {
+        var broken = CodeBehindPages().Where(name => !CodeBehindPagesAllowed.Contains(name))
+            .Select(name => $"{name} reads in its code-behind (ICodeBehindPage): load in its view model's LoadAsync instead.")
+            .ToList();
+
+        Fail(broken, "A new page reads through its view model (docs/Architecture.md, Adding a page):");
+    }
+
+    [Fact]
+    public void CodeBehindPages_AllowlistShrinksWithIt()
+    {
+        var pages = CodeBehindPages().ToHashSet();
+        var stale = CodeBehindPagesAllowed.Where(name => !pages.Contains(name))
+            .Select(name => $"{name} no longer reads in its code-behind: take it off CodeBehindPagesAllowed.")
+            .ToList();
+
+        Fail(stale, "The allowlist only shrinks:");
+    }
+
+    private static IEnumerable<string> CodeBehindPages() =>
+        typeof(MainWindow).Assembly.GetTypes()
+            .Where(t => !t.IsAbstract && typeof(Pages.ICodeBehindPage).IsAssignableFrom(t))
+            .Select(t => t.Name);
 
     // ── The checks themselves ────────────────────────────────────────────
 

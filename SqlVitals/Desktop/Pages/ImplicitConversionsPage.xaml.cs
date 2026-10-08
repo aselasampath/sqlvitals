@@ -5,7 +5,7 @@ using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ImplicitConversionsPage : System.Windows.Controls.Page, IRefreshable, IPageContext
+public partial class ImplicitConversionsPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;

@@ -18,7 +18,7 @@ namespace SqlVitals.Desktop.Pages;
 /// Each finding is a Risk, something to Review, or a Pass, with the risk explained; a risk comes
 /// with the T-SQL to remove it, which is never run here.
 /// </summary>
-public partial class SecurityAuditPage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class SecurityAuditPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#150): the selected finding ─────────────────────────────
     private const string SelectHint = "Select a finding to see the risk and the script that removes it.";

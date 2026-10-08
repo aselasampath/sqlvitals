@@ -21,7 +21,7 @@ namespace SqlVitals.Desktop.Pages;
 /// show straight away. Filtered by connection, status and period. On the page template (#150): the
 /// verdict names the worst active alert, and a row's details are in the drawer.
 /// </summary>
-public partial class AlertsPage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#150): the selected alert ─────────────────────────
     private const string SelectHint = "Select an alert to see its figures, its times and what the health dot said.";

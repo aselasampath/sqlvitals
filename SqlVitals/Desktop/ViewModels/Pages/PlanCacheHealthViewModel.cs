@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Plan Cache Health's verdict (#149): the worst of what it checks.</summary>
-public sealed class PlanCacheHealthViewModel(Action<int> showTab) : PageViewModel
+public sealed class PlanCacheHealthViewModel(Action<int> showTab) : CodeBehindViewModel
 {
     public void Show(PlanCacheHealthSummary summary, int keyLookups) => Verdict = PlanCacheHealthVerdict.From(summary, keyLookups);
 
