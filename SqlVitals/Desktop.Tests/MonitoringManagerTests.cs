@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.Reflection;
 using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
@@ -28,7 +28,7 @@ public sealed class MonitoringManagerTests : IDisposable
 
     private MonitoringManager Create() =>
         new(new HistoryWriter(HistoryPath, (_, _) => { }),
-            (conn, _) => CountingRepository.Create(conn.Server, _calls));
+            (conn, _) => Counting(conn.Server, _calls));
 
     private static ConnectionStore Store(bool automatic, params ConnectionSettings[] connections) => new()
     {
@@ -213,7 +213,7 @@ public sealed class MonitoringManagerTests : IDisposable
     // A server at 99 % CPU: with Alert samples at 1, its first sample raises a critical alert.
     private MonitoringManager CreateHot() =>
         new(new HistoryWriter(HistoryPath, (_, _) => { }),
-            (conn, _) => HotRepository.Create(conn.Server, _calls));
+            (conn, _) => Hot(conn.Server, _calls));
 
     private static ConnectionStore HotStore(ConnectionSettings conn)
     {
@@ -326,54 +326,17 @@ public sealed class MonitoringManagerTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
-    /// <summary>As <see cref="CountingRepository"/>, but live metrics come back, at 99 % CPU.</summary>
-    public class HotRepository : CountingRepository
+    /// <summary>A server that can't be reached: every call recorded, by connection and method, and failed.</summary>
+    internal static FakeRepository Counting(string server, ConcurrentQueue<(string, string)> calls) =>
+        new() { Unreachable = true, Called = method => calls.Enqueue((server, method)) };
+
+    /// <summary>As <see cref="Counting"/>, but live metrics come back, at 99 % CPU.</summary>
+    internal static FakeRepository Hot(string server, ConcurrentQueue<(string, string)> calls) => new()
     {
-        public static new IWaitStatsRepository Create(string server, ConcurrentQueue<(string, string)> calls)
-        {
-            var proxy = DispatchProxy.Create<IWaitStatsRepository, HotRepository>();
-            ((HotRepository)(object)proxy).Init(server, calls);
-            return proxy;
-        }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            targetMethod!.Name == nameof(IWaitStatsRepository.GetLiveMetricsAsync)
-                ? Task.FromResult(new LiveMetricSnapshot(DateTime.UtcNow, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 99,
-                                                         PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
-                                                         0, 0, 0, 0, 0, 0, 0))
-                : base.Invoke(targetMethod, args);
-    }
-
-    /// <summary>An IWaitStatsRepository that records every call and fails it, as an unreachable server would.</summary>
-    public class CountingRepository : DispatchProxy
-    {
-        private string _server = "";
-        private ConcurrentQueue<(string, string)> _calls = new();
-
-        public static IWaitStatsRepository Create(string server, ConcurrentQueue<(string, string)> calls)
-        {
-            var proxy = DispatchProxy.Create<IWaitStatsRepository, CountingRepository>();
-            ((CountingRepository)(object)proxy).Init(server, calls);
-            return proxy;
-        }
-
-        protected void Init(string server, ConcurrentQueue<(string, string)> calls)
-        {
-            _server = server;
-            _calls  = calls;
-        }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            _calls.Enqueue((_server, targetMethod!.Name));
-            var type = targetMethod.ReturnType;
-            if (type == typeof(Task))
-                return Task.FromException(new InvalidOperationException("No server in tests."));
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>))
-                return typeof(Task).GetMethod(nameof(Task.FromException), 1, [typeof(Exception)])!
-                                   .MakeGenericMethod(type.GetGenericArguments()[0])
-                                   .Invoke(null, [new InvalidOperationException("No server in tests.")]);
-            return type.IsValueType ? Activator.CreateInstance(type) : null;
-        }
-    }
+        Unreachable = true,
+        Called      = method => calls.Enqueue((server, method)),
+        GetLiveMetricsAsync = () => Task.FromResult(new LiveMetricSnapshot(DateTime.UtcNow, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 99,
+                                                                           PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
+                                                                           0, 0, 0, 0, 0, 0, 0)),
+    };
 }

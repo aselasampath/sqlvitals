@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -11,6 +10,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
@@ -31,26 +31,6 @@ public sealed class TemplateRolloutTests : IDisposable
     internal static readonly string RenderDir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", "page-template-rollout");
 
     private ConnectionSettingsService Settings() => new(_dir);
-
-    private static IWaitStatsRepository Repo(Dictionary<string, object> results) => EvidencePagesTests.FakeRepository.Create(results);
-
-    // A repository whose answers can change from one call to the next.
-    public class SequenceRepository : DispatchProxy
-    {
-        private Dictionary<string, Func<object>> _results = [];
-
-        public static IWaitStatsRepository Create(Dictionary<string, Func<object>> results)
-        {
-            var proxy = Create<IWaitStatsRepository, SequenceRepository>();
-            ((SequenceRepository)(object)proxy)._results = results;
-            return proxy;
-        }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            _results.TryGetValue(targetMethod!.Name, out var result)
-                ? result()
-                : throw new NotSupportedException($"{targetMethod.Name} isn't faked in this test.");
-    }
 
     // ── Hosting and rendering ────────────────────────────────────────────
 
@@ -136,7 +116,7 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void ActiveWaits_OpensWithTheBlockedRequests() => UiThread.Run(() =>
     {
-        var page = new ActiveWaitsPage(Repo(new() { [nameof(IWaitStatsRepository.GetActiveWaitsAsync)] = Task.FromResult<IEnumerable<ActiveWait>>(Waits) }), Settings());
+        var page = new ActiveWaitsPage(new FakeRepository { GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>(Waits) }, Settings());
         Hosted(page, page.RefreshAsync, "active-waits.png", () => AssertLaidOut(page.Shell, page.ActiveGrid));
 
         var verdict = page.Shell.Verdict!;
@@ -172,7 +152,7 @@ public sealed class TemplateRolloutTests : IDisposable
     public void Deadlocks_OpensWithHowManyAndTheObjectFoughtOverMost() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new DeadlocksPage(Repo(new() { [nameof(IWaitStatsRepository.GetDeadlockHistoryAsync)] = Task.FromResult(DeadlockHistoryOf(DateTime.UtcNow)) }), settings);
+        var page = new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => Task.FromResult(DeadlockHistoryOf(DateTime.UtcNow)) }, settings);
         page.CmbRange.SelectedIndex = 1;   // Last 24 hours
         Hosted(page, page.RefreshAsync, "deadlocks.png", () => AssertLaidOut(page.Shell, page.Tabs));
 
@@ -198,8 +178,8 @@ public sealed class TemplateRolloutTests : IDisposable
     public void Deadlocks_NoneInTheRange_OffersTheOlderOnes() => UiThread.Run(() =>
     {
         var now  = DateTime.UtcNow;
-        var page = new DeadlocksPage(Repo(new() { [nameof(IWaitStatsRepository.GetDeadlockHistoryAsync)] = Task.FromResult(
-            new DeadlockHistory([Deadlock(now.AddDays(-3), "a", "b", "t")], DeadlockSource.RingBuffer, 1, 0, null, null)) }));
+        var page = new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => Task.FromResult(
+            new DeadlockHistory([Deadlock(now.AddDays(-3), "a", "b", "t")], DeadlockSource.RingBuffer, 1, 0, null, null)) });
         page.CmbRange.SelectedIndex = 0;   // Last hour
         UiThread.Wait(page.RefreshAsync());
 
@@ -218,11 +198,11 @@ public sealed class TemplateRolloutTests : IDisposable
     public void AppConnections_OpensWithWhoHoldsThem_AndItsCountsAndChartFold() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new ApplicationConnectionsPage(Repo(new() { [nameof(IWaitStatsRepository.GetApplicationConnectionsAsync)] = Task.FromResult<IEnumerable<ApplicationConnection>>(
+        var page = new ApplicationConnectionsPage(new FakeRepository { GetApplicationConnectionsAsync = () => Task.FromResult<IEnumerable<ApplicationConnection>>(
         [
             App("OrderService", 120, 6, 1_840_000), App("BillingService", 64, 2, 912_000), App("Reporting (SSRS)", 22, 1, 2_310_000),
             App("Microsoft SQL Server Management Studio", 4, 1, 12_000), App("SQLAgent - TSQL JobStep", 3, 0, 4_000),
-        ]) }), settings);
+        ]) }, settings);
         Hosted(page, page.RefreshAsync, "app-connections.png", () => AssertLaidOut(page.Shell, page.ConnectionsGrid, minDetail: 150));
 
         Assert.Equal("5 applications hold 213 connections; OrderService the most, 120", page.Shell.Verdict!.Headline);
@@ -254,7 +234,7 @@ public sealed class TemplateRolloutTests : IDisposable
     public void TopWaits_OpensWithTheTopCategory_AndTheChartFolds() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new TopWaitsPage(Repo(new() { [nameof(IWaitStatsRepository.GetTopWaitTypesAsync)] = Task.FromResult<IEnumerable<TopWaitType>>(TopWaitTypes) }), settings);
+        var page = new TopWaitsPage(new FakeRepository { GetTopWaitTypesAsync = () => Task.FromResult<IEnumerable<TopWaitType>>(TopWaitTypes) }, settings);
         Hosted(page, page.RefreshAsync, "top-waits.png", () => AssertLaidOut(page.Shell, page.WaitsGrid, minDetail: 200));
 
         var verdict = page.Shell.Verdict!;
@@ -268,7 +248,7 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Equal(["chart"], settings.Folded("TopWaits"));
 
         // Opened again: still folded.
-        var again = new TopWaitsPage(Repo(new()), settings);
+        var again = new TopWaitsPage(new FakeRepository(), settings);
         Assert.True(again.ChartSection.IsFolded);
     });
 
@@ -281,9 +261,9 @@ public sealed class TemplateRolloutTests : IDisposable
     public void WaitTrend_OpensWithTheWaitTypeThatWaitsMost_AndTheBarStartsAndStopsIt() => UiThread.Run(() =>
     {
         var reads = 0;
-        var page = new WaitStatsTrendPage(SequenceRepository.Create(new()
+        var page = new WaitStatsTrendPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetCumulativeWaitsAsync)] = () =>
+            GetCumulativeWaitsAsync = () =>
             {
                 var n = reads++;
                 // CXPACKET waits more and more; WRITELOG steadily.
@@ -294,7 +274,7 @@ public sealed class TemplateRolloutTests : IDisposable
                     Cumulative("PAGEIOLATCH_SH", "I/O", 600_000 + n * 30, 800 + n * 3),
                 ]);
             },
-        }), null, Settings());
+        }, null, Settings());
         var context = (IPageContext)page;
         context.TakeBarTools();   // the range picker goes to the top bar, as in the app
 
@@ -331,10 +311,10 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void WaitTrend_ThatCantRead_SaysSoInTheVerdict() => UiThread.Run(() =>
     {
-        var page = new WaitStatsTrendPage(Repo(new()
+        var page = new WaitStatsTrendPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetCumulativeWaitsAsync)] = Task.FromException<IEnumerable<WaitStatCumulative>>(new InvalidOperationException("Timeout expired.")),
-        }));
+            GetCumulativeWaitsAsync = () => Task.FromException<IEnumerable<WaitStatCumulative>>(new InvalidOperationException("Timeout expired.")),
+        });
         UiThread.Wait(page.RefreshAsync());   // the page reports the error in its status line, as before
 
         Assert.Equal("Couldn't read the wait statistics", page.Shell.Verdict!.Headline);
@@ -355,12 +335,12 @@ public sealed class TemplateRolloutTests : IDisposable
         Query(null, "Ad-Hoc", 300, 21_000_000, 61_000_000, "SELECT COUNT(*) FROM dbo.AuditLog WHERE At > @p0"),
     ];
 
-    private static IWaitStatsRepository QueriesRepo() => Repo(new()
+    private static IWaitStatsRepository QueriesRepo() => new FakeRepository
     {
-        [nameof(IWaitStatsRepository.GetResourceIntensiveQueriesAsync)] = Task.FromResult<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(
+        GetResourceIntensiveQueriesAsync = _ => Task.FromResult<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(
             (Queries.OrderByDescending(q => q.TotalLogicalReads), Queries.OrderByDescending(q => q.TotalCPUTime), Queries.OrderByDescending(q => q.TotalLogicalReads))),
-        [nameof(IWaitStatsRepository.GetObjectQueryPlanAsync)] = Task.FromResult<string?>(PlanXml),
-    });
+        GetObjectQueryPlanAsync = _ => Task.FromResult<string?>(PlanXml),
+    };
 
     [Fact]
     public void ResourceQueries_OpensWithTheCostliestQuery_AndShowsItInTheDrawer() => UiThread.Run(() =>
@@ -399,9 +379,9 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── Query Regressions ────────────────────────────────────────────────
 
-    private static IWaitStatsRepository RegressionsRepo() => Repo(new()
+    private static IWaitStatsRepository RegressionsRepo() => new FakeRepository
     {
-        [nameof(IWaitStatsRepository.GetQueryStoreRegressionStatsAsync)] = Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true,
+        GetQueryStoreRegressionStatsAsync = _ => Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true,
         [
             new("4183", IsRecent: false, PlanId: 311, Executions: 1000, DurationUs: 1000 * 500_000.0, CpuUs: 1000 * 100_000.0),
             new("4183", IsRecent: true,  PlanId: 902, Executions: 200,  DurationUs: 200 * 2_050_000.0, CpuUs: 200 * 100_000.0),
@@ -410,13 +390,13 @@ public sealed class TemplateRolloutTests : IDisposable
             new("3391", IsRecent: false, PlanId: 120, Executions: 800,  DurationUs: 800 * 9_000.0, CpuUs: 800 * 8_000.0),
             new("3391", IsRecent: true,  PlanId: 120, Executions: 700,  DurationUs: 700 * 9_100.0, CpuUs: 700 * 8_100.0),
         ])),
-        [nameof(IWaitStatsRepository.GetQueryStoreTextsAsync)] = Task.FromResult<IReadOnlyDictionary<long, string>>(new Dictionary<long, string>
+        GetQueryStoreTextsAsync = _ => Task.FromResult<IReadOnlyDictionary<long, string>>(new Dictionary<long, string>
         {
             [4183] = "SELECT o.OrderId, c.Name, SUM(l.Qty) FROM dbo.Orders o JOIN dbo.Customers c ON …",
             [2210] = "EXEC dbo.usp_GetCustomerHistory @CustomerId = @p0",
         }),
-        [nameof(IWaitStatsRepository.GetQueryStorePlanAsync)] = Task.FromResult<string?>(PlanXml),
-    });
+        GetQueryStorePlanAsync = _ => Task.FromResult<string?>(PlanXml),
+    };
 
     [Fact]
     public void QueryRegressions_OpensWithTheWorstQuery_AndItsPlansInTheDrawer() => UiThread.Run(() =>
@@ -455,16 +435,16 @@ public sealed class TemplateRolloutTests : IDisposable
     public void PlanCacheHealth_OpensWithTheWorstCheck_AndTheSummaryFolds() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new PlanCacheHealthPage(Repo(new()
+        var page = new PlanCacheHealthPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetPlanCacheHealthAsync)] = Task.FromResult<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
+            GetPlanCacheHealthAsync = () => Task.FromResult<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
                                                                                        IEnumerable<CardinalityMisestimate>, IEnumerable<SkewedParallelQuery>, IEnumerable<PlanGuide>)>((
                 new PlanCacheHealthSummary(false, 4, 18_420, 0, 2, "WARNING"),
                 [new(42, 1_204, "0x8F3A1B2C4D5E6F70", "SELECT * FROM dbo.Orders WHERE OrderId = 1001", "SalesDb", "WARNING"),
                  new(17, 380, "0x1122334455667788", "SELECT Name FROM dbo.Customers WHERE Email = 'a@b.c'", "SalesDb", "INFO")],
                 [new("Key Lookup", 81_200, 9_410_000, 115.9, "SalesDb", "usp_GetOrderHistory", "SELECT o.OrderId, o.Placed FROM dbo.Orders o WHERE CustomerId = @c")],
                 [], [], [])),
-        }), settings);
+        }, settings);
         Hosted(page, page.RefreshAsync, "plan-cache-health.png", () =>
         {
             AssertLaidOut(page.Shell, page.Tabs);
@@ -485,15 +465,15 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void ImplicitConversions_OpensWithHowManyConvert_TheMostUsedFirst() => UiThread.Run(() =>
     {
-        var page = new ImplicitConversionsPage(Repo(new()
+        var page = new ImplicitConversionsPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetImplicitConversionsAsync)] = Task.FromResult<IEnumerable<ImplicitConversion>>(
+            GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(
             [
                 new("SalesDb", "usp_FindCustomer", 48_120, 96, "SELECT CustomerId FROM dbo.Customers WHERE Email = @email -- @email NVARCHAR(256), Email VARCHAR(256)", DateTime.Now),
                 new("SalesDb", "", 3_410, 40, "SELECT * FROM dbo.Orders WHERE OrderRef = @p0", DateTime.Now),
                 new("HR", "usp_GetEmployee", 120, 64, "SELECT * FROM dbo.Employees WHERE BadgeNo = @badge", DateTime.Now),
             ]),
-        }), Settings());
+        }, Settings());
         Hosted(page, page.RefreshAsync, "implicit-conversions.png", () =>
         {
             AssertLaidOut(page.Shell, page.ConvGrid, minDetail: 200);
@@ -517,12 +497,12 @@ public sealed class TemplateRolloutTests : IDisposable
     {
         var now = DateTime.Now;
         var running = new TraceSessionStatus(true, TraceMode.ExtendedEvents, "SqlVitals_SpTrace", null, 5, 0, false);
-        var page = new SpTracePage(Repo(new()
+        var page = new SpTracePage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.StartTraceAsync)]         = Task.FromResult(running),
-            [nameof(IWaitStatsRepository.StopTraceAsync)]          = Task.FromResult(TraceSessionStatus.Stopped("SqlVitals_SpTrace")),
-            [nameof(IWaitStatsRepository.GetTraceStatusAsync)]     = Task.FromResult(running),
-            [nameof(IWaitStatsRepository.PollTraceEventsAsync)]    = Task.FromResult<IReadOnlyList<SpTraceEvent>>(
+            StartTraceAsync         = _ => Task.FromResult(running),
+            StopTraceAsync          = () => Task.FromResult(TraceSessionStatus.Stopped("SqlVitals_SpTrace")),
+            GetTraceStatusAsync     = () => Task.FromResult(running),
+            PollTraceEventsAsync    = () => Task.FromResult<IReadOnlyList<SpTraceEvent>>(
             [
                 Call(now.AddSeconds(-9), "dbo.usp_GetOrderHistory", 1_840, 61, "OrderService"),
                 Call(now.AddSeconds(-7), "dbo.usp_PriceBasket", 42, 64, "OrderService"),
@@ -530,13 +510,13 @@ public sealed class TemplateRolloutTests : IDisposable
                 Call(now.AddSeconds(-2), "dbo.usp_PriceBasket", 38, 64, "OrderService"),
                 Call(now.AddSeconds(-1), "dbo.usp_ShipOrder", 96, 77, "OrderService"),
             ]),
-            [nameof(IWaitStatsRepository.PollProcedureStatsAsync)] = Task.FromResult<IReadOnlyList<SpAggregateRow>>(
+            PollProcedureStatsAsync = () => Task.FromResult<IReadOnlyList<SpAggregateRow>>(
             [
                 new("SalesDb", "dbo", "usp_GetOrderHistory", 1, 1_840, 1_840, 1_840, 610, 75_440, 75_440, now),
                 new("SalesDb", "dbo", "usp_PriceBasket", 2, 40, 42, 80, 13, 1_640, 3_280, now),
             ]),
-            [nameof(IWaitStatsRepository.GetObjectQueryPlanAsync)] = Task.FromResult<string?>(PlanXml),
-        }), Settings());
+            GetObjectQueryPlanAsync = _ => Task.FromResult<string?>(PlanXml),
+        }, Settings());
         var source = (IDetailsSource)page;
 
         UiThread.Wait(page.RefreshAsync());
@@ -574,19 +554,19 @@ public sealed class TemplateRolloutTests : IDisposable
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
     {
         var error = new InvalidOperationException("Timeout expired.");
-        var repo  = SequenceRepository.Create(new()
+        var repo  = new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetActiveWaitsAsync)]               = () => Task.FromException<IEnumerable<ActiveWait>>(error),
-            [nameof(IWaitStatsRepository.GetDeadlockHistoryAsync)]           = () => Task.FromException<DeadlockHistory>(error),
-            [nameof(IWaitStatsRepository.GetApplicationConnectionsAsync)]    = () => Task.FromException<IEnumerable<ApplicationConnection>>(error),
-            [nameof(IWaitStatsRepository.GetTopWaitTypesAsync)]              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
-            [nameof(IWaitStatsRepository.GetResourceIntensiveQueriesAsync)]  = () => Task.FromException<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(error),
-            [nameof(IWaitStatsRepository.GetQueryStoreRegressionStatsAsync)] = () => Task.FromException<QueryStoreRegressionStats>(error),
-            [nameof(IWaitStatsRepository.GetPlanCacheHealthAsync)]           = () => Task.FromException<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
+            GetActiveWaitsAsync               = () => Task.FromException<IEnumerable<ActiveWait>>(error),
+            GetDeadlockHistoryAsync           = () => Task.FromException<DeadlockHistory>(error),
+            GetApplicationConnectionsAsync    = () => Task.FromException<IEnumerable<ApplicationConnection>>(error),
+            GetTopWaitTypesAsync              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
+            GetResourceIntensiveQueriesAsync  = _ => Task.FromException<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(error),
+            GetQueryStoreRegressionStatsAsync = _ => Task.FromException<QueryStoreRegressionStats>(error),
+            GetPlanCacheHealthAsync           = () => Task.FromException<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
                                                                                     IEnumerable<CardinalityMisestimate>, IEnumerable<SkewedParallelQuery>, IEnumerable<PlanGuide>)>(error),
-            [nameof(IWaitStatsRepository.GetImplicitConversionsAsync)]       = () => Task.FromException<IEnumerable<ImplicitConversion>>(error),
-            [nameof(IWaitStatsRepository.PollProcedureStatsAsync)]           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
-        });
+            GetImplicitConversionsAsync       = () => Task.FromException<IEnumerable<ImplicitConversion>>(error),
+            PollProcedureStatsAsync           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
+        };
         ICodeBehindPage page = tag switch
         {
             "ActiveWaits"      => new ActiveWaitsPage(repo),
@@ -615,7 +595,7 @@ public sealed class TemplateRolloutTests : IDisposable
     {
         UiThread.Run(() =>
         {
-            var repo = Repo(new());
+            var repo = new FakeRepository();
             (string Key, Page Page, PageKind Kind)[] pages =
             [
                 ("ActiveWaits", new ActiveWaitsPage(repo, Settings()), PageKind.Snapshot),

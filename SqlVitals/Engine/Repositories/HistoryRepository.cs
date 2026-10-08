@@ -7,7 +7,7 @@ public class HistoryRepository(IConfiguration configuration) : BaseRepository(co
 {
     // Same idle waits the Live Metrics total leaves out (see GetLiveMetricsAsync). They grow
     // every interval on an idle server and say nothing about a problem.
-    private static readonly string BenignWaits = SqlScripts.Get("History/BenignWaits");
+    internal static readonly string BenignWaits =SqlScripts.Get("History/BenignWaits");
 
     // EngineEdition 5 = Azure SQL Database: no sys.master_files, and waits are per database.
     private bool? _isAzureSqlDb;
@@ -26,7 +26,8 @@ public class HistoryRepository(IConfiguration configuration) : BaseRepository(co
 
         var memorySql = SqlScripts.Get("History/Memory");
 
-        var countersSql = SqlScripts.Get("History/PerfmonCounters") + "\n" + LiveMetricsRepository.PerfmonCounterFilter;
+        var countersSql = SqlScripts.Get("History/PerfmonCounters")
+            .Replace("/*COUNTER_FILTER*/", LiveMetricsRepository.PerfmonCounterFilter);
 
         using var conn = CreateConnection();
 

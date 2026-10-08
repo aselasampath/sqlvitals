@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -7,6 +6,7 @@ using System.Windows.Threading;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 
@@ -234,38 +234,25 @@ public sealed class ViewStateTests
     }
 
     /// <summary>Two missing indexes and no other indexes; other reads fail, as with no server.</summary>
-    public class IndexRepository : DispatchProxy
+    internal static class IndexRepository
     {
         private static int _reads;
 
-        public static IWaitStatsRepository Create() => DispatchProxy.Create<IWaitStatsRepository, IndexRepository>();
+        public static FakeRepository Create() => new()
+        {
+            Unreachable = true,
+            GetIndexHealthAsync = () =>
+            {
+                var rows = new[] { Missing("Customers", 100 + _reads), Missing("Orders", 50 + _reads) };
+                return Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(
+                    (_reads % 2 == 0 ? rows : rows.Reverse(), []));
+            },
+            GetIndexUsagePatternsAsync = () => Task.FromResult<IEnumerable<IndexUsagePattern>>([]),
+            GetIndexFragmentationAsync = (_, _) => Task.FromResult<IEnumerable<IndexFragmentation>>([]),
+        };
 
         // The next read returns different numbers, and the rows in another order.
         public static void Bump() => _reads++;
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            switch (targetMethod!.Name)
-            {
-                case nameof(IWaitStatsRepository.GetIndexHealthAsync):
-                    var rows = new[] { Missing("Customers", 100 + _reads), Missing("Orders", 50 + _reads) };
-                    return Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(
-                        (_reads % 2 == 0 ? rows : rows.Reverse(), []));
-                case nameof(IWaitStatsRepository.GetIndexUsagePatternsAsync):
-                    return Task.FromResult<IEnumerable<IndexUsagePattern>>([]);
-                case nameof(IWaitStatsRepository.GetIndexFragmentationAsync):
-                    return Task.FromResult<IEnumerable<IndexFragmentation>>([]);
-            }
-
-            var type = targetMethod.ReturnType;
-            if (type == typeof(Task))
-                return Task.FromException(new InvalidOperationException("No server in tests."));
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>))
-                return typeof(Task).GetMethod(nameof(Task.FromException), 1, [typeof(Exception)])!
-                                   .MakeGenericMethod(type.GetGenericArguments()[0])
-                                   .Invoke(null, [new InvalidOperationException("No server in tests.")]);
-            return type.IsValueType ? Activator.CreateInstance(type) : null;
-        }
 
         private static MissingIndex Missing(string table, long seeks) =>
             new("Sales", "dbo", table, "[Id]", null, null, 1, seeks, 0, null, null, 1, 50, seeks * 50,

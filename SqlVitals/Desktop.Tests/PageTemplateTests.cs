@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Models;
@@ -148,14 +149,14 @@ public sealed class PageTemplateTests : IDisposable
     [Fact]
     public void Processes_OpensWithTheVerdictOnBlocking() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(EvidencePagesTests.FakeRepository.Create(new()
+        var page = new ProcessesPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetProcessesAsync)] = Task.FromResult<IEnumerable<ProcessNode>>(
+            GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>(
             [
                 Node(87, status: "sleeping", openTran: 1), Node(112, 87, 252_000), Node(115, 87, 231_000), Node(130, 112, 40_000),
                 Node(5), Node(6), Node(7),
             ]),
-        }), Settings());
+        }, Settings());
         UiThread.Wait(page.RefreshAsync());
         Render(page, "processes.png");
 
@@ -174,10 +175,10 @@ public sealed class PageTemplateTests : IDisposable
     [Fact]
     public void Processes_ThatCantRead_SaysSoInTheVerdict() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(EvidencePagesTests.FakeRepository.Create(new()
+        var page = new ProcessesPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetProcessesAsync)] = Task.FromException<IEnumerable<ProcessNode>>(new InvalidOperationException("Timeout expired.")),
-        }), Settings());
+            GetProcessesAsync = () => Task.FromException<IEnumerable<ProcessNode>>(new InvalidOperationException("Timeout expired.")),
+        }, Settings());
 
         Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
 
@@ -199,11 +200,11 @@ public sealed class PageTemplateTests : IDisposable
                                   Ago(now, TimeSpan.FromDays(1)), null, null),
         };
         var settings = Settings();
-        var page = new BackupsPage(EvidencePagesTests.FakeRepository.Create(new()
+        var page = new BackupsPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetBackupStatusAsync)]  = Task.FromResult(BackupList.From(rows, now, BackupRpo.Default)),
-            [nameof(IWaitStatsRepository.GetBackupHistoryAsync)] = Task.FromResult<IReadOnlyList<BackupHistoryEntry>>([]),
-        }), settings);
+            GetBackupStatusAsync  = _ => Task.FromResult(BackupList.From(rows, now, BackupRpo.Default)),
+            GetBackupHistoryAsync = (_, _) => Task.FromResult<IReadOnlyList<BackupHistoryEntry>>([]),
+        }, settings);
         UiThread.Wait(page.RefreshAsync());
         Render(page, "backups.png");
 
@@ -230,10 +231,10 @@ public sealed class PageTemplateTests : IDisposable
             new("4183", IsRecent: false, PlanId: 311, Executions: 1000, DurationUs: 1000 * 500_000.0, CpuUs: 1000 * 100_000.0),
             new("4183", IsRecent: true,  PlanId: 902, Executions: 200,  DurationUs: 200 * 2_050_000.0, CpuUs: 200 * 100_000.0),
         ];
-        var page = new QueryStorePage(EvidencePagesTests.FakeRepository.Create(new()
+        var page = new QueryStorePage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetQueryStoreStatusAsync)]          = Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)),
-            [nameof(IWaitStatsRepository.GetQueryStoreTopQueriesAsync)]      = Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>(
+            GetQueryStoreStatusAsync          = () => Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)),
+            GetQueryStoreTopQueriesAsync      = (_, _, _, _) => Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>(
             [
                 new(4183, 0, null, "SELECT o.OrderId, c.Name, SUM(l.Qty) FROM dbo.Orders o JOIN dbo.Customers c ON …", 2, 8_412, 0,
                     18_120_000, 18_120_000, 2_310, 41_000_000, null, 902, DateTime.UtcNow.AddMinutes(-3)),
@@ -242,8 +243,8 @@ public sealed class PageTemplateTests : IDisposable
                 new(3391, 0, null, "SELECT TOP (50) * FROM dbo.Products WHERE CategoryId = @p0", 1, 55_004, 0,
                     10_500_000, 10_500_000, 1_180, 9_000_000, null, 120, DateTime.UtcNow.AddMinutes(-2)),
             ])),
-            [nameof(IWaitStatsRepository.GetQueryStoreRegressionStatsAsync)] = Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true, stats)),
-        }), Settings());
+            GetQueryStoreRegressionStatsAsync = _ => Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true, stats)),
+        }, Settings());
         // In a window, as in the app, placed off the screen: a DataGrid that isn't laid out while the
         // dispatcher runs (here, while the verdict is read) shrinks its columns to their minimum.
         var window = new Window { Content = page, Width = 1400, Height = 820, Left = -20_000, Top = -20_000,

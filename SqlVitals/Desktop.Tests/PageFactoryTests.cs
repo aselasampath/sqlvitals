@@ -38,9 +38,9 @@ public sealed class PageFactoryTests : IDisposable
         Directory.CreateDirectory(_dir);
         var settings = new ConnectionSettingsService(_dir);
         _monitoring ??= new MonitoringManager(new HistoryWriter(Path.Combine(_dir, "history.db"), (_, _) => { }),
-                                              (_, _) => EvidencePagesTests.FakeRepository.Create(new()));
+                                              (_, _) => new FakeRepository());
         var server = Guid.NewGuid();
-        return new PageArgs(new Route(tag, ServerId: tag == "Overview" ? server : null), repo ?? EvidencePagesTests.FakeRepository.Create(new()),
+        return new PageArgs(new Route(tag, ServerId: tag == "Overview" ? server : null), repo ?? new FakeRepository(),
                             _monitoring, settings)
         {
             ConnectionName   = "PROD-SQL01",
@@ -89,10 +89,10 @@ public sealed class PageFactoryTests : IDisposable
     public void ACodeBehindPage_LoadsThroughItsViewModel_AndAFailureIsReportedOnce() => UiThread.Run(() =>
     {
         var error = new InvalidOperationException("Timeout expired.");
-        var repo  = TemplateRolloutTests.SequenceRepository.Create(new()
+        var repo  = new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetTopWaitTypesAsync)] = () => Task.FromException<IEnumerable<TopWaitType>>(error),
-        });
+            GetTopWaitTypesAsync = () => Task.FromException<IEnumerable<TopWaitType>>(error),
+        };
         var made = Factory().Create("TopWaits", Args("TopWaits", repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());

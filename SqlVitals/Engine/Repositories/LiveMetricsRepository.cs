@@ -84,7 +84,7 @@ public class LiveMetricsRepository(IConfiguration configuration) : BaseRepositor
 
     public async Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync()
     {
-        var sql = SqlScripts.Get("LiveMetrics/PerfmonCounters") + "\n" + PerfmonCounterFilter;
+        var sql = SqlScripts.Get("LiveMetrics/PerfmonCounters").Replace("/*COUNTER_FILTER*/", PerfmonCounterFilter);
 
         using var conn = CreateConnection();
         return (await Q(conn, sql)).Select(r =>

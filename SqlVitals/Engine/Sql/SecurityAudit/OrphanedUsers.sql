@@ -1,8 +1,8 @@
 SELECT dp.name                                         AS Name,
        dp.sid                                          AS Sid,
        dp.create_date                                  AS CreateDate,
-       (SELECT COUNT(*) FROM {db}.sys.schemas s WHERE s.principal_id = dp.principal_id) AS OwnedSchemas
-FROM {db}.sys.database_principals dp
+       (SELECT COUNT(*) FROM /*DATABASE*/.sys.schemas s WHERE s.principal_id = dp.principal_id) AS OwnedSchemas
+FROM /*DATABASE*/.sys.database_principals dp
 WHERE dp.type = 'S'
   AND dp.authentication_type = 1
   AND dp.principal_id > 4

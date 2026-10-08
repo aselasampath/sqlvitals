@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -170,11 +171,11 @@ public sealed class DetailsDrawerTests : IDisposable
             "BEGIN TRANSACTION;\nUPDATE dbo.Orders SET Status = @p0 WHERE OrderId = @p1;", "",
             openTran > 0 ? Now.AddMinutes(-4).AddSeconds(-12) : null, Now);
 
-    private static IWaitStatsRepository Sessions(params ProcessNode[] nodes) => EvidencePagesTests.FakeRepository.Create(new()
+    private static IWaitStatsRepository Sessions(params ProcessNode[] nodes) => new FakeRepository
     {
-        [nameof(IWaitStatsRepository.GetProcessesAsync)]   = Task.FromResult<IEnumerable<ProcessNode>>(nodes),
-        [nameof(IWaitStatsRepository.GetSessionPlanAsync)] = Task.FromResult(new SessionPlan(null, false)),
-    });
+        GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>(nodes),
+        GetSessionPlanAsync = _ => Task.FromResult(new SessionPlan(null, false)),
+    };
 
     [Fact]
     public void Processes_WithNothingSelected_SaysWhatToSelect_AndAClickOpensTheSession() => UiThread.Run(() =>
@@ -212,10 +213,10 @@ public sealed class DetailsDrawerTests : IDisposable
     public void Processes_ASessionThatHasGone_SaysSo() => UiThread.Run(() =>
     {
         var nodes = new List<ProcessNode> { Node(87), Node(5) };
-        var page = new ProcessesPage(EvidencePagesTests.FakeRepository.Create(new()
+        var page = new ProcessesPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetProcessesAsync)] = Task.FromResult<IEnumerable<ProcessNode>>(nodes),
-        }), Settings());
+            GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>(nodes),
+        }, Settings());
         UiThread.Wait(page.RefreshAsync());
         page.ProcessMap.ShowSession(87);
 
@@ -249,13 +250,13 @@ public sealed class DetailsDrawerTests : IDisposable
                                           200, 1482, 1630, 0, DateTime.UtcNow.AddDays(-20), DateTime.Now);
         var row = new QueryStoreQueryRow(4183, 0, null, "SELECT o.OrderId FROM dbo.Orders o", 2, 8_412, 0, 18_120, 18_120, 2_310, 41_000_000,
                                          null, 902, DateTime.UtcNow.AddMinutes(-3));
-        var page = new QueryStorePage(EvidencePagesTests.FakeRepository.Create(new()
+        var page = new QueryStorePage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetQueryStoreStatusAsync)]          = Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)),
-            [nameof(IWaitStatsRepository.GetQueryStoreTopQueriesAsync)]      = Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>([row])),
-            [nameof(IWaitStatsRepository.GetQueryStoreRegressionStatsAsync)] = Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true, [])),
-            [nameof(IWaitStatsRepository.GetQueryStoreQueryDetailsAsync)]    = Task.FromResult(new QueryStoreQueryDetails(null, [], [])),
-        }), Settings());
+            GetQueryStoreStatusAsync          = () => Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)),
+            GetQueryStoreTopQueriesAsync      = (_, _, _, _) => Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>([row])),
+            GetQueryStoreRegressionStatsAsync = _ => Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true, [])),
+            GetQueryStoreQueryDetailsAsync    = (_, _) => Task.FromResult(new QueryStoreQueryDetails(null, [], [])),
+        }, Settings());
         var source = (IDetailsSource)page;
         page.Tabs.SelectedItem = page.TabTop;   // off screen, no tab is selected until it is shown
         UiThread.Wait(page.RefreshAsync());

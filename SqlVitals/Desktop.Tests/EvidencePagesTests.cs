@@ -1,10 +1,10 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Home;
 using SqlVitals.Engine.Models;
@@ -44,10 +44,10 @@ public sealed class EvidencePagesTests : IDisposable
     [Fact]
     public void Processes_ShowsTheChainWaitingLongest_UntilShowAll() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(FakeRepository.Create(new()
+        var page = new ProcessesPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetProcessesAsync)] = Task.FromResult<IEnumerable<ProcessNode>>(Sessions),
-        }), new ConnectionSettingsService(_dir));
+            GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>(Sessions),
+        }, new ConnectionSettingsService(_dir));
         var focusPage = (IFocusPage)page;
 
         focusPage.ShowFocus(Focus(new FocusFilter(FocusKind.BlockingChain)));
@@ -68,10 +68,10 @@ public sealed class EvidencePagesTests : IDisposable
     [Fact]
     public void Processes_WithNothingBlocked_SaysSo() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(FakeRepository.Create(new()
+        var page = new ProcessesPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetProcessesAsync)] = Task.FromResult<IEnumerable<ProcessNode>>([Node(5), Node(6)]),
-        }), new ConnectionSettingsService(_dir));
+            GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>([Node(5), Node(6)]),
+        }, new ConnectionSettingsService(_dir));
 
         ((IFocusPage)page).ShowFocus(Focus(new FocusFilter(FocusKind.BlockingChain)));
         UiThread.Wait(page.RefreshAsync());
@@ -95,12 +95,11 @@ public sealed class EvidencePagesTests : IDisposable
     {
         // The server's clock is this PC's.
         var now  = DateTime.Now;
-        var page = new ResourceQueriesPage(FakeRepository.Create(new()
+        var page = new ResourceQueriesPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetResourceIntensiveQueriesAsync)] =
-                Task.FromResult<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(
+            GetResourceIntensiveQueriesAsync = _ => Task.FromResult<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(
                     ([], [Query("old", now.AddHours(-2), 900), Query("during", now.AddMinutes(-5), 500)], [])),
-        }), TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow));
+        }, TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow));
         var focusPage = (IFocusPage)page;
         var since     = DateTime.UtcNow.AddMinutes(-20);
 
@@ -127,11 +126,10 @@ public sealed class EvidencePagesTests : IDisposable
     [Fact]
     public void ActiveWaits_ShowsTheSession_AndTheSessionsItBlocks() => UiThread.Run(() =>
     {
-        var page = new ActiveWaitsPage(FakeRepository.Create(new()
+        var page = new ActiveWaitsPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetActiveWaitsAsync)] =
-                Task.FromResult<IEnumerable<ActiveWait>>([Wait(87), Wait(112, blockedBy: 87), Wait(200)]),
-        }));
+            GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>([Wait(87), Wait(112, blockedBy: 87), Wait(200)]),
+        });
         var focusPage = (IFocusPage)page;
 
         focusPage.ShowFocus(new PageFocus(new FocusFilter(FocusKind.Session, 87), new FocusOrigin(FocusSource.Page, "session 87", "Processes")));
@@ -185,23 +183,5 @@ public sealed class EvidencePagesTests : IDisposable
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
-    }
-
-    /// <summary>A repository answering the calls named with the results given.</summary>
-    public class FakeRepository : DispatchProxy
-    {
-        private Dictionary<string, object> _results = [];
-
-        public static IWaitStatsRepository Create(Dictionary<string, object> results)
-        {
-            var proxy = Create<IWaitStatsRepository, FakeRepository>();
-            ((FakeRepository)(object)proxy)._results = results;
-            return proxy;
-        }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            _results.TryGetValue(targetMethod!.Name, out var result)
-                ? result
-                : throw new NotSupportedException($"{targetMethod.Name} isn't faked in this test.");
     }
 }

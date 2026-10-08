@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -8,6 +7,7 @@ using System.Windows.Documents;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.AgentJobs;
 using SqlVitals.Engine.Deadlocks;
@@ -51,9 +51,9 @@ public sealed class OverviewPageTests : IDisposable
 
     private IWaitStatsRepository Repository(ConnectionSettings conn) => conn.Server switch
     {
-        "hot"  => MonitoringManagerTests.HotRepository.Create(conn.Server, _calls),
-        "calm" => CalmRepository.Create(conn.Server, _calls),
-        _      => MonitoringManagerTests.CountingRepository.Create(conn.Server, _calls),
+        "hot"  => MonitoringManagerTests.Hot(conn.Server, _calls),
+        "calm" => Calm(conn.Server, _calls),
+        _      => MonitoringManagerTests.Counting(conn.Server, _calls),
     };
 
     // On the UI thread: the four connections saved, Hot active, monitoring started automatically;
@@ -322,48 +322,32 @@ public sealed class OverviewPageTests : IDisposable
     /// A healthy server (CPU 12 %, four tasks waiting) with two deadlocks, an hour and five hours
     /// ago, and three Agent jobs: one failed half an hour ago, one yesterday, one that worked.
     /// </summary>
-    public class CalmRepository : MonitoringManagerTests.CountingRepository
+    internal static FakeRepository Calm(string server, ConcurrentQueue<(string, string)> calls) => new()
     {
-        public static new IWaitStatsRepository Create(string server, ConcurrentQueue<(string, string)> calls)
+        Unreachable = true,
+        Called      = method => calls.Enqueue((server, method)),
+        GetLiveMetricsAsync = () => Task.FromResult(new LiveMetricSnapshot(DateTime.Now, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 12,
+                                                                           PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
+                                                                           0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4)),
+        GetDeadlockHistoryAsync = () => Task.FromResult(new DeadlockHistory(
+            [Deadlock(DateTime.UtcNow.AddHours(-1)), Deadlock(DateTime.UtcNow.AddHours(-5))],
+            DeadlockSource.RingBuffer, 2, 0, null, null)),
+        GetAgentJobsAsync = () =>
         {
-            var proxy = DispatchProxy.Create<IWaitStatsRepository, CalmRepository>();
-            ((CalmRepository)(object)proxy).Init(server, calls);
-            return proxy;
-        }
+            var now = DateTime.Now;   // the server is on this PC's clock
+            return Task.FromResult(new AgentJobList(
+            [
+                Job("Nightly ETL",   JobOutcome.Failed,    now.AddMinutes(-35)),
+                Job("Weekly checks", JobOutcome.Failed,    now.AddDays(-1)),
+                Job("Backups",       JobOutcome.Succeeded, now.AddMinutes(-20)),
+            ], AgentServiceState.Running, now, null));
+        },
+    };
 
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            switch (targetMethod!.Name)
-            {
-                case nameof(IWaitStatsRepository.GetLiveMetricsAsync):
-                    base.Invoke(targetMethod, args);
-                    return Task.FromResult(new LiveMetricSnapshot(DateTime.Now, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 12,
-                                                                  PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
-                                                                  0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4));
-                case nameof(IWaitStatsRepository.GetDeadlockHistoryAsync):
-                    base.Invoke(targetMethod, args);
-                    return Task.FromResult(new DeadlockHistory(
-                        [Deadlock(DateTime.UtcNow.AddHours(-1)), Deadlock(DateTime.UtcNow.AddHours(-5))],
-                        DeadlockSource.RingBuffer, 2, 0, null, null));
-                case nameof(IWaitStatsRepository.GetAgentJobsAsync):
-                    base.Invoke(targetMethod, args);
-                    var now = DateTime.Now;   // the server is on this PC's clock
-                    return Task.FromResult(new AgentJobList(
-                    [
-                        Job("Nightly ETL",   JobOutcome.Failed,    now.AddMinutes(-35)),
-                        Job("Weekly checks", JobOutcome.Failed,    now.AddDays(-1)),
-                        Job("Backups",       JobOutcome.Succeeded, now.AddMinutes(-20)),
-                    ], AgentServiceState.Running, now, null));
-                default:
-                    return base.Invoke(targetMethod, args);
-            }
-        }
+    private static DeadlockReport Deadlock(DateTime utc) => new(utc, [], [], "<deadlock/>");
 
-        private static DeadlockReport Deadlock(DateTime utc) => new(utc, [], [], "<deadlock/>");
-
-        private static AgentJob Job(string name, JobOutcome outcome, DateTime start) =>
-            new(Guid.NewGuid(), name, true, null, null, null, outcome, start, TimeSpan.FromMinutes(5), null,
-                1, outcome == JobOutcome.Failed ? 1 : 0, outcome == JobOutcome.Succeeded ? 1 : 0,
-                null, null, null, null, "");
-    }
+    private static AgentJob Job(string name, JobOutcome outcome, DateTime start) =>
+        new(Guid.NewGuid(), name, true, null, null, null, outcome, start, TimeSpan.FromMinutes(5), null,
+            1, outcome == JobOutcome.Failed ? 1 : 0, outcome == JobOutcome.Succeeded ? 1 : 0,
+            null, null, null, null, "");
 }

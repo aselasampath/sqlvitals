@@ -51,8 +51,8 @@ public sealed class SettingsPageTests : IDisposable
     };
 
     private IWaitStatsRepository Repository(ConnectionSettings conn) => conn.Server == "hot"
-        ? MonitoringManagerTests.HotRepository.Create(conn.Server, _calls)
-        : MonitoringManagerTests.CountingRepository.Create(conn.Server, _calls);
+        ? MonitoringManagerTests.Hot(conn.Server, _calls)
+        : MonitoringManagerTests.Counting(conn.Server, _calls);
 
     // On the UI thread: the three connections saved, Hot active, monitoring started automatically,
     // one sample from each monitored connection, and the page opened at the location.

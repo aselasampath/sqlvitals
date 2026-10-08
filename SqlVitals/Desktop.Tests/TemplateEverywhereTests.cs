@@ -39,8 +39,6 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     private ConnectionSettingsService Settings() => new(_dir);
 
-    private static IWaitStatsRepository Repo(Dictionary<string, object> results) => EvidencePagesTests.FakeRepository.Create(results);
-
     private static readonly DateTime Now = DateTime.Now;
 
     // ── Memory Grants ────────────────────────────────────────────────────
@@ -56,14 +54,14 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     private static MemoryClerk Clerk(string name, long mb) => new("MEMORYCLERK_" + name, name, mb * 1024, mb, 5, Now);
 
-    private static IWaitStatsRepository MemoryRepo() => Repo(new()
+    private static IWaitStatsRepository MemoryRepo() => new FakeRepository
     {
-        [nameof(IWaitStatsRepository.GetMemorySnapshotAsync)] = Task.FromResult(Snapshot()),
-        [nameof(IWaitStatsRepository.GetMemoryGrantsAsync)] = Task.FromResult<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>((
+        GetMemorySnapshotAsync = () => Task.FromResult(Snapshot()),
+        GetMemoryGrantsAsync = () => Task.FromResult<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>((
             [Grant(51, false, 0, 2_097_152, 2_097_152), Grant(77, true, 41_000, 3_145_728, 0), Grant(78, true, 9_000, 1_048_576, 0)],
             [Clerk("SQLBUFFERPOOL", 18_400), Clerk("SQLQUERYPLAN", 2_100), Clerk("SQLCLR", 300)],
             [])),
-    });
+    };
 
     [Fact]
     public void Memory_OpensWithTheQueriesWaitingForMemory() => UiThread.Run(() =>
@@ -107,16 +105,16 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void TempDb_OpensWithWhoHoldsItAndTheRoomLeft() => UiThread.Run(() =>
     {
-        var page = new TempDbPage(Repo(new()
+        var page = new TempDbPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetTempDbPressureAsync)] = Task.FromResult<(IEnumerable<TempDbFile>, IEnumerable<TempDbSession>, IEnumerable<TempDbCounter>)>((
+            GetTempDbPressureAsync = () => Task.FromResult<(IEnumerable<TempDbFile>, IEnumerable<TempDbSession>, IEnumerable<TempDbCounter>)>((
                 [new("tempdev", "ROWS", @"T:\tempdb.mdf", 8_192, 2_100, 6_092, 25.6, "64 MB", Now),
                  new("temp2", "ROWS", @"T:\tempdb2.ndf", 8_192, 2_050, 6_142, 25.0, "64 MB", Now),
                  new("templog", "LOG", @"T:\templog.ldf", 2_048, 300, 1_748, 14.6, "64 MB", Now)],
                 [new(88, 20_480, 0, 870_400, 0, 890_880, "etl", "APP-ETL01", "Loader", "PAGELATCH_UP", "running", 4_000, "SalesDb", "INSERT #stage SELECT …", Now, "Critical"),
                  new(91, 4_096, 0, 0, 0, 4_096, "app", "APP-WEB03", "OrderService", null, "sleeping", 10, "SalesDb", null, Now, "Info")],
                 [new("Version Store Size (KB)", 12_288, Now), new("Free Space in tempdb (KB)", 12_500_000, Now), new("Active Temp Tables", 42, Now)])),
-        }), Settings());
+        }, Settings());
         Hosted(page, page.RefreshAsync, "tempdb.png", () => AssertLaidOut(page.Shell, page.SessionsGrid, minDetail: 150));
 
         var verdict = page.Shell.Verdict!;
@@ -146,7 +144,7 @@ public sealed class TemplateEverywhereTests : IDisposable
             Reading(10, Io(5, "SalesDb", 1, "ROWS", 1_400, 26_200, 120, 260, @"D:\"), Io(5, "SalesDb", 2, "LOG", 0, 0, 1_500, 4_000, @"L:\"),
                         Io(6, "HrDb", 1, "ROWS", 600, 1_300, 10, 10, @"E:\")),
         ]);
-        var repo = SequenceRepository.Create(new() { [nameof(IWaitStatsRepository.ReadFileIoAsync)] = () => Task.FromResult(readings.Count > 1 ? readings.Dequeue() : readings.Peek()) });
+        var repo = new FakeRepository { ReadFileIoAsync = () => Task.FromResult(readings.Count > 1 ? readings.Dequeue() : readings.Peek()) };
         var settings = Settings();
         var page = new FileIoPage(repo, settings);
         Hosted(page, async () =>
@@ -187,16 +185,16 @@ public sealed class TemplateEverywhereTests : IDisposable
         new(db, "ONLINE", "FULL", 160, "Latin1_General_CI_AS", autoShrink, true, true, true, false, false, type, logical,
             $@"D:\MSSQL\{logical}.{(type == "LOG" ? "ldf" : "mdf")}", sizeMb, sizeMb * 0.8m, sizeMb * 0.2m, maxMb, type == "LOG" ? "512 MB" : "10%");
 
-    private static IWaitStatsRepository StorageRepo() => Repo(new()
+    private static IWaitStatsRepository StorageRepo() => new FakeRepository
     {
-        [nameof(IWaitStatsRepository.GetDatabaseStorageAsync)] = Task.FromResult<(IEnumerable<ServerConfigParam>, IEnumerable<DatabaseFile>, IEnumerable<TempDbFileSummary>, IEnumerable<TableStorage>)>((
+        GetDatabaseStorageAsync = () => Task.FromResult<(IEnumerable<ServerConfigParam>, IEnumerable<DatabaseFile>, IEnumerable<TempDbFileSummary>, IEnumerable<TableStorage>)>((
             [new("max degree of parallelism", 8, 0, 32767, "maximum degree of parallelism", true, true),
              new("cost threshold for parallelism", 50, 0, 32767, "cost threshold for parallelism", true, true)],
             [DbFile("SalesDb", "ROWS", "SalesDb", 412_000), DbFile("SalesDb", "LOG", "SalesDb_log", 30_720, maxMb: 32_768),
              DbFile("HrDb", "ROWS", "HrDb", 2_048, autoShrink: true), DbFile("HrDb", "LOG", "HrDb_log", 512)],
             [new("tempdev", "ROWS", @"T:\tempdb.mdf", 8_192, 2_100, 6_092)],
             [new("dbo", "Orders", 48_000_000, 92_000, 31_000, 123_000, 122_400, 600, 6, "Clustered")])),
-    });
+    };
 
     [Fact]
     public void DbStorage_OpensWithTheFileNearItsLimit() => UiThread.Run(() =>
@@ -245,16 +243,16 @@ public sealed class TemplateEverywhereTests : IDisposable
     public void Perfmon_OpensWithTheCountersPastTheirLimit() => UiThread.Run(() =>
     {
         static PerfmonCounter Counter(string name, long value, int type = 65792) => new("SQLServer:Memory Manager", name, "", value, type, Now);
-        var page = new PerfmonPage(Repo(new()
+        var page = new PerfmonPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetPerfmonCountersAsync)] = Task.FromResult<IEnumerable<PerfmonCounter>>(
+            GetPerfmonCountersAsync = () => Task.FromResult<IEnumerable<PerfmonCounter>>(
             [
                 Counter("Batch Requests/sec", 1_200_000, LiveMetricsRepository.PerfmonRateCounterType),
                 Counter("Memory Grants Pending", 3),
                 Counter("Target Server Memory (KB)", 28_000_000),
                 Counter("Total Server Memory (KB)", 24_000_000),
             ]),
-        }), null, Settings());
+        }, null, Settings());
 
         // Before anything is read: what to do.
         Assert.Equal("Not charting yet", page.Shell.Verdict!.Headline);
@@ -283,17 +281,17 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void IndexHealth_OpensWithTheMostValuableMissingIndex() => UiThread.Run(() =>
     {
-        var page = new IndexHealthPage(Repo(new()
+        var page = new IndexHealthPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetIndexHealthAsync)] = Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>((
+            GetIndexHealthAsync = () => Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>((
                 [Missing("OrderLines", 54_000, "WARNING", 3_100), Missing("Orders", 310_000, "CRITICAL", 18_400), Missing("Notes", 900, "INFO", 12)],
                 [new("SalesDb", "dbo", "Orders", "IX_Orders_Legacy", "NONCLUSTERED", false, false, false, 0, 0, 0, 912_000, null, null, Now, 0, 48_000_000, Now)])),
-            [nameof(IWaitStatsRepository.GetIndexUsagePatternsAsync)] = Task.FromResult<IEnumerable<IndexUsagePattern>>(
+            GetIndexUsagePatternsAsync = () => Task.FromResult<IEnumerable<IndexUsagePattern>>(
                 [new("Orders", "PK_Orders", "CLUSTERED", 4_000_000, 120, 0, 900_000, Now, Now, null, Now, "Healthy", "SalesDb", Now)]),
-            [nameof(IWaitStatsRepository.SupportsOnlineIndexRebuildAsync)] = Task.FromResult(true),
-            [nameof(IWaitStatsRepository.GetIndexFragmentationAsync)] = Task.FromResult<IEnumerable<IndexFragmentation>>(
+            SupportsOnlineIndexRebuildAsync = () => Task.FromResult(true),
+            GetIndexFragmentationAsync = (_, _) => Task.FromResult<IEnumerable<IndexFragmentation>>(
                 [new("dbo", "Orders", "IX_Orders_Date", "NONCLUSTERED INDEX", 41.5, 120_000, 71.2, 48_000_000, "SalesDb", "Rebuild", Now)]),
-        }), Settings());
+        }, Settings());
         Hosted(page, page.RefreshAsync, "index-health.png", () => AssertLaidOut(page.Shell, page.Tabs));
 
         var verdict = page.Shell.Verdict!;
@@ -324,12 +322,12 @@ public sealed class TemplateEverywhereTests : IDisposable
         static StaleStatistic Stat(string table, string name, long rows, long changes, int days) =>
             new("dbo", table, name, Now.AddDays(-days), days, rows, rows / 4, 25, changes, false, name.StartsWith("_WA", StringComparison.Ordinal), false, "SalesDb", Now);
         var settings = Settings();
-        var page = new StaleStatisticsPage(Repo(new()
+        var page = new StaleStatisticsPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetStaleStatisticsAsync)] = Task.FromResult<IEnumerable<StaleStatistic>>(
+            GetStaleStatisticsAsync = () => Task.FromResult<IEnumerable<StaleStatistic>>(
                 [Stat("Orders", "IX_Orders_Date", 48_000_000, 2_100_000, 9), Stat("OrderLines", "_WA_Sys_00000003_2A4B4B5E", 900_000, 410_000, 31),
                  Stat("Customers", "PK_Customers", 1_200_000, 12_000, 4)]),
-        }), settings);
+        }, settings);
         Hosted(page, page.RefreshAsync, "stale-stats.png", () => AssertLaidOut(page.Shell, page.StatsGrid));
 
         var verdict = page.Shell.Verdict!;
@@ -365,11 +363,11 @@ public sealed class TemplateEverywhereTests : IDisposable
         var runReads = 0;
         IReadOnlyList<JobRun> runs = [new(Now.AddHours(-6), JobOutcome.Failed, TimeSpan.FromMinutes(6), "The job failed.",
                                           [Step(1, "Check space", JobOutcome.Succeeded, "Done."), Step(2, "Backup", JobOutcome.Failed, "BACKUP DATABASE is terminating abnormally: disk full.")])];
-        var page = new AgentJobsPage(SequenceRepository.Create(new()
+        var page = new AgentJobsPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetAgentJobsAsync)] = () => Task.FromResult(new AgentJobList(jobs, AgentServiceState.Running, Now, null)),
-            [nameof(IWaitStatsRepository.GetAgentJobRunsAsync)] = () => ++runReads <= 3 ? Task.FromResult(runs) : new TaskCompletionSource<IReadOnlyList<JobRun>>().Task,
-        }), Settings());
+            GetAgentJobsAsync = () => Task.FromResult(new AgentJobList(jobs, AgentServiceState.Running, Now, null)),
+            GetAgentJobRunsAsync = (_, _) => ++runReads <= 3 ? Task.FromResult(runs) : new TaskCompletionSource<IReadOnlyList<JobRun>>().Task,
+        }, Settings());
         Hosted(page, async () => { await page.RefreshAsync(); await Task.Delay(50); }, "agent-jobs.png", () => AssertLaidOut(page.Shell, page.JobsGrid, minDetail: 100));
 
         var verdict = page.Shell.Verdict!;
@@ -406,9 +404,9 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void ConfigChecks_OpensWithTheRiskiestFailingCheck() => UiThread.Run(() =>
     {
-        var page = new ConfigChecksPage(Repo(new()
+        var page = new ConfigChecksPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetConfigurationChecksAsync)] = Task.FromResult(new ConfigCheckList(ConfigCheckList.Sort(
+            GetConfigurationChecksAsync = () => Task.FromResult(new ConfigCheckList(ConfigCheckList.Sort(
             [
                 new(ConfigCheckKind.MaxDop, ConfigCheck.ServerScope, ConfigCheckStatus.Warn, "0 (all 16 cores)", "8",
                     "With MAXDOP 0 one query can take every core.", "EXEC sp_configure 'max degree of parallelism', 8;"),
@@ -417,7 +415,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 new(ConfigCheckKind.CostThreshold, ConfigCheck.ServerScope, ConfigCheckStatus.Pass, "50", "50 or more", "Fine."),
                 new(ConfigCheckKind.AutoShrink, "All 12 databases", ConfigCheckStatus.Pass, "OFF", "OFF", "Fine."),
             ]), null)),
-        }), "PROD-SQL01", Settings());
+        }, "PROD-SQL01", Settings());
         Hosted(page, page.RefreshAsync, "config-checks.png", () => AssertLaidOut(page.Shell, page.ChecksGrid));
 
         var verdict = page.Shell.Verdict!;
@@ -442,9 +440,9 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void SecurityAudit_OpensWithTheHighestRisk() => UiThread.Run(() =>
     {
-        var page = new SecurityAuditPage(Repo(new()
+        var page = new SecurityAuditPage(new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetSecurityAuditAsync)] = Task.FromResult(new SecurityFindingList(SecurityFindingList.Sort(
+            GetSecurityAuditAsync = () => Task.FromResult(new SecurityFindingList(SecurityFindingList.Sort(
             [
                 new(SecurityCheckKind.SysadminMember, SecurityFinding.ServerScope, @"CORP\svc_reports", SecurityFindingStatus.Risk, "Windows login · sysadmin",
                     "A service account in sysadmin can do anything if it is compromised.", @"ALTER SERVER ROLE sysadmin DROP MEMBER [CORP\svc_reports];"),
@@ -453,7 +451,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 new(SecurityCheckKind.Trustworthy, "SalesDb", "SalesDb", SecurityFindingStatus.Pass, "OFF", "Fine."),
                 new(SecurityCheckKind.OrphanedUser, "HrDb", "old_app", SecurityFindingStatus.Review, "SQL user · no login", "Nobody can log in as it."),
             ]), null)),
-        }), "PROD-SQL01", Settings());
+        }, "PROD-SQL01", Settings());
         Hosted(page, page.RefreshAsync, "security-audit.png", () => AssertLaidOut(page.Shell, page.FindingsGrid));
 
         var verdict = page.Shell.Verdict!;
@@ -484,7 +482,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         settings.SetActive(hot.Id);
         settings.SetStartMonitoringAutomatically(true);
         _monitoring = new MonitoringManager(new HistoryWriter(Path.Combine(_dir, "history.db"), (_, _) => { }),
-                                            (conn, _) => MonitoringManagerTests.HotRepository.Create(conn.Server, calls));
+                                            (conn, _) => MonitoringManagerTests.Hot(conn.Server, calls));
         _monitoring.Sync(settings.Load(), ActivitySources.AutomaticAtStartup);
         for (var i = 0; i < 3; i++)
             UiThread.Wait(_monitoring.Get(hot.Id)!.CollectNowAsync());
@@ -516,7 +514,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void Export_SaysWhatItWillWrite_AndWhatIsMissing() => UiThread.Run(() =>
     {
-        var page = new ExportPage(Repo(new()), Settings());
+        var page = new ExportPage(new FakeRepository(), Settings());
         page.TxtFilePath.Text = @"C:\Reports";
         Hosted(page, () => Task.CompletedTask, "export.png", () => AssertLaidOut(page.Shell, page.GroupList, minDetail: 150));
 
@@ -540,20 +538,20 @@ public sealed class TemplateEverywhereTests : IDisposable
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
     {
         var error = new InvalidOperationException("Timeout expired.");
-        var repo  = SequenceRepository.Create(new()
+        var repo  = new FakeRepository
         {
-            [nameof(IWaitStatsRepository.GetMemorySnapshotAsync)]      = () => Task.FromException<MemorySnapshot>(error),
-            [nameof(IWaitStatsRepository.GetMemoryGrantsAsync)]        = () => Task.FromException<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>(error),
-            [nameof(IWaitStatsRepository.GetTempDbPressureAsync)]      = () => Task.FromException<(IEnumerable<TempDbFile>, IEnumerable<TempDbSession>, IEnumerable<TempDbCounter>)>(error),
-            [nameof(IWaitStatsRepository.ReadFileIoAsync)]             = () => Task.FromException<FileIoReading>(error),
-            [nameof(IWaitStatsRepository.GetDatabaseStorageAsync)]     = () => Task.FromException<(IEnumerable<ServerConfigParam>, IEnumerable<DatabaseFile>, IEnumerable<TempDbFileSummary>, IEnumerable<TableStorage>)>(error),
-            [nameof(IWaitStatsRepository.GetPerfmonCountersAsync)]     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
-            [nameof(IWaitStatsRepository.GetIndexHealthAsync)]         = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
-            [nameof(IWaitStatsRepository.GetStaleStatisticsAsync)]     = () => Task.FromException<IEnumerable<StaleStatistic>>(error),
-            [nameof(IWaitStatsRepository.GetAgentJobsAsync)]           = () => Task.FromException<AgentJobList>(error),
-            [nameof(IWaitStatsRepository.GetConfigurationChecksAsync)] = () => Task.FromException<ConfigCheckList>(error),
-            [nameof(IWaitStatsRepository.GetSecurityAuditAsync)]       = () => Task.FromException<SecurityFindingList>(error),
-        });
+            GetMemorySnapshotAsync      = () => Task.FromException<MemorySnapshot>(error),
+            GetMemoryGrantsAsync        = () => Task.FromException<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>(error),
+            GetTempDbPressureAsync      = () => Task.FromException<(IEnumerable<TempDbFile>, IEnumerable<TempDbSession>, IEnumerable<TempDbCounter>)>(error),
+            ReadFileIoAsync             = () => Task.FromException<FileIoReading>(error),
+            GetDatabaseStorageAsync     = () => Task.FromException<(IEnumerable<ServerConfigParam>, IEnumerable<DatabaseFile>, IEnumerable<TempDbFileSummary>, IEnumerable<TableStorage>)>(error),
+            GetPerfmonCountersAsync     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
+            GetIndexHealthAsync         = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
+            GetStaleStatisticsAsync     = () => Task.FromException<IEnumerable<StaleStatistic>>(error),
+            GetAgentJobsAsync           = () => Task.FromException<AgentJobList>(error),
+            GetConfigurationChecksAsync = () => Task.FromException<ConfigCheckList>(error),
+            GetSecurityAuditAsync       = () => Task.FromException<SecurityFindingList>(error),
+        };
         ICodeBehindPage page = tag switch
         {
             "Memory"        => new MemoryGrantsPage(repo),
@@ -615,7 +613,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     {
         UiThread.Run(() =>
         {
-            var repo = Repo(new());
+            var repo = new FakeRepository();
             var settings = Settings();
             (string Key, Page Page, PageKind Kind)[] pages =
             [
