@@ -16,7 +16,7 @@ public sealed class PageBarToolsTests
     private static readonly ConcurrentQueue<(string, string)> Calls = new();
 
     private static Engine.Repositories.IWaitStatsRepository Repo() =>
-        MonitoringManagerTests.CountingRepository.Create("prod", Calls);
+        MonitoringManagerTests.Counting("prod", Calls);
 
     public static TheoryData<string> TrendPages => new() { "LiveMetrics", "WaitTrend", "Perfmon" };
 
