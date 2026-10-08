@@ -6,8 +6,8 @@ namespace SqlVitals.Engine.Repositories;
 public interface ILiveMetricsRepository
 {
     // ── Live metrics dashboard ───────────────────────────────────────
-    Task<LiveMetricSnapshot> GetLiveMetricsAsync();
+    Task<LiveMetricSnapshot> GetLiveMetricsAsync(CancellationToken cancellationToken = default);
 
     // ── Perfmon counters (live DMV snapshot) ─────────────────────────
-    Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync();
+    Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync(CancellationToken cancellationToken = default);
 }

@@ -1,4 +1,5 @@
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -112,9 +113,10 @@ public sealed class HistoryRecorder
 
     /// <summary>
     /// Takes a detail snapshot when one is due and none is already running. Never throws; the
-    /// server reads run off the calling thread.
+    /// server reads run off the calling thread. Cancelled (monitoring stopped), or held up by a
+    /// lock past monitoring's LOCK_TIMEOUT, it is skipped without an error: the next one is due as usual.
     /// </summary>
-    public async Task CollectDetailIfDueAsync()
+    public async Task CollectDetailIfDueAsync(CancellationToken cancellationToken = default)
     {
         // _lastDetail is only read or written while holding the in-flight flag.
         if (Interlocked.Exchange(ref _detailInFlight, 1) == 1)
@@ -127,7 +129,13 @@ public sealed class HistoryRecorder
 
         try
         {
-            await CollectDetailAsync().ConfigureAwait(false);
+            await CollectDetailAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (WaitStatsException ex) when (ex.Failure.Kind == SqlFailureKind.LockTimeout)
+        {
         }
         catch (Exception ex)
         {
@@ -140,11 +148,11 @@ public sealed class HistoryRecorder
         }
     }
 
-    private async Task CollectDetailAsync()
+    private async Task CollectDetailAsync(CancellationToken cancellationToken)
     {
         var since = _tracker.QueriesExecutedSince;
         var snapshot = await _repository
-            .GetHistoryDetailAsync(since, since is null ? BaselineQueryLimit : IntervalQueryLimit)
+            .GetHistoryDetailAsync(since, since is null ? BaselineQueryLimit : IntervalQueryLimit, cancellationToken)
             .ConfigureAwait(false);
         var capturedUtc = _time.GetUtcNow().UtcDateTime;
 
@@ -166,9 +174,9 @@ public sealed class HistoryRecorder
         {
             try
             {
-                texts = await _repository.GetQueryTextsAsync(missing, MaxQueryTextLength).ConfigureAwait(false);
+                texts = await _repository.GetQueryTextsAsync(missing, MaxQueryTextLength, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 // The numbers are still worth keeping; the text is fetched again next time.
                 _reporter.Report($"Could not read query text for monitoring history of {Connection.Name}.", ex);

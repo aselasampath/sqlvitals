@@ -52,9 +52,9 @@ public partial class SqlScriptsTests
     [Fact]
     public void A_script_is_its_file_without_the_final_newline()
     {
-        var sql = SqlScripts.Get("Server/Edition");
+        var sql = SqlScripts.Get("Server/Capabilities");
 
-        Assert.Equal("SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition", sql);
+        Assert.Equal("SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition, CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128)) AS ProductVersion", sql);
     }
 
     [Fact]

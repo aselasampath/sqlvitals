@@ -248,18 +248,22 @@ public class HistoryRecorderTests
         public List<string[]>                                TextCalls   { get; } = new();
         public Exception?                                    DetailFailure { get; set; }
         public Exception?                                    TextFailure   { get; set; }
+        public List<CancellationToken>                       Tokens      { get; } = new();
 
-        public async Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries)
+        public async Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries, CancellationToken cancellationToken)
         {
             await Task.Yield();
+            Tokens.Add(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             DetailCalls.Add((queriesExecutedSince, maxQueries));
             if (DetailFailure is not null) throw DetailFailure;
             return Snapshots.Dequeue();
         }
 
-        public async Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength)
+        public async Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength, CancellationToken cancellationToken)
         {
             await Task.Yield();
+            Tokens.Add(cancellationToken);
             TextCalls.Add(queryHashes.ToArray());
             if (TextFailure is not null) throw TextFailure;
             Assert.Equal(HistoryRecorder.MaxQueryTextLength, maxLength);

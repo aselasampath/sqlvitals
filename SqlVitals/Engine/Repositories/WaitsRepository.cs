@@ -3,7 +3,7 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Wait statistics: cumulative, active, signal versus resource, and the top wait types. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class WaitsRepository(SqlTarget target) : BaseRepository(target), IWaitsRepository
+public class WaitsRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IWaitsRepository
 {
     // ── Helper: category → hex color ─────────────────────────────────
     internal static string CategoryColor(string cat) => cat switch
@@ -19,12 +19,12 @@ public class WaitsRepository(SqlTarget target) : BaseRepository(target), IWaitsR
     };
 
     // ── 1. Cumulative wait stats ──────────────────────────────────────
-    public async Task<IEnumerable<WaitStatCumulative>> GetCumulativeWaitsAsync()
+    public async Task<IEnumerable<WaitStatCumulative>> GetCumulativeWaitsAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("Waits/CumulativeWaits");
 
         using var conn = CreateConnection();
-        var rows = await Q(conn, sql);
+        var rows = await Q(conn, sql, cancellationToken);
         return rows.Select(r => new WaitStatCumulative(
             (string)r.WaitType, (string)r.WaitCategory, (int)r.IsBenign,
             (long)r.WaitingTasksCount, (long)r.WaitTimeMs, (long)r.MaxWaitTimeMs,
@@ -42,11 +42,11 @@ public class WaitsRepository(SqlTarget target) : BaseRepository(target), IWaitsR
     // sys.dm_exec_requests.dop is SQL Server 2016+; before that the degree of parallelism reads 0.
     internal static string ActiveWaitsSql(bool hasDop) => ActiveWaitsSqlTemplate.Replace("/*DOP*/", hasDop ? "r.dop" : "0");
 
-    public async Task<IEnumerable<ActiveWait>> GetActiveWaitsAsync()
+    public async Task<IEnumerable<ActiveWait>> GetActiveWaitsAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var sql = ActiveWaitsSql(await HasColumnAsync(conn, "sys.dm_exec_requests", "dop"));
-        var rows = await Q(conn, sql);
+        var sql = ActiveWaitsSql(await HasColumnAsync(conn, "sys.dm_exec_requests", "dop", cancellationToken));
+        var rows = await Q(conn, sql, cancellationToken);
         return rows.Select(r =>
         {
             double sec = (double)r.WaitTimeSec;
@@ -70,12 +70,12 @@ public class WaitsRepository(SqlTarget target) : BaseRepository(target), IWaitsR
     private static readonly string ActiveWaitsSqlTemplate = SqlScripts.Get("Waits/ActiveWaits");
 
     // ── 4. Signal vs resource ─────────────────────────────────────────
-    public async Task<SignalVsResourceWait?> GetSignalVsResourceAsync()
+    public async Task<SignalVsResourceWait?> GetSignalVsResourceAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("Waits/SignalVsResource");
 
         using var conn = CreateConnection();
-        var r = await QFirst(conn, sql);
+        var r = await QFirst(conn, sql, cancellationToken);
         if (r is null) return null;
         return new SignalVsResourceWait(
             (long)r.TotalWaitMs, (long)r.TotalSignalMs, (long)r.TotalResourceMs,
@@ -87,12 +87,12 @@ public class WaitsRepository(SqlTarget target) : BaseRepository(target), IWaitsR
     }
 
     // ── 5. Top 25 wait types ──────────────────────────────────────────
-    public async Task<IEnumerable<TopWaitType>> GetTopWaitTypesAsync()
+    public async Task<IEnumerable<TopWaitType>> GetTopWaitTypesAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("Waits/TopWaitTypes");
 
         using var conn = CreateConnection();
-        var rows = await Q(conn, sql);
+        var rows = await Q(conn, sql, cancellationToken);
         return rows.Select(r =>
         {
             string cat = (string)r.WaitCategory;

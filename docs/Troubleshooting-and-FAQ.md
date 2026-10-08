@@ -10,7 +10,7 @@ SqlVitals checks every connection before saving it. Check, in order:
 4. **Credentials**: try the same login in SSMS.
 
 **A screen shows a permission error.**
-Your login lacks `VIEW SERVER STATE` (or `VIEW DATABASE STATE` on Azure SQL Database). See [Installation → Ask your DBA](Installation.md#ask-your-dba-for-permission).
+Your login lacks `VIEW SERVER STATE` (or `VIEW DATABASE STATE` on Azure SQL Database), or another permission the screen names. From 0.69.0 the screen shows the `GRANT` that adds it, for your DBA to run once; then press Refresh. See [When a permission is missing](Server-Impact-and-Permissions.md#when-a-permission-is-missing) and [Installation → Ask your DBA](Installation.md#ask-your-dba-for-permission).
 
 **I'm asked for my password every time I start the app.**
 **Remember password** is unticked for that connection. That's deliberate: passwords then never reach disk. Tick it if you prefer.

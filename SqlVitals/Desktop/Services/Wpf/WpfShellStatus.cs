@@ -12,6 +12,9 @@ internal sealed class WpfShellStatus(Func<MainWindow?> window, ILogger<WpfShellS
 
     public void ReportError(object page, string source, Exception exception, PageRead read)
     {
+        // A read cancelled because the page was left, or its server switched, isn't an error (#167).
+        if (exception is OperationCanceledException)
+            return;
         log.Error(read switch
         {
             PageRead.Load    => $"{source}: load failed",

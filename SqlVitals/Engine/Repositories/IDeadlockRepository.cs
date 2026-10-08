@@ -10,5 +10,5 @@ public interface IDeadlockRepository
     /// event files, or its ring buffer when the files can't be read. Never throws for a missing
     /// permission, a stopped session or Azure SQL Database: the history then carries the reason.
     /// </summary>
-    Task<DeadlockHistory> GetDeadlockHistoryAsync();
+    Task<DeadlockHistory> GetDeadlockHistoryAsync(CancellationToken cancellationToken = default);
 }

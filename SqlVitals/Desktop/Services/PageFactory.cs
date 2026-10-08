@@ -2,6 +2,7 @@ using System.Windows.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Services;
 
@@ -42,11 +43,13 @@ public sealed class PageFactory(IServiceProvider services, IShellStatus shell, I
         if (!_pages.TryGetValue(tag, out var registration))
             throw new ArgumentException($"No page is registered for \"{tag}\": add it to PageRegistrations.", nameof(tag));
 
-        var page = registration.Create(services, args);
+        // Every query the page starts ends when the page is left (#167), from its view model or its code-behind.
+        var lifetime = new PageLifetime();
+        var page = registration.Create(services, args with { Repo = new LifetimeRepository(args.Repo, () => lifetime.Token) });
         // Until its wave of #180, the page's code-behind reads, as it did when the window called it.
         if (page is { View: ICodeBehindPage codeBehind, ViewModel: CodeBehindViewModel model })
             model.LoadThrough(codeBehind);
-        page.ViewModel.Connect(tag, shell, scheduler);
+        page.ViewModel.Connect(tag, shell, scheduler, lifetime);
         page.View.DataContext = page.ViewModel;
         return page;
     }

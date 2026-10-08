@@ -9,11 +9,8 @@ namespace SqlVitals.Engine.Repositories;
 /// processors and memory, TempDB's data files and each database's options. Read only. The
 /// processors and memory need VIEW SERVER STATE; without it the rest is still checked.
 /// </summary>
-public class ConfigurationRepository(SqlTarget target) : BaseRepository(target), IConfigurationRepository
+public class ConfigurationRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IConfigurationRepository
 {
-    // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022) is missing.
-    private static readonly int[] PermissionErrors = [297, 300];
-
     internal static readonly string ServerSql = SqlScripts.Get("Configuration/Server");
 
     // value_in_use is what the server runs with; value differs until RECONFIGURE.
@@ -33,16 +30,16 @@ public class ConfigurationRepository(SqlTarget target) : BaseRepository(target),
     // Azure SQL Database sets MAXDOP per database.
     internal static readonly string DatabaseMaxDopSql = SqlScripts.Get("Configuration/DatabaseMaxDop");
 
-    public async Task<ConfigCheckList> GetConfigurationChecksAsync()
+    public async Task<ConfigCheckList> GetConfigurationChecksAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
-        var server  = await QFirst(conn, ServerSql);
+        var server  = await QFirst(conn, ServerSql, cancellationToken);
         int edition = server is null ? 0 : Convert.ToInt32(server.Edition);
         var version = (string?)server?.ProductVersion ?? string.Empty;
         var isAzure = edition == ServerConfiguration.AzureSqlDatabaseEdition;
 
-        var databases = (await Q(conn, DatabasesSql)).Select(r => new DatabaseOptions(
+        var databases = (await Q(conn, DatabasesSql, cancellationToken)).Select(r => new DatabaseOptions(
             (string)r.Name,
             Convert.ToInt32(r.CompatibilityLevel),
             Convert.ToInt32(r.AutoShrink) == 1,
@@ -54,7 +51,7 @@ public class ConfigurationRepository(SqlTarget target) : BaseRepository(target),
             int? maxDop = null;
             try
             {
-                var row = await QFirst(conn, DatabaseMaxDopSql);
+                var row = await QFirst(conn, DatabaseMaxDopSql, cancellationToken);
                 maxDop = row is null ? null : Convert.ToInt32(row.Value);
             }
             catch (WaitStatsException)
@@ -64,7 +61,7 @@ public class ConfigurationRepository(SqlTarget target) : BaseRepository(target),
             return ConfigurationChecks.Run(new ServerConfiguration(edition, version, null, null, null, null, databases, null, maxDop));
         }
 
-        var options = (await Q(conn, OptionsSql)).ToDictionary(
+        var options = (await Q(conn, OptionsSql, cancellationToken)).ToDictionary(
             r => (string)r.Name,
             r => new ConfigOption(Convert.ToInt64(r.Value), Convert.ToInt64(r.ValueInUse)),
             StringComparer.OrdinalIgnoreCase);
@@ -75,17 +72,17 @@ public class ConfigurationRepository(SqlTarget target) : BaseRepository(target),
             options.GetValueOrDefault("max degree of parallelism"),
             options.GetValueOrDefault("cost threshold for parallelism"),
             options.GetValueOrDefault("max server memory (MB)"),
-            await ReadHardwareAsync(conn),
+            await ReadHardwareAsync(conn, cancellationToken: cancellationToken),
             databases,
-            await ReadTempDbAsync(conn));
+            await ReadTempDbAsync(conn, cancellationToken: cancellationToken));
         return ConfigurationChecks.Run(config);
     }
 
-    private async Task<ServerHardware?> ReadHardwareAsync(IDbConnection conn)
+    private async Task<ServerHardware?> ReadHardwareAsync(IDbConnection conn, CancellationToken cancellationToken)
     {
         try
         {
-            var r = await QFirst(conn, HardwareSql);
+            var r = await QFirst(conn, HardwareSql, cancellationToken);
             if (r is null)
                 return null;
             int processors = r.LogicalProcessors is null ? 0 : Convert.ToInt32(r.LogicalProcessors);
@@ -97,18 +94,18 @@ public class ConfigurationRepository(SqlTarget target) : BaseRepository(target),
                 Convert.ToInt32(r.ProcessorsPerNumaNode ?? processors),
                 Convert.ToInt64(r.PhysicalMemoryMb ?? 0L));
         }
-        catch (WaitStatsException ex) when (PermissionErrors.Contains(ex.SqlErrorNumber))
+        catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
             return null;
         }
     }
 
     // Not needed for the other checks, so a TempDB that can't be read leaves only its own two out.
-    private async Task<IReadOnlyList<TempDbDataFile>?> ReadTempDbAsync(IDbConnection conn)
+    private async Task<IReadOnlyList<TempDbDataFile>?> ReadTempDbAsync(IDbConnection conn, CancellationToken cancellationToken)
     {
         try
         {
-            return (await Q(conn, TempDbSql)).Select(r => new TempDbDataFile(
+            return (await Q(conn, TempDbSql, cancellationToken)).Select(r => new TempDbDataFile(
                 (string)r.Name,
                 (string?)r.PhysicalName ?? string.Empty,
                 Convert.ToInt64(r.SizeMb),

@@ -30,11 +30,29 @@ public sealed class WaitStatsException : Exception
     /// <summary>Short tag suitable for display and code-search: "Component.Operation".</summary>
     public string ErrorTag => $"{Component}.{Operation}";
 
-    public WaitStatsException(string component, string operation, Exception inner)
+    /// <summary>The failure classified (#167): a missing permission, a lock timeout, a timeout, or other.</summary>
+    public SqlFailure Failure { get; }
+
+    /// <summary>The login the query ran as, for the <c>GRANT</c> that fixes a permission failure; null when unknown.</summary>
+    public string? Login { get; }
+
+    /// <summary>The script that fixes a permission failure; null for any other.</summary>
+    public string? FixScript => Failure.FixScript(Login);
+
+    public WaitStatsException(string component, string operation, Exception inner, string? login = null)
+        : this(component, operation, inner,
+               inner is SqlException sql ? SqlFailure.Classify(sql.Number, sql.Message) : SqlFailure.None, login)
+    {
+    }
+
+    /// <summary>A failure already classified: one a host read another way, or a test's.</summary>
+    public WaitStatsException(string component, string operation, Exception inner, SqlFailure failure, string? login = null)
         : base($"[{component}.{operation}] {inner.Message}", inner)
     {
-        Component    = component;
-        Operation    = operation;
-        SqlErrorNumber = inner is SqlException sql ? sql.Number : 0;
+        Component      = component;
+        Operation      = operation;
+        SqlErrorNumber = inner is SqlException sql ? sql.Number : failure.Number;
+        Failure        = failure;
+        Login          = login;
     }
 }

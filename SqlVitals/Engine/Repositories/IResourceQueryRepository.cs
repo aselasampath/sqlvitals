@@ -8,7 +8,7 @@ public interface IResourceQueryRepository
     // ── Resource-intensive queries ───────────────────────────────────
     Task<(IEnumerable<ResourceIntensiveQuery> ByReads,
           IEnumerable<ResourceIntensiveQuery> ByCpu,
-          IEnumerable<ResourceIntensiveQuery> ByHighestReads)> GetResourceIntensiveQueriesAsync(int topN = 20);
-    Task<string?> GetObjectQueryPlanAsync(string objectName);
-    Task<IEnumerable<ImplicitConversion>> GetImplicitConversionsAsync();
+          IEnumerable<ResourceIntensiveQuery> ByHighestReads)> GetResourceIntensiveQueriesAsync(int topN = 20, CancellationToken cancellationToken = default);
+    Task<string?> GetObjectQueryPlanAsync(string objectName, CancellationToken cancellationToken = default);
+    Task<IEnumerable<ImplicitConversion>> GetImplicitConversionsAsync(CancellationToken cancellationToken = default);
 }

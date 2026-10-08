@@ -10,8 +10,8 @@ public interface IHistoryRepository
     /// null every cached query_hash is returned (the baseline); otherwise only those executed since then.
     /// Either way at most <paramref name="maxQueries"/>, highest total CPU first.
     /// </summary>
-    Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries);
+    Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries, CancellationToken cancellationToken = default);
 
     /// <summary>Statement text for the given query hashes ("0x…"), cut to <paramref name="maxLength"/> characters.</summary>
-    Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength);
+    Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength, CancellationToken cancellationToken = default);
 }

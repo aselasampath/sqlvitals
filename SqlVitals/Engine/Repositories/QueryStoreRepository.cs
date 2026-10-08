@@ -13,7 +13,7 @@ namespace SqlVitals.Engine.Repositories;
 /// Only sys.query_store_* and sys.database_query_store_options are read. Every query groups and
 /// ranks on the server, so only the top N rows come back, never the raw runtime stats.
 /// </summary>
-public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQueryStoreRepository
+public class QueryStoreRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IQueryStoreRepository
 {
     // Up to 30 days of a large Query Store can take a while, as on Query Regressions.
     private const int ExtendedTimeoutSec = 120;
@@ -31,12 +31,12 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
     /// <summary>Every probe in one round trip.</summary>
     internal static readonly string FeaturesSql = SqlScripts.Get("QueryStore/Features");
 
-    private async Task<QueryStoreFeatures> FeaturesAsync(IDbConnection conn)
+    private async Task<QueryStoreFeatures> FeaturesAsync(IDbConnection conn, CancellationToken cancellationToken)
     {
         if (_features is { } known)
             return known;
 
-        var r = Row(await QFirst(conn, FeaturesSql));
+        var r = Row(await QFirst(conn, FeaturesSql, cancellationToken));
         return _features = r is null
             ? QueryStoreFeatures.None
             : new QueryStoreFeatures(Bool(r, "WaitStats"), Bool(r, "WaitStatsCaptureMode"), Bool(r, "LogBytes"),
@@ -51,14 +51,14 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
 
     private static readonly string HealthSqlTemplate = SqlScripts.Get("QueryStore/Health");
 
-    public async Task<QueryStoreStatus> GetQueryStoreStatusAsync()
+    public async Task<QueryStoreStatus> GetQueryStoreStatusAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var features = await FeaturesAsync(conn);
+        var features = await FeaturesAsync(conn, cancellationToken: cancellationToken);
 
         try
         {
-            if (Row(await QFirst(conn, HealthSql(features.WaitStatsCaptureMode))) is { } r)
+            if (Row(await QFirst(conn, HealthSql(features.WaitStatsCaptureMode), cancellationToken)) is { } r)
                 return new QueryStoreStatus(Str(r, "DatabaseName"), ReadHealth(r), features);
         }
         catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208)
@@ -66,7 +66,7 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
             // SQL Server 2014 and earlier: no Query Store catalog views at all.
         }
 
-        var db = Row(await QFirst(conn, SqlScripts.Get("QueryStore/DatabaseName")));
+        var db = Row(await QFirst(conn, SqlScripts.Get("QueryStore/DatabaseName"), cancellationToken));
         return new QueryStoreStatus(db is null ? string.Empty : Str(db, "DatabaseName"), null, features);
     }
 
@@ -98,9 +98,9 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
     internal static string QueryStoreTopQueriesSql(bool hasPlanType) =>
         QueryStoreTopQueriesSqlTemplate.Replace("/*PLAN_TYPE*/", hasPlanType ? "p.plan_type_desc" : "N'Compiled Plan'");
 
-    public async Task<(QueryStoreHealth?, IEnumerable<QueryStoreTopQuery>)> GetQueryStoreAsync()
+    public async Task<(QueryStoreHealth?, IEnumerable<QueryStoreTopQuery>)> GetQueryStoreAsync(CancellationToken cancellationToken = default)
     {
-        var status = await GetQueryStoreStatusAsync();
+        var status = await GetQueryStoreStatusAsync(cancellationToken: cancellationToken);
         if (!status.IsSupported)
             return (null, []);
 
@@ -108,7 +108,7 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
         IEnumerable<QueryStoreTopQuery> queries = [];
         try
         {
-            var rows = await Q(conn, QueryStoreTopQueriesSql(status.Features.PlanType));
+            var rows = await Q(conn, QueryStoreTopQueriesSql(status.Features.PlanType), cancellationToken);
             queries = rows.Select(r =>
             {
                 double cpu = (double)r.TotalCpuMs;
@@ -199,11 +199,11 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
     private static readonly string TopQueriesSqlTemplate = SqlScripts.Get("QueryStore/TopQueries");
 
     public Task<QueryStoreRows<QueryStoreQueryRow>> GetQueryStoreTopQueriesAsync(
-        QueryStorePeriod period, QueryStoreMetric metric, QueryStoreStatistic statistic, int top) =>
+        QueryStorePeriod period, QueryStoreMetric metric, QueryStoreStatistic statistic, int top, CancellationToken cancellationToken = default) =>
         ReadAsync(async conn =>
         {
             var scale = metric == QueryStoreMetric.Executions ? 1 : QueryStoreMetrics.Info(metric).Scale;
-            var rows = await Q(conn, TopQueriesSql(metric, statistic), Parameters(period, new { top }), ExtendedTimeoutSec);
+            var rows = await Q(conn, TopQueriesSql(metric, statistic), cancellationToken, Parameters(period, new { top }), ExtendedTimeoutSec);
             return Rows(rows).Select(r =>
             {
                 var executions = Long(r, "Executions");
@@ -244,12 +244,12 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
         .Replace("/*PERIOD*/", PeriodSql)
         .Replace("/*TOTALS*/", TotalsSql(hasLogBytes, hasTempDb));
 
-    public Task<QueryStoreRows<QueryStoreSlot>> GetQueryStoreOverTimeAsync(QueryStorePeriod period, TimeSpan slotLength, DateTimeOffset origin) =>
+    public Task<QueryStoreRows<QueryStoreSlot>> GetQueryStoreOverTimeAsync(QueryStorePeriod period, TimeSpan slotLength, DateTimeOffset origin, CancellationToken cancellationToken = default) =>
         ReadAsync(async conn =>
         {
-            var features = await FeaturesAsync(conn);
+            var features = await FeaturesAsync(conn, cancellationToken: cancellationToken);
             var rows = await Q(conn, OverTimeSql(features.LogBytes, features.TempDb),
-                Parameters(period, new { origin, slotMinutes = (int)slotLength.TotalMinutes }), ExtendedTimeoutSec);
+                cancellationToken, Parameters(period, new { origin, slotMinutes = (int)slotLength.TotalMinutes }), ExtendedTimeoutSec);
             return Rows(rows)
                 .Select(r => new QueryStoreSlot(QueryStoreTimeSlots.SlotStartUtc(origin, slotLength, Long(r, "Slot")), ReadTotals(r)))
                 .ToList();
@@ -274,11 +274,11 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
     private static readonly string HighVariationSqlTemplate = SqlScripts.Get("QueryStore/HighVariation");
 
     public Task<QueryStoreRows<QueryStoreVariationRow>> GetQueryStoreHighVariationAsync(
-        QueryStorePeriod period, QueryStoreMetric metric, int minExecutions, int top) =>
+        QueryStorePeriod period, QueryStoreMetric metric, int minExecutions, int top, CancellationToken cancellationToken = default) =>
         ReadAsync(async conn =>
         {
             var scale = QueryStoreMetrics.Info(metric).Scale;
-            var rows = await Q(conn, HighVariationSql(metric), Parameters(period, new { minExecutions, top }), ExtendedTimeoutSec);
+            var rows = await Q(conn, HighVariationSql(metric), cancellationToken, Parameters(period, new { minExecutions, top }), ExtendedTimeoutSec);
             return Rows(rows).Select(r => new QueryStoreVariationRow(
                 Long(r, "QueryId"),
                 Long(r, "ObjectId"),
@@ -298,10 +298,10 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
     internal static readonly string WaitCategoriesSql = SqlScripts.Get("QueryStore/WaitCategories")
         .Replace("/*PERIOD*/", PeriodSql);
 
-    public Task<QueryStoreRows<QueryStoreWaitCategory>> GetQueryStoreWaitCategoriesAsync(QueryStorePeriod period) =>
+    public Task<QueryStoreRows<QueryStoreWaitCategory>> GetQueryStoreWaitCategoriesAsync(QueryStorePeriod period, CancellationToken cancellationToken = default) =>
         ReadAsync(async conn =>
         {
-            var rows = Rows(await Q(conn, WaitCategoriesSql, Parameters(period), ExtendedTimeoutSec)).ToList();
+            var rows = Rows(await Q(conn, WaitCategoriesSql, cancellationToken, Parameters(period), ExtendedTimeoutSec)).ToList();
             var all  = rows.Sum(r => Dbl(r, "WaitMs"));
             return rows.Select(r =>
             {
@@ -320,10 +320,10 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
         .Replace("/*RANKED_PLANS*/", RankedPlans)
         .Replace("/*OBJECT_NAME*/", ObjectNameSql);
 
-    public Task<QueryStoreRows<QueryStoreWaitQuery>> GetQueryStoreWaitQueriesAsync(QueryStorePeriod period, int category, int top) =>
+    public Task<QueryStoreRows<QueryStoreWaitQuery>> GetQueryStoreWaitQueriesAsync(QueryStorePeriod period, int category, int top, CancellationToken cancellationToken = default) =>
         ReadAsync(async conn =>
         {
-            var rows = await Q(conn, WaitQueriesSql, Parameters(period, new { category, top }), ExtendedTimeoutSec);
+            var rows = await Q(conn, WaitQueriesSql, cancellationToken, Parameters(period, new { category, top }), ExtendedTimeoutSec);
             return Rows(rows).Select(r => new QueryStoreWaitQuery(
                 Long(r, "QueryId"),
                 Long(r, "ObjectId"),
@@ -352,19 +352,15 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
     /// <summary>Query Store hints: SQL Server 2022+ and Azure SQL only.</summary>
     internal static readonly string HintsSql = SqlScripts.Get("QueryStore/Hints");
 
-    // Reading the hints needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on 2022+); a denied
-    // SELECT on the view is 229.
-    private static readonly int[] PermissionErrors = [229, 297, 300];
-
-    public async Task<QueryStoreForcedPlans> GetQueryStoreForcedPlansAsync(QueryStorePeriod period)
+    public async Task<QueryStoreForcedPlans> GetQueryStoreForcedPlansAsync(QueryStorePeriod period, CancellationToken cancellationToken = default)
     {
         QueryStoreFeatures features;
         using (var conn = CreateConnection())
-            features = await FeaturesAsync(conn);
+            features = await FeaturesAsync(conn, cancellationToken: cancellationToken);
 
         var plans = await ReadAsync(async conn =>
         {
-            var rows = await Q(conn, ForcedPlansSql(features.ForcingType), Parameters(period), ExtendedTimeoutSec);
+            var rows = await Q(conn, ForcedPlansSql(features.ForcingType), cancellationToken, Parameters(period), ExtendedTimeoutSec);
             return Rows(rows).Select(r =>
             {
                 var executions = Long(r, "Executions");
@@ -389,7 +385,7 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
         QueryStoreRows<QueryStoreHint> hints;
         try
         {
-            hints = await ReadAsync(async conn => Rows(await Q(conn, HintsSql)).Select(r => new QueryStoreHint(
+            hints = await ReadAsync(async conn => Rows(await Q(conn, HintsSql, cancellationToken)).Select(r => new QueryStoreHint(
                 Long(r, "QueryId"),
                 Str(r, "HintText"),
                 Str(r, "Source"),
@@ -397,7 +393,7 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
                 StrOrNull(r, "LastFailureReason"),
                 Str(r, "QueryText"))).ToList());
         }
-        catch (WaitStatsException ex) when (PermissionErrors.Contains(ex.SqlErrorNumber))
+        catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
             hints = QueryStoreRows<QueryStoreHint>.Missing(
                 "Reading Query Store hints needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022 and later).");
@@ -417,22 +413,22 @@ public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQ
         .Replace("/*TOTALS*/", TotalsSql(hasLogBytes, hasTempDb))
         .Replace("/*RUNTIME_IN_PERIOD*/", RuntimeInPeriod);
 
-    public async Task<QueryStoreQueryDetails> GetQueryStoreQueryDetailsAsync(long queryId, QueryStorePeriod period)
+    public async Task<QueryStoreQueryDetails> GetQueryStoreQueryDetailsAsync(long queryId, QueryStorePeriod period, CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var features = await FeaturesAsync(conn);
+        var features = await FeaturesAsync(conn, cancellationToken: cancellationToken);
 
-        var info = Row(await QFirst(conn, QueryInfoSql, new { queryId }));
+        var info = Row(await QFirst(conn, QueryInfoSql, cancellationToken, new { queryId }));
         if (info is null)
             return new QueryStoreQueryDetails(null, [], []);
 
         var query = new QueryStoreQueryInfo(Long(info, "QueryId"), Long(info, "ObjectId"), StrOrNull(info, "ObjectName"), Str(info, "QueryText"));
 
-        var plans = Rows(await Q(conn, QueryPlansSql, new { queryId })).Select(r => new QueryStorePlanState(
+        var plans = Rows(await Q(conn, QueryPlansSql, cancellationToken, new { queryId })).Select(r => new QueryStorePlanState(
             Long(r, "PlanId"), Bool(r, "IsForced"), Long(r, "ForceFailures"), StrOrNull(r, "LastFailureReason"))).ToList();
 
         var intervals = Rows(await Q(conn, QueryIntervalsSql(features.LogBytes, features.TempDb),
-                Parameters(period, new { queryId }), ExtendedTimeoutSec))
+                cancellationToken, Parameters(period, new { queryId }), ExtendedTimeoutSec))
             .Select(r => new QueryStorePlanInterval(
                 Utc(r, "StartTime") ?? DateTime.MinValue,
                 Long(r, "PlanId"),

@@ -9,12 +9,8 @@ namespace SqlVitals.Engine.Repositories;
 /// the time between them (<see cref="FileIoTracker"/>). Read only. Keeps which volume each file
 /// is on, so sys.dm_os_volume_stats is only asked about files it hasn't seen.
 /// </summary>
-public class FileIoRepository(SqlTarget target) : BaseRepository(target), IFileIoRepository
+public class FileIoRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IFileIoRepository
 {
-    // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022; VIEW DATABASE STATE on
-    // Azure SQL Database) is missing.
-    private static readonly int[] PermissionErrors = [297, 300];
-
     private const int AzureSqlDatabaseEdition = 5;
 
     internal static readonly string ServerSql = SqlScripts.Get("FileIo/Server");
@@ -36,7 +32,7 @@ public class FileIoRepository(SqlTarget target) : BaseRepository(target), IFileI
     private readonly HashSet<(int, int)> _volumesAsked = new();
     private bool _volumeStatsFailed;
 
-    public async Task<FileIoReading> ReadFileIoAsync()
+    public async Task<FileIoReading> ReadFileIoAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
@@ -45,12 +41,12 @@ public class FileIoRepository(SqlTarget target) : BaseRepository(target), IFileI
         bool isAzure;
         try
         {
-            server  = await QFirst(conn, ServerSql)
+            server  = await QFirst(conn, ServerSql, cancellationToken)
                       ?? throw new InvalidOperationException("Failed to read the server's start time.");
             isAzure = Convert.ToInt32(server.Edition) == AzureSqlDatabaseEdition;
-            rows    = (await Q(conn, isAzure ? FilesAzureSql : FilesSql)).ToList();
+            rows    = (await Q(conn, isAzure ? FilesAzureSql : FilesSql, cancellationToken)).ToList();
         }
-        catch (WaitStatsException ex) when (PermissionErrors.Contains(ex.SqlErrorNumber))
+        catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
             return FileIoReading.Unavailable(
                 "This login can't read file I/O statistics. Grant it VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE " +
@@ -68,7 +64,7 @@ public class FileIoRepository(SqlTarget target) : BaseRepository(target), IFileI
             files = files.Select(f => f with { Volume = AzureVolume }).ToList();
         else
         {
-            await LearnVolumesAsync(conn, files);
+            await LearnVolumesAsync(conn, files, cancellationToken: cancellationToken);
             files = files.Select(f => f with
             {
                 Volume = _volumes.TryGetValue(f.Key, out var volume) ? volume : FileIoCounters.VolumeFromPath(f.PhysicalName),
@@ -81,14 +77,14 @@ public class FileIoRepository(SqlTarget target) : BaseRepository(target), IFileI
 
     // Asks sys.dm_os_volume_stats about files it hasn't been asked about. It isn't needed for
     // latency, so a server that won't answer gets volumes worked out from the file paths.
-    private async Task LearnVolumesAsync(System.Data.IDbConnection conn, IReadOnlyList<FileIoCounters> files)
+    private async Task LearnVolumesAsync(System.Data.IDbConnection conn, IReadOnlyList<FileIoCounters> files, CancellationToken cancellationToken)
     {
         if (_volumeStatsFailed || files.All(f => _volumesAsked.Contains(f.Key)))
             return;
 
         try
         {
-            foreach (var r in await Q(conn, VolumesSql))
+            foreach (var r in await Q(conn, VolumesSql, cancellationToken))
                 if ((string?)r.Volume is { Length: > 0 } volume)
                     _volumes[(Convert.ToInt32(r.DatabaseId), Convert.ToInt32(r.FileId))] = volume;
         }

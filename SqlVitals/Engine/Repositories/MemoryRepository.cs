@@ -4,10 +4,10 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Memory: grants, clerks and counters, and the memory KPI snapshot. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class MemoryRepository(SqlTarget target) : BaseRepository(target), IMemoryRepository
+public class MemoryRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IMemoryRepository
 {
     // ── 9. Memory grants ──────────────────────────────────────────────
-    public async Task<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)> GetMemoryGrantsAsync()
+    public async Task<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)> GetMemoryGrantsAsync(CancellationToken cancellationToken = default)
     {
         // SQL Server 2016+ (ProductMajorVersion >= 13) and Azure SQL have queue_id,
         // wait_order, is_next_candidate, wait_time_ms in sys.dm_exec_query_memory_grants.
@@ -18,10 +18,8 @@ public class MemoryRepository(SqlTarget target) : BaseRepository(target), IMemor
         // queue_id, wait_order, is_next_candidate, wait_time_ms did not exist yet.
         var grantsSqlCompat = SqlScripts.Get("Memory/GrantsCompat");
 
-        // Select the right variant based on SQL Server version.
-        // Azure SQL DB (5) and MI (8) always support the full column set.
-        var sqlMeta = SqlScripts.Get("Memory/ServerVersion");
-        var grantsSql = grantsSqlFull; // resolved after meta query below
+        // Azure SQL DB and MI always support the full column set (ServerCapabilities.HasMemoryGrantQueue).
+        var grantsSql = (await CapabilitiesAsync(cancellationToken)).HasMemoryGrantQueue ? grantsSqlFull : grantsSqlCompat;
 
         var clerksSql = SqlScripts.Get("Memory/Clerks");
 
@@ -29,14 +27,7 @@ public class MemoryRepository(SqlTarget target) : BaseRepository(target), IMemor
 
         using var conn = CreateConnection();
 
-        // Detect version once; default to full query if meta unavailable
-        var meta = await QFirst(conn, sqlMeta);
-        int majorVer = meta != null ? (int)meta.MajorVersion : 13;
-        int eng = meta != null ? (int)meta.Edition : 0;
-        bool supportsNewCols = majorVer >= 13 || eng == 5 || eng == 8; // 2016+ | Azure SQL DB | MI
-        grantsSql = supportsNewCols ? grantsSqlFull : grantsSqlCompat;
-
-        var grants = (await Q(conn, grantsSql)).Select(r =>
+        var grants = (await Q(conn, grantsSql, cancellationToken)).Select(r =>
         {
             var row = (IDictionary<string, object>)r;
             object? Get(string k) => row.TryGetValue(k, out var v) && v is not DBNull ? v : null;
@@ -80,12 +71,12 @@ public class MemoryRepository(SqlTarget target) : BaseRepository(target), IMemor
                 pending, sev);
         });
 
-        var clerks = (await Q(conn, clerksSql)).Select(r =>
+        var clerks = (await Q(conn, clerksSql, cancellationToken)).Select(r =>
             new MemoryClerk((string)r.ClerkType, (string)r.ClerkName,
                 (long)r.TotalPagesKB, (long)r.TotalPagesMB,
                 (double)(r.PctOfTotalMemory ?? 0), (DateTime)r.CaptureTime));
 
-        var counters = (await Q(conn, countersSql)).Select(r =>
+        var counters = (await Q(conn, countersSql, cancellationToken)).Select(r =>
             new MemoryCounter((string)r.CounterName, (long)r.CounterValue, (DateTime)r.CaptureTime));
 
         return (grants, clerks, counters);
@@ -127,17 +118,17 @@ public class MemoryRepository(SqlTarget target) : BaseRepository(target), IMemor
     // columns on sys.dm_os_sys_info are not exposed. Use counters only.
     private static readonly string MemorySnapshotAzureSql = SqlScripts.Get("Memory/MemorySnapshotAzure");
 
-    public async Task<MemorySnapshot> GetMemorySnapshotAsync()
+    public async Task<MemorySnapshot> GetMemorySnapshotAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
         // EngineEdition 5 = Azure SQL DB; 8 = Managed Instance (MI has the DMVs).
         // No probe row: leave the memory model out rather than risk error 207.
-        var meta = await QFirst(conn, MemorySnapshotProbeSql);
+        var meta = await QFirst(conn, MemorySnapshotProbeSql, cancellationToken);
         bool isAzureSqlDb = meta is not null && (int)meta.Edition == 5;
         bool hasMemoryModel = meta is not null && (int)meta.HasMemoryModel == 1;
 
-        var r = await QFirst(conn, MemorySnapshotSql(isAzureSqlDb, hasMemoryModel));
+        var r = await QFirst(conn, MemorySnapshotSql(isAzureSqlDb, hasMemoryModel), cancellationToken);
         if (r is null) return new MemorySnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Unknown", "N/A", DateTime.Now);
         return new MemorySnapshot(
             (long)r.PhysicalMemoryKB,

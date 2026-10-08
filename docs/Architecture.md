@@ -209,14 +209,25 @@ Every repository derives from `BaseRepository`, built with the connection's `Sql
 
 ```csharp
 protected IDbConnection CreateConnection();                                   // new SqlConnection per call
-protected Task<IEnumerable<dynamic>> Q(IDbConnection c, string sql, object? p = null, ...);
-protected Task<dynamic?>             QFirst(IDbConnection c, string sql, object? p = null, ...);
-protected Task<int>                  Exec(IDbConnection c, string sql, object? p = null, ...); // DDL, no isolation prefix
+protected Task<IEnumerable<dynamic>> Q(IDbConnection c, string sql, CancellationToken ct, object? p = null, ...);
+protected Task<dynamic?>             QFirst(IDbConnection c, string sql, CancellationToken ct, object? p = null, ...);
+protected Task<int>                  Exec(IDbConnection c, string sql, CancellationToken ct, object? p = null, ...); // DDL, no isolation prefix
+protected Task<ServerCapabilities>   CapabilitiesAsync(CancellationToken ct);  // read once per connection
+protected Task<bool>                 HasColumnAsync(IDbConnection c, string view, string column, CancellationToken ct);
 ```
 
-- `Q` / `QFirst` prepend `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;` when `SqlTarget.UseNoLock` is true (appsettings.json's `QuerySettings:UseNoLock`, true by default).
-- All three apply the command timeout and wrap failures in `WaitStatsException`, which names the repository and method.
-- **Always** use `Q` / `QFirst`, never `conn.QueryAsync` directly.
+- `Q` / `QFirst` prepend `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;` when `SqlTarget.UseNoLock` is true (appsettings.json's `QuerySettings:UseNoLock`, true by default), and always `SET LOCK_TIMEOUT n;`: -1 for a page, `SqlTarget.MonitoringLockTimeoutMilliseconds` (2000) for monitoring's repositories, which `CompositionRoot` builds with it. Both are set on every read, since a pooled connection keeps the last one's.
+- **Cancellation (#167):** every repository method takes `CancellationToken cancellationToken = default` as its last parameter and passes it on; `Q`, `QFirst`, `Exec`, `HasColumnAsync` and the private helpers take it as a required parameter, so a call that forgets it doesn't compile. Dapper gets it through `CommandDefinition`, and SqlClient cancels the command on the server. A query cancelled by its token throws `OperationCanceledException`, never `WaitStatsException`, so nothing reports it as an error (`PlainLog.Error`, `IShellStatus.ReportError` and `PageViewModel.ShowError` leave cancellations out too).
+- All three apply the command timeout and wrap other failures in `WaitStatsException`, which names the repository and method and classifies the failure (`Failure`, an `Engine/Errors/SqlFailure`): `MissingPermission` (229, 262, 297, 300; `Permission` names it), `NoDatabaseAccess` (916), `LockTimeout` (1222), `Timeout` (-2) or `Other`. `FixScript` is the `GRANT` (or `CREATE USER`) for the connection's login (`SqlTarget.Login`); a page's verdict and the error box show it. A permission failure forgets the capabilities, so a GRANT made since is seen. A repository that turns a permission failure into a page message catches `WaitStatsException` `when (ex.Failure.IsPermission)`.
+- **Always** use `Q` / `QFirst`, never `conn.QueryAsync` directly. `QueryExecutionTests` checks them through a `RecordingConnection` (`BaseRepository.Connect`), which records each command's text, timeout and token.
+
+### Who cancels
+
+| What | Cancelled when | How |
+|---|---|---|
+| A page's reads, from its view model or its code-behind | The page is left, or its connection switched (`OnNavigatedFrom`) | `PageFactory` wraps the page's repository in a `LifetimeRepository` bound to a `PageLifetime`, which `PageViewModel` ends on `OnNavigatedFrom`. A call's own token still works; `StopTraceAsync` is cleanup and isn't bound |
+| The window's own reads (the edition check) | The connection switches | `MainWindow._connectionWork` |
+| A monitoring sample and its history detail | **■ Stop** (`Pause`) or `Dispose` | `MonitoringSession._collecting`; a cancelled sample records no failure, and a lock timeout skips the sample |
 
 ### DBNull-safe mapping
 
@@ -262,14 +273,14 @@ Every query is a `.sql` file under `Engine/Sql/<Area>/`, one folder per reposito
 
 ### Azure SQL Database branching
 
-Server-level views (`sys.master_files`, cross-database `tempdb.sys.database_files`, `sys.configurations`) don't exist on Azure SQL Database (`EngineEdition = 5`). Detect it and switch queries:
+Server-level views (`sys.master_files`, cross-database `tempdb.sys.database_files`, `sys.configurations`) don't exist on Azure SQL Database (`EngineEdition = 5`). Ask the connection's `ServerCapabilities` (#167) and switch queries:
 
 ```csharp
-var edition = await QFirst(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition");
-bool isAzureSqlDb = Convert.ToInt32(edition.Edition) == 5;
+var capabilities = await CapabilitiesAsync(cancellationToken);
+var sql = capabilities.IsAzureSqlDatabase ? AzureSql : OnPremSql;
 ```
 
-`GetDatabaseStorageAsync` and SP Trace (`IsAzureSqlDatabaseAsync`) follow this pattern. Pages with nothing to show there are listed in `MainWindow.PagesAzureSqlLacks`, each with the reason; on connecting, their sidebar buttons are disabled and given that reason as the tooltip, and the `NavButton` style dims them and marks them **N/A**.
+`ServerCapabilities` (edition, major version, `Azure`, the login's `Permissions` from `sys.fn_my_permissions`, `HasMemoryGrantQueue`, `SupportsOnlineIndexRebuild`) is read once per connection (`Sql/Server/Capabilities.sql`, `Permissions.sql`) and shared by its area repositories through a `ServerCapabilitiesCache` that `WaitStatsRepository` hands each of them. A failed read isn't kept. Live Metrics, Memory, DB Storage, Deadlocks, SP Trace and `IServerRepository` (`GetCapabilitiesAsync`, `IsAzureSqlDatabaseAsync`, `SupportsOnlineIndexRebuildAsync`) choose by it; the history snapshot and the memory snapshot read the edition in the same round trip as their other figures. Pages with nothing to show there are listed in `MainWindow.PagesAzureSqlLacks`, each with the reason; on connecting, their sidebar buttons are disabled and given that reason as the tooltip, and the `NavButton` style dims them and marks them **N/A**.
 
 ## UI conventions
 

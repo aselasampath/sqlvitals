@@ -2,7 +2,7 @@ using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
-public class TempDbRepository(SqlTarget target) : BaseRepository(target), ITempDbRepository
+public class TempDbRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), ITempDbRepository
 {
     // Run in tempdb's own context: FILEPROPERTY only sees the current database's files, and
     // sys.master_files holds tempdb's startup size rather than its size now.
@@ -16,15 +16,15 @@ public class TempDbRepository(SqlTarget target) : BaseRepository(target), ITempD
     // The version store counters have no instance; Active Transactions is per database.
     internal static readonly string CountersSql = SqlScripts.Get("TempDb/Counters");
 
-    public async Task<(IEnumerable<TempDbFile> Files, IEnumerable<TempDbSession> Sessions, IEnumerable<TempDbCounter> Counters)> GetTempDbPressureAsync()
+    public async Task<(IEnumerable<TempDbFile> Files, IEnumerable<TempDbSession> Sessions, IEnumerable<TempDbCounter> Counters)> GetTempDbPressureAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var files = (await Q(conn, FilesSql)).Select(r => new TempDbFile(
+        var files = (await Q(conn, FilesSql, cancellationToken)).Select(r => new TempDbFile(
             (string)r.FileName, (string)r.FileType, (string)r.PhysicalPath,
             (long)r.FileSizeMB, (long)r.SpaceUsedMB, (long)r.FreeSpaceMB,
             (double)(r.UsedPct ?? 0), (string)r.AutoGrowth, (DateTime)r.CaptureTime));
 
-        var sessions = (await Q(conn, SessionsSql)).Select(r =>
+        var sessions = (await Q(conn, SessionsSql, cancellationToken)).Select(r =>
         {
             long net = (long)r.NetTempDBUsageKB;
             string sev = net > 1_000_000 ? "Critical" : net > 100_000 ? "Warning" : "Info";
@@ -36,7 +36,7 @@ public class TempDbRepository(SqlTarget target) : BaseRepository(target), ITempD
                 (string?)r.DatabaseName, (string?)r.QueryText, (DateTime)r.CaptureTime, sev);
         });
 
-        var counters = (await Q(conn, CountersSql)).Select(r =>
+        var counters = (await Q(conn, CountersSql, cancellationToken)).Select(r =>
             new TempDbCounter((string)r.CounterName, (long)r.CounterValue, (DateTime)r.CaptureTime));
 
         return (files, sessions, counters);

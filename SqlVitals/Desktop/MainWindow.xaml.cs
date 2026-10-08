@@ -15,7 +15,7 @@ using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop;
 
-[SuppressMessage("Design", "CA1001", Justification = "A Window isn't IDisposable; OnClosing disposes _tray, Monitoring and Chat")]
+[SuppressMessage("Design", "CA1001", Justification = "A Window isn't IDisposable; OnClosing disposes _tray, Monitoring, Chat and the connection's work")]
 public partial class MainWindow : Window
 {
     // Replaced whenever the active connection changes, so pages created after that point
@@ -23,6 +23,10 @@ public partial class MainWindow : Window
     internal IWaitStatsRepository Repo { get; private set; }
     internal readonly ConnectionSettingsService SettingsService;
     private bool _isConnectionConfigured;
+
+    // The window's own reads of the active connection (its edition); a switch cancels them (#167).
+    // A page's reads end with the page (PageLifetime).
+    private CancellationTokenSource _connectionWork = new();
 
     // Identifies the connection Repo was built from, so re-reading the store only swaps the
     // repository when the active connection (or its details) actually changed.
@@ -445,6 +449,10 @@ public partial class MainWindow : Window
         // Anything still loading was queried against the previous database.
         _loadVersion++;
         _model?.OnNavigatedFrom();
+        var stopped = _connectionWork;
+        _connectionWork = new CancellationTokenSource();
+        stopped.Cancel();
+        stopped.Dispose();
 
         var previous = Repo;
         Repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
@@ -651,7 +659,9 @@ public partial class MainWindow : Window
         _activeIsAzureSql = false;
         if (_isConnectionConfigured)
         {
-            try { _activeIsAzureSql = await Repo.IsAzureSqlDatabaseAsync(); }
+            var cancel = _connectionWork.Token;
+            try { _activeIsAzureSql = await Repo.IsAzureSqlDatabaseAsync(cancel); }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) { return; /* switched meanwhile: the new server's check decides */ }
             catch { /* Edition check failed (e.g. server unreachable): leave the pages enabled. */ }
         }
         ApplyPagesAzureSqlLacks();
@@ -748,6 +758,8 @@ public partial class MainWindow : Window
         Monitoring.Dispose();
         Chat.Shutdown(ChatNotificationService.ExitTime - exitStarted.Elapsed);
         Chat.Dispose();
+        _connectionWork.Cancel();
+        _connectionWork.Dispose();
 
         try
         {
@@ -817,8 +829,11 @@ public partial class MainWindow : Window
         if (ex is WaitStatsException wse)
         {
             var sqlNote = wse.SqlErrorNumber != 0 ? $"\nSQL error number: {wse.SqlErrorNumber}" : string.Empty;
+            // A failure SqlVitals tells apart says what it was, and a missing permission the GRANT that fixes it (#167).
+            var explained = wse.Failure.Explanation is { } plain ? $"{plain}\n\n" : string.Empty;
+            var fix = wse.FixScript is { } script ? $"\n\nA DBA can fix it once with:\n{script}" : string.Empty;
             return ConnectionSettingsService.RedactSecrets(
-                $"Error tag:  {wse.ErrorTag}{sqlNote}\n\n{ex.InnerException?.Message ?? ex.Message}\n\nSearch the codebase for \"{wse.ErrorTag}\" to locate the originating query.");
+                $"Error tag:  {wse.ErrorTag}{sqlNote}\n\n{explained}{ex.InnerException?.Message ?? ex.Message}{fix}\n\nSearch the codebase for \"{wse.ErrorTag}\" to locate the originating query.");
         }
         return ConnectionSettingsService.RedactSecrets(ex.Message);
     }

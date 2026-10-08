@@ -4,7 +4,7 @@ using SqlVitals.Engine.Monitoring;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Sessions: the process map, a session's plan, and the applications connected. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class SessionRepository(SqlTarget target) : BaseRepository(target), ISessionRepository
+public class SessionRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), ISessionRepository
 {
     // ── 20. Process map (Active sessions + blocking) ─────────────────
     // A head blocker is often a sleeping session with an open transaction: it has no request, so
@@ -12,10 +12,10 @@ public class SessionRepository(SqlTarget target) : BaseRepository(target), ISess
     // A blocker that isn't a user process (a system task) is included too, so its chain has a head.
     internal static readonly string ProcessesSql = SqlScripts.Get("Session/Processes");
 
-    public async Task<IEnumerable<ProcessNode>> GetProcessesAsync()
+    public async Task<IEnumerable<ProcessNode>> GetProcessesAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var rows = await Q(conn, ProcessesSql);
+        var rows = await Q(conn, ProcessesSql, cancellationToken);
         return BlockingChains.Classify(rows.Select(r => new ProcessNode(
             (int)r.SessionId,
             (int)(r.BlockingSessionId ?? 0),
@@ -46,20 +46,20 @@ public class SessionRepository(SqlTarget target) : BaseRepository(target), ISess
     // blocker), the cached plan of its last statement, the newest one when there are several (#147).
     internal static readonly string SessionPlanSql = SqlScripts.Get("Session/SessionPlan");
 
-    public async Task<SessionPlan> GetSessionPlanAsync(int sessionId)
+    public async Task<SessionPlan> GetSessionPlanAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var row = await QFirst(conn, SessionPlanSql, new { SessionId = sessionId });
+        var row = await QFirst(conn, SessionPlanSql, cancellationToken, new { SessionId = sessionId });
         return row is null ? new SessionPlan(null, false) : new SessionPlan((string?)row.QueryPlan, (bool)row.IsRunning);
     }
 
     // ── 21. Application connections ──────────────────────────────────
-    public async Task<IEnumerable<ApplicationConnection>> GetApplicationConnectionsAsync()
+    public async Task<IEnumerable<ApplicationConnection>> GetApplicationConnectionsAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("Session/ApplicationConnections");
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql)).Select(r =>
+        return (await Q(conn, sql, cancellationToken)).Select(r =>
             new ApplicationConnection(
                 (string)(r.ApplicationName ?? ""),
                 (int)r.CurrentConnections,

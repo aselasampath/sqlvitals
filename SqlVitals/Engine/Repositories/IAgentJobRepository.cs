@@ -10,11 +10,11 @@ public interface IAgentJobRepository
     /// runs next. Never throws for Azure SQL Database or a login that can't read msdb's job
     /// tables: the list then carries the reason.
     /// </summary>
-    Task<AgentJobList> GetAgentJobsAsync();
+    Task<AgentJobList> GetAgentJobsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The runs of one job msdb still keeps, newest first, each with its steps.
     /// <paramref name="runningSince"/> is when the run in progress started, if the job is running.
     /// </summary>
-    Task<IReadOnlyList<JobRun>> GetAgentJobRunsAsync(Guid jobId, DateTime? runningSince);
+    Task<IReadOnlyList<JobRun>> GetAgentJobRunsAsync(Guid jobId, DateTime? runningSince, CancellationToken cancellationToken = default);
 }
