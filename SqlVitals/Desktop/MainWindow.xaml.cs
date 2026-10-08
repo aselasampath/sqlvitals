@@ -12,6 +12,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop;
 
@@ -36,6 +37,9 @@ public partial class MainWindow : Window
     // How each recent route's page was being looked at, put back when it's opened again (#139).
     private readonly RouteStates<ViewState> _viewStates = new();
 
+    // What each recent route's view model kept, put back on the new one (#183).
+    private readonly RouteStates<object> _modelStates = new();
+
     // The routes opened this session, most recent first, for the quick switcher (#144).
     private readonly RecentRoutes _recent = new();
 
@@ -47,6 +51,12 @@ public partial class MainWindow : Window
     // before then hasn't had its saved view state put back yet, so that state is kept.
     private Page? _page;
     private bool  _pageLoaded;
+
+    // The page's view model (#183): it loads, refreshes and reports; left, it is cancelled.
+    private PageViewModel? _model;
+
+    // Makes each page with its view model (#183).
+    private readonly IPageFactory _pages = CompositionRoot.Get<IPageFactory>();
 
     // When the page on screen last loaded, refreshed or reported an update: a snapshot's "Taken",
     // a live page's "As of" (#140). Null until its first load finishes.
@@ -427,6 +437,7 @@ public partial class MainWindow : Window
     {
         // Anything still loading was queried against the previous database.
         _loadVersion++;
+        _model?.OnNavigatedFrom();
 
         var previous = Repo;
         Repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
@@ -762,24 +773,13 @@ public partial class MainWindow : Window
     // pop up again on every tick while the server stays unreachable. The details go to the
     // log; the top bar shows the one-line error (#140). A page the user has navigated away from
     // no longer owns the bar, so only its log entry is kept.
-    internal static void ReportBackgroundError(Page page, string source, Exception ex)
-    {
-        AppLog.Error($"{source}: collection failed", ex);
-        if (OwnerOf(page) is { } main)
-            main.Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
-    }
+    // #166 moves these callers to IShellStatus.
+    internal static void ReportBackgroundError(Page page, string source, Exception ex) =>
+        CompositionRoot.Get<IShellStatus>().ReportError(page, source, ex, PageRead.Timed);
 
     // The page updated on its own: a live page's "As of", a snapshot's "Taken" (#140). Replaces an
     // earlier background error once the page collects successfully again.
-    internal static void ReportBackgroundSuccess(Page page)
-    {
-        if (OwnerOf(page) is not { } main)
-            return;
-        main._updatedAt = DateTime.Now;
-        if (main.Bar.MessageIsError)
-            main.Bar.ShowMessage(null);
-        main.ShowPageContext();
-    }
+    internal static void ReportBackgroundSuccess(Page page) => OwnerOf(page)?.ShowRead(page, PageRead.Timed);
 
     /// <summary>
     /// A page's <see cref="IPageContext"/> changed: it paused or resumed, picked another time
@@ -792,6 +792,41 @@ public partial class MainWindow : Window
         Window.GetWindow(page) is MainWindow main && ReferenceEquals(main._page, page) ? main
         : Application.Current?.MainWindow is MainWindow app && ReferenceEquals(app._page, page) ? app
         : null;
+
+    // ── What the page on screen reports (IShellStatus, #183) ──────────────────
+
+    // The page on screen, or its view model: a report from any other is only logged.
+    private bool IsOnScreen(object page) => ReferenceEquals(page, _page) || ReferenceEquals(page, _model);
+
+    /// <summary>The page read: opened or refreshed, the top bar's message goes; on its own, only an error does.</summary>
+    internal void ShowRead(object page, PageRead read)
+    {
+        if (!IsOnScreen(page))
+            return;
+        _updatedAt = DateTime.Now;
+        if (read != PageRead.Timed || Bar.MessageIsError)
+            Bar.ShowMessage(null);
+        ShowPageContext();
+    }
+
+    /// <summary>The page couldn't read: the error on the top bar, and in a message box when it was just opened.</summary>
+    internal void ShowError(object page, Exception error, PageRead read)
+    {
+        if (!IsOnScreen(page))
+            return;
+        Bar.ShowMessage(FormatErrorStatus(error), isError: true);
+        if (read == PageRead.Load)
+            _dialogs.Warn(
+                FormatErrorDetail(error) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
+                "Data Error");
+    }
+
+    /// <summary>The page's kind, window or pause changed.</summary>
+    internal void ShowContextOf(object page)
+    {
+        if (IsOnScreen(page))
+            ShowPageContext();
+    }
 
     // Returns the full message for the MessageBox, with the searchable tag on its own line.
     private static string FormatErrorDetail(Exception ex)
@@ -810,19 +845,28 @@ public partial class MainWindow : Window
     // When each server's Overview was last opened, for its "Since you last looked".
     private readonly OverviewVisits _overviewVisits;
 
-    private HomePage CreateHomePage()
+    // The links out of a page the factory made (#183) that lead to the window: Home's tiles, an
+    // Overview's links, Settings'.
+    private void Wire(Page page)
     {
-        var page = new HomePage(Monitoring, SettingsService);
+        switch (page)
+        {
+            case HomePage home:         Wire(home); break;
+            case OverviewPage overview: Wire(overview); break;
+            case SettingsPage settings: Wire(settings); break;
+        }
+    }
+
+    private void Wire(HomePage page)
+    {
         page.OpenRequested          += async id => await NavigateTo("Overview", serverId: id);
         page.InvestigateRequested   += async alert => await OpenEvidenceAsync(alert, ActivitySources.Home);
         page.AddConnectionRequested += async () => await NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage);
         page.EditRequested          += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
-        return page;
     }
 
-    private OverviewPage CreateOverviewPage(Guid connectionId)
+    private void Wire(OverviewPage page)
     {
-        var page = new OverviewPage(connectionId, Monitoring, SettingsService, _overviewVisits.Open(connectionId));
         page.EditRequested       += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
         page.ThresholdsRequested += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id, ConnectionTab.Thresholds));
         page.AlertsRequested     += async id => await NavigateTo("Alerts", alertsConnectionId: id);
@@ -836,11 +880,7 @@ public partial class MainWindow : Window
         page.OpenPageRequested += async (id, tag) => await NavigateTo(tag, serverId: id, switchSource: ActivitySources.Overview);
         // An alert's or a check's evidence, filtered and set to its time (#145).
         page.EvidenceRequested += async route => await OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.Overview);
-        return page;
     }
-
-    // Investigate goes through the navigator (#182), to OpenEvidenceAsync.
-    private AlertsPage CreateAlertsPage(Guid? connectionId) => new(Monitoring, SettingsService, connectionId);
 
     // ── An alert's evidence (#145) ────────────────────────────────────────────
 
@@ -927,14 +967,11 @@ public partial class MainWindow : Window
                   settingsMessage: null, _history.Visit, ActivitySources.Page(fromPage));
 
     // Settings (#131): links out of it come back here, and switching theme opens it again.
-    private SettingsPage CreateSettingsPage(SettingsLocation? location, string? message)
+    private void Wire(SettingsPage page)
     {
-        var page = new SettingsPage(SettingsService, Monitoring, Chat, ApplySavedConnectionsAsync,
-                                    location ?? new SettingsLocation(_settingsCategory), message);
         page.CategoryShown   += category => _settingsCategory = category;
         page.ServerRequested += async id => await NavigateTo("Overview", serverId: id);
         page.ThemeChanged    += async () => await NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Appearance));
-        return page;
     }
 
     /// <summary>Opens another page, as its sidebar button would; for links between pages (<see cref="INavigator"/>).</summary>
@@ -977,33 +1014,16 @@ public partial class MainWindow : Window
     // Refresh in the top bar, or F5: the page on screen reads again.
     private async System.Threading.Tasks.Task RefreshPageAsync()
     {
-        if (_page is not IRefreshable page || !Bar.CanRefresh)
+        if (_model is not { } model || !Bar.CanRefresh)
             return;
 
+        // The view model reports how it went (ShowRead, ShowError), and never throws.
         var version = _loadVersion;
         Bar.CanRefresh = false;
         Bar.ShowMessage("Refreshing…");
-        try
-        {
-            await page.RefreshAsync();
-            if (version == _loadVersion)
-            {
-                _updatedAt = DateTime.Now;
-                Bar.ShowMessage(null);
-                ShowPageContext();
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error($"{_history.Current?.Tag}: refresh failed", ex);
-            if (version == _loadVersion)
-                Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
-        }
-        finally
-        {
-            if (version == _loadVersion)
-                Bar.CanRefresh = true;
-        }
+        await model.RefreshCommand.ExecuteAsync(null);
+        if (version == _loadVersion)
+            Bar.CanRefresh = true;
     }
 
     // Pause or Resume in the top bar, for a live page that can.
@@ -1218,6 +1238,8 @@ public partial class MainWindow : Window
             return;
 
         var version = ++_loadVersion;
+        _model?.OnNavigatedFrom();
+        _model = null;
         var tag = route.Tag;
         var settingsLocation = route.Settings;
 
@@ -1254,12 +1276,28 @@ public partial class MainWindow : Window
         // A banner hidden on the page left shows again on the next page opened as evidence.
         FocusBar.NewPage();
 
-        // Settings page does not implement IRefreshable — handle separately
-        if (tag == "Settings")
+        var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
+        // An unknown tag (one remembered from an older version) opens Live Metrics, as it always has.
+        var made = _pages.Create(PageCatalog.Types.ContainsKey(tag) ? tag : "LiveMetrics",
+            new PageArgs(tag == "Settings" ? shown with { Settings = settingsLocation ?? new SettingsLocation(_settingsCategory) } : shown,
+                         Repo, Monitoring, SettingsService)
+            {
+                ConnectionId     = _activeConnectionId,
+                ConnectionName   = activeName,
+                ServerOffset     = ServerOffset(_activeConnectionId),
+                OverviewVisits   = _overviewVisits,
+                Chat             = Chat,
+                ApplyConnections = ApplySavedConnectionsAsync,
+                SettingsMessage  = settingsMessage,
+            });
+        Wire(made.View);
+
+        // Settings reads nothing on Refresh, and keeps its own place (#131).
+        if (made.View is SettingsPage settings)
         {
-            var settings = CreateSettingsPage(settingsLocation, settingsMessage);
             MainFrame.Navigate(settings);
             _page      = settings;
+            _model     = made.ViewModel;
             _updatedAt = null;
             ShowFocusBanner();
             ShowDetailsOf(settings);
@@ -1270,40 +1308,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
-        IRefreshable page = tag switch
-        {
-            "Home"            => CreateHomePage(),
-            "Overview"        => CreateOverviewPage(shown.ServerId!.Value),
-            "LiveMetrics"     => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
-            "Alerts"          => CreateAlertsPage(shown.AlertsConnectionId),
-            "TopWaits"        => new TopWaitsPage(Repo, SettingsService),
-            "ActiveWaits"     => new ActiveWaitsPage(Repo, SettingsService),
-            "Processes"       => new ProcessesPage(Repo, SettingsService),
-            "Deadlocks"       => new DeadlocksPage(Repo, SettingsService),
-            "AgentJobs"       => new AgentJobsPage(Repo, SettingsService),
-            "Backups"         => new BackupsPage(Repo, SettingsService),
-            "FileIo"          => new FileIoPage(Repo, SettingsService),
-            "ConfigChecks"    => new ConfigChecksPage(Repo, activeName, SettingsService),
-            "SecurityAudit"   => new SecurityAuditPage(Repo, activeName, SettingsService),
-            "WaitTrend"       => new WaitStatsTrendPage(Repo, Monitoring.HistoryFor(_activeConnectionId), SettingsService),
-            "TempDb"          => new TempDbPage(Repo, SettingsService),
-            "Memory"          => new MemoryGrantsPage(Repo, SettingsService),
-            "QueryStore"      => new QueryStorePage(Repo, SettingsService),
-            "QueryRegressions" => new QueryRegressionsPage(Repo, Monitoring.HistoryFor(_activeConnectionId), SettingsService),
-            "IndexHealth"     => new IndexHealthPage(Repo, SettingsService),
-            "ResourceQueries" => new ResourceQueriesPage(Repo, ServerOffset(_activeConnectionId), SettingsService),
-            "ImplicitConv"    => new ImplicitConversionsPage(Repo, SettingsService),
-            "PlanCacheHealth" => new PlanCacheHealthPage(Repo, SettingsService),
-            "StaleStats"      => new StaleStatisticsPage(Repo, SettingsService),
-            "DbStorage"       => new DatabaseStoragePage(Repo, SettingsService),
-            "AppConnections" => new ApplicationConnectionsPage(Repo, SettingsService),
-            "Perfmon"        => new PerfmonPage(Repo, Monitoring.HistoryFor(_activeConnectionId), SettingsService),
-            "SpTrace"         => new SpTracePage(Repo, SettingsService),
-            "Export"          => new ExportPage(Repo, SettingsService),
-            _                 => new LiveMetricsDashboardPage(Repo, Monitoring, _activeConnectionId, Monitoring.HistoryFor(_activeConnectionId), activeName),
-        };
-
+        var page  = made.View;
+        var model = made.ViewModel;
         System.Diagnostics.Debug.Assert(PageCatalog.Types.GetValueOrDefault(tag) == page.GetType() || !PageCatalog.Types.ContainsKey(tag),
                                         $"PageCatalog says \"{tag}\" opens another type than {page.GetType().Name}.");
 
@@ -1323,7 +1329,8 @@ public partial class MainWindow : Window
         }
 
         MainFrame.Navigate(page);
-        _page       = page as Page;
+        _page       = page;
+        _model      = model;
         _pageLoaded = false;
         _updatedAt  = null;
         ShowDetailsOf(page);
@@ -1333,46 +1340,24 @@ public partial class MainWindow : Window
         // How the page was left last time: its tab now, each grid's sort, filter and selection
         // as its rows arrive, so the page loads straight into it (#139).
         var viewState = _viewStates.Get(shown);
-        if (viewState is not null && page is Page opened)
-            RestoreViewState(() => viewState.Restore(opened));
+        if (viewState is not null)
+            RestoreViewState(() => viewState.Restore(page));
+        if (_modelStates.Get(shown) is { } modelState)
+            RestoreViewState(() => model.RestoreState(modelState));
 
+        // The view model loads it and reports how it went (ShowRead, ShowError): once the user has
+        // moved on (another page or another database) it was cancelled, and says nothing.
         Bar.CanRefresh = false;
         Bar.ShowMessage("Loading…");
-        try
+        await model.OnNavigatedToAsync();
+        if (version == _loadVersion)
         {
-            await page.RefreshAsync();
-            if (version == _loadVersion)
-            {
-                _updatedAt = DateTime.Now;
-                Bar.ShowMessage(null);
-                ShowPageContext();
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error($"{tag}: load failed", ex);
+            Bar.CanRefresh = true;
 
-            // The user has already moved on (another page or another database) — an error
-            // from this load would describe data that is no longer on screen.
-            if (version != _loadVersion)
-                return;
-
-            Bar.ShowMessage(FormatErrorStatus(ex), isError: true);
-            _dialogs.Warn(
-                FormatErrorDetail(ex) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
-                "Data Error");
-        }
-        finally
-        {
-            if (version == _loadVersion)
-            {
-                Bar.CanRefresh = true;
-
-                // Loaded or not, the page is as long as it will be: scroll it back.
-                _pageLoaded = true;
-                if (viewState is not null && page is Page loaded)
-                    RestoreViewState(() => viewState.RestoreScrolling(loaded));
-            }
+            // Loaded or not, the page is as long as it will be: scroll it back.
+            _pageLoaded = true;
+            if (viewState is not null)
+                RestoreViewState(() => viewState.RestoreScrolling(page));
         }
     }
 
@@ -1386,6 +1371,9 @@ public partial class MainWindow : Window
         try
         {
             _viewStates.Save(current, ViewState.Capture(_page, _viewStates.Get(current)));
+            // What the view model keeps (#183): a converted page's tab or filter.
+            if (_model?.SaveState() is { } modelState)
+                _modelStates.Save(current, modelState);
         }
         catch (Exception ex)
         {

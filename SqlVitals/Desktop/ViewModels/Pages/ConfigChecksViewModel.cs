@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Config Checks' verdict (#150): how many checks fail, the highest risk first.</summary>
-public sealed class ConfigChecksViewModel(Action showCheck, Action script) : PageViewModel
+public sealed class ConfigChecksViewModel(Action showCheck, Action script) : CodeBehindViewModel
 {
     public void Show(ConfigCheckList list) => Verdict = ConfigChecksVerdict.From(list);
 

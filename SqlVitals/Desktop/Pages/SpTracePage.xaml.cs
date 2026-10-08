@@ -18,7 +18,7 @@ namespace SqlVitals.Desktop.Pages;
 /// when the login can create one, and falls back to per-procedure DMV aggregates when it
 /// cannot — see <see cref="ISpTraceRepository"/>.
 /// </summary>
-public partial class SpTracePage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#149): the selected call ─────────────────────────
     // Its figures, its statement with Copy, and its procedure's cached plan, drawn here or in a

@@ -10,7 +10,7 @@ using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ProcessesPage : Page, IRefreshable, IPageContext, IFocusPage, IDetailsSource
+public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocusPage, IDetailsSource
 {
     // ── The details drawer (#147): the selected session ───────────────────
     private const string SelectHint = "Select a session on the map or in the grid to see its details.";

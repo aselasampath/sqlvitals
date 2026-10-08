@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>File I/O's verdict (#150): the files slower than the threshold, the worst first.</summary>
-public sealed class FileIoViewModel(Action showSlow) : PageViewModel
+public sealed class FileIoViewModel(Action showSlow) : CodeBehindViewModel
 {
     public void Show(FileLatencyList? list) => Verdict = FileIoVerdict.From(list);
 

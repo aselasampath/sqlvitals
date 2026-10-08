@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Agent Jobs' verdict (#150): failed and long-running jobs, or Agent stopped.</summary>
-public sealed class AgentJobsViewModel(Action showJob, Action needsAttention) : PageViewModel
+public sealed class AgentJobsViewModel(Action showJob, Action needsAttention) : CodeBehindViewModel
 {
     public void Show(AgentJobList list) => Verdict = AgentJobsVerdict.From(list);
 

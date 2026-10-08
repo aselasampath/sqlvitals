@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Perfmon's verdict (#150): counters past a known limit, and the ones rising.</summary>
-public sealed class PerfmonViewModel(INavigator navigator) : PageViewModel
+public sealed class PerfmonViewModel(INavigator navigator) : CodeBehindViewModel
 {
     private string? _causePage;
 

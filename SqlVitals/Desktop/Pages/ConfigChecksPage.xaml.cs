@@ -18,7 +18,7 @@ namespace SqlVitals.Desktop.Pages;
 /// verify and compatibility level. Each check shows Pass or Warn, the value now, the value
 /// recommended and why; a warning comes with the T-SQL to fix it, which is never run here.
 /// </summary>
-public partial class ConfigChecksPage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class ConfigChecksPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#150): the selected check ─────────────────────────────
     private const string SelectHint = "Select a check to see why it matters and the script that fixes it.";

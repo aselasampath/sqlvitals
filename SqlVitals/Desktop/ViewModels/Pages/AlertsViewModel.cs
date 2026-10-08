@@ -6,7 +6,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Alerts' verdict (#150): the active alerts, the worst first, and whether alerts are raised at all.</summary>
-public sealed class AlertsViewModel(INavigator navigator, Action activeOnly) : PageViewModel
+public sealed class AlertsViewModel(INavigator navigator, Action activeOnly) : CodeBehindViewModel
 {
     private Alert? _worst;
 

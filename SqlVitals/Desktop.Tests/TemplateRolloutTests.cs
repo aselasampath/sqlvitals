@@ -587,7 +587,7 @@ public sealed class TemplateRolloutTests : IDisposable
             [nameof(IWaitStatsRepository.GetImplicitConversionsAsync)]       = () => Task.FromException<IEnumerable<ImplicitConversion>>(error),
             [nameof(IWaitStatsRepository.PollProcedureStatsAsync)]           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
         });
-        IRefreshable page = tag switch
+        ICodeBehindPage page = tag switch
         {
             "ActiveWaits"      => new ActiveWaitsPage(repo),
             "Deadlocks"        => new DeadlocksPage(repo),

@@ -13,6 +13,7 @@ using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Home;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -21,8 +22,11 @@ namespace SqlVitals.Desktop.Pages;
 /// attention first. Everything comes from the monitoring sessions and the local history; Home
 /// never queries a server, and never contacts one that isn't monitored.
 /// </summary>
-public partial class HomePage : Page, IRefreshable, IPageContext
+public partial class HomePage : Page, ICodeBehindPage, IPageContext
 {
+    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
+    internal HomeViewModel ViewModel { get; } = new();
+
     // Every monitored server's health as its samples arrive (#140); each has its own interval.
     public PageKind Kind => PageKind.Live;
 

@@ -17,7 +17,7 @@ namespace SqlVitals.Desktop.Pages;
 /// backups msdb keeps for it. Not reachable on Azure SQL Database, which takes its own backups:
 /// MainWindow disables the button, and the repository says so too.
 /// </summary>
-public partial class BackupsPage : Page, IRefreshable, IPageContext
+public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;

@@ -6,15 +6,17 @@ using SqlVitals.Desktop.Services.Wpf;
 namespace SqlVitals.Desktop.Services;
 
 /// <summary>
-/// Where the app's services are made (#182): today the WPF-free services view models ask for
-/// dialogs, the clipboard, files, navigation, the theme and the UI thread. #166 adds settings,
-/// monitoring and the repositories, and #183 the pages.
+/// Where the app's services are made (#182): the WPF-free services view models ask for (dialogs,
+/// the clipboard, files, navigation, the theme and the UI thread), the top bar and the timed
+/// refresh, and the pages with their factory (#183). #166 adds settings, monitoring and the
+/// repositories.
 /// </summary>
 /// <remarks>
-/// <c>App.OnStartup</c> builds it before the main window opens. Until the page factory of #183
-/// hands services to every page, a page takes them as optional constructor parameters and falls
-/// back to <see cref="Get{T}"/>; controls, windows and helpers that WPF makes ask it directly. A
-/// test that builds a page passes its fakes, or gets the app's services, built on first use.
+/// <c>App.OnStartup</c> builds it before the main window opens. The page factory hands a page its
+/// services (<see cref="PageRegistrations"/>); a page built elsewhere takes them as optional
+/// constructor parameters and falls back to <see cref="Get{T}"/>; controls, windows and helpers
+/// that WPF makes ask it directly. A test that builds a page passes its fakes, or gets the app's
+/// services, built on first use.
 /// </remarks>
 public static class CompositionRoot
 {
@@ -45,6 +47,7 @@ public static class CompositionRoot
     public static IServiceProvider Build() =>
         new ServiceCollection()
             .AddUiServices()
+            .AddPages()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
     /// <summary>The WPF implementations of the view models' services.</summary>
@@ -56,5 +59,9 @@ public static class CompositionRoot
             .AddSingleton<IThemeService>(_ => new WpfThemeService(() => Application.Current?.Resources))
             .AddSingleton<INavigator>(_ => new ShellNavigator(() => Application.Current?.MainWindow as MainWindow))
             // The application's thread: where the app is built, which is the UI thread.
-            .AddSingleton<IUiDispatcher>(_ => new WpfUiDispatcher(Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher));
+            .AddSingleton<IUiDispatcher>(_ => new WpfUiDispatcher(Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher))
+            // The top bar, and the pages' timed refresh (#183).
+            .AddSingleton<IShellStatus>(_ => new WpfShellStatus(() => Application.Current?.MainWindow as MainWindow))
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<IRefreshScheduler, RefreshScheduler>();
 }

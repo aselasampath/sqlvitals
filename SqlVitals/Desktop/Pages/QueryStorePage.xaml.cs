@@ -27,7 +27,7 @@ namespace SqlVitals.Desktop.Pages;
 /// SSMS's Query Store reports on five tabs. Opening the page reads the settings and the tab on
 /// screen; another tab is read the first time it's opened, and again after Refresh or a new period.
 /// </summary>
-public partial class QueryStorePage : Page, IRefreshable, IPageContext, IFocusPage, IDetailsSource
+public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocusPage, IDetailsSource
 {
     // ── The details drawer (#147): the selected query ─────────────────────────
     // A row selected in any tab: its figures there, its text and its plans in the period. It stays

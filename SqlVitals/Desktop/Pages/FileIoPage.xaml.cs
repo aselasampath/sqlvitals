@@ -21,7 +21,7 @@ namespace SqlVitals.Desktop.Pages;
 /// added up to show whether the storage itself is slow. On the page template (#150): the verdict
 /// names the slow files, and a file's details are in the drawer.
 /// </summary>
-public partial class FileIoPage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // Live: read every few seconds; the bar's Pause and Resume are the page's own (#140).
     public PageKind Kind => PageKind.Live;

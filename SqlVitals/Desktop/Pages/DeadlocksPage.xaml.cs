@@ -17,7 +17,7 @@ namespace SqlVitals.Desktop.Pages;
 /// participants, the objects and statements involved, and which deadlocks keep coming back.
 /// Each one can be saved as an .xdl file to open as a graph in SSMS.
 /// </summary>
-public partial class DeadlocksPage : Page, IRefreshable, IPageContext
+public partial class DeadlocksPage : Page, ICodeBehindPage, IPageContext
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;

@@ -6,7 +6,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Active Waits' verdict (#149): the requests blocked, or what they wait on.</summary>
-public sealed class ActiveWaitsViewModel(INavigator navigator) : PageViewModel
+public sealed class ActiveWaitsViewModel(INavigator navigator) : CodeBehindViewModel
 {
     public void Show(IReadOnlyList<ActiveWait> waits, HealthThreshold? blocking) => Verdict = ActiveWaitsVerdict.From(waits, blocking);
 

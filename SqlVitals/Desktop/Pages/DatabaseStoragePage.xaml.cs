@@ -49,7 +49,7 @@ public sealed class ServerConfigVm
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-public partial class DatabaseStoragePage : Page, IRefreshable, IPageContext, IFocusPage
+public partial class DatabaseStoragePage : Page, ICodeBehindPage, IPageContext, IFocusPage
 {
     // Read once, and again on Refresh, from the connection's database (#140).
     public PageKind Kind => PageKind.Snapshot;

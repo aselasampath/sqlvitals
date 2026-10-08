@@ -554,7 +554,7 @@ public sealed class TemplateEverywhereTests : IDisposable
             [nameof(IWaitStatsRepository.GetConfigurationChecksAsync)] = () => Task.FromException<ConfigCheckList>(error),
             [nameof(IWaitStatsRepository.GetSecurityAuditAsync)]       = () => Task.FromException<SecurityFindingList>(error),
         });
-        IRefreshable page = tag switch
+        ICodeBehindPage page = tag switch
         {
             "Memory"        => new MemoryGrantsPage(repo),
             "TempDb"        => new TempDbPage(repo),

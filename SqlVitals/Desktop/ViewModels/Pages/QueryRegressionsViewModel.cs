@@ -6,7 +6,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>Query Regressions' verdict (#149): the queries that got slower, the worst first.</summary>
-public sealed class QueryRegressionsViewModel(Action showPlans, INavigator navigator) : PageViewModel
+public sealed class QueryRegressionsViewModel(Action showPlans, INavigator navigator) : CodeBehindViewModel
 {
     public void Show(IReadOnlyList<QueryRegression> rows, bool compared, string comparison, string? notCompared, RegressionCriteria criteria) =>
         Verdict = QueryRegressionsVerdict.From(rows, compared, comparison, notCompared, criteria);

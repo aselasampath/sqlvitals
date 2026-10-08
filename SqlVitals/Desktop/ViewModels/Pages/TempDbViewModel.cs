@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>TempDB's verdict (#150): who holds TempDB, and how much room is left.</summary>
-public sealed class TempDbViewModel(Action showSession) : PageViewModel
+public sealed class TempDbViewModel(Action showSession) : CodeBehindViewModel
 {
     public void Show(IReadOnlyList<TempDbFile> files, IReadOnlyList<TempDbSession> sessions, IReadOnlyList<TempDbCounter> counters) =>
         Verdict = TempDbVerdict.From(files, sessions, counters);

@@ -7,7 +7,7 @@ using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class ActiveWaitsPage : System.Windows.Controls.Page, IRefreshable, IPageContext, IFocusPage
+public partial class ActiveWaitsPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext, IFocusPage
 {
     // Read once, and again on Refresh (#140).
     public PageKind Kind => PageKind.Snapshot;

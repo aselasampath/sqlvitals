@@ -4,7 +4,7 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>App Connections' verdict (#149): who holds the connections; it has no actions.</summary>
-public sealed class ApplicationConnectionsViewModel : PageViewModel
+public sealed class ApplicationConnectionsViewModel : CodeBehindViewModel
 {
     public void Show(IReadOnlyList<ApplicationConnection> apps) => Verdict = AppConnectionsVerdict.From(apps);
 

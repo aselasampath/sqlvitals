@@ -20,7 +20,7 @@ namespace SqlVitals.Desktop.Pages;
 /// template (#150): the verdict names failed and long-running jobs; a job's details and the
 /// selected step's message are in the drawer.
 /// </summary>
-public partial class AgentJobsPage : Page, IRefreshable, IPageContext, IDetailsSource
+public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
     // ── The details drawer (#150): the selected job, and its selected step's message ──
     private const string SelectHint = "Select a job to see what happened, its next run and owner, and the message of the step selected below.";

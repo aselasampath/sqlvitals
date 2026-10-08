@@ -9,7 +9,7 @@ using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class StaleStatisticsPage : System.Windows.Controls.Page, IRefreshable, IPageContext
+public partial class StaleStatisticsPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext
 {
     // Read once, and again on Refresh, from the connection's database (#140).
     public PageKind Kind => PageKind.Snapshot;
