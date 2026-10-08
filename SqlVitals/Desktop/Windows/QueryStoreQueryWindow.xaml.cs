@@ -63,7 +63,7 @@ public partial class QueryStoreQueryWindow : Window
         catch (Exception ex)
         {
             AppLog.Error($"QueryStore: reading query {_queryId} failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
             return;
         }
 

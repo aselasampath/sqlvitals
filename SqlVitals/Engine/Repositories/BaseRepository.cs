@@ -2,18 +2,21 @@ using System.Data;
 using System.Runtime.CompilerServices;
 using Dapper;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 
 namespace SqlVitals.Engine.Repositories;
 
-public abstract class BaseRepository(IConfiguration configuration)
+/// <summary>
+/// What every area's repository shares: a connection to its <see cref="SqlTarget"/>, the query
+/// time limit and isolation level, and errors wrapped with the query's name.
+/// </summary>
+public abstract class BaseRepository(SqlTarget target)
 {
-    private readonly int  _timeoutSec  = configuration.GetValue<int> ("QuerySettings:CommandTimeoutSeconds", 30);
-    private readonly bool _useNoLock   = configuration.GetValue<bool>("QuerySettings:UseNoLock",             true);
+    private readonly int  _timeoutSec = target.CommandTimeoutSeconds;
+    private readonly bool _useNoLock  = target.UseNoLock;
 
     protected IDbConnection CreateConnection() =>
-        new SqlConnection(configuration.GetConnectionString("SqlServer"));
+        new SqlConnection(target.ConnectionString);
 
     // ── Version-dependent columns ─────────────────────────────────────
     // Newer versions add columns to catalog views and DMVs, and naming a missing one fails the

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
@@ -7,54 +6,54 @@ namespace SqlVitals.Engine.Repositories;
 /// Every area's repository behind one <see cref="IWaitStatsRepository"/> (#47): it holds one of each
 /// for its connection, and hands each call to the area's. It runs no SQL itself.
 /// </summary>
-public class WaitStatsRepository(IConfiguration configuration) : IWaitStatsRepository
+public class WaitStatsRepository(SqlTarget target) : IWaitStatsRepository
 {
-    private readonly ServerRepository _server = new(configuration);
+    private readonly ServerRepository _server = new(target);
 
-    private readonly WaitsRepository _waits = new(configuration);
+    private readonly WaitsRepository _waits = new(target);
 
     // Each of these remembers which columns its server has, so one instance per connection.
-    private readonly MemoryRepository _memory = new(configuration);
+    private readonly MemoryRepository _memory = new(target);
 
-    private readonly IndexRepository _indexes = new(configuration);
+    private readonly IndexRepository _indexes = new(target);
 
-    private readonly ResourceQueryRepository _resourceQueries = new(configuration);
+    private readonly ResourceQueryRepository _resourceQueries = new(target);
 
-    private readonly StorageRepository _storage = new(configuration);
+    private readonly StorageRepository _storage = new(target);
 
-    private readonly SessionRepository _sessions = new(configuration);
+    private readonly SessionRepository _sessions = new(target);
 
     // Caches the engine edition, so one instance per connection.
-    private readonly LiveMetricsRepository _liveMetrics = new(configuration);
+    private readonly LiveMetricsRepository _liveMetrics = new(target);
 
-    private readonly PlanCacheHealthRepository _planHealth = new(configuration);
+    private readonly PlanCacheHealthRepository _planHealth = new(target);
 
-    private readonly TempDbRepository _tempDb = new(configuration);
+    private readonly TempDbRepository _tempDb = new(target);
 
     // Stateful across polls (dedup window + previous DMV snapshot), so it must be a single
     // long-lived instance rather than created per call.
-    private readonly SpTraceRepository _spTrace = new(configuration);
+    private readonly SpTraceRepository _spTrace = new(target);
 
     // Caches the engine edition, so one instance per connection.
-    private readonly HistoryRepository _history = new(configuration);
+    private readonly HistoryRepository _history = new(target);
 
-    private readonly QueryRegressionRepository _regressions = new(configuration);
+    private readonly QueryRegressionRepository _regressions = new(target);
 
     // Remembers which Query Store views and columns the server has, so one instance per connection.
-    private readonly QueryStoreRepository _queryStore = new(configuration);
+    private readonly QueryStoreRepository _queryStore = new(target);
 
-    private readonly DeadlockRepository _deadlocks = new(configuration);
+    private readonly DeadlockRepository _deadlocks = new(target);
 
-    private readonly AgentJobRepository _agentJobs = new(configuration);
+    private readonly AgentJobRepository _agentJobs = new(target);
 
-    private readonly BackupRepository _backups = new(configuration);
+    private readonly BackupRepository _backups = new(target);
 
     // Remembers which volume each file is on, so one instance per connection.
-    private readonly FileIoRepository _fileIo = new(configuration);
+    private readonly FileIoRepository _fileIo = new(target);
 
-    private readonly ConfigurationRepository _configuration = new(configuration);
+    private readonly ConfigurationRepository _configuration = new(target);
 
-    private readonly SecurityAuditRepository _securityAudit = new(configuration);
+    private readonly SecurityAuditRepository _securityAudit = new(target);
 
     // ── Server (delegated to ServerRepository) ────────────────────────
     public Task<bool> IsAzureSqlDatabaseAsync() => _server.IsAzureSqlDatabaseAsync();

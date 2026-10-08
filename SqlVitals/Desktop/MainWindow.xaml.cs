@@ -2,7 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
@@ -56,7 +55,7 @@ public partial class MainWindow : Window
     private PageViewModel? _model;
 
     // Makes each page with its view model (#183).
-    private readonly IPageFactory _pages = CompositionRoot.Get<IPageFactory>();
+    private readonly IPageFactory _pages;
 
     // When the page on screen last loaded, refreshed or reported an update: a snapshot's "Taken",
     // a live page's "As of" (#140). Null until its first load finishes.
@@ -71,14 +70,16 @@ public partial class MainWindow : Window
 
 
     // Messages and the app's windows (#182).
-    private readonly IDialogService _dialogs = CompositionRoot.Get<IDialogService>();
+    private readonly IDialogService _dialogs;
 
     // Background live-metrics collection for the active and every monitored connection.
-    internal readonly MonitoringManager Monitoring = new();
+    internal readonly MonitoringManager Monitoring;
 
     // The Slack and Teams channels in Settings → Alerts & chat (#108).
-    internal readonly ChatNotificationService Chat = new(new HttpWebhookSender(), ui: System.Threading.SynchronizationContext.Current
-                                                                              ?? new System.Windows.Threading.DispatcherSynchronizationContext());
+    internal readonly ChatNotificationService Chat;
+
+    // Builds the active connection's repositories (#166).
+    private readonly IRepositoryFactory _repositories;
     private List<ConnectionSelectorItem> _selectorItems = new();
 
     // The notification-area icon: Windows notifications for alerts, and the way back to the
@@ -88,8 +89,16 @@ public partial class MainWindow : Window
     // What restoring from the tray goes back to: normal or maximized.
     private WindowState _restoreState = WindowState.Normal;
 
-    public MainWindow()
+    /// <summary>The app's window, made by the container (#166) with the services it starts and stops.</summary>
+    public MainWindow(IPageFactory pages, IDialogService dialogs, ConnectionSettingsService settings, MonitoringManager monitoring,
+                      ChatNotificationService chat, IRepositoryFactory repositories)
     {
+        _pages          = pages;
+        _dialogs        = dialogs;
+        SettingsService = settings;
+        Monitoring      = monitoring;
+        Chat            = chat;
+        _repositories   = repositories;
         InitializeComponent();
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -138,8 +147,6 @@ public partial class MainWindow : Window
                 await OpenAsync(history, settingsMessage: null, _history.Visit, ActivitySources.Sidebar);
         };
 
-        SettingsService = new ConnectionSettingsService();
-        _overviewVisits = new OverviewVisits(SettingsService);
         var store  = SettingsService.Load();
 
         // Every grid's density, as chosen in Settings → Appearance (#148).
@@ -405,9 +412,9 @@ public partial class MainWindow : Window
         _activeConnectionId = active?.Id;
         _activeFingerprint  = Fingerprint(active, commandTimeoutSeconds);
 
-        var repo = RepositoryFactory.Create(active, commandTimeoutSeconds, out var resolvedConnectionString);
-        _isConnectionConfigured = !string.IsNullOrWhiteSpace(resolvedConnectionString);
-        return repo;
+        var target = _repositories.TargetFor(active, commandTimeoutSeconds);
+        _isConnectionConfigured = !string.IsNullOrWhiteSpace(target.ConnectionString);
+        return _repositories.Create(target);
     }
 
     /// <summary>
@@ -766,34 +773,10 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    // Returns a compact one-line status bar string, e.g. "Error [WaitStatsRepository.GetCumulativeWaitsAsync]: Timeout"
-    internal static string FormatErrorStatus(Exception ex) => ErrorStatus.Format(ex);
-
-    // Timer-driven page refreshes report here rather than through a MessageBox, which would
-    // pop up again on every tick while the server stays unreachable. The details go to the
-    // log; the top bar shows the one-line error (#140). A page the user has navigated away from
-    // no longer owns the bar, so only its log entry is kept.
-    // #166 moves these callers to IShellStatus.
-    internal static void ReportBackgroundError(Page page, string source, Exception ex) =>
-        CompositionRoot.Get<IShellStatus>().ReportError(page, source, ex, PageRead.Timed);
-
-    // The page updated on its own: a live page's "As of", a snapshot's "Taken" (#140). Replaces an
-    // earlier background error once the page collects successfully again.
-    internal static void ReportBackgroundSuccess(Page page) => OwnerOf(page)?.ShowRead(page, PageRead.Timed);
-
-    /// <summary>
-    /// A page's <see cref="IPageContext"/> changed: it paused or resumed, picked another time
-    /// range, or read a new window. The top bar follows (#140).
-    /// </summary>
-    internal static void ReportContextChanged(Page page) => OwnerOf(page)?.ShowPageContext();
-
-    // The window showing this page, while it is the page on screen.
-    private static MainWindow? OwnerOf(Page page) =>
-        Window.GetWindow(page) is MainWindow main && ReferenceEquals(main._page, page) ? main
-        : Application.Current?.MainWindow is MainWindow app && ReferenceEquals(app._page, page) ? app
-        : null;
-
-    // ── What the page on screen reports (IShellStatus, #183) ──────────────────
+    // ── What the page on screen reports (IShellStatus, #183, #166) ────────────
+    // Timed refreshes report through the top bar rather than a message box, which would pop up
+    // again on every tick while the server stays unreachable (#140). A page the user has left no
+    // longer owns the bar, so only its log entry is kept.
 
     // The page on screen, or its view model: a report from any other is only logged.
     private bool IsOnScreen(object page) => ReferenceEquals(page, _page) || ReferenceEquals(page, _model);
@@ -814,7 +797,7 @@ public partial class MainWindow : Window
     {
         if (!IsOnScreen(page))
             return;
-        Bar.ShowMessage(FormatErrorStatus(error), isError: true);
+        Bar.ShowMessage(ErrorStatus.Format(error), isError: true);
         if (read == PageRead.Load)
             _dialogs.Warn(
                 FormatErrorDetail(error) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
@@ -841,9 +824,6 @@ public partial class MainWindow : Window
     }
 
     // ── Home and a server's Overview (#130, #143) ─────────────────────────────
-
-    // When each server's Overview was last opened, for its "Since you last looked".
-    private readonly OverviewVisits _overviewVisits;
 
     // The links out of a page the factory made (#183) that lead to the window: Home's tiles, an
     // Overview's links, Settings'.
@@ -1279,14 +1259,11 @@ public partial class MainWindow : Window
         var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
         // An unknown tag (one remembered from an older version) opens Live Metrics, as it always has.
         var made = _pages.Create(PageCatalog.Types.ContainsKey(tag) ? tag : "LiveMetrics",
-            new PageArgs(tag == "Settings" ? shown with { Settings = settingsLocation ?? new SettingsLocation(_settingsCategory) } : shown,
-                         Repo, Monitoring, SettingsService)
+            new PageArgs(tag == "Settings" ? shown with { Settings = settingsLocation ?? new SettingsLocation(_settingsCategory) } : shown, Repo)
             {
                 ConnectionId     = _activeConnectionId,
                 ConnectionName   = activeName,
                 ServerOffset     = ServerOffset(_activeConnectionId),
-                OverviewVisits   = _overviewVisits,
-                Chat             = Chat,
                 ApplyConnections = ApplySavedConnectionsAsync,
                 SettingsMessage  = settingsMessage,
             });

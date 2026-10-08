@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
 
@@ -106,7 +107,7 @@ public sealed class QueryDetailsView : StackPanel
         catch (Exception ex)
         {
             if (version == _plansVersion)
-                _plansNote.Text = "Its plans couldn't be read: " + MainWindow.FormatErrorStatus(ex);
+                _plansNote.Text = "Its plans couldn't be read: " + ErrorStatus.Format(ex);
         }
     }
 

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Errors;
 
@@ -9,7 +8,7 @@ namespace SqlVitals.Engine.Repositories;
 /// log backup of each database in sys.databases. Read only; msdb keeps its times in the server's
 /// local time, and so does the list.
 /// </summary>
-public class BackupRepository(IConfiguration configuration) : BaseRepository(configuration), IBackupRepository
+public class BackupRepository(SqlTarget target) : BaseRepository(target), IBackupRepository
 {
     // SELECT denied on an msdb table (229), or no access to msdb at all (916).
     private static readonly int[] MsdbPermissionErrors = [229, 916];

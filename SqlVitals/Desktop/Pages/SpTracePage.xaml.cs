@@ -106,9 +106,13 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
     // exists) and while combo items are being rebuilt.
     private bool _filtersReady;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    public SpTracePage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public SpTracePage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
 
@@ -244,14 +248,14 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
         _remainingSec = _intervalSec;
         UpdateCountdown();
         _timer.Start();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private void StopTimer()
     {
         _timer.Stop();
         TxtCountdown.Text = "--";
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private async void Timer_Tick(object? sender, EventArgs e)
@@ -265,7 +269,7 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
         try
         {
             await PollOnceAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch
         {
@@ -470,7 +474,7 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
         _intervalSec  = sec;
         _remainingSec = sec;
         UpdateCountdown();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private void BtnClear_Click(object sender, RoutedEventArgs e)

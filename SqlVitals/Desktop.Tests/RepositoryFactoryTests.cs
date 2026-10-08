@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Tests;
 
@@ -38,16 +39,58 @@ public sealed class RepositoryFactoryTests
     {
         var connection = ConnectionSettingsServiceTests.Connection();
 
-        RepositoryFactory.Create(connection, commandTimeoutSeconds: 60, out var resolved);
+        var target = new RepositoryFactory(Shipped()).TargetFor(connection, commandTimeoutSeconds: 60);
 
-        Assert.Equal(connection.ConnectionString, resolved);
+        Assert.Equal(connection.ConnectionString, target.ConnectionString);
+        Assert.Equal(60, target.CommandTimeoutSeconds);
     }
 
     [Fact]
     public void NoConnection_UsesTheFallbackFromTheFile()
     {
-        RepositoryFactory.Create(null, commandTimeoutSeconds: 0, out var resolved);
+        var target = new RepositoryFactory(Shipped()).TargetFor(null, commandTimeoutSeconds: 0);
 
-        Assert.Equal("", resolved);
+        Assert.Equal("", target.ConnectionString);
     }
+
+    // ── The target the repositories read (#166) ──────────────────────────
+
+    [Fact]
+    public void TheTarget_CarriesTheFilesDefaults_WhenSettingsLeaveThemAlone()
+    {
+        var target = new RepositoryFactory(Shipped()).TargetFor(ConnectionSettingsServiceTests.Connection(), commandTimeoutSeconds: 0);
+
+        Assert.Equal(30, target.CommandTimeoutSeconds);
+        Assert.True(target.UseNoLock);
+        Assert.Equal("SqlVitals_SpTrace", target.TraceSessionName);
+    }
+
+    [Fact]
+    public void TheTarget_FollowsAnEditedFile()
+    {
+        var edited = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:SqlServer"]          = "Server=fallback;Integrated Security=true",
+            ["QuerySettings:CommandTimeoutSeconds"]  = "45",
+            ["QuerySettings:UseNoLock"]              = "false",
+            ["TraceSettings:SessionName"]            = "OurTrace",
+        }).Build();
+
+        var target = new RepositoryFactory(edited).TargetFor(null, commandTimeoutSeconds: 0);
+
+        Assert.Equal(new SqlTarget("Server=fallback;Integrated Security=true", 45) { UseNoLock = false, TraceSessionName = "OurTrace" }, target);
+    }
+
+    [Fact]
+    public void TheTarget_NeverPrintsTheConnectionString()
+    {
+        var target = new SqlTarget("Server=sql01;User ID=sa;Password=s3cret;");
+
+        Assert.DoesNotContain("s3cret", target.ToString());
+        Assert.DoesNotContain("sql01", target.ToString());
+    }
+
+    [Fact]
+    public void TheFactory_BuildsTheRepositoriesForATarget() =>
+        Assert.IsType<WaitStatsRepository>(new RepositoryFactory(Shipped()).Create(new SqlTarget("")));
 }

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.AgentJobs;
 using SqlVitals.Engine.Errors;
 
@@ -9,7 +8,7 @@ namespace SqlVitals.Engine.Repositories;
 /// the current Agent session's sysjobactivity and the schedules. Read only; msdb keeps its
 /// times in the server's local time, and so do the jobs listed.
 /// </summary>
-public class AgentJobRepository(IConfiguration configuration) : BaseRepository(configuration), IAgentJobRepository
+public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAgentJobRepository
 {
     // SELECT denied on an msdb table (229), or no access to msdb at all (916).
     private static readonly int[] MsdbPermissionErrors = [229, 916];

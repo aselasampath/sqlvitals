@@ -90,6 +90,12 @@ internal static partial class MvvmRules
                                           && IsIn(type.ContainingNamespace, "SqlVitals.Engine")
             ? type.Name : null);
 
+    // ── Pages report to the shell, not the window ────────────────────────
+
+    /// <summary>Where a file refers to <c>MainWindow</c>: by name, through a member, or through the type of what it uses.</summary>
+    public static IEnumerable<Offence> WindowReferences(SemanticModel model, string file) =>
+        References(model, file, symbol => symbol is ITypeSymbol type && Is(type, "SqlVitals.Desktop.MainWindow") ? "MainWindow" : null);
+
     // ── async void only where an event calls it ──────────────────────────
 
     /// <summary>

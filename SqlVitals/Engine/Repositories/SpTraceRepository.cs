@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 
@@ -17,19 +16,16 @@ namespace SqlVitals.Engine.Repositories;
 /// by <see cref="WaitStatsRepository"/>.
 /// </remarks>
 [SuppressMessage("Design", "CA1001", Justification = "_gate never creates a wait handle, so there is nothing to dispose")]
-public partial class SpTraceRepository(IConfiguration configuration)
-    : BaseRepository(configuration), ISpTraceRepository
+public partial class SpTraceRepository(SqlTarget target)
+    : BaseRepository(target), ISpTraceRepository
 {
-    private const string DefaultSessionName = "SqlVitals_SpTrace";
-
     /// <summary>
     /// Upper bound on remembered ring-buffer event keys. The buffer holds at most
     /// max_events_limit events, so a window this size covers many polls' worth of overlap.
     /// </summary>
     private const int DedupWindowSize = 20_000;
 
-    private readonly string _sessionName = SanitiseIdentifier(
-        configuration.GetValue<string>("TraceSettings:SessionName") ?? DefaultSessionName);
+    private readonly string _sessionName = SanitiseIdentifier(target.TraceSessionName);
 
     // Start/Stop can race a poll tick from the UI timer; serialise all server interaction.
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -422,10 +418,10 @@ public partial class SpTraceRepository(IConfiguration configuration)
     /// </summary>
     internal static string SanitiseIdentifier(string? name)
     {
-        if (string.IsNullOrWhiteSpace(name)) return DefaultSessionName;
+        if (string.IsNullOrWhiteSpace(name)) return SqlTarget.DefaultTraceSessionName;
 
         var cleaned = IdentifierPattern().Replace(name.Trim(), "");
-        return cleaned.Length == 0 ? DefaultSessionName : cleaned;
+        return cleaned.Length == 0 ? SqlTarget.DefaultTraceSessionName : cleaned;
     }
 
     [GeneratedRegex(@"[^A-Za-z0-9_]", RegexOptions.CultureInvariant)]

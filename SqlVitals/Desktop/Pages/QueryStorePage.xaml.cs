@@ -93,7 +93,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         _tabs[TabTop].IsCurrent = false;
         if (Tabs.SelectedItem == TabTop)
             _ = LoadTabAsync(TabTop);
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     public string? FocusNote => _query is not { } id || _queryRowsShown is not { } shown ? null
@@ -114,7 +114,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         var nowUtc = DateTime.UtcNow;
         var toUtc  = _period.Resolve(nowUtc).ToUtc;
         DataTo = (toUtc < nowUtc ? toUtc : nowUtc).ToLocalTime();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private const int VariationTop   = 50;
@@ -205,9 +205,13 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         }
     }
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="navigator">Where Regressions goes; the app's (#182) when null.</param>
-    public QueryStorePage(IWaitStatsRepository repo, ConnectionSettingsService settings, INavigator? navigator = null)
+    public QueryStorePage(IWaitStatsRepository repo, ConnectionSettingsService settings, INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell    = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo     = repo;
         _settings = settings;
         InitializeComponent();
@@ -310,7 +314,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
             AppLog.Error($"QueryStore: reading the {tab.Header} tab failed", ex);
             if (version == state.Version)
             {
-                statusLine.Text  = MainWindow.FormatErrorStatus(ex);
+                statusLine.Text  = ErrorStatus.Format(ex);
                 state.IsCurrent = false;   // read again when next opened
             }
         }
@@ -601,7 +605,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
             {
                 rows            = rows with { Rows = rows.Rows.Where(r => r.QueryId == query).ToList() };
                 _queryRowsShown = rows.Rows.Count;
-                MainWindow.ReportContextChanged(this);
+                _shell.ReportContextChanged(this);
             }
             ShowRows(TopGrid, TopNotice, rows);
             TxtTopStatus.Text = rows.Unavailable is null ? Counted(rows.Rows.Count, "query", "queries") : string.Empty;
@@ -862,7 +866,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         {
             AppLog.Error("QueryStore: reading a wait category's queries failed", ex);
             if (version == _waitQueriesVersion)
-                TxtWaitQueriesHeader.Text = MainWindow.FormatErrorStatus(ex);
+                TxtWaitQueriesHeader.Text = ErrorStatus.Format(ex);
         }
     }
 

@@ -1,9 +1,8 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
-public class HistoryRepository(IConfiguration configuration) : BaseRepository(configuration), IHistoryRepository
+public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHistoryRepository
 {
     // Same idle waits the Live Metrics total leaves out (see GetLiveMetricsAsync). They grow
     // every interval on an idle server and say nothing about a problem.

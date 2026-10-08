@@ -396,7 +396,7 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, ICodeBehind
         catch (Exception ex)
         {
             if (version == _fragLoadVersion)
-                SetFragStatus(MainWindow.FormatErrorStatus(ex) + " — the grid still shows the previous results.", isError: true);
+                SetFragStatus(ErrorStatus.Format(ex) + " — the grid still shows the previous results.", isError: true);
             throw;
         }
         finally

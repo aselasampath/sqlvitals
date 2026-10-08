@@ -194,7 +194,7 @@ public sealed class RowDetailsView : StackPanel
             {
                 if (version == _version)
                 {
-                    _note.Text       = "The plan couldn't be read: " + MainWindow.FormatErrorStatus(ex);
+                    _note.Text       = "The plan couldn't be read: " + ErrorStatus.Format(ex);
                     _note.Visibility = Visibility.Visible;
                 }
                 return false;

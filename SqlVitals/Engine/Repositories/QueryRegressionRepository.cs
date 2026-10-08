@@ -1,12 +1,11 @@
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Regressions;
 
 namespace SqlVitals.Engine.Repositories;
 
-public partial class QueryRegressionRepository(IConfiguration configuration) : BaseRepository(configuration), IQueryRegressionRepository
+public partial class QueryRegressionRepository(SqlTarget target) : BaseRepository(target), IQueryRegressionRepository
 {
     // Reads every runtime-stats row of a week or more, which can take a while on a busy
     // database with a large Query Store.

@@ -6,7 +6,7 @@ namespace SqlVitals.Desktop.Pages;
 /// A page that can be opened as evidence (#145): shown filtered to the problem, or set to an
 /// alert's time window, until Show all. MainWindow calls <see cref="ShowFocus"/> once, before the
 /// page loads; the filter stays through its refreshes. The page calls
-/// <see cref="MainWindow.ReportContextChanged"/> when <see cref="FocusNote"/> changes.
+/// <see cref="Services.IShellStatus.ReportContextChanged"/> when <see cref="FocusNote"/> changes.
 /// </summary>
 public interface IFocusPage
 {

@@ -1,19 +1,24 @@
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SqlVitals.Desktop.Services.Wpf;
+using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.History;
+using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Services;
 
 /// <summary>
-/// Where the app's services are made (#182): the WPF-free services view models ask for (dialogs,
-/// the clipboard, files, navigation, the theme and the UI thread), the top bar and the timed
-/// refresh, and the pages with their factory (#183). #166 adds settings, monitoring and the
-/// repositories.
+/// Where the app's services are made (#182, #166): the WPF-free services view models ask for
+/// (dialogs, the clipboard, files, navigation, the theme and the UI thread), the top bar and the
+/// timed refresh, the pages with their factory (#183), the app's own services (settings, the
+/// history, monitoring, chat channels, export, the repositories and the log), and the main window.
 /// </summary>
 /// <remarks>
-/// <c>App.OnStartup</c> builds it before the main window opens. The page factory hands a page its
-/// services (<see cref="PageRegistrations"/>); a page built elsewhere takes them as optional
+/// <c>App.OnStartup</c> builds it and asks it for the main window. The page factory hands a page
+/// its services (<see cref="PageRegistrations"/>); a page built elsewhere takes them as optional
 /// constructor parameters and falls back to <see cref="Get{T}"/>; controls, windows and helpers
 /// that WPF makes ask it directly. A test that builds a page passes its fakes, or gets the app's
 /// services, built on first use.
@@ -46,8 +51,11 @@ public static class CompositionRoot
     /// <summary>A new container with every service of the app's, checked as it is built.</summary>
     public static IServiceProvider Build() =>
         new ServiceCollection()
+            .AddAppLog()
             .AddUiServices()
+            .AddAppServices()
             .AddPages()
+            .AddSingleton<MainWindow>()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
     /// <summary>The WPF implementations of the view models' services.</summary>
@@ -61,7 +69,46 @@ public static class CompositionRoot
             // The application's thread: where the app is built, which is the UI thread.
             .AddSingleton<IUiDispatcher>(_ => new WpfUiDispatcher(Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher))
             // The top bar, and the pages' timed refresh (#183).
-            .AddSingleton<IShellStatus>(_ => new WpfShellStatus(() => Application.Current?.MainWindow as MainWindow))
+            .AddSingleton<IShellStatus>(s => new WpfShellStatus(() => Application.Current?.MainWindow as MainWindow,
+                                                                 s.GetRequiredService<ILogger<WpfShellStatus>>()))
             .AddSingleton(TimeProvider.System)
             .AddSingleton<IRefreshScheduler, RefreshScheduler>();
+
+    /// <summary><c>ILogger&lt;T&gt;</c> on the log file, through the same factory as <see cref="AppLog"/> (#166).</summary>
+    public static IServiceCollection AddAppLog(this IServiceCollection services) =>
+        services
+            .AddSingleton(AppLog.Factory)
+            .AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+
+    /// <summary>
+    /// The app's own services (#166), one each for the app: the saved settings, the local history,
+    /// monitoring, the chat channels, when each Overview was last opened, export, and the
+    /// repositories over appsettings.json. The main window starts and stops them.
+    /// </summary>
+    public static IServiceCollection AddAppServices(this IServiceCollection services) =>
+        services
+            .AddSingleton<IConfiguration>(_ => RepositoryFactory.ReadAppSettings())
+            .AddSingleton<IRepositoryFactory, RepositoryFactory>()
+            .AddSingleton(s => new ConnectionSettingsService(log: s.GetRequiredService<ILogger<ConnectionSettingsService>>()))
+            .AddSingleton(s =>
+            {
+                var log = s.GetRequiredService<ILogger<HistoryWriter>>();
+                return new HistoryWriter(HistoryWriter.DefaultPath, log.Error, onActivityNotSaved: e => log.Info(MonitoringManager.NotSaved(e)));
+            })
+            .AddSingleton(s =>
+            {
+                var repositories = s.GetRequiredService<IRepositoryFactory>();
+                return new MonitoringManager(s.GetRequiredService<HistoryWriter>(),
+                                             (connection, timeout) => repositories.Create(repositories.TargetFor(connection, timeout)),
+                                             s.GetRequiredService<ILogger<MonitoringManager>>());
+            })
+            .AddSingleton<IWebhookSender, HttpWebhookSender>()
+            // Status changes are raised where the app is built: the UI thread.
+            .AddSingleton(s => new ChatNotificationService(s.GetRequiredService<IWebhookSender>(),
+                                                           log: s.GetRequiredService<ILogger<ChatNotificationService>>().Info,
+                                                           ui: SynchronizationContext.Current ?? new DispatcherSynchronizationContext()))
+            .AddSingleton(s => new OverviewVisits(s.GetRequiredService<ConnectionSettingsService>(), s.GetRequiredService<TimeProvider>(),
+                                                  s.GetRequiredService<ILogger<OverviewVisits>>()))
+            // Export reads the connection open when the page is: one per page.
+            .AddSingleton<Func<IWaitStatsRepository, ExportService>>(_ => repository => new ExportService(repository));
 }

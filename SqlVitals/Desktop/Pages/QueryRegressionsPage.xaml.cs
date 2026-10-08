@@ -103,10 +103,14 @@ public partial class QueryRegressionsPage : Page, ICodeBehindPage, IPageContext,
     // Where the rows on screen came from, which decides where the plan buttons look.
     private bool _shownFromQueryStore;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="navigator">Where a query_id goes; the app's (#182) when null.</param>
     public QueryRegressionsPage(IWaitStatsRepository repo, ConnectionHistory? history, ConnectionSettingsService settings,
-                                INavigator? navigator = null)
+                                INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell     = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo      = repo;
         _history   = history;
         _settings  = settings;
@@ -177,7 +181,7 @@ public partial class QueryRegressionsPage : Page, ICodeBehindPage, IPageContext,
 
             _shownFromQueryStore = result.FromQueryStore;
             (_checked, DataTo) = (windows, DateTime.Now);
-            MainWindow.ReportContextChanged(this);
+            _shell.ReportContextChanged(this);
             DataGridRefresh.SetItemsSource(RegressionsGrid, result.Rows);
             TxtStatus.Text = result.Status;
             TxtCount.Text  = result.Rows.Count switch
@@ -351,18 +355,18 @@ public partial class QueryRegressionsPage : Page, ICodeBehindPage, IPageContext,
 
     private async void BtnCheck_Click(object sender, RoutedEventArgs e) => await CheckFromToolbarAsync();
 
-    // The top bar's Refresh reports errors through MainWindow; a check started here reports its own.
+    // The top bar's Refresh reports errors through the view model; a check started here reports its own.
     private async Task CheckFromToolbarAsync()
     {
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             AppLog.Error("QueryRegressions: check failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
         }
     }
 

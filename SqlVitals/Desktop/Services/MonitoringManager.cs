@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.History;
@@ -44,16 +45,18 @@ public sealed class MonitoringManager : IDisposable
     // The store the last Sync applied: Start and Stop decide again from it.
     private ConnectionStore? _store;
 
-    public MonitoringManager()
-        : this(new HistoryWriter(HistoryWriter.DefaultPath, AppLog.Error, onActivityNotSaved: LogToAppLog),
-               (conn, timeout) => RepositoryFactory.Create(conn, timeout, out _))
-    {
-    }
+    // Sessions' failures, and handlers that throw.
+    private readonly ILogger _log;
 
-    internal MonitoringManager(HistoryWriter history, Func<ConnectionSettings, int, IWaitStatsRepository> createRepository)
+    /// <param name="history">The local history every session saves to; disposed with this.</param>
+    /// <param name="createRepository">A connection's repositories, with Settings' command timeout: <see cref="IRepositoryFactory"/>, or a fake.</param>
+    /// <param name="log">The app log; <see cref="AppLog"/>'s when null (tests).</param>
+    internal MonitoringManager(HistoryWriter history, Func<ConnectionSettings, int, IWaitStatsRepository> createRepository,
+                               ILogger<MonitoringManager>? log = null)
     {
         _history          = history;
         _createRepository = createRepository;
+        _log              = log ?? AppLog.For<MonitoringManager>();
 
         // Queued before any session exists, so it can only end what a previous run left active.
         _history.EndAlertsLeftOpen();
@@ -181,10 +184,11 @@ public sealed class MonitoringManager : IDisposable
             Machine = Environment.MachineName,
         });
 
-    private static void LogToAppLog(ActivityEntry e) =>
-        AppLog.Info($"Activity not saved to the history: {e.Event} · {e.ConnectionName ?? "all connections"} · {e.Source}" +
-                    (e.Setting is null ? "" : $" · {e.Setting}: {e.OldValue ?? "–"} → {e.NewValue ?? e.Detail ?? "–"}") +
-                    (e.Detail is null || e.Setting is not null ? "" : $" · {e.Detail}"));
+    /// <summary>The log line for an activity row the history couldn't save.</summary>
+    internal static string NotSaved(ActivityEntry e) =>
+        $"Activity not saved to the history: {e.Event} · {e.ConnectionName ?? "all connections"} · {e.Source}" +
+        (e.Setting is null ? "" : $" · {e.Setting}: {e.OldValue ?? "–"} → {e.NewValue ?? e.Detail ?? "–"}") +
+        (e.Detail is null || e.Setting is not null ? "" : $" · {e.Detail}");
 
     /// <summary>
     /// Applies the history snapshot interval and retention to the writer and every running
@@ -366,7 +370,7 @@ public sealed class MonitoringManager : IDisposable
         var repo     = _createRepository(conn, store.CommandTimeoutSeconds);
         var recorder = new HistoryRecorder(
             new HistoryConnection(id, conn.DisplayName, conn.Server.Trim(), conn.DatabaseLabel),
-            repo, _history, AppLog.Error)
+            repo, _history, _log.Error)
         {
             DetailInterval = _detailInterval,
         };
@@ -414,7 +418,7 @@ public sealed class MonitoringManager : IDisposable
         Raise(AlertsChanged, id, changes, "the window");
     }
 
-    private static void Raise(Action<Guid, IReadOnlyList<AlertChange>>? handlers, Guid id,
+    private void Raise(Action<Guid, IReadOnlyList<AlertChange>>? handlers, Guid id,
                               IReadOnlyList<AlertChange> changes, string who)
     {
         if (handlers is null)
@@ -422,7 +426,7 @@ public sealed class MonitoringManager : IDisposable
         foreach (var handler in handlers.GetInvocationList().Cast<Action<Guid, IReadOnlyList<AlertChange>>>())
         {
             try { handler(id, changes); }
-            catch (Exception ex) { AppLog.Error($"Alerts: {who} failed to handle an alert change", ex); }
+            catch (Exception ex) { _log.Error($"Alerts: {who} failed to handle an alert change", ex); }
         }
     }
 
@@ -456,7 +460,7 @@ public sealed class MonitoringManager : IDisposable
         AlertsRaised = null;
         // Before the history's wait below, so the chat channels send meanwhile, not after it.
         try { AllStopped?.Invoke(); }
-        catch (Exception ex) { AppLog.Error("Exit: a background service failed when monitoring stopped", ex); }
+        catch (Exception ex) { _log.Error("Exit: a background service failed when monitoring stopped", ex); }
         AllStopped = null;
         Log(new ActivityEntry(DateTime.UtcNow, ActivityEvents.AppExited, null, null, ActivitySources.AppExit));
 

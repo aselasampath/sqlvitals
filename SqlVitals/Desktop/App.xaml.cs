@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SqlVitals.Desktop;
 
@@ -47,10 +48,10 @@ public partial class App : System.Windows.Application
 
         SessionEnding += (_, _) => IsExiting = true;
 
-        // The services view models ask for (#182), before anything asks.
-        Services.CompositionRoot.Start();
+        // The app's services (#182, #166), before anything asks; the main window is one of them.
+        var services = Services.CompositionRoot.Start();
 
-        Services.AppLog.DeleteExpiredFiles();
+        Services.FileLog.DeleteExpiredFiles();
         DispatcherUnhandledException += OnDispatcherUnhandledException;
 
         // Failures off the UI thread never reach DispatcherUnhandledException.
@@ -63,7 +64,7 @@ public partial class App : System.Windows.Application
             Services.AppLog.Error("Unobserved task exception", args.Exception);
 
         // Entra MFA prompts through Windows' account broker, which needs a window to belong to.
-        var mainWindow = new MainWindow();
+        var mainWindow = services.GetRequiredService<MainWindow>();
         Services.EntraSignIn.MainWindow = new System.Windows.Interop.WindowInteropHelper(mainWindow).EnsureHandle();
         if (!Services.EntraSignIn.Install())
             Services.AppLog.Info("Entra MFA sign-in: SqlClient's provider isn't registered, so sign-in prompts may fail.");

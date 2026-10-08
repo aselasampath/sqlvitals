@@ -1,12 +1,11 @@
 using System.Data;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
-public class PlanCacheHealthRepository(IConfiguration configuration)
-    : BaseRepository(configuration), IPlanCacheHealthRepository
+public class PlanCacheHealthRepository(SqlTarget target)
+    : BaseRepository(target), IPlanCacheHealthRepository
 {
     public async Task<(
         PlanCacheHealthSummary Summary,

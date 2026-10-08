@@ -1,10 +1,9 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Scripting;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>What kind of server the connection is on: its edition and what it supports. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class ServerRepository(IConfiguration configuration) : BaseRepository(configuration), IServerRepository
+public class ServerRepository(SqlTarget target) : BaseRepository(target), IServerRepository
 {
     // ── Engine edition detection ──────────────────────────────────────
     // EngineEdition 5 = Azure SQL Database, which lacks sys.master_files and other

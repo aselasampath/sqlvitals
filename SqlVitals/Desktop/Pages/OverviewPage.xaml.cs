@@ -90,8 +90,13 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     private bool _sinceRead;
     private bool _sinceMonitored;
 
-    public OverviewPage(Guid connectionId, MonitoringManager monitoring, ConnectionSettingsService settings, LookWindow look)
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
+    public OverviewPage(Guid connectionId, MonitoringManager monitoring, ConnectionSettingsService settings, LookWindow look,
+                        IShellStatus? shell = null)
     {
+        _shell      = shell ?? CompositionRoot.Get<IShellStatus>();
         _id         = connectionId;
         _monitoring = monitoring;
         _settings   = settings;
@@ -216,7 +221,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         if (version != _loadVersion)
             return;
         Render();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         if (sinceToo)
             SinceLoaded = RefreshSinceAsync();
         await RefreshBlockingAsync();
@@ -310,7 +315,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
             if (version != _sinceVersion)
                 return;
             AppLog.Error("Overview: could not read the deadlocks", ex);
-            _deadlocks = new SinceRow("—", Muted, "Deadlocks", $"Couldn't read them: {MainWindow.FormatErrorStatus(ex)}", "Deadlocks →", "Deadlocks");
+            _deadlocks = new SinceRow("—", Muted, "Deadlocks", $"Couldn't read them: {ErrorStatus.Format(ex)}", "Deadlocks →", "Deadlocks");
         }
         RenderSince();
 
@@ -332,7 +337,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
             if (version != _sinceVersion)
                 return;
             AppLog.Error("Overview: could not read the Agent jobs", ex);
-            _failedJobs = new SinceRow("—", Muted, "Failed Agent jobs", $"Couldn't read them: {MainWindow.FormatErrorStatus(ex)}", "Agent Jobs →", "AgentJobs");
+            _failedJobs = new SinceRow("—", Muted, "Failed Agent jobs", $"Couldn't read them: {ErrorStatus.Format(ex)}", "Agent Jobs →", "AgentJobs");
         }
         RenderSince();
     }
@@ -372,10 +377,10 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
 
         var newSample = TakeLiveScore();
         Render();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         if (newSample)
         {
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
             _ = RefreshBlockingAsync();
             // The first sample since the page opened or the server came back: now it can be asked.
             if (!_sinceRead && _monitoring.Get(_id) is { FailingSince: null })
@@ -387,7 +392,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     private void OnMonitoringChanged()
     {
         Render();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         if (_monitoring.Get(_id) is { IsRunning: true } != _sinceMonitored)
             SinceLoaded = RefreshSinceAsync();
     }
@@ -416,7 +421,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     {
         _range   = range;
         _metrics = null;
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         try
         {
             await LoadAsync(sinceToo: false);
@@ -424,7 +429,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         catch (Exception ex)
         {
             if (_range == range)
-                MainWindow.ReportBackgroundError(this, "Overview history", ex);
+                _shell.ReportError(this, "Overview history", ex, PageRead.Timed);
         }
     }
 
@@ -842,7 +847,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         {
             AppLog.Error("Overview: could not read the blocking sessions", ex);
             BlockingGrid.Visibility = Visibility.Collapsed;
-            TxtBlockingNote.Text    = $"Couldn't read the sessions: {MainWindow.FormatErrorStatus(ex)}";
+            TxtBlockingNote.Text    = $"Couldn't read the sessions: {ErrorStatus.Format(ex)}";
         }
         finally
         {

@@ -1,40 +1,51 @@
-using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Services;
 
-/// <summary>Builds repositories for a saved connection, on top of appsettings.json.</summary>
-public static class RepositoryFactory
+/// <summary>Builds a saved connection's repositories (#166): the container's one way to reach a server.</summary>
+public interface IRepositoryFactory
 {
     /// <summary>
-    /// Builds config from appsettings.json overlaid with the given connection. With no connection
-    /// the appsettings.json connection string (usually empty) is used as-is.
+    /// The server a connection reads: its connection string and the command timeout over the
+    /// defaults in appsettings.json. With no connection, the file's connection string (usually empty).
     /// </summary>
-    public static IWaitStatsRepository Create(
-        ConnectionSettings? connection, int commandTimeoutSeconds, out string resolvedConnectionString)
+    /// <param name="commandTimeoutSeconds">Settings' timeout; 0 or less keeps the file's.</param>
+    SqlTarget TargetFor(ConnectionSettings? connection, int commandTimeoutSeconds);
+
+    /// <summary>The repositories for one server.</summary>
+    IWaitStatsRepository Create(SqlTarget target);
+}
+
+/// <summary>
+/// <see cref="IRepositoryFactory"/> on top of appsettings.json, read once when the app starts: the
+/// fallback connection string, the command timeout, READ UNCOMMITTED and SP Trace's session name.
+/// </summary>
+public sealed class RepositoryFactory(IConfiguration appSettings) : IRepositoryFactory
+{
+    private readonly SqlTarget _defaults = new(
+        appSettings.GetConnectionString("SqlServer") ?? string.Empty,
+        appSettings.GetValue("QuerySettings:CommandTimeoutSeconds", SqlTarget.DefaultCommandTimeoutSeconds))
     {
-        var configBuilder = new ConfigurationBuilder()
+        UseNoLock        = appSettings.GetValue("QuerySettings:UseNoLock", true),
+        TraceSessionName = appSettings["TraceSettings:SessionName"] ?? SqlTarget.DefaultTraceSessionName,
+    };
+
+    /// <summary>appsettings.json beside the exe.</summary>
+    public static IConfiguration ReadAppSettings() =>
+        new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false);
+            .AddJsonFile("appsettings.json", optional: false)
+            .Build();
 
-        var overrides = new Dictionary<string, string?>();
+    public SqlTarget TargetFor(ConnectionSettings? connection, int commandTimeoutSeconds) =>
+        _defaults with
+        {
+            ConnectionString      = connection?.ConnectionString is { } saved && !string.IsNullOrWhiteSpace(saved) ? saved : _defaults.ConnectionString,
+            CommandTimeoutSeconds = commandTimeoutSeconds > 0 ? commandTimeoutSeconds : _defaults.CommandTimeoutSeconds,
+        };
 
-        var connectionString = connection?.ConnectionString;
-        if (!string.IsNullOrWhiteSpace(connectionString))
-            overrides["ConnectionStrings:SqlServer"] = connectionString;
-
-        if (commandTimeoutSeconds > 0)
-            overrides["QuerySettings:CommandTimeoutSeconds"] = commandTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-
-        if (overrides.Count > 0)
-            configBuilder.AddInMemoryCollection(overrides);
-
-        var config = configBuilder.Build();
-        resolvedConnectionString = config.GetConnectionString("SqlServer") ?? string.Empty;
-
-        return new WaitStatsRepository(config);
-    }
+    public IWaitStatsRepository Create(SqlTarget target) => new WaitStatsRepository(target);
 
     /// <summary>
     /// Identifies everything a repository is built from, so callers can tell whether an edited

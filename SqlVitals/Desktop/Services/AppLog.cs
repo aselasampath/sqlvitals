@@ -1,97 +1,39 @@
-using System.Globalization;
-using System.IO;
-using System.Text;
-using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 
 namespace SqlVitals.Desktop.Services;
 
 /// <summary>
-/// Plain-text application log, one file per day under %APPDATA%\SqlVitals\logs, kept for
-/// <see cref="RetentionDays"/> days so it can be attached to a bug report. Nothing secret is
-/// written: see <see cref="Redact"/>.
+/// The log for code the container doesn't make (#166): pages, controls, helpers and startup. A
+/// thin adapter over the same <see cref="ILoggerFactory"/> the container's <c>ILogger&lt;T&gt;</c>
+/// come from, so every entry lands in <see cref="FileLog"/>. A service the container makes asks
+/// for an <c>ILogger&lt;T&gt;</c> instead.
 /// </summary>
 public static class AppLog
 {
-    public const int RetentionDays = 14;
+    /// <summary>The app's loggers: one file, information and up.</summary>
+    public static ILoggerFactory Factory { get; } = LoggerFactory.Create(logging => logging.AddProvider(new FileLoggerProvider()));
 
-    private const string FilePrefix = "SqlVitals-";
+    private static readonly ILogger Log = Factory.CreateLogger("SqlVitals");
 
-    private static readonly object Gate = new();
+    /// <summary>A logger for a type the container doesn't make, or for a test that passes none.</summary>
+    public static ILogger<T> For<T>() => Factory.CreateLogger<T>();
 
-    // Two or more "key=value;" pairs with a connection-string keyword — a whole connection
-    // string (or most of one) echoed back by a driver or parser error.
-    private static readonly Regex ConnectionString = new(
-        @"(?i)(?:\b(?:server|data\s+source|addr|address|network\s+address|initial\s+catalog|database|" +
-        @"user\s+id|uid|user|password|pwd|integrated\s+security|trusted_connection|authentication|" +
-        @"encrypt|trustservercertificate|trust\s+server\s+certificate|connect(?:ion)?\s+timeout|" +
-        @"application\s+name|multipleactiveresultsets|persist\s+security\s+info)\s*=\s*" +
-        @"(?:""[^""]*""|'[^']*'|[^;\r\n]*)(?:;[ \t]*|(?=[\r\n])|$)){2,}",
-        RegexOptions.Compiled);
+    public static void Error(string message, Exception ex) => Log.Error(message, ex);
 
-    // A Slack or Teams webhook URL (#120): anyone who has one can post to the channel. SqlVitals
-    // never logs one on purpose; this catches one echoed back in an exception or a service's answer.
-    private static readonly Regex WebhookUrl = new(
-        @"(?i)\bhttps?://[^\s""'<>]*(?:hooks\.slack\.com|logic\.azure\.com|powerplatform\.com|webhook\.office\.com|outlook\.office\.com/webhook)[^\s""'<>]*",
-        RegexOptions.Compiled);
+    public static void Info(string message) => Log.Info(message);
+}
 
-    public static string Directory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SqlVitals", "logs");
+/// <summary>
+/// The app's log lines on any <see cref="ILogger"/>: the text as written, not a message template,
+/// so braces in an error's text (a query, JSON) stay as they are.
+/// </summary>
+public static class PlainLog
+{
+    public static void Error(this ILogger log, string message, Exception ex) =>
+        log.Log(LogLevel.Error, default, message, ex, Text);
 
-    public static void Error(string message, Exception ex) =>
-        Write("ERROR", $"{message}{Environment.NewLine}{ex}");
+    public static void Info(this ILogger log, string message) =>
+        log.Log(LogLevel.Information, default, message, null, Text);
 
-    public static void Info(string message) => Write("INFO", message);
-
-    /// <summary>Deletes log files older than <see cref="RetentionDays"/>. Called once at startup.</summary>
-    public static void DeleteExpiredFiles()
-    {
-        try
-        {
-            if (!System.IO.Directory.Exists(Directory))
-                return;
-
-            var cutoff = DateTime.Today.AddDays(-RetentionDays);
-            foreach (var file in System.IO.Directory.EnumerateFiles(Directory, $"{FilePrefix}*.log"))
-            {
-                var stamp = Path.GetFileNameWithoutExtension(file)[FilePrefix.Length..];
-                if (DateTime.TryParseExact(stamp, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
-                    && day < cutoff)
-                    File.Delete(file);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // A file still open elsewhere is retried on the next start.
-        }
-    }
-
-    /// <summary>
-    /// Masks passwords, then replaces anything that looks like a connection string or a chat
-    /// webhook URL, so none of them reaches the log even when an exception message echoes one back.
-    /// </summary>
-    public static string Redact(string message) =>
-        WebhookUrl.Replace(
-            ConnectionString.Replace(ConnectionSettingsService.RedactSecrets(message), "[connection string removed] "),
-            "[webhook URL removed]");
-
-    private static void Write(string level, string message)
-    {
-        try
-        {
-            var now  = DateTime.Now;
-            var file = Path.Combine(Directory, $"{FilePrefix}{now.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}.log");
-            var line = $"{now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)} {level} " +
-                       $"{Redact(message)}{Environment.NewLine}";
-
-            lock (Gate)
-            {
-                System.IO.Directory.CreateDirectory(Directory);
-                File.AppendAllText(file, line, Encoding.UTF8);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Logging must never take the app down.
-        }
-    }
+    private static string Text(string message, Exception? _) => message;
 }

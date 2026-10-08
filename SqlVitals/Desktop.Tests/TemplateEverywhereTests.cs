@@ -514,7 +514,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void Export_SaysWhatItWillWrite_AndWhatIsMissing() => UiThread.Run(() =>
     {
-        var page = new ExportPage(new FakeRepository(), Settings());
+        var page = new ExportPage(new ExportService(new FakeRepository()), Settings());
         page.TxtFilePath.Text = @"C:\Reports";
         Hosted(page, () => Task.CompletedTask, "export.png", () => AssertLaidOut(page.Shell, page.GroupList, minDetail: 150));
 
@@ -627,7 +627,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 ("AgentJobs", new AgentJobsPage(repo, settings), PageKind.Snapshot),
                 ("ConfigChecks", new ConfigChecksPage(repo, "PROD-SQL01", settings), PageKind.Snapshot),
                 ("SecurityAudit", new SecurityAuditPage(repo, "PROD-SQL01", settings), PageKind.Snapshot),
-                ("Export", new ExportPage(repo, settings), PageKind.None),
+                ("Export", new ExportPage(new ExportService(repo), settings), PageKind.None),
             ];
             foreach (var (key, page, kind) in pages)
             {

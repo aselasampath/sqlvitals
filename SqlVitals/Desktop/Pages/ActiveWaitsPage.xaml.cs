@@ -24,10 +24,14 @@ public partial class ActiveWaitsPage : System.Windows.Controls.Page, ICodeBehind
     private int? _session;
     private List<ActiveWait>? _waits;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="settings">Where the verdict's fold is remembered, and the blocking threshold; none in some tests.</param>
     /// <param name="navigator">Where the verdict's Processes goes; the app's (#182) when null.</param>
-    public ActiveWaitsPage(IWaitStatsRepository repo, ConnectionSettingsService? settings = null, INavigator? navigator = null)
+    public ActiveWaitsPage(IWaitStatsRepository repo, ConnectionSettingsService? settings = null, INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
 
@@ -86,6 +90,6 @@ public partial class ActiveWaitsPage : System.Windows.Controls.Page, ICodeBehind
         if (_waits is null)
             return;
         ActiveGrid.ItemsSource = WaitsShown;
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 }

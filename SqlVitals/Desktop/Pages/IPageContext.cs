@@ -7,7 +7,7 @@ namespace SqlVitals.Desktop.Pages;
 /// <summary>
 /// What a page tells the top bar about itself (#140): whether it is live, a snapshot or a time
 /// window, and the controls for that. Every page implements it; <c>PageCatalogTests</c> fails for
-/// one that doesn't. A page calls <see cref="MainWindow.ReportContextChanged"/> when any of it changes.
+/// one that doesn't. A page calls <see cref="Services.IShellStatus.ReportContextChanged"/> when any of it changes.
 /// </summary>
 public interface IPageContext
 {

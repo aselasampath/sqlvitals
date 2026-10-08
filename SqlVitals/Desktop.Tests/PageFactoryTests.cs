@@ -24,31 +24,33 @@ public sealed class PageFactoryTests : IDisposable
     private readonly FakeShellStatus _shell = new();
     private MonitoringManager? _monitoring;
 
-    private IPageFactory Factory() =>
-        new ServiceCollection()
-            .AddSingleton<INavigator>(new FakeNavigator())
-            .AddSingleton<IShellStatus>(_shell)
-            .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
-            .AddPages()
-            .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true })
-            .GetRequiredService<IPageFactory>();
-
-    private PageArgs Args(string tag, IWaitStatsRepository? repo = null)
+    // The pages' services as the app registers them (#166), on a temp folder and fakes.
+    private IPageFactory Factory()
     {
         Directory.CreateDirectory(_dir);
         var settings = new ConnectionSettingsService(_dir);
         _monitoring ??= new MonitoringManager(new HistoryWriter(Path.Combine(_dir, "history.db"), (_, _) => { }),
                                               (_, _) => new FakeRepository());
-        var server = Guid.NewGuid();
-        return new PageArgs(new Route(tag, ServerId: tag == "Overview" ? server : null), repo ?? new FakeRepository(),
-                            _monitoring, settings)
+        return new ServiceCollection()
+            .AddSingleton<INavigator>(new FakeNavigator())
+            .AddSingleton<IShellStatus>(_shell)
+            .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
+            .AddSingleton(settings)
+            .AddSingleton(_monitoring)
+            .AddSingleton(new OverviewVisits(settings))
+            .AddSingleton(new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }))
+            .AddSingleton<Func<IWaitStatsRepository, ExportService>>(repository => new ExportService(repository))
+            .AddPages()
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true })
+            .GetRequiredService<IPageFactory>();
+    }
+
+    private static PageArgs Args(string tag, IWaitStatsRepository? repo = null) =>
+        new(new Route(tag, ServerId: tag == "Overview" ? Guid.NewGuid() : null), repo ?? new FakeRepository())
         {
             ConnectionName   = "PROD-SQL01",
-            OverviewVisits   = new OverviewVisits(settings),
-            Chat             = new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }),
             ApplyConnections = _ => Task.CompletedTask,
         };
-    }
 
     [Fact]
     public void TheFactory_MakesEveryPageInTheCatalog()

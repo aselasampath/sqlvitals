@@ -50,7 +50,7 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **dire
       SQL Server / Azure SQL                          %LocalAppData%\SqlVitals\history.db
 ```
 
-**Key decision:** Desktop references Engine as a **project reference**. There's zero network latency and nothing extra to deploy. Engine is a plain class library (`Microsoft.NET.Sdk`): no web host, no ASP.NET Core. Until 0.68.0 (#165) it was a web project with an unused REST API and a parked React UI; a future host, such as an MCP server, would be a new project over Engine's services. `appsettings.json` belongs to Desktop, which reads it in `RepositoryFactory`.
+**Key decision:** Desktop references Engine as a **project reference**. There's zero network latency and nothing extra to deploy. Engine is a plain class library (`Microsoft.NET.Sdk`): no web host, no ASP.NET Core. Until 0.68.0 (#165) it was a web project with an unused REST API and a parked React UI; a future host, such as an MCP server, would be a new project over Engine's services. `appsettings.json` belongs to Desktop, which reads it once in `RepositoryFactory`. A repository takes a `SqlTarget` (the connection string, command timeout, `UseNoLock` and SP Trace's session name), not an `IConfiguration` (#166), so Engine has no configuration package and any host can build one.
 
 ## Projects
 
@@ -104,7 +104,7 @@ The four pages with layouts of their own are All servers (tiles), a server's Ove
    **Focus mode and grid density** (#148): F11 or the bar's Focus button captures a `Services/WindowPlacement` (state, style, resize mode, restore bounds) and applies its `FullScreen()` (frameless, maximized, restored first so it covers the taskbar); `WorkspaceShell.InFocus` (`SidebarLayout.InFocus`) shows the sidebar hidden without touching the saved state, and Ctrl+B slides it in instead. Esc, after the quick switcher, a slid-in menu and a floating drawer, or F11 puts the placement back. Grid density sets `GridCellPadding`, `GridHeaderPadding` and `GridFontSize` in the application's own resources (`Services/GridDensity`); the themes define the comfortable values and their DataGrid styles take them as `DynamicResource`, so a change applies to every grid at once and survives a theme switch. Saved as `GridDensity` in `settings.dat` and logged.
    **The details drawer** (#147): `Controls/DrawerHost` (a code-built `Grid`) holds MainWindow's `Frame` and `Controls/DetailsDrawer`, pinned in a second column or floating over the first, as the pure `Services/DrawerLayout` says (Closed / Floating / Pinned; width 320–640; Ctrl+J toggles, Esc closes a floating one). Whether it pins and its width are saved in `settings.dat` (`DrawerPinned`, `DrawerWidth`), not logged. A page fills it by implementing `IDetailsSource` (`Details` → `DrawerContent(Title, Body, Hint)`, `DetailsChanged(open)`); MainWindow shows the page's content on navigation and when it changes, opening the drawer on a click. Processes' `Controls/SessionDetailsView` (rows and KILL script from the pure `Engine/Monitoring/SessionDetails`; the plan from `GetSessionPlanAsync`) and Query Store's `Controls/QueryDetailsView` (`Engine/QueryStore/QueryStoreDetails`) are built from `Controls/DrawerParts`. Resource Queries, Query Regressions and SP Trace (#149), and File I/O, Index Health, Agent Jobs, Config Checks, Security Audit and Alerts (#150) use `Controls/RowDetailsView`: rows from `Engine/Monitoring/RowDetails`, a text with Copy (a query, a fix script, a job step's message) and plans read when asked. The AI assistant (#93) will be another source.
    **The page template** (#146): `Controls/PageShell` (built in code, a `Decorator` whose content is the detail) lays out a page as title and page actions, `Controls/VerdictView`, the `FoldSection`s in `Sections`, then the detail. A verdict is an `Engine/Verdicts/PageVerdict` (level, headline, why, up to four `VerdictAction`s) from a pure function per page (`ProcessesVerdict`, `QueryStoreVerdict`, `BackupsVerdict`), unit tested. A page on the template has a view model in `ViewModels/Pages/` (one file each, named after the page, #181), derived from `ViewModels/PageViewModel` (CommunityToolkit.Mvvm: `[ObservableProperty] Verdict`, `[RelayCommand] Act`) and bound to the shell with `Attach`. The rest of the page's code-behind is unchanged until the page moves to its view model (see [MVVM](#mvvm)). The fold of the verdict and each section is saved per page in `settings.dat` (`ISectionFolds`, implemented by `ConnectionSettingsService`; `FoldedSections`), a layout preference kept out of the activity log. Processes, Query Store and Backups were the pilots; #149 moved the Activity, Waits and Queries pages onto it and #150 the Resources, Maintenance and Configuration pages, Alerts and Export / AI (verdicts in `Engine/Verdicts/ResourcesVerdicts`, `MaintenanceVerdicts`, `ConfigurationVerdicts`, `GlobalVerdicts`). A page's own Start / Stop or Pause went with it where the top bar's Pause / Resume did the same (Wait Trend, Memory Grants, Perfmon, File I/O), and a page's button strip of views became a `TabControl` so the Navigator keeps the tab (Memory Grants, DB Storage). See [The workspace](#the-workspace).
-4. The top bar (`Controls/TopBar`, #140) shows the route as a breadcrumb (`Services/Breadcrumb`) and the page's context from its `IPageContext`: its `PageKind` (**Live**, **Snapshot** or **History**; `None` for Settings and Export), a live page's interval and whether it is paused (Pause calls `SetPaused`), a history page's window and where its data ends, and whether it reads the connection's database. A page hands the bar its own controls with `TakeBarTools()` (the three `TimeRangePicker`s, Live Metrics' interval) before it loads, and reports through `IShellStatus` as things change: `ReportContextChanged`, `ReportRead` (the *As of* / *Taken* time) or `ReportError`. A page whose code-behind still runs its own timer calls `MainWindow.ReportContextChanged`, `ReportBackgroundSuccess` or `ReportBackgroundError`, which go the same way (#166 moves them to `IShellStatus`). `PageContextText` words it all, with the clock passed in. `Services/PageCatalog` maps each tag to its page type, and a test fails for a page that doesn't implement `IPageContext`. Short of room the bar leaves out *All servers* and the group, then its freshness text and the 🔍 and Ask AI buttons, then moves the page's controls to a row of its own, so the server's name is never squeezed out.
+4. The top bar (`Controls/TopBar`, #140) shows the route as a breadcrumb (`Services/Breadcrumb`) and the page's context from its `IPageContext`: its `PageKind` (**Live**, **Snapshot** or **History**; `None` for Settings and Export), a live page's interval and whether it is paused (Pause calls `SetPaused`), a history page's window and where its data ends, and whether it reads the connection's database. A page hands the bar its own controls with `TakeBarTools()` (the three `TimeRangePicker`s, Live Metrics' interval) before it loads, and reports through `IShellStatus` as things change: `ReportContextChanged`, `ReportRead` (the *As of* / *Taken* time) or `ReportError`. A page whose code-behind still runs its own timer reports the same way, to the `IShellStatus` its constructor takes (#166); no page refers to `MainWindow`. `PageContextText` words it all, with the clock passed in. `Services/PageCatalog` maps each tag to its page type, and a test fails for a page that doesn't implement `IPageContext`. Short of room the bar leaves out *All servers* and the group, then its freshness text and the 🔍 and Ask AI buttons, then moves the page's controls to a row of its own, so the server's name is never squeezed out.
    **Evidence routes** (#145): a `Route` can carry a `PageFocus`: a filter (`FocusFilter`: a blocking chain, top CPU, a database, pending grants, a session, a query), a time window in UTC, and its origin (an alert, a health check or a page's link). `Services/EvidenceRoutes` (pure, unit tested; it replaced `CheckLinks`) maps every `HealthIndicator` to its page, filter and history page, and builds an alert's route with the window start − 15 min to end + 15 min. `OpenAsync` hands the focus to a page that implements `Pages/IFocusPage` before it loads (Processes, Resource Queries, Memory Grants, DB Storage, Active Waits, Query Store, Live charts); `Controls/FocusBannerView`, between the top bar and the `Frame`, shows *Opened from alert* with the page's `FocusNote` (worded by `FocusBanner.For`), and **Show all** calls `ClearFocus` and `NavigationHistory.ReplaceCurrent` with the unfocused route. `Route.IsSamePlace` ignores the focus, so the same page opened as evidence replaces its entry; the quick switcher's recents and the breadcrumb's other servers drop it. Entry points: the Overview, Home tiles, the Alerts page's Evidence column and a notification about one alert (`AlertNotification.Alert`, `TrayIcon.EvidenceRequested`).
    **Ctrl+K** or 🔍 opens `Controls/QuickSwitcherOverlay` (#144) over the whole window, a child of `WorkspaceShell` spanning both columns (not a `Popup`, like the fly-outs). What it lists is `Services/QuickSwitcher.Search` (pure, unit tested): the open server's pages from `NavMenu` (matched by name, then by the words of their tooltip and group), the same page on the other servers, the saved servers, the global pages, and `SettingsNav`'s categories, connection tabs and settings, ranked exact > prefix > a word's start > anywhere > tooltip words, with the most recent route first on a tie (`RecentRoutes`, this session's). Nothing typed, the 8 most recent routes still available. The result picked goes through `OpenAsync` with `_history.Visit`, so Back returns; its source in the activity log is `user: quick switcher`. The keyboard stays in the search box; Esc gives it back to where it was, and opening a route from inside the page moves it into the new page.
 5. The page calls repository methods; results are records from `Engine/Models`, bound to `DataGrid`s and LiveCharts.
@@ -113,7 +113,7 @@ The four pages with layouts of their own are All servers (tiles), a server's Ove
 
 ### 2. Switching connections
 
-`ConnectionSettingsService` loads saved connections (DPAPI) → `RepositoryFactory.Create(connection, commandTimeout)` layers the connection string and timeout over `appsettings.json` → `MainWindow` swaps `Repo` and reopens the current page. In-flight loads for the previous connection are discarded, so stale data never appears under the new name. A **fingerprint** of connection plus timeout decides whether a repository must be rebuilt.
+`ConnectionSettingsService` loads saved connections (DPAPI) → `IRepositoryFactory.TargetFor(connection, commandTimeout)` layers the connection string and timeout over `appsettings.json` into a `SqlTarget`, and `Create(target)` builds its repositories → `MainWindow` swaps `Repo` and reopens the current page. In-flight loads for the previous connection are discarded, so stale data never appears under the new name. A **fingerprint** of connection plus timeout decides whether a repository must be rebuilt.
 
 ### 3. Monitoring, the health dot and the health score
 
@@ -205,7 +205,7 @@ Every start and stop of monitoring, app start and exit, settings change and hist
 
 ### BaseRepository wrappers
 
-Every repository derives from `BaseRepository`:
+Every repository derives from `BaseRepository`, built with the connection's `SqlTarget`:
 
 ```csharp
 protected IDbConnection CreateConnection();                                   // new SqlConnection per call
@@ -214,7 +214,7 @@ protected Task<dynamic?>             QFirst(IDbConnection c, string sql, object?
 protected Task<int>                  Exec(IDbConnection c, string sql, object? p = null, ...); // DDL, no isolation prefix
 ```
 
-- `Q` / `QFirst` prepend `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;` when `QuerySettings:UseNoLock` is true (default).
+- `Q` / `QFirst` prepend `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;` when `SqlTarget.UseNoLock` is true (appsettings.json's `QuerySettings:UseNoLock`, true by default).
 - All three apply the command timeout and wrap failures in `WaitStatsException`, which names the repository and method.
 - **Always** use `Q` / `QFirst`, never `conn.QueryAsync` directly.
 
@@ -317,10 +317,27 @@ Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wp
 | `IRefreshScheduler` | `Every(interval, tick)`, until disposed; a tick due while the last one runs is skipped | `RefreshScheduler`, on the container's `TimeProvider`, each tick posted through `IUiDispatcher` |
 | `IPageFactory` | `Create(tag, PageArgs)`: a page and its view model (#183) | `PageFactory`, over the `PageRegistration`s in `Services/PageRegistrations` |
 
-- **The composition root:** `Services/CompositionRoot` builds a `Microsoft.Extensions.DependencyInjection` container (from the ASP.NET Core shared framework the Engine brings) with these services, checked as it is built, and the pages (`AddPages`). `App.OnStartup` builds it before the main window opens. #166 adds settings, monitoring and the repositories to it; until then the window passes them to each page in `PageArgs`.
-- **A page's services:** its registration hands it what it needs from the container (`INavigator` today). A page built elsewhere, such as in a test, takes a service as an optional constructor parameter, which the test fills with a fake, and falls back to `CompositionRoot.Get<T>()`. Controls, windows and helpers that WPF creates ask `CompositionRoot.Get<T>()` directly.
+- **The composition root:** these services live in the container, with the app's own; see [The composition root](#the-composition-root).
+- **A page's services:** its registration hands it what it needs from the container. A page built elsewhere, such as in a test, takes a service as an optional constructor parameter, which the test fills with a fake, and falls back to `CompositionRoot.Get<T>()`. Controls, windows and helpers that WPF creates ask `CompositionRoot.Get<T>()` directly.
 - **A verdict action that opens a page** overrides `OnActionAsync` and returns the navigator's task; one that stays on the page overrides `OnAction`. Active Waits, Alerts, Perfmon, Top Waits, Wait Trend, Query Store and Query Regressions navigate this way.
 - Every message box in the app goes through `IDialogService`, and every save dialog through `IFileDialogs`. `ErrorStatus.Format` is the one-line error a verdict and the top bar show.
+
+### The composition root
+
+`Services/CompositionRoot` (#182, #166) builds one `Microsoft.Extensions.DependencyInjection` container for the app, checked as it is built (`ValidateOnBuild`). `App.OnStartup` builds it and asks it for `MainWindow`, which takes the services it starts and stops in its constructor. Everything in it is a singleton:
+
+| Registered by | Services |
+|---|---|
+| `AddAppLog` | `ILogger<T>`, over `AppLog.Factory`: every logger writes the daily log file (`FileLog`, through `FileLoggerProvider`) |
+| `AddUiServices` | The [services for view models](#services-for-view-models), `TimeProvider` and `IRefreshScheduler` |
+| `AddAppServices` | `IConfiguration` (appsettings.json), `IRepositoryFactory`, `ConnectionSettingsService`, `HistoryWriter`, `MonitoringManager`, `IWebhookSender` and `ChatNotificationService`, `OverviewVisits`, and `Func<IWaitStatsRepository, ExportService>` |
+| `AddPages` | `IPageFactory` and a `PageRegistration` per page ([Adding a page](#adding-a-page)) |
+| `Build` | `MainWindow` |
+
+- **What a page is opened with:** `PageArgs` holds only what belongs to this navigation: the `Route`, the active connection's repository, its id and name, the server's clock offset, and Settings' message and callback. A page's other services come from the container in its registration.
+- **The repositories** belong to a connection, so the container holds their factory, not them: `IRepositoryFactory.TargetFor` gives a connection's `SqlTarget`, and `Create` its repositories. The window builds the active connection's, and `MonitoringManager` each monitored one's.
+- **Logging:** a service the container makes asks for an `ILogger<T>` and writes with `PlainLog`'s `Error(message, exception)` or `Info(message)`: the text as written, not a message template, so braces in an error stay as they are. Code the container doesn't make (pages, controls, helpers) calls the static `AppLog.Error` and `AppLog.Info`, a thin adapter over the same factory. A line reads `12:04:31.207 ERROR message`, the exception on the lines after it, redacted as before.
+- **A new service:** its interface in `Services/`, its WPF implementation in `Services/Wpf/` if it needs WPF, a line in the `Add…` method it belongs to, and a fake in `Desktop.Tests/Fakes/`. `CompositionRootTests` lists the app's services and checks each is registered once.
 
 ### The page lifecycle
 
@@ -347,7 +364,7 @@ Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wp
 1. **The view:** `Pages/XPage.xaml` and its code-behind, which implements `IPageContext` (what the top bar says about it) and holds only the view: `internal XViewModel ViewModel { get; }`, set from its constructor.
 2. **The view model:** `ViewModels/Pages/XViewModel.cs`, derived from `PageViewModel`. It overrides `LoadAsync`, sets `RefreshInterval` if the page updates on its own, and takes its services in its constructor.
 3. **The catalog:** the tag in `Services/PageCatalog` (tag → view type) and in `Services/NavMenu` (its sidebar button).
-4. **The registration:** a line in `Services/PageRegistrations.AddPages`: `.AddPage("X", (services, args) => new XPage(...), page => page.ViewModel)`. The factory makes the view model the page's `DataContext` and connects it to `IShellStatus` and `IRefreshScheduler`. `MainWindow` has no `switch` of pages; it only wires the links of Home, the Overview and Settings that lead back to the window.
+4. **The registration:** a line in `Services/PageRegistrations.AddPages`: `.AddPage("X", (s, a) => new XPage(...), page => page.ViewModel)`, its services from the container (`Settings(s)`, `Shell(s)`, `Navigator(s)`…) and the connection from the `PageArgs` (`a.Repo`). The factory makes the view model the page's `DataContext` and connects it to `IShellStatus` and `IRefreshScheduler`. `MainWindow` has no `switch` of pages; it only wires the links of Home, the Overview and Settings that lead back to the window.
 
 `PageCatalogTests`, `PageFactoryTests`, `NavMenuTests` and the guard tests fail for a page missing from any of these.
 
@@ -374,7 +391,8 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | Rule | Where | Today's offenders (allowlist) |
 |---|---|---|
 | A view model doesn't refer to `System.Windows.Controls`, `MessageBox`, `MainWindow`, `Application` or a `Dispatcher` | `ViewModels/**` | `ViewReferencesAllowed`: none |
-| Page code doesn't use a repository | `Pages/**/*.cs` | `RepositoryReferencesAllowed`: 26 pages |
+| Page code doesn't use a repository | `Pages/**/*.cs` | `RepositoryReferencesAllowed`: 25 pages |
+| Only the shell refers to `MainWindow`: pages report to `IShellStatus` and open pages through `INavigator` (#166) | `Pages/**`, `Controls/**`, `Windows/**`, `Helpers/**` | none |
 | A page's XAML gains no `Click=` (comments aren't counted) | `Pages/**/*.xaml` | `ClicksAllowed`: 98 in 27 files |
 | `async void` only in event handlers | all of `Desktop/` | `AsyncVoidAllowed`: 6 in 5 files |
 | A page reads through its view model, not in its code-behind (`ICodeBehindPage`) | the pages | `CodeBehindPagesAllowed`: 28 pages |
@@ -393,12 +411,12 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | Microsoft.Data.SqlClient | 7.1.1 | Engine | SQL Server / Azure SQL driver |
 | Microsoft.Data.SqlClient.Extensions.Azure | 7.1.1 | Engine | Entra MFA sign-in (split out of SqlClient in 7.0). It prompts through Windows' account manager (WAM), which needs a parent window: `Services/EntraSignIn` gives it the app's, set in `App.OnStartup` |
 | Microsoft.Data.Sqlite | 10.0.12 | Engine | History file |
-| Microsoft.Extensions.Configuration.Binder | 10.0.12 | Engine | Repositories read their settings through `IConfiguration` |
 | LiveChartsCore.SkiaSharpView.WPF | 2.0.5 | Desktop | Charts |
 | System.Security.Cryptography.ProtectedData | in .NET 10 | Desktop | DPAPI |
 | CommunityToolkit.Mvvm | 8.4.2 | Desktop | View models: `ObservableObject`, `[ObservableProperty]`, `[RelayCommand]` |
-| Microsoft.Extensions.Configuration.Json | 10.0.12 | Desktop | `appsettings.json`, under the saved connection (`RepositoryFactory`) |
-| Microsoft.Extensions.DependencyInjection | 10.0.12 | Desktop | The composition root (#182) |
+| Microsoft.Extensions.Configuration.Json, .Binder | 10.0.12 | Desktop | `appsettings.json`, read once into each connection's `SqlTarget` (`RepositoryFactory`) |
+| Microsoft.Extensions.DependencyInjection | 10.0.12 | Desktop | The composition root (#182, #166) |
+| Microsoft.Extensions.Logging | 10.0.12 | Desktop | `ILogger<T>` on the log file (#166) |
 | xunit | 2.9.3 | Tests | Unit tests |
 | Microsoft.SqlServer.TransactSql.ScriptDom | 180.117.0 | Engine.Tests | Parses every query (#111, #168) |
 | Microsoft.CodeAnalysis.CSharp | 5.9.0 | Desktop.Tests | The MVVM guard tests read the app's sources (#181) |
