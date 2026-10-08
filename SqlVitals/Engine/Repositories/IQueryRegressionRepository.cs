@@ -11,17 +11,17 @@ public interface IQueryRegressionRepository
     /// both periods of <paramref name="windows"/>, on the server's clock. Only queries that ran in
     /// the recent period are returned. Not available (and nothing read) when Query Store is off.
     /// </summary>
-    Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(RegressionWindows windows);
+    Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(RegressionWindows windows, CancellationToken cancellationToken = default);
 
     /// <summary>Statement text of each Query Store query_id given, by id.</summary>
-    Task<IReadOnlyDictionary<long, string>> GetQueryStoreTextsAsync(IReadOnlyCollection<long> queryIds);
+    Task<IReadOnlyDictionary<long, string>> GetQueryStoreTextsAsync(IReadOnlyCollection<long> queryIds, CancellationToken cancellationToken = default);
 
     /// <summary>A plan's showplan XML from Query Store; null when it has been removed.</summary>
-    Task<string?> GetQueryStorePlanAsync(long planId);
+    Task<string?> GetQueryStorePlanAsync(long planId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The showplan XML of the most recently used cached plan for a query_hash ("0x…"); null
     /// when none is in the plan cache any more.
     /// </summary>
-    Task<string?> GetCachedPlanForQueryHashAsync(string queryHash);
+    Task<string?> GetCachedPlanForQueryHashAsync(string queryHash, CancellationToken cancellationToken = default);
 }

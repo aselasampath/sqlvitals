@@ -14,31 +14,31 @@ public interface ISpTraceRepository
     /// permissions. Never throws for a missing permission — returns a
     /// <see cref="TraceMode.DmvFallback"/> status carrying the reason instead.
     /// </summary>
-    Task<TraceSessionStatus> StartTraceAsync(SpTraceOptions options);
+    Task<TraceSessionStatus> StartTraceAsync(SpTraceOptions options, CancellationToken cancellationToken = default);
 
     /// <summary>Stops the trace and drops the event session if this app created one.</summary>
-    Task<TraceSessionStatus> StopTraceAsync();
+    Task<TraceSessionStatus> StopTraceAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Current trace state, including ring-buffer dropped-event counters.</summary>
-    Task<TraceSessionStatus> GetTraceStatusAsync();
+    Task<TraceSessionStatus> GetTraceStatusAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns calls captured since the previous poll. Empty in
     /// <see cref="TraceMode.DmvFallback"/> mode, which has no per-call data.
     /// </summary>
-    Task<IReadOnlyList<SpTraceEvent>> PollTraceEventsAsync();
+    Task<IReadOnlyList<SpTraceEvent>> PollTraceEventsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns per-procedure activity since the previous poll, derived from
     /// sys.dm_exec_procedure_stats. The first poll after a start returns nothing — it
     /// establishes the baseline the next poll measures against.
     /// </summary>
-    Task<IReadOnlyList<SpAggregateRow>> PollProcedureStatsAsync();
+    Task<IReadOnlyList<SpAggregateRow>> PollProcedureStatsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cumulative per-procedure totals since each plan was cached, heaviest first. Unlike
     /// <see cref="PollProcedureStatsAsync"/> this needs no baseline and no running trace,
     /// which is what makes it usable for a one-shot report.
     /// </summary>
-    Task<IReadOnlyList<SpAggregateRow>> GetProcedureStatsTotalsAsync(int topN = 25);
+    Task<IReadOnlyList<SpAggregateRow>> GetProcedureStatsTotalsAsync(int topN = 25, CancellationToken cancellationToken = default);
 }

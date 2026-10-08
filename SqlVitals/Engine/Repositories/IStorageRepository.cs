@@ -11,5 +11,5 @@ public interface IStorageRepository
         IEnumerable<DatabaseFile> Files,
         IEnumerable<TempDbFileSummary> TempDbFiles,
         IEnumerable<TableStorage> TopTables
-    )> GetDatabaseStorageAsync();
+    )> GetDatabaseStorageAsync(CancellationToken cancellationToken = default);
 }

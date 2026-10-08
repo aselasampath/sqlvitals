@@ -62,9 +62,16 @@ public sealed record PageVerdict
     };
 
     /// <summary>A page that couldn't read what it judges: "Couldn't read the sessions", and why.</summary>
-    public static PageVerdict Unreadable(string what, string? error) =>
+    /// <param name="fixScript">
+    /// The GRANT that fixes a missing permission (#167): the verdict shows it for a DBA to run once,
+    /// then Refresh reads again.
+    /// </param>
+    public static PageVerdict Unreadable(string what, string? error, string? fixScript = null) =>
         new(VerdictLevel.Unknown, $"Couldn't read {what}",
-            string.IsNullOrWhiteSpace(error) ? "Refresh to try again." : $"{error.Trim()} Refresh to try again.");
+            (string.IsNullOrWhiteSpace(error) ? "" : error.Trim() + " ") +
+            (string.IsNullOrWhiteSpace(fixScript)
+                ? "Refresh to try again."
+                : $"A DBA can grant it once:\n{fixScript}\nthen Refresh to read again."));
 
     /// <summary>Records compare by value, actions included.</summary>
     public bool Equals(PageVerdict? other) =>

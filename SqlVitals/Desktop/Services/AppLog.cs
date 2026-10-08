@@ -29,8 +29,13 @@ public static class AppLog
 /// </summary>
 public static class PlainLog
 {
-    public static void Error(this ILogger log, string message, Exception ex) =>
+    /// <summary>An error, with its exception. A cancelled read isn't one (#167): it is left out.</summary>
+    public static void Error(this ILogger log, string message, Exception ex)
+    {
+        if (ex is OperationCanceledException)
+            return;
         log.Log(LogLevel.Error, default, message, ex, Text);
+    }
 
     public static void Info(this ILogger log, string message) =>
         log.Log(LogLevel.Information, default, message, null, Text);

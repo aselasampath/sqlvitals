@@ -1,0 +1,233 @@
+using System.IO;
+using Microsoft.Extensions.DependencyInjection;
+using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.Errors;
+using SqlVitals.Engine.History;
+using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Verdicts;
+
+namespace SqlVitals.Desktop.Tests;
+
+/// <summary>
+/// The app stops its queries when they are no longer wanted (#167): a page left, monitoring
+/// stopped; a lock it waited too long for skips a sample; a cancelled read is never an error;
+/// and a missing permission shows the GRANT that fixes it.
+/// </summary>
+public sealed class CancellationTests : IDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
+    private readonly FakeShellStatus _shell = new();
+    private MonitoringManager? _monitoring;
+
+    private IPageFactory Factory()
+    {
+        Directory.CreateDirectory(_dir);
+        var settings = new ConnectionSettingsService(_dir);
+        _monitoring ??= new MonitoringManager(new HistoryWriter(Path.Combine(_dir, "history.db"), (_, _) => { }),
+                                              (_, _) => new FakeRepository());
+        return new ServiceCollection()
+            .AddSingleton<INavigator>(new FakeNavigator())
+            .AddSingleton<IShellStatus>(_shell)
+            .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
+            .AddSingleton(settings)
+            .AddSingleton(_monitoring)
+            .AddSingleton(new OverviewVisits(settings))
+            .AddSingleton(new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }))
+            .AddSingleton<Func<IWaitStatsRepository, ExportService>>(repository => new ExportService(repository))
+            .AddPages()
+            .BuildServiceProvider()
+            .GetRequiredService<IPageFactory>();
+    }
+
+    private static LiveMetricSnapshot Snapshot() =>
+        new(DateTime.UtcNow, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 12,
+            PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99, 0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4);
+
+    private static WaitStatsException Failed(SqlFailure failure) =>
+        new("LiveMetricsRepository", "GetLiveMetricsAsync", new InvalidOperationException("from the server"), failure, "vitals");
+
+    // ── A page left ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void LeavingAPage_CancelsWhatItsCodeBehindIsReading() => UiThread.Run(() =>
+    {
+        var reading = new TaskCompletionSource<IEnumerable<TopWaitType>>();
+        var repo    = new FakeRepository { GetTopWaitTypesAsync = () => reading.Task };
+        var made    = Factory().Create("TopWaits", new PageArgs(new Route("TopWaits"), repo));
+
+        var shown = made.ViewModel.OnNavigatedToAsync();
+        var token = repo.Tokens[nameof(FakeRepository.GetTopWaitTypesAsync)];
+        Assert.False(token.IsCancellationRequested);
+
+        made.ViewModel.OnNavigatedFrom();
+
+        Assert.True(token.IsCancellationRequested);
+        reading.SetCanceled(token);
+        UiThread.Wait(shown);
+        // Left, and cancelled: nothing reported, nothing in the verdict.
+        Assert.Empty(_shell.Reports);
+    });
+
+    [Fact]
+    public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
+    {
+        var repo = new FakeRepository { GetTopWaitTypesAsync = () => Task.FromResult<IEnumerable<TopWaitType>>([]) };
+        var made = Factory().Create("TopWaits", new PageArgs(new Route("TopWaits"), repo));
+
+        UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
+        var first = repo.Tokens[nameof(FakeRepository.GetTopWaitTypesAsync)];
+        made.ViewModel.OnNavigatedFrom();
+        UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
+
+        Assert.True(first.IsCancellationRequested);
+        Assert.False(repo.Tokens[nameof(FakeRepository.GetTopWaitTypesAsync)].IsCancellationRequested);
+    });
+
+    [Fact]
+    public async Task ALifetimeRepository_CancelsACallInFlight_WhenItsLifetimeEnds()
+    {
+        var pending = new TaskCompletionSource<IEnumerable<ActiveWait>>();
+        var inner = new FakeRepository
+        {
+            GetActiveWaitsAsync = () => pending.Task,
+            StopTraceAsync      = () => Task.FromResult(TraceSessionStatus.Stopped("SqlVitals_SpTrace")),
+        };
+        using var lifetime = new PageLifetime();
+        var repo = new LifetimeRepository(inner, () => lifetime.Token);
+        using var own = new CancellationTokenSource();
+
+        var reading = repo.GetActiveWaitsAsync(own.Token);
+        var token   = inner.Tokens[nameof(FakeRepository.GetActiveWaitsAsync)];
+        await repo.StopTraceAsync();
+        lifetime.End();
+
+        // A call with its own token is cancelled by either; its own isn't touched.
+        Assert.True(token.IsCancellationRequested);
+        Assert.False(own.IsCancellationRequested);
+        pending.SetCanceled(token);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reading);
+        // Stopping a trace is cleanup: the page leaving doesn't stop it.
+        Assert.False(inner.Tokens[nameof(FakeRepository.StopTraceAsync)].CanBeCanceled);
+    }
+
+    [Fact]
+    public async Task ALifetimeRepository_CallWithoutAToken_GetsTheLifetimes()
+    {
+        var inner = new FakeRepository { GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>([]) };
+        using var lifetime = new PageLifetime();
+
+        await new LifetimeRepository(inner, () => lifetime.Token).GetActiveWaitsAsync();
+
+        Assert.Equal(lifetime.Token, inner.Tokens[nameof(FakeRepository.GetActiveWaitsAsync)]);
+    }
+
+    // ── Monitoring ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void PausingMonitoring_CancelsTheSampleBeingRead_AndRecordsNoFailure() => UiThread.Run(() =>
+    {
+        var reading = new TaskCompletionSource<LiveMetricSnapshot>();
+        var repo    = new FakeRepository { GetLiveMetricsAsync = () => reading.Task };
+        using var session = new MonitoringSession(Guid.NewGuid(), repo, "fp");
+        session.Start();
+
+        var sample = session.CollectNowAsync();
+        var token  = repo.Tokens[nameof(FakeRepository.GetLiveMetricsAsync)];
+        session.Pause();
+
+        Assert.True(token.IsCancellationRequested);
+        reading.SetCanceled(token);
+        Assert.ThrowsAny<OperationCanceledException>(() => UiThread.Wait(sample));
+        Assert.Null(session.LastError);
+        Assert.NotEqual(Engine.Monitoring.HealthLevel.Unavailable, session.Health);
+    });
+
+    [Fact]
+    public void DisposingMonitoring_CancelsTheSampleBeingRead() => UiThread.Run(() =>
+    {
+        var repo    = new FakeRepository { GetLiveMetricsAsync = () => new TaskCompletionSource<LiveMetricSnapshot>().Task };
+        var session = new MonitoringSession(Guid.NewGuid(), repo, "fp");
+
+        _ = session.CollectNowAsync();
+        var token = repo.Tokens[nameof(FakeRepository.GetLiveMetricsAsync)];
+        session.Dispose();
+
+        Assert.True(token.IsCancellationRequested);
+    });
+
+    [Fact]
+    public void ALockTimeout_SkipsTheSample_WithoutAFailure() => UiThread.Run(() =>
+    {
+        var answers = new Queue<Func<Task<LiveMetricSnapshot>>>(
+        [
+            () => Task.FromResult(Snapshot()),
+            () => Task.FromException<LiveMetricSnapshot>(Failed(SqlFailure.Classify(SqlFailure.LockTimeoutError, "Lock request time out period exceeded."))),
+        ]);
+        var repo = new FakeRepository { GetLiveMetricsAsync = () => answers.Dequeue()() };
+        using var session = new MonitoringSession(Guid.NewGuid(), repo, "fp");
+
+        UiThread.Wait(session.CollectNowAsync());
+        var health = session.Health;
+        UiThread.Wait(session.CollectNowAsync());
+
+        Assert.Equal(health, session.Health);
+        Assert.Null(session.LastError);
+        Assert.Single(session.Samples);
+        Assert.Contains("sample was skipped: it waited 2 s for a lock another session holds", session.HealthText, StringComparison.Ordinal);
+    });
+
+    [Fact]
+    public void AnyOtherFailure_StillCounts() => UiThread.Run(() =>
+    {
+        var repo = new FakeRepository
+        {
+            GetLiveMetricsAsync = () => Task.FromException<LiveMetricSnapshot>(Failed(SqlFailure.Classify(SqlFailure.CommandTimeoutError, "Timeout expired."))),
+        };
+        using var session = new MonitoringSession(Guid.NewGuid(), repo, "fp");
+
+        Assert.Throws<WaitStatsException>(() => UiThread.Wait(session.CollectNowAsync()));
+
+        Assert.Equal(Engine.Monitoring.HealthLevel.Unavailable, session.Health);
+    });
+
+    // ── What a page says when it can't read ──────────────────────────────
+
+    [Fact]
+    public void AMissingPermission_IsExplained_WithTheGrantThatFixesIt()
+    {
+        var model = new TempDbViewModel(() => { });
+        var error = Failed(SqlFailure.Classify(300, "VIEW SERVER STATE permission was denied on object 'server', database 'master'."));
+
+        model.ShowError("the TempDB figures", error);
+
+        Assert.Equal(
+            PageVerdict.Unreadable("the TempDB figures",
+                                   "Error [LiveMetricsRepository.GetLiveMetricsAsync]: The login lacks VIEW SERVER STATE.",
+                                   "USE [master];\nGRANT VIEW SERVER STATE TO [vitals];"),
+            model.Verdict);
+        Assert.Equal("Error [LiveMetricsRepository.GetLiveMetricsAsync]: The login lacks VIEW SERVER STATE. A DBA can grant it once:\nUSE [master];\nGRANT VIEW SERVER STATE TO [vitals];\nthen Refresh to read again.",
+                     model.Verdict!.Why);
+    }
+
+    [Fact]
+    public void ACancelledRead_LeavesTheVerdictAlone()
+    {
+        var model = new TempDbViewModel(() => { });
+        var before = model.Verdict;
+
+        model.ShowError("the TempDB figures", new OperationCanceledException());
+
+        Assert.Same(before, model.Verdict);
+    }
+
+    public void Dispose()
+    {
+        if (_monitoring is { } monitoring)
+            UiThread.Run(monitoring.Dispose);
+        try { Directory.Delete(_dir, recursive: true); }
+        catch (IOException) { /* a file still open: the temp folder keeps it */ }
+    }
+}

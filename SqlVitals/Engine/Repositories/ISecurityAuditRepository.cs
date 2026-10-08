@@ -10,5 +10,5 @@ public interface ISecurityAuditRepository
     /// database's orphaned users, and runs <see cref="SecurityAudit"/> on them. Never throws for a
     /// login without VIEW ANY DEFINITION, or for a database that can't be read: the checks say so instead.
     /// </summary>
-    Task<SecurityFindingList> GetSecurityAuditAsync();
+    Task<SecurityFindingList> GetSecurityAuditAsync(CancellationToken cancellationToken = default);
 }

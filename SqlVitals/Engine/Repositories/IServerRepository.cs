@@ -4,6 +4,9 @@ namespace SqlVitals.Engine.Repositories;
 public interface IServerRepository
 {
     // ── Engine edition detection ──────────────────────────────────────
-    Task<bool> IsAzureSqlDatabaseAsync();
-    Task<bool> SupportsOnlineIndexRebuildAsync();
+    /// <summary>The server's edition, version and the login's permissions, read once per connection (#167).</summary>
+    Task<ServerCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default);
+
+    Task<bool> IsAzureSqlDatabaseAsync(CancellationToken cancellationToken = default);
+    Task<bool> SupportsOnlineIndexRebuildAsync(CancellationToken cancellationToken = default);
 }

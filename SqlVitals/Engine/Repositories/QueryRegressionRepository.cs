@@ -5,13 +5,13 @@ using SqlVitals.Engine.Regressions;
 
 namespace SqlVitals.Engine.Repositories;
 
-public partial class QueryRegressionRepository(SqlTarget target) : BaseRepository(target), IQueryRegressionRepository
+public partial class QueryRegressionRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IQueryRegressionRepository
 {
     // Reads every runtime-stats row of a week or more, which can take a while on a busy
     // database with a large Query Store.
     private const int ExtendedTimeoutSec = 120;
 
-    public async Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(RegressionWindows windows)
+    public async Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(RegressionWindows windows, CancellationToken cancellationToken = default)
     {
         var stateSql = SqlScripts.Get("QueryRegression/State");
 
@@ -24,7 +24,7 @@ public partial class QueryRegressionRepository(SqlTarget target) : BaseRepositor
         dynamic? state;
         try
         {
-            state = await QFirst(conn, stateSql);
+            state = await QFirst(conn, stateSql, cancellationToken);
         }
         catch (WaitStatsException ex) when (ex.SqlErrorNumber == 208)
         {
@@ -39,7 +39,7 @@ public partial class QueryRegressionRepository(SqlTarget target) : BaseRepositor
         if (actualState is not ("READ_WRITE" or "READ_ONLY"))
             return new QueryStoreRegressionStats(database, actualState, false, []);
 
-        var rows = await Q(conn, statsSql, new
+        var rows = await Q(conn, statsSql, cancellationToken, new
         {
             recentMinutes        = (int)Math.Ceiling(windows.Recent.TotalMinutes),
             baselineStartMinutes = (int)Math.Ceiling(windows.BaselineStartAgo.TotalMinutes),
@@ -57,7 +57,7 @@ public partial class QueryRegressionRepository(SqlTarget target) : BaseRepositor
         return new QueryStoreRegressionStats(database, actualState, true, stats);
     }
 
-    public async Task<IReadOnlyDictionary<long, string>> GetQueryStoreTextsAsync(IReadOnlyCollection<long> queryIds)
+    public async Task<IReadOnlyDictionary<long, string>> GetQueryStoreTextsAsync(IReadOnlyCollection<long> queryIds, CancellationToken cancellationToken = default)
     {
         if (queryIds.Count == 0)
             return new Dictionary<long, string>();
@@ -65,20 +65,20 @@ public partial class QueryRegressionRepository(SqlTarget target) : BaseRepositor
         var sql = SqlScripts.Get("QueryRegression/QueryStoreTexts");
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql, new { queryIds }))
+        return (await Q(conn, sql, cancellationToken, new { queryIds }))
             .ToDictionary(r => (long)Convert.ToInt64(r.QueryId), r => r.QueryText is DBNull ? string.Empty : (string)r.QueryText);
     }
 
-    public async Task<string?> GetQueryStorePlanAsync(long planId)
+    public async Task<string?> GetQueryStorePlanAsync(long planId, CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("QueryRegression/QueryStorePlan");
 
         using var conn = CreateConnection();
-        var r = await QFirst(conn, sql, new { planId });
+        var r = await QFirst(conn, sql, cancellationToken, new { planId });
         return r is null || r.QueryPlan is DBNull ? null : (string)r.QueryPlan;
     }
 
-    public async Task<string?> GetCachedPlanForQueryHashAsync(string queryHash)
+    public async Task<string?> GetCachedPlanForQueryHashAsync(string queryHash, CancellationToken cancellationToken = default)
     {
         // Checked here so a malformed hash is "no plan" rather than a conversion error.
         if (!QueryHashPattern().IsMatch(queryHash))
@@ -87,7 +87,7 @@ public partial class QueryRegressionRepository(SqlTarget target) : BaseRepositor
         var sql = SqlScripts.Get("QueryRegression/CachedPlanForQueryHash");
 
         using var conn = CreateConnection();
-        var r = await QFirst(conn, sql, new { queryHash });
+        var r = await QFirst(conn, sql, cancellationToken, new { queryHash });
         return r is null || r.QueryPlan is DBNull ? null : (string)r.QueryPlan;
     }
 

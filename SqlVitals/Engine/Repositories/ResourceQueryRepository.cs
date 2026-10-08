@@ -3,13 +3,13 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>The plan cache's costliest queries, an object's plan, and implicit conversions. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class ResourceQueryRepository(SqlTarget target) : BaseRepository(target), IResourceQueryRepository
+public class ResourceQueryRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IResourceQueryRepository
 {
     // ── 13 + 14. Resource-intensive queries (logical reads + CPU) ─────
     public async Task<(IEnumerable<ResourceIntensiveQuery> ByReads,
                        IEnumerable<ResourceIntensiveQuery> ByCpu,
                        IEnumerable<ResourceIntensiveQuery> ByHighestReads)>
-        GetResourceIntensiveQueriesAsync(int topN = 20)
+        GetResourceIntensiveQueriesAsync(int topN = 20, CancellationToken cancellationToken = default)
     {
         var readsSql = SqlScripts.Get("ResourceQuery/Reads");
 
@@ -44,27 +44,27 @@ public class ResourceQueryRepository(SqlTarget target) : BaseRepository(target),
         // Increase timeout to 2 minutes to avoid timeouts on busy servers.
         const int extendedTimeout = 120;
 
-        var byReads = (await Q(conn, readsSql, p, extendedTimeout)).Select(r => Map(r));
-        var byCpu = (await Q(conn, cpuSql, p, extendedTimeout)).Select(r => Map(r));
-        var byHighestReads = (await Q(conn, highestReadsSql, p, extendedTimeout)).Select(r => MapHighestReads(r));
+        var byReads = (await Q(conn, readsSql, cancellationToken, p, extendedTimeout)).Select(r => Map(r));
+        var byCpu = (await Q(conn, cpuSql, cancellationToken, p, extendedTimeout)).Select(r => Map(r));
+        var byHighestReads = (await Q(conn, highestReadsSql, cancellationToken, p, extendedTimeout)).Select(r => MapHighestReads(r));
         return (byReads, byCpu, byHighestReads);
     }
 
-    public async Task<string?> GetObjectQueryPlanAsync(string objectName)
+    public async Task<string?> GetObjectQueryPlanAsync(string objectName, CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("ResourceQuery/ObjectQueryPlan");
         using var conn = CreateConnection();
-        var r = await QFirst(conn, sql, new { ObjectName = objectName });
+        var r = await QFirst(conn, sql, cancellationToken, new { ObjectName = objectName });
         return r is null ? null : (string?)r.QueryPlan;
     }
 
     // ── 17. Implicit conversions ──────────────────────────────────────
-    public async Task<IEnumerable<ImplicitConversion>> GetImplicitConversionsAsync()
+    public async Task<IEnumerable<ImplicitConversion>> GetImplicitConversionsAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("ResourceQuery/ImplicitConversions");
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql)).Select(r => new ImplicitConversion(
+        return (await Q(conn, sql, cancellationToken)).Select(r => new ImplicitConversion(
             (string?)r.DatabaseName, (string?)r.ObjectName,
             (int)r.ExecutionCount, (long)r.PlanSizeKB,
             (string?)r.QueryText, (DateTime)r.CaptureTime));

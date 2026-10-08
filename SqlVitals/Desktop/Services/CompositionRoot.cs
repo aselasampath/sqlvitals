@@ -98,8 +98,12 @@ public static class CompositionRoot
             .AddSingleton(s =>
             {
                 var repositories = s.GetRequiredService<IRepositoryFactory>();
+                // Monitoring gives up on a lock after 2 s and skips the sample (#167), rather than queue behind a schema change.
                 return new MonitoringManager(s.GetRequiredService<HistoryWriter>(),
-                                             (connection, timeout) => repositories.Create(repositories.TargetFor(connection, timeout)),
+                                             (connection, timeout) => repositories.Create(repositories.TargetFor(connection, timeout) with
+                                             {
+                                                 LockTimeoutMilliseconds = SqlTarget.MonitoringLockTimeoutMilliseconds,
+                                             }),
                                              s.GetRequiredService<ILogger<MonitoringManager>>());
             })
             .AddSingleton<IWebhookSender, HttpWebhookSender>()

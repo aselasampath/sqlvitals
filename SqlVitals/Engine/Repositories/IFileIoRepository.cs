@@ -10,5 +10,5 @@ public interface IFileIoRepository
     /// server's clock and start time to compare readings by. Never throws for a login without
     /// permission to read them: the reading then carries the reason.
     /// </summary>
-    Task<FileIoReading> ReadFileIoAsync();
+    Task<FileIoReading> ReadFileIoAsync(CancellationToken cancellationToken = default);
 }

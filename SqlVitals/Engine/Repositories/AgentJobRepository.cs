@@ -8,11 +8,8 @@ namespace SqlVitals.Engine.Repositories;
 /// the current Agent session's sysjobactivity and the schedules. Read only; msdb keeps its
 /// times in the server's local time, and so do the jobs listed.
 /// </summary>
-public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAgentJobRepository
+public class AgentJobRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IAgentJobRepository
 {
-    // SELECT denied on an msdb table (229), or no access to msdb at all (916).
-    private static readonly int[] MsdbPermissionErrors = [229, 916];
-
     private const int AzureSqlDatabaseEdition = 5;
 
     // Kept to what every edition has, so Azure SQL Database gets its message rather than an error.
@@ -30,11 +27,11 @@ public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAge
 
     internal static readonly string RunsSql = SqlScripts.Get("AgentJob/Runs");
 
-    public async Task<AgentJobList> GetAgentJobsAsync()
+    public async Task<AgentJobList> GetAgentJobsAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
-        var server  = await QFirst(conn, ServerSql);
+        var server  = await QFirst(conn, ServerSql, cancellationToken);
         int edition = server is null ? 0 : Convert.ToInt32(server.Edition);
         DateTime serverNow = server?.ServerNow as DateTime? ?? DateTime.Now;
         if (edition == AzureSqlDatabaseEdition)
@@ -45,7 +42,7 @@ public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAge
         string? serviceStatus = null;
         try
         {
-            serviceStatus = (await QFirst(conn, AgentServiceSql))?.Status as string;
+            serviceStatus = (await QFirst(conn, AgentServiceSql, cancellationToken))?.Status as string;
         }
         catch (WaitStatsException)
         {
@@ -55,7 +52,7 @@ public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAge
         int? agentXps = null;
         try
         {
-            agentXps = (await QFirst(conn, AgentXpsSql))?.AgentXps as int?;
+            agentXps = (await QFirst(conn, AgentXpsSql, cancellationToken))?.AgentXps as int?;
         }
         catch (WaitStatsException)
         {
@@ -67,9 +64,9 @@ public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAge
         List<dynamic> rows;
         try
         {
-            rows = (await Q(conn, JobsSql)).ToList();
+            rows = (await Q(conn, JobsSql, cancellationToken)).ToList();
         }
-        catch (WaitStatsException ex) when (MsdbPermissionErrors.Contains(ex.SqlErrorNumber))
+        catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
             return AgentJobList.Unavailable(
                 "This login can't read SQL Server Agent's tables in msdb. Members of sysadmin can; for another login, " +
@@ -81,10 +78,10 @@ public class AgentJobRepository(SqlTarget target) : BaseRepository(target), IAge
         return new AgentJobList(AgentJobList.Sort(jobs), agent, serverNow, AgentJobList.AgentProblem(agent));
     }
 
-    public async Task<IReadOnlyList<JobRun>> GetAgentJobRunsAsync(Guid jobId, DateTime? runningSince)
+    public async Task<IReadOnlyList<JobRun>> GetAgentJobRunsAsync(Guid jobId, DateTime? runningSince, CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var rows = await Q(conn, RunsSql, new { jobId, maxRows = AgentJobHistory.MaxRows });
+        var rows = await Q(conn, RunsSql, cancellationToken, new { jobId, maxRows = AgentJobHistory.MaxRows });
         return AgentJobHistory.GroupRuns(rows.Select(r => new JobHistoryRow(
             (int)r.InstanceId,
             (int)r.StepId,

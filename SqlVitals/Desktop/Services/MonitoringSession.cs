@@ -36,6 +36,10 @@ public sealed class MonitoringSession : IDisposable
     private DateTime                        _lastSuccess;
     private bool                            _disposed;
     private DateTime?                       _failingSince;
+    private string?                         _gradedText;
+
+    // Cancelled by Pause and Dispose (#167): a sample in flight stops on the server too.
+    private CancellationTokenSource         _collecting = new();
 
     /// <param name="history">
     /// Saves this session's samples and alerts to the local history; null (the ad-hoc Live
@@ -183,8 +187,18 @@ public sealed class MonitoringSession : IDisposable
         if (!IsRunning) return;
         IsRunning = false;
         _timer.Stop();
+        StopCollecting();
         StopAlerts();
         StateChanged?.Invoke(this);
+    }
+
+    // Whatever is being read stops; the next collection gets a new token.
+    private void StopCollecting()
+    {
+        var stopped = _collecting;
+        _collecting = new CancellationTokenSource();
+        stopped.Cancel();
+        stopped.Dispose();
     }
 
     /// <summary>
@@ -215,15 +229,18 @@ public sealed class MonitoringSession : IDisposable
         }
         catch
         {
-            // Recorded in Health/HealthText and retried with backoff.
+            // A failure is recorded in Health/HealthText and retried with backoff; a sample
+            // stopped by Pause or Dispose (#167) records nothing.
         }
     }
 
     private async Task CollectAsync()
     {
+        if (_disposed) return;
+        var cancel = _collecting.Token;
         try
         {
-            var snapshot = await Repository.GetLiveMetricsAsync();
+            var snapshot = await Repository.GetLiveMetricsAsync(cancel);
             if (_disposed) return;
 
             var isFirst = _previous is null;
@@ -254,10 +271,23 @@ public sealed class MonitoringSession : IDisposable
             {
                 if (!isFirst)
                     _history.RecordSample(sample);
-                _ = _history.CollectDetailIfDueAsync();
+                _ = _history.CollectDetailIfDueAsync(cancel);
             }
 
             SampleAdded?.Invoke(this, sample);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+        {
+            // Paused or disposed while reading: not a failure, and the health stays as it was.
+            throw;
+        }
+        catch (WaitStatsException ex) when (ex.Failure.Kind == SqlFailureKind.LockTimeout && !_disposed)
+        {
+            // Monitoring waits SqlTarget.MonitoringLockTimeoutMilliseconds for a lock, then skips
+            // the sample rather than queue behind a schema change (#167). Not a failure: the next
+            // sample is due as usual, and the health stays as the last one graded.
+            HealthText = $"{_gradedText ?? "No sample yet"} · the {DateTime.Now:HH:mm:ss} sample was skipped: " +
+                         $"it waited {SqlTarget.MonitoringLockTimeoutMilliseconds / 1000} s for a lock another session holds";
         }
         catch (Exception ex)
         {
@@ -294,6 +324,7 @@ public sealed class MonitoringSession : IDisposable
                             ? $"Healthy · CPU {sample.SqlCpuPct:0}%"
                             : string.Join(" · ", reasons))
                         + $" · updated {_lastSuccess:HH:mm:ss}";
+        _gradedText   = HealthText;
     }
 
     // Saves the changes and tells the app. Neither waits on the disk.
@@ -321,6 +352,8 @@ public sealed class MonitoringSession : IDisposable
         IsRunning = false;
         _timer.Stop();
         _timer.Tick -= Timer_Tick;
+        _collecting.Cancel();
+        _collecting.Dispose();
         StopAlerts();
         SampleAdded   = null;
         StateChanged  = null;

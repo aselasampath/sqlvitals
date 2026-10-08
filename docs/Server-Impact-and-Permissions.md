@@ -7,8 +7,8 @@
 - **Read-only.** SqlVitals reads DMVs and catalog views. It creates no objects, jobs, tables or agents on the server. (DB Storage collects each database's used space in a `#temporary` table that lives only for the one batch.)
 - **One exception:** [SP Trace](SP-Trace.md) creates a temporary Extended Events session **only when a user presses Start**, and drops it on Stop, on leaving the page, and when the app exits.
 - **Never runs generated scripts.** Index and statistics scripts are shown for review only.
-- **Never blocks.** Every query runs under `READ UNCOMMITTED` with a command timeout (30 s by default).
-- **Nothing runs by default.** From 0.46.0 a new installation monitors no server until the user presses **Start** or turns on **Start monitoring automatically**. Until then the only queries are the ones of the pages the user opens, plus the Azure SQL Database edition check on connecting. See [below](#what-runs-by-default).
+- **Takes no shared locks, and stops when it isn't wanted.** Every read runs under `READ UNCOMMITTED`, so it doesn't wait on, or block, the workload's row and page locks. It can still wait on a schema change (see [Locks](#locks-what-can-still-wait)): monitoring for at most 2 s, then it skips the sample; a screen up to its command timeout (30 s by default). From 0.69.0 leaving a screen, switching server or stopping monitoring cancels its queries on the server.
+- **Nothing runs by default.** From 0.46.0 a new installation monitors no server until the user presses **Start** or turns on **Start monitoring automatically**. Until then the only queries are the ones of the pages the user opens, plus the server check on connecting (its edition, version and the login's permissions, once per connection). See [below](#what-runs-by-default).
 - **Home adds nothing on the server.** [All servers](Your-Servers.md) (Home, from 0.53.0) shows what monitoring has already collected and the local history. A server's details page reads the sessions once per sample only while blocking is past its warning threshold (see *Blocking right now* below).
 - **Chat channels add nothing on the server.** The [Slack and Teams channels](Chat-Notifications.md) (from 0.52.0) are posted to over outbound HTTPS from this PC, using what SqlVitals already knows. They need no new SQL and no new permissions.
 - **No agent, no service, no inbound ports.** It's a desktop app making ordinary client connections. From 0.35.0 closing its window hides it to the [notification area](Notifications-and-Tray.md) by default, so any monitoring carries on until the user stops it or chooses **Exit**. The load is the same as with the window open.
@@ -41,7 +41,7 @@ Heavy screens **never run in the background**, and never against connections oth
 
 | | Start monitoring automatically **off** (new installations from 0.46.0) | **On** (upgraded installations, or turned on) |
 |---|---|---|
-| **When SqlVitals starts or connects** | Nothing, apart from the Azure SQL Database edition check (`SERVERPROPERTY('EngineEdition')`) on connecting | Live Metrics query and history snapshots for the active connection and each with *Monitor in background* |
+| **When SqlVitals starts or connects** | Nothing, apart from the server check on connecting: `SERVERPROPERTY('EngineEdition')` and `('ProductVersion')`, and the login's permissions from `sys.fn_my_permissions`, once per connection | Live Metrics query and history snapshots for the active connection and each with *Monitor in background* |
 | **Opening a server's screen, or switching server** | Nothing new | It becomes the active connection, which is monitored too while Start monitoring automatically is on |
 | **A server's Overview open** | Nothing: it says the server isn't monitored, until **Start monitoring** | *Since you last looked* (deadlocks and jobs) once, and *Blocking right now* while blocking is past its threshold |
 | **Live charts page open** | Nothing: it shows *Monitoring is off* until **▶ Start monitoring**; no Process Map polling | The live metrics query, and the Process Map while that chart is shown |
@@ -63,12 +63,27 @@ The most expensive reads, worth knowing on very large servers:
 
 ### Protective behaviour
 
-- **`READ UNCOMMITTED`** is prepended to every query (`QuerySettings:UseNoLock`), so monitoring never waits on locks it's reporting on.
-- **Command timeout** (default 30 s, configurable) cancels any runaway query.
+- **`READ UNCOMMITTED`** is prepended to every read (`QuerySettings:UseNoLock`), so it takes no shared locks: it doesn't wait on the row and page locks it's reporting on, and doesn't block writers.
+- **Lock timeout:** monitoring's reads (the Live Metrics query and the history snapshots) set `LOCK_TIMEOUT 2000`. One held up by a lock for 2 s gives up, and the sample is skipped: the health stays as it was, and the score's text says a sample was skipped because it waited for a lock. It isn't counted as a failure. A screen's reads set `LOCK_TIMEOUT -1` and wait up to the command timeout.
+- **Command timeout** (default 30 s, configurable; 2 min for Query Store, Query Regressions and Deadlocks) cancels any runaway query.
+- **Cancellation (from 0.69.0):** leaving a screen cancels what it's reading, on the server, and so does switching server; stopping monitoring cancels the sample being read. A cancelled query isn't reported as an error.
+- **Server check, once per connection:** the edition, version and the login's permissions are read once, and every query is chosen from them, rather than each screen asking the server what it is.
 - **Backoff:** unreachable servers are retried with exponential backoff, up to every 5 minutes.
 - **One connection per query:** connections are opened per call and returned to the ADO.NET pool; no long-lived sessions are held.
 - **SP Trace limits:** filtered to the connected database and to calls ≥ *Min duration* **on the server side**; ring buffer capped at 4 MB / 1,000 events; dropped-event warnings are surfaced.
 - **MFA and password prompts** are never triggered by monitoring: a connection without a saved password, or an Entra MFA connection not signed in to this session, can't be started until the user connects to it.
+
+## Locks: what can still wait
+
+`READ UNCOMMITTED` takes no shared locks, but every query still takes a schema-stability (Sch-S) lock on what it reads, and that one conflicts with a schema-modification (Sch-M) lock: an offline index rebuild, `ALTER TABLE`, `TRUNCATE`, a partition switch.
+
+| Who waits | For how long | Then |
+|---|---|---|
+| A **monitoring** read, while a schema change holds Sch-M on what it reads | At most **2 s** (`LOCK_TIMEOUT 2000`) | It gives up and the sample is skipped (error 1222, not counted as a failure) |
+| A **screen's** read, likewise | Up to its command timeout: **30 s** by default, 2 min for Query Store, Query Regressions and Deadlocks | It fails with a timeout, or ends when you leave the screen |
+| A **schema change** started while a SqlVitals read holds Sch-S on the same object | Until that read ends: a monitoring read is short; a screen's at most its command timeout, or until you leave the screen | Sessions queued behind the waiting schema change wait too, as they would behind any reader |
+
+Most of what SqlVitals reads is DMVs and system views, which user schema changes don't touch. The screens that read user objects are Index Health (fragmentation, `sys.dm_db_index_physical_stats`), DB Storage and Stale Stats; they run only when opened.
 
 ## Permissions
 
@@ -95,6 +110,17 @@ GRANT ALTER ANY DATABASE EVENT SESSION TO [sqlvitals_user];    -- Azure SQL Data
 > ⚠️ `ALTER ANY EVENT SESSION` lets the login create, alter, start, stop and drop **any** event session on the server, not only SqlVitals'. Withhold it if that's too broad. SP Trace then falls back to per-procedure aggregates automatically.
 
 On SQL Server 2022 and later, `VIEW SERVER STATE` includes the finer-grained `VIEW SERVER PERFORMANCE STATE`, which is what the [Deadlocks](Deadlocks.md) page needs to read system_health; granting that one alone is enough for it.
+
+### When a permission is missing
+
+From 0.69.0 a screen that can't read for lack of a permission says which one, and shows the script that adds it for the login SqlVitals connects as, for a DBA to run once; then **Refresh**. For example:
+
+```sql
+USE [master];
+GRANT VIEW SERVER STATE TO [CONTOSO\svc_vitals];
+```
+
+It reads SQL Server's errors 229 (a `SELECT` denied on an object, such as an msdb table), 262 and 300 (a permission denied, which the message names), 297 (not named; `VIEW SERVER STATE` is the likely one, and the screen says so) and 916 (no user in the database, fixed with `CREATE USER … FOR LOGIN`). With Entra sign-in the login is the user name of the connection; with none, the script has a placeholder to replace. The error box when a screen first fails to open shows the same script.
 
 ### SQL Agent jobs
 

@@ -9,13 +9,10 @@ namespace SqlVitals.Engine.Repositories;
 /// <c>xml_deadlock_report</c> events are read. The XML is shredded here, in
 /// <see cref="DeadlockReportParser"/>.
 /// </summary>
-public class DeadlockRepository(SqlTarget target) : BaseRepository(target), IDeadlockRepository
+public class DeadlockRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IDeadlockRepository
 {
     // Reading the event files goes through every rollover file system_health keeps.
     private const int FileReadTimeoutSec = 120;
-
-    // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022) is missing.
-    private static readonly int[] PermissionErrors = [297, 300];
 
     internal static readonly string TargetsSql = SqlScripts.Get("Deadlock/Targets");
 
@@ -24,23 +21,22 @@ public class DeadlockRepository(SqlTarget target) : BaseRepository(target), IDea
 
     internal static readonly string RingBufferSql = SqlScripts.Get("Deadlock/RingBuffer");
 
-    public async Task<DeadlockHistory> GetDeadlockHistoryAsync()
+    public async Task<DeadlockHistory> GetDeadlockHistoryAsync(CancellationToken cancellationToken = default)
     {
-        using var conn = CreateConnection();
-
-        var edition = await QFirst(conn, SqlScripts.Get("Server/Edition"));
-        if (edition is not null && Convert.ToInt32(edition.Edition) == 5)
+        if ((await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase)
             return DeadlockHistory.Unavailable(
                 "Azure SQL Database has no system_health session to read. Deadlocks there are kept in the master " +
                 "database's event log (sys.fn_xe_telemetry_blob_target_read_file); SQL Server and Azure SQL Managed " +
                 "Instance are supported here.");
 
+        using var conn = CreateConnection();
+
         List<dynamic> targets;
         try
         {
-            targets = (await Q(conn, TargetsSql)).ToList();
+            targets = (await Q(conn, TargetsSql, cancellationToken)).ToList();
         }
-        catch (WaitStatsException ex) when (PermissionErrors.Contains(ex.SqlErrorNumber))
+        catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
             return DeadlockHistory.Unavailable(
                 "This login can't read Extended Events sessions. Grant it VIEW SERVER STATE " +
@@ -61,7 +57,7 @@ public class DeadlockRepository(SqlTarget target) : BaseRepository(target), IDea
             var pattern = DeadlockReportParser.EventFilePattern(eventFile.TargetData as string);
             try
             {
-                var rows = await Q(conn, EventFileSql, new { pattern }, FileReadTimeoutSec);
+                var rows = await Q(conn, EventFileSql, cancellationToken, new { pattern }, FileReadTimeoutSec);
                 var unreadable = 0;
                 var reports = new List<DeadlockReport>();
                 foreach (var row in rows)
@@ -85,7 +81,7 @@ public class DeadlockRepository(SqlTarget target) : BaseRepository(target), IDea
                 "The system_health session on this server has neither its event file nor its ring buffer target, " +
                 "so there is nowhere to read deadlocks from.");
 
-        var ring = await QFirst(conn, RingBufferSql);
+        var ring = await QFirst(conn, RingBufferSql, cancellationToken);
         var fromRing = DeadlockReportParser.ParseRingBuffer(ring?.TargetData as string, out int ringUnreadable);
         return Build(fromRing, DeadlockSource.RingBuffer, ringUnreadable, null,
                      fileProblem ?? "system_health has no event file target here.");

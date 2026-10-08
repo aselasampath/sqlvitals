@@ -11,7 +11,7 @@ namespace SqlVitals.Engine.Repositories;
 /// Read only: catalog views, nothing written. Without VIEW ANY DEFINITION the logins and users
 /// can't all be seen, so those checks are left out rather than guessed.
 /// </summary>
-public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target), ISecurityAuditRepository
+public class SecurityAuditRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), ISecurityAuditRepository
 {
     internal static readonly string ServerSql = SqlScripts.Get("SecurityAudit/Server");
 
@@ -41,11 +41,11 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
     internal static string OrphanedUsersIn(string database) =>
         OrphanedUsersSql.Replace("/*DATABASE*/", UnusedIndexDropScript.QuoteName(database));
 
-    public async Task<SecurityFindingList> GetSecurityAuditAsync()
+    public async Task<SecurityFindingList> GetSecurityAuditAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
-        var server      = await QFirst(conn, ServerSql);
+        var server      = await QFirst(conn, ServerSql, cancellationToken);
         int edition     = server is null ? 0 : Convert.ToInt32(server.Edition);
         bool windowsOnly = server is not null && Convert.ToInt32(server.WindowsAuthenticationOnly) == 1;
         bool canView     = server is not null && Convert.ToInt32(server.CanViewDefinitions) == 1;
@@ -53,10 +53,10 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
         if (edition == SecuritySnapshot.AzureSqlDatabaseEdition)
             return SecurityAudit.Run(new SecuritySnapshot(edition, windowsOnly, canView, null, null, [], null));
 
-        var saRow = await QFirst(conn, SaSql);
+        var saRow = await QFirst(conn, SaSql, cancellationToken);
         SaLogin? sa = saRow is null ? null : new SaLogin((string)saRow.Name, Convert.ToInt32(saRow.IsDisabled) == 1);
 
-        var databases = (await Q(conn, DatabasesSql)).Select(r => new DatabaseRow(
+        var databases = (await Q(conn, DatabasesSql, cancellationToken)).Select(r => new DatabaseRow(
             (string)r.Name,
             (string?)r.State ?? string.Empty,
             Convert.ToInt32(r.HasAccess) == 1,
@@ -64,7 +64,7 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
             (string?)r.Owner,
             r.OwnerIsSysadmin is null ? null : Convert.ToInt32(r.OwnerIsSysadmin) == 1)).ToList();
 
-        var connectedSids = (await Q(conn, LoginTokenSql))
+        var connectedSids = (await Q(conn, LoginTokenSql, cancellationToken))
             .Select(r => Convert.ToHexString((byte[])r.Sid))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -72,7 +72,7 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
         OrphanScan? orphans = null;
         if (canView)
         {
-            members = (await Q(conn, SysadminSql)).Select(r => new SysadminMember(
+            members = (await Q(conn, SysadminSql, cancellationToken)).Select(r => new SysadminMember(
                 (string)r.Name,
                 ((string)r.Type).Trim(),
                 Convert.ToInt32(r.IsDisabled) == 1,
@@ -82,7 +82,7 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
                 r.PolicyChecked is null ? null : Convert.ToInt32(r.PolicyChecked) == 1,
                 Convert.ToInt32(r.ViaControlServer) == 1)).ToList();
 
-            orphans = await ScanForOrphansAsync(conn, databases);
+            orphans = await ScanForOrphansAsync(conn, databases, cancellationToken: cancellationToken);
         }
 
         return SecurityAudit.Run(new SecuritySnapshot(
@@ -95,7 +95,7 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
 
     // One light query per database, so one that can't be read (offline, restoring, a secondary
     // that isn't readable) is reported on its own and the rest are still checked.
-    private async Task<OrphanScan> ScanForOrphansAsync(IDbConnection conn, IReadOnlyList<DatabaseRow> databases)
+    private async Task<OrphanScan> ScanForOrphansAsync(IDbConnection conn, IReadOnlyList<DatabaseRow> databases, CancellationToken cancellationToken)
     {
         var checkedDbs = new List<string>();
         var skipped    = new List<SkippedDatabase>();
@@ -116,7 +116,7 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
 
             try
             {
-                users.AddRange((await Q(conn, OrphanedUsersIn(db.Name))).Select(r => new OrphanedUser(
+                users.AddRange((await Q(conn, OrphanedUsersIn(db.Name), cancellationToken)).Select(r => new OrphanedUser(
                     db.Name,
                     (string)r.Name,
                     (byte[])r.Sid,
@@ -132,7 +132,7 @@ public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target),
 
         IReadOnlyCollection<string> logins = users.Count == 0
             ? []
-            : (await Q(conn, SqlLoginsSql)).Select(r => (string)r.Name).ToList();
+            : (await Q(conn, SqlLoginsSql, cancellationToken)).Select(r => (string)r.Name).ToList();
 
         return new OrphanScan(checkedDbs, skipped, users, logins);
     }

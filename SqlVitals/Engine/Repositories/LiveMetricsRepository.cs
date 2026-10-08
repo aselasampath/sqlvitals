@@ -3,7 +3,7 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Live metrics: the dashboard's counters and ring buffers, and the Perfmon counters. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class LiveMetricsRepository(SqlTarget target) : BaseRepository(target), ILiveMetricsRepository
+public class LiveMetricsRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), ILiveMetricsRepository
 {
     // ── 21. Live metrics dashboard (perf counters + ring buffers) ────
 
@@ -20,19 +20,12 @@ public class LiveMetricsRepository(SqlTarget target) : BaseRepository(target), I
     internal static string LiveMetricsSql(bool isAzureSqlDb) =>
         LiveMetricsSqlTemplate.Replace("/*CPU*/", isAzureSqlDb ? AzureSqlDbCpuSql : RingBufferCpuSql);
 
-    // Read on the first live metrics query; one repository per connection.
-    private bool? _liveIsAzureSqlDb;
-
-    public async Task<LiveMetricSnapshot> GetLiveMetricsAsync()
+    public async Task<LiveMetricSnapshot> GetLiveMetricsAsync(CancellationToken cancellationToken = default)
     {
-        using var conn = CreateConnection();
-        if (_liveIsAzureSqlDb is null)
-        {
-            var edition = await QFirst(conn, SqlScripts.Get("Server/Edition"));
-            _liveIsAzureSqlDb = edition is not null && Convert.ToInt32(edition.Edition) == 5;
-        }
+        var isAzureSqlDb = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
 
-        var r = await QFirst(conn, LiveMetricsSql(_liveIsAzureSqlDb.Value)) ?? throw new InvalidOperationException("Failed to capture metrics");
+        using var conn = CreateConnection();
+        var r = await QFirst(conn, LiveMetricsSql(isAzureSqlDb), cancellationToken) ?? throw new InvalidOperationException("Failed to capture metrics");
         return ToLiveMetricSnapshot(r);
     }
 
@@ -81,12 +74,12 @@ public class LiveMetricsRepository(SqlTarget target) : BaseRepository(target), I
     /// </summary>
     internal static readonly string PerfmonCounterFilter = SqlScripts.Get("LiveMetrics/PerfmonCounterFilter");
 
-    public async Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync()
+    public async Task<IEnumerable<PerfmonCounter>> GetPerfmonCountersAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("LiveMetrics/PerfmonCounters").Replace("/*COUNTER_FILTER*/", PerfmonCounterFilter);
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql)).Select(r =>
+        return (await Q(conn, sql, cancellationToken)).Select(r =>
             new PerfmonCounter(
                 (string)r.ObjectName,
                 (string)r.CounterName,

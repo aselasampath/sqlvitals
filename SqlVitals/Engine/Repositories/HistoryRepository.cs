@@ -2,7 +2,7 @@ using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
-public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHistoryRepository
+public class HistoryRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IHistoryRepository
 {
     // Same idle waits the Live Metrics total leaves out (see GetLiveMetricsAsync). They grow
     // every interval on an idle server and say nothing about a problem.
@@ -11,7 +11,7 @@ public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHist
     // EngineEdition 5 = Azure SQL Database: no sys.master_files, and waits are per database.
     private bool? _isAzureSqlDb;
 
-    public async Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries)
+    public async Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries, CancellationToken cancellationToken = default)
     {
         var clockSql = SqlScripts.Get("History/Clock");
 
@@ -30,7 +30,7 @@ public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHist
 
         using var conn = CreateConnection();
 
-        var clock = await QFirst(conn, clockSql)
+        var clock = await QFirst(conn, clockSql, cancellationToken)
                     ?? throw new InvalidOperationException("Failed to read the server clock.");
         _isAzureSqlDb ??= Convert.ToInt32(clock.Edition) == 5;
         var isAzure = _isAzureSqlDb.Value;
@@ -39,21 +39,21 @@ public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHist
             .Replace("/*WAIT_STATS*/", isAzure ? "sys.dm_db_wait_stats" : "sys.dm_os_wait_stats")
             .Replace("/*BENIGN_WAITS*/", BenignWaits);
 
-        var waits = (await Q(conn, waitsSql)).Select(r => new WaitTypeTotals(
+        var waits = (await Q(conn, waitsSql, cancellationToken)).Select(r => new WaitTypeTotals(
             (string)r.WaitType, Convert.ToInt64(r.WaitingTasks), Convert.ToInt64(r.WaitTimeMs),
             Convert.ToInt64(r.SignalWaitTimeMs))).ToList();
 
-        var files = (await Q(conn, isAzure ? filesAzureSql : filesSql)).Select(r => new FileIoTotals(
+        var files = (await Q(conn, isAzure ? filesAzureSql : filesSql, cancellationToken)).Select(r => new FileIoTotals(
             (string)r.DatabaseName, Convert.ToInt32(r.FileId), (string)r.FileName, (string)r.FileType,
             Convert.ToInt64(r.Reads), Convert.ToInt64(r.BytesRead), Convert.ToInt64(r.ReadStallMs),
             Convert.ToInt64(r.Writes), Convert.ToInt64(r.BytesWritten), Convert.ToInt64(r.WriteStallMs))).ToList();
 
-        var queries = (await Q(conn, queriesSql, new { maxQueries, since = queriesExecutedSince })).Select(r => new QueryTotals(
+        var queries = (await Q(conn, queriesSql, cancellationToken, new { maxQueries, since = queriesExecutedSince })).Select(r => new QueryTotals(
             (string)r.QueryHash, Convert.ToInt64(r.Executions), Convert.ToInt64(r.WorkerTimeUs),
             Convert.ToInt64(r.ElapsedTimeUs), Convert.ToInt64(r.LogicalReads), Convert.ToInt64(r.LogicalWrites),
             (DateTime)r.FirstPlanCreated)).ToList();
 
-        var m = await QFirst(conn, memorySql);
+        var m = await QFirst(conn, memorySql, cancellationToken);
         HistoryMemory? memory = m?.TotalServerMemoryKB is null ? null : new HistoryMemory(
             Convert.ToInt64(m!.TotalServerMemoryKB),
             Convert.ToInt64(m.TargetServerMemoryKB ?? 0L),
@@ -64,7 +64,7 @@ public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHist
             Convert.ToInt64(m.MemoryGrantsOutstanding ?? 0L));
 
         // First row per name, as the Perfmon page takes it.
-        var counters = (await Q(conn, countersSql))
+        var counters = (await Q(conn, countersSql, cancellationToken))
             .Select(r => new CounterTotals(
                 (string)r.CounterName, Convert.ToInt64(r.CntrValue),
                 Convert.ToInt32(r.CntrType) == LiveMetricsRepository.PerfmonRateCounterType))
@@ -75,7 +75,7 @@ public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHist
             (DateTime)clock.ServerTime, (DateTime)clock.ServerStartTime, waits, files, queries, memory, counters);
     }
 
-    public async Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength)
+    public async Task<IReadOnlyList<QueryTextInfo>> GetQueryTextsAsync(IReadOnlyCollection<string> queryHashes, int maxLength, CancellationToken cancellationToken = default)
     {
         if (queryHashes.Count == 0)
             return Array.Empty<QueryTextInfo>();
@@ -83,7 +83,7 @@ public class HistoryRepository(SqlTarget target) : BaseRepository(target), IHist
         var sql = SqlScripts.Get("History/QueryTexts");
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql, new { hashes = queryHashes, maxLength }))
+        return (await Q(conn, sql, cancellationToken, new { hashes = queryHashes, maxLength }))
             .Select(r => new QueryTextInfo((string)r.QueryHash, (string?)r.DatabaseName, (string)r.QueryText))
             .ToList();
     }

@@ -3,7 +3,7 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Database storage and configuration: settings, files, TempDB files and the largest tables. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class StorageRepository(SqlTarget target) : BaseRepository(target), IStorageRepository
+public class StorageRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IStorageRepository
 {
     // ── 19. Database storage & configuration ─────────────────────────
     // Detects Azure SQL (EngineEdition 5/8) and switches to compatible queries.
@@ -14,11 +14,8 @@ public class StorageRepository(SqlTarget target) : BaseRepository(target), IStor
         IEnumerable<DatabaseFile> Files,
         IEnumerable<TempDbFileSummary> TempDbFiles,
         IEnumerable<TableStorage> TopTables
-    )> GetDatabaseStorageAsync()
+    )> GetDatabaseStorageAsync(CancellationToken cancellationToken = default)
     {
-        // ── Detect engine edition: 5 = Azure SQL DB, 8 = Azure SQL MI ─
-        var sqlEdition = SqlScripts.Get("Server/Edition");
-
         // ── A) Server / database-scoped config ────────────────────────
         // On-prem: sys.configurations (server-wide)
         // Azure SQL DB: sys.database_scoped_configurations (DB-level only)
@@ -28,14 +25,12 @@ public class StorageRepository(SqlTarget target) : BaseRepository(target), IStor
 
         using var conn = CreateConnection();
 
-        // Detect Azure SQL (EngineEdition 5 = Azure SQL DB, 8 = Azure SQL MI)
-        var editionRow = await QFirst(conn, sqlEdition);
-        int edition = editionRow != null ? (int)editionRow.Edition : 0;
-        bool isAzureSqlDb = edition == 5;   // Managed Instance (8) still has master_files
+        // Azure SQL Database; Managed Instance still has master_files.
+        bool isAzureSqlDb = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
 
         // Config
         var configSql = isAzureSqlDb ? sqlConfigAzure : sqlConfigOnPrem;
-        var config = (await Q(conn, configSql)).Select(r => new ServerConfigParam(
+        var config = (await Q(conn, configSql, cancellationToken)).Select(r => new ServerConfigParam(
             (string)r.ParameterName,
             Convert.ToInt64(r.CurrentValue),
             Convert.ToInt64(r.MinValue),
@@ -47,8 +42,8 @@ public class StorageRepository(SqlTarget target) : BaseRepository(target), IStor
         // Files
         var filesSql = isAzureSqlDb
             ? DatabaseFilesAzureSql
-            : DatabaseFilesSql(await HasColumnAsync(conn, "sys.databases", "is_query_store_on"));
-        var files = (await Q(conn, filesSql)).Select(r => new DatabaseFile(
+            : DatabaseFilesSql(await HasColumnAsync(conn, "sys.databases", "is_query_store_on", cancellationToken));
+        var files = (await Q(conn, filesSql, cancellationToken)).Select(r => new DatabaseFile(
             (string)r.DatabaseName,
             (string)r.State,
             r.RecoveryModel == null || r.RecoveryModel is DBNull ? "" : (string)r.RecoveryModel,
@@ -73,7 +68,7 @@ public class StorageRepository(SqlTarget target) : BaseRepository(target), IStor
         IEnumerable<TempDbFileSummary> tempFiles = [];
         if (!isAzureSqlDb)
         {
-            tempFiles = (await Q(conn, TempDbFilesSummarySql)).Select(r => new TempDbFileSummary(
+            tempFiles = (await Q(conn, TempDbFilesSummarySql, cancellationToken)).Select(r => new TempDbFileSummary(
                 (string)r.FileName,
                 (string)r.FileType,
                 r.PhysicalPath == null || r.PhysicalPath is DBNull ? "" : (string)r.PhysicalPath,
@@ -83,7 +78,7 @@ public class StorageRepository(SqlTarget target) : BaseRepository(target), IStor
         }
 
         // ── D) Top 20 tables by storage (same on both) ────────────────
-        var tables = (await Q(conn, TopTablesSql)).Select(r => new TableStorage(
+        var tables = (await Q(conn, TopTablesSql, cancellationToken)).Select(r => new TableStorage(
             (string)r.SchemaName,
             (string)r.TableName,
             Convert.ToInt64(r.RowsCount),

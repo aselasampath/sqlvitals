@@ -11,5 +11,5 @@ public interface IPlanCacheHealthRepository
         IEnumerable<CardinalityMisestimate>     CardinalityMisestimates,
         IEnumerable<SkewedParallelQuery>        SkewedParallelQueries,
         IEnumerable<PlanGuide>                  PlanGuides
-    )> GetPlanCacheHealthAsync();
+    )> GetPlanCacheHealthAsync(CancellationToken cancellationToken = default);
 }

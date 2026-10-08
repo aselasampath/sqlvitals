@@ -15,8 +15,8 @@ public abstract class CodeBehindViewModel : PageViewModel
     /// <summary>The page whose code-behind reads; the page factory sets it.</summary>
     internal void LoadThrough(ICodeBehindPage page) => _page = page;
 
-    // The code-behind doesn't take a token: the repositories don't yet (#167). A read left behind
-    // finishes, and the base class keeps its result off the screen.
+    // The code-behind doesn't take a token: its repository is bound to the page's lifetime instead
+    // (#167), so leaving the page cancels what it reads, and the base class keeps it off the screen.
     protected override Task LoadAsync(CancellationToken cancel) => _page?.RefreshAsync() ?? Task.CompletedTask;
 
     // The page has already put it in its verdict, saying what it couldn't read.

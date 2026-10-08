@@ -44,6 +44,7 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     private TimeSpan? _refreshInterval;
     private IDisposable? _schedule;
     private CancellationTokenSource? _run;
+    private PageLifetime? _lifetime;
     private Task _reading = Task.CompletedTask;
     private bool _shown;
 
@@ -60,11 +61,13 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     /// Hands the view model what runs its lifecycle; the page factory calls it as it makes the page.
     /// Until then (a page built on its own in a test) nothing is reported and nothing is timed.
     /// </summary>
-    internal void Connect(string tag, IShellStatus shell, IRefreshScheduler scheduler)
+    /// <param name="lifetime">The page's reads end with it (#167): ended when the page is left.</param>
+    internal void Connect(string tag, IShellStatus shell, IRefreshScheduler scheduler, PageLifetime? lifetime = null)
     {
         Tag        = tag;
         _shell     = shell;
         _scheduler = scheduler;
+        _lifetime  = lifetime;
     }
 
     /// <summary>
@@ -88,15 +91,20 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     public async Task OnNavigatedToAsync()
     {
         _shown = true;
+        _lifetime?.Begin();
         await ReadAsync(PageRead.Load);
         Reschedule();
     }
 
-    /// <summary>The page was left: what it was reading is cancelled and its timer stops.</summary>
+    /// <summary>
+    /// The page was left: what it was reading is cancelled, on the server too (#167), and its timer
+    /// stops. Reads its code-behind started end with it.
+    /// </summary>
     public void OnNavigatedFrom()
     {
         _shown = false;
         _run?.Cancel();
+        _lifetime?.End();
         Reschedule();
     }
 
@@ -122,10 +130,17 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     /// <summary>The page couldn't read: the verdict says so. A page whose code-behind says so itself does nothing here.</summary>
     protected virtual void ShowLoadError(Exception exception) => ShowError("this page's data", exception);
 
-    /// <summary>The page couldn't read what it judges: the verdict says so.</summary>
+    /// <summary>
+    /// The page couldn't read what it judges: the verdict says so, with the GRANT that fixes a
+    /// missing permission (#167). A read cancelled because the page was left says nothing.
+    /// </summary>
     /// <param name="what">"the sessions", "the backup history".</param>
-    public void ShowError(string what, Exception error) =>
-        Verdict = PageVerdict.Unreadable(what, ErrorStatus.Format(error));
+    public void ShowError(string what, Exception error)
+    {
+        if (error is OperationCanceledException)
+            return;
+        Verdict = PageVerdict.Unreadable(what, ErrorStatus.Format(error), ErrorStatus.Fix(error));
+    }
 
     // One read at a time: asked again while one runs, the caller waits for that one.
     private Task ReadAsync(PageRead read)

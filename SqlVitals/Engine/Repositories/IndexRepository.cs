@@ -5,17 +5,17 @@ using SqlVitals.Engine.Scripting;
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Indexes and statistics: missing and unused indexes, usage, fragmentation and stale statistics. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class IndexRepository(SqlTarget target) : BaseRepository(target), IIndexRepository
+public class IndexRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IIndexRepository
 {
     // ── 11. Index health ──────────────────────────────────────────────
-    public async Task<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)> GetIndexHealthAsync()
+    public async Task<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)> GetIndexHealthAsync(CancellationToken cancellationToken = default)
     {
         var missingSql = SqlScripts.Get("Index/Missing");
 
         var unusedSql = SqlScripts.Get("Index/Unused");
 
         using var conn = CreateConnection();
-        var missing = (await Q(conn, missingSql)).Select(r => new MissingIndex(
+        var missing = (await Q(conn, missingSql, cancellationToken)).Select(r => new MissingIndex(
             (string)r.DatabaseName, (string)r.SchemaName, (string)r.TableName,
             (string?)r.EqualityColumns, (string?)r.InequalityColumns, (string?)r.IncludedColumns,
             (long)r.UniqueCompiles, (long)r.UserSeeks, (long)r.UserScans,
@@ -23,7 +23,7 @@ public class IndexRepository(SqlTarget target) : BaseRepository(target), IIndexR
             (double)r.AvgTotalUserCost, (double)r.AvgUserImpact, (double)r.ImpactScore,
             (string)r.Severity, (string)r.CreateIndexStatement, (DateTime)r.CaptureTime));
 
-        var unused = (await Q(conn, unusedSql)).Select(r => new UnusedIndex(
+        var unused = (await Q(conn, unusedSql, cancellationToken)).Select(r => new UnusedIndex(
             (string)r.DatabaseName, (string)r.SchemaName, (string)r.TableName,
             (string)r.IndexName, (string)r.IndexType,
             (bool)r.IsUnique, (bool)r.IsPrimaryKey, (bool)r.IsUniqueConstraint,
@@ -35,12 +35,12 @@ public class IndexRepository(SqlTarget target) : BaseRepository(target), IIndexR
     }
 
     // ── 15. Index usage patterns ──────────────────────────────────────
-    public async Task<IEnumerable<IndexUsagePattern>> GetIndexUsagePatternsAsync()
+    public async Task<IEnumerable<IndexUsagePattern>> GetIndexUsagePatternsAsync(CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("Index/UsagePatterns");
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql)).Select(r => new IndexUsagePattern(
+        return (await Q(conn, sql, cancellationToken)).Select(r => new IndexUsagePattern(
             (string)r.TableName, (string?)r.IndexName, (string)r.IndexType,
             (long)r.UserSeeks, (long)r.UserScans, (long)r.UserLookups, (long)r.UserUpdates,
             (DateTime?)r.LastUserSeek, (DateTime?)r.LastUserScan,
@@ -49,12 +49,12 @@ public class IndexRepository(SqlTarget target) : BaseRepository(target), IIndexR
     }
 
     // ── 16. Index fragmentation ───────────────────────────────────────
-    public async Task<IEnumerable<IndexFragmentation>> GetIndexFragmentationAsync(double minFragmentationPercent = 10, long minPageCount = 1000)
+    public async Task<IEnumerable<IndexFragmentation>> GetIndexFragmentationAsync(double minFragmentationPercent = 10, long minPageCount = 1000, CancellationToken cancellationToken = default)
     {
         var sql = SqlScripts.Get("Index/Fragmentation");
 
         using var conn = CreateConnection();
-        return (await Q(conn, sql, new { MinFrag = minFragmentationPercent, MinPageCount = minPageCount })).Select(r =>
+        return (await Q(conn, sql, cancellationToken, new { MinFrag = minFragmentationPercent, MinPageCount = minPageCount })).Select(r =>
         {
             var row = (IDictionary<string, object>)r;
             object? Get(string k) => row.TryGetValue(k, out var v) && v is not DBNull ? v : null;
@@ -74,11 +74,11 @@ public class IndexRepository(SqlTarget target) : BaseRepository(target), IIndexR
     internal static string StaleStatisticsSql(bool hasIncremental) =>
         StaleStatisticsSqlTemplate.Replace("/*INCREMENTAL*/", hasIncremental ? "s.is_incremental" : "CAST(0 AS BIT)");
 
-    public async Task<IEnumerable<StaleStatistic>> GetStaleStatisticsAsync()
+    public async Task<IEnumerable<StaleStatistic>> GetStaleStatisticsAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var sql = StaleStatisticsSql(await HasColumnAsync(conn, "sys.stats", "is_incremental"));
-        return (await Q(conn, sql)).Select(r => new StaleStatistic(
+        var sql = StaleStatisticsSql(await HasColumnAsync(conn, "sys.stats", "is_incremental", cancellationToken));
+        return (await Q(conn, sql, cancellationToken)).Select(r => new StaleStatistic(
             (string)r.SchemaName, (string)r.TableName, (string)r.StatisticsName,
             (DateTime?)r.LastUpdated, (int?)r.DaysOld,
             (long?)r.RowsInTable, (long?)r.RowsSampled, (double?)r.SamplePct ?? 0,

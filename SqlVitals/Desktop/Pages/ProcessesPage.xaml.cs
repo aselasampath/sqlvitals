@@ -32,7 +32,7 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         }
         else
         {
-            _sessionView ??= new SessionDetailsView(_repo.GetSessionPlanAsync, OpenActiveWaits);
+            _sessionView ??= new SessionDetailsView(id => _repo.GetSessionPlanAsync(id), OpenActiveWaits);
             _sessionView.Show(node, ProcessMap.Snapshot);
             Details = new($"Session {sessionId}", _sessionView, SelectHint);
         }

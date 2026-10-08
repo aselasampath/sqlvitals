@@ -16,8 +16,8 @@ namespace SqlVitals.Engine.Repositories;
 /// by <see cref="WaitStatsRepository"/>.
 /// </remarks>
 [SuppressMessage("Design", "CA1001", Justification = "_gate never creates a wait handle, so there is nothing to dispose")]
-public partial class SpTraceRepository(SqlTarget target)
-    : BaseRepository(target), ISpTraceRepository
+public partial class SpTraceRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null)
+    : BaseRepository(target, capabilities), ISpTraceRepository
 {
     /// <summary>
     /// Upper bound on remembered ring-buffer event keys. The buffer holds at most
@@ -47,19 +47,18 @@ public partial class SpTraceRepository(SqlTarget target)
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
-    public async Task<TraceSessionStatus> StartTraceAsync(SpTraceOptions options)
+    public async Task<TraceSessionStatus> StartTraceAsync(SpTraceOptions options, CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             ResetState();
 
             using var conn = CreateConnection();
 
-            var editionRow = await QFirst(conn, SqlScripts.Get("Server/Edition"));
-            _isAzureSqlDb = editionRow is not null && Convert.ToInt32(editionRow.Edition) == 5;
+            _isAzureSqlDb = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
 
-            if (!await CanCreateEventSessionAsync(conn))
+            if (!await CanCreateEventSessionAsync(conn, cancellationToken: cancellationToken))
             {
                 _mode = TraceMode.DmvFallback;
                 _modeReason = _isAzureSqlDb
@@ -70,7 +69,7 @@ public partial class SpTraceRepository(SqlTarget target)
             {
                 try
                 {
-                    await CreateAndStartSessionAsync(conn, options);
+                    await CreateAndStartSessionAsync(conn, options, cancellationToken: cancellationToken);
                     _mode = TraceMode.ExtendedEvents;
                     _modeReason = null;
                     _sessionCreated = true;
@@ -86,7 +85,7 @@ public partial class SpTraceRepository(SqlTarget target)
 
             // Seed the DMV baseline in both modes so the aggregate view has something to
             // measure against on the next poll, and works as a cross-check alongside XE.
-            _previousStats = await ReadProcedureStatsAsync(conn, options.CurrentDatabaseOnly);
+            _previousStats = await ReadProcedureStatsAsync(conn, options.CurrentDatabaseOnly, cancellationToken: cancellationToken);
 
             _isRunning = true;
             return BuildStatus();
@@ -97,13 +96,13 @@ public partial class SpTraceRepository(SqlTarget target)
         }
     }
 
-    public async Task<TraceSessionStatus> StopTraceAsync()
+    public async Task<TraceSessionStatus> StopTraceAsync(CancellationToken cancellationToken = default)
     {
         // Bounded wait rather than an open-ended one: a poll in flight holds the gate for a
         // full server round trip, and on app shutdown there is a hard deadline. Dropping
         // opens its own connection, so going ahead without the gate is safe — the worst
         // case is a poll reading a session that is about to disappear, which it tolerates.
-        var acquired = await _gate.WaitAsync(TimeSpan.FromSeconds(3));
+        var acquired = await _gate.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
         try
         {
             if (_sessionCreated)
@@ -111,7 +110,7 @@ public partial class SpTraceRepository(SqlTarget target)
                 try
                 {
                     using var conn = CreateConnection();
-                    await DropSessionAsync(conn);
+                    await DropSessionAsync(conn, cancellationToken: cancellationToken);
                 }
                 catch (WaitStatsException)
                 {
@@ -130,16 +129,16 @@ public partial class SpTraceRepository(SqlTarget target)
         }
     }
 
-    public async Task<TraceSessionStatus> GetTraceStatusAsync()
+    public async Task<TraceSessionStatus> GetTraceStatusAsync(CancellationToken cancellationToken = default)
     {
         if (!_isRunning || _mode != TraceMode.ExtendedEvents)
             return BuildStatus();
 
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             using var conn = CreateConnection();
-            var snapshot = SpTraceXmlParser.Parse(await ReadRingBufferXmlAsync(conn));
+            var snapshot = SpTraceXmlParser.Parse(await ReadRingBufferXmlAsync(conn, cancellationToken: cancellationToken));
             _eventsDropped   = snapshot.DroppedCount;
             _targetTruncated = snapshot.Truncated;
             return BuildStatus();
@@ -156,15 +155,15 @@ public partial class SpTraceRepository(SqlTarget target)
 
     // ── Polling ──────────────────────────────────────────────────────────
 
-    public async Task<IReadOnlyList<SpTraceEvent>> PollTraceEventsAsync()
+    public async Task<IReadOnlyList<SpTraceEvent>> PollTraceEventsAsync(CancellationToken cancellationToken = default)
     {
         if (!_isRunning || _mode != TraceMode.ExtendedEvents) return [];
 
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             using var conn = CreateConnection();
-            var snapshot = SpTraceXmlParser.Parse(await ReadRingBufferXmlAsync(conn));
+            var snapshot = SpTraceXmlParser.Parse(await ReadRingBufferXmlAsync(conn, cancellationToken: cancellationToken));
 
             _eventsDropped   = snapshot.DroppedCount;
             _targetTruncated = snapshot.Truncated;
@@ -190,13 +189,13 @@ public partial class SpTraceRepository(SqlTarget target)
         }
     }
 
-    public async Task<IReadOnlyList<SpAggregateRow>> PollProcedureStatsAsync()
+    public async Task<IReadOnlyList<SpAggregateRow>> PollProcedureStatsAsync(CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             using var conn = CreateConnection();
-            var current = await ReadProcedureStatsAsync(conn, currentDatabaseOnly: true);
+            var current = await ReadProcedureStatsAsync(conn, currentDatabaseOnly: true, cancellationToken: cancellationToken);
             var rows    = ProcedureStatsDelta.Compute(_previousStats, current);
             _previousStats = current;
             return rows;
@@ -207,10 +206,10 @@ public partial class SpTraceRepository(SqlTarget target)
         }
     }
 
-    public async Task<IReadOnlyList<SpAggregateRow>> GetProcedureStatsTotalsAsync(int topN = 25)
+    public async Task<IReadOnlyList<SpAggregateRow>> GetProcedureStatsTotalsAsync(int topN = 25, CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var snapshot = await ReadProcedureStatsAsync(conn, currentDatabaseOnly: true);
+        var snapshot = await ReadProcedureStatsAsync(conn, currentDatabaseOnly: true, cancellationToken: cancellationToken);
 
         return snapshot.Values
             .Where(s => s.ExecutionCount > 0)
@@ -233,7 +232,7 @@ public partial class SpTraceRepository(SqlTarget target)
 
     // ── Permission probe ─────────────────────────────────────────────────
 
-    private async Task<bool> CanCreateEventSessionAsync(System.Data.IDbConnection conn)
+    private async Task<bool> CanCreateEventSessionAsync(System.Data.IDbConnection conn, CancellationToken cancellationToken)
     {
         var sql = _isAzureSqlDb
             ? SqlScripts.Get("SpTrace/CanCreateSessionInDatabase")
@@ -241,7 +240,7 @@ public partial class SpTraceRepository(SqlTarget target)
 
         try
         {
-            var row = await QFirst(conn, sql);
+            var row = await QFirst(conn, sql, cancellationToken);
             return row is not null && Convert.ToInt32(row.HasPerm) == 1;
         }
         catch (WaitStatsException)
@@ -252,11 +251,11 @@ public partial class SpTraceRepository(SqlTarget target)
 
     // ── Event session DDL ────────────────────────────────────────────────
 
-    private async Task CreateAndStartSessionAsync(System.Data.IDbConnection conn, SpTraceOptions options)
+    private async Task CreateAndStartSessionAsync(System.Data.IDbConnection conn, SpTraceOptions options, CancellationToken cancellationToken)
     {
         // A previous run killed mid-trace leaves the session behind; clear it first so the
         // CREATE below cannot fail on a name collision.
-        await DropSessionAsync(conn);
+        await DropSessionAsync(conn, cancellationToken: cancellationToken);
 
         var scope        = _isAzureSqlDb ? "DATABASE" : "SERVER";
         var minDurationUs = Math.Max(0, options.MinDurationMs) * 1000L;
@@ -272,7 +271,7 @@ public partial class SpTraceRepository(SqlTarget target)
         // DB_ID() cannot appear inside an event predicate, so resolve it first.
         if (dbPredicate.Length > 0)
         {
-            var dbIdRow = await QFirst(conn, SqlScripts.Get("SpTrace/DatabaseId"));
+            var dbIdRow = await QFirst(conn, SqlScripts.Get("SpTrace/DatabaseId"), cancellationToken);
             var dbId = dbIdRow is null ? 0 : Convert.ToInt32(dbIdRow.DbId);
             dbPredicate = dbId > 0 ? $" AND sqlserver.database_id = {dbId}" : string.Empty;
         }
@@ -305,22 +304,22 @@ public partial class SpTraceRepository(SqlTarget target)
 
         try
         {
-            await Exec(conn, BuildDdl(withObjectTypePredicate: true));
+            await Exec(conn, BuildDdl(withObjectTypePredicate: true), cancellationToken);
             _filterModulesClientSide = false;
         }
         catch (WaitStatsException)
         {
             // A failed CREATE leaves nothing behind, but drop defensively in case the
             // statement partially applied before erroring.
-            await DropSessionAsync(conn);
-            await Exec(conn, BuildDdl(withObjectTypePredicate: false));
+            await DropSessionAsync(conn, cancellationToken: cancellationToken);
+            await Exec(conn, BuildDdl(withObjectTypePredicate: false), cancellationToken);
             _filterModulesClientSide = true;
         }
 
-        await Exec(conn, SqlScripts.Get("SpTrace/StartSession").Replace("/*SESSION*/", _sessionName).Replace("/*SCOPE*/", scope));
+        await Exec(conn, SqlScripts.Get("SpTrace/StartSession").Replace("/*SESSION*/", _sessionName).Replace("/*SCOPE*/", scope), cancellationToken);
     }
 
-    private async Task DropSessionAsync(System.Data.IDbConnection conn)
+    private async Task DropSessionAsync(System.Data.IDbConnection conn, CancellationToken cancellationToken)
     {
         var scope   = _isAzureSqlDb ? "DATABASE" : "SERVER";
         var catalog = _isAzureSqlDb ? "sys.database_event_sessions" : "sys.server_event_sessions";
@@ -328,16 +327,16 @@ public partial class SpTraceRepository(SqlTarget target)
         // DROP EVENT SESSION has no IF EXISTS form, hence the catalog guard.
         var sql = SqlScripts.Get("SpTrace/DropSession")
             .Replace("/*CATALOG*/", catalog).Replace("/*SESSION*/", _sessionName).Replace("/*SCOPE*/", scope);
-        await Exec(conn, sql, new { name = _sessionName });
+        await Exec(conn, sql, cancellationToken, new { name = _sessionName });
     }
 
-    private async Task<string?> ReadRingBufferXmlAsync(System.Data.IDbConnection conn)
+    private async Task<string?> ReadRingBufferXmlAsync(System.Data.IDbConnection conn, CancellationToken cancellationToken)
     {
         var sessions = _isAzureSqlDb ? "sys.dm_xe_database_sessions"        : "sys.dm_xe_sessions";
         var targets  = _isAzureSqlDb ? "sys.dm_xe_database_session_targets" : "sys.dm_xe_session_targets";
 
         var sql = SqlScripts.Get("SpTrace/RingBuffer").Replace("/*SESSIONS*/", sessions).Replace("/*TARGETS*/", targets);
-        var row = await QFirst(conn, sql, new { name = _sessionName });
+        var row = await QFirst(conn, sql, cancellationToken, new { name = _sessionName });
 
         return row?.TargetData is null or DBNull ? null : (string)row.TargetData;
     }
@@ -345,13 +344,13 @@ public partial class SpTraceRepository(SqlTarget target)
     // ── Procedure stats snapshot ─────────────────────────────────────────
 
     private async Task<Dictionary<ProcStatsKey, ProcStatsSnapshot>> ReadProcedureStatsAsync(
-        System.Data.IDbConnection conn, bool currentDatabaseOnly)
+        System.Data.IDbConnection conn, bool currentDatabaseOnly, CancellationToken cancellationToken)
     {
         var dbFilter = currentDatabaseOnly ? "WHERE ps.database_id = DB_ID()" : "";
 
         var sql = SqlScripts.Get("SpTrace/ProcedureStats").Replace("/*DB_FILTER*/", dbFilter);
 
-        var rows = await Q(conn, sql);
+        var rows = await Q(conn, sql, cancellationToken);
         var result = new Dictionary<ProcStatsKey, ProcStatsSnapshot>();
 
         foreach (var r in rows)

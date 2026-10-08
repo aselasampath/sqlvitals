@@ -10,12 +10,12 @@ public interface IBackupRepository
     /// <paramref name="rpo"/>. Never throws for Azure SQL Database or a login that can't read
     /// msdb's backup history: the list then carries the reason.
     /// </summary>
-    Task<BackupList> GetBackupStatusAsync(BackupRpo rpo);
+    Task<BackupList> GetBackupStatusAsync(BackupRpo rpo, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The backups msdb keeps for one database, newest first, at most
     /// <see cref="BackupHistoryEntry.MaxRows"/>. <paramref name="createDate"/> marks the ones
     /// from before it was created or restored.
     /// </summary>
-    Task<IReadOnlyList<BackupHistoryEntry>> GetBackupHistoryAsync(string databaseName, DateTime createDate);
+    Task<IReadOnlyList<BackupHistoryEntry>> GetBackupHistoryAsync(string databaseName, DateTime createDate, CancellationToken cancellationToken = default);
 }

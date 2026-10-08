@@ -4,8 +4,8 @@ using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
-public class PlanCacheHealthRepository(SqlTarget target)
-    : BaseRepository(target), IPlanCacheHealthRepository
+public class PlanCacheHealthRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null)
+    : BaseRepository(target, capabilities), IPlanCacheHealthRepository
 {
     public async Task<(
         PlanCacheHealthSummary Summary,
@@ -14,7 +14,7 @@ public class PlanCacheHealthRepository(SqlTarget target)
         IEnumerable<CardinalityMisestimate> CardinalityMisestimates,
         IEnumerable<SkewedParallelQuery> SkewedParallelQueries,
         IEnumerable<PlanGuide> PlanGuides
-    )> GetPlanCacheHealthAsync()
+    )> GetPlanCacheHealthAsync(CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
@@ -43,13 +43,13 @@ public class PlanCacheHealthRepository(SqlTarget target)
         // ── Execute all queries ───────────────────────────────────────────────
         // The summary and multi-plan queries are the page: if they fail, it fails.
         // The rest are optional sections (see Optional).
-        var summaryRows   = await Q(conn, summarySql,   commandTimeout: 60);
-        var multiPlanRows = await Q(conn, multiPlanSql, commandTimeout: 120);
+        var summaryRows   = await Q(conn, summarySql,   cancellationToken, commandTimeout: 60);
+        var multiPlanRows = await Q(conn, multiPlanSql, cancellationToken, commandTimeout: 120);
 
-        var keyLookupRows   = await Optional(Q(conn, keyLookupSql,   commandTimeout: 120));
-        var cardinalityRows = await Optional(Q(conn, CardinalitySql, commandTimeout: 30));
-        var skewRows        = await Optional(Q(conn, SkewSql,        commandTimeout: 30));
-        var planGuideRows   = await Optional(Q(conn, planGuidesSql,  commandTimeout: 15));
+        var keyLookupRows   = await Optional(Q(conn, keyLookupSql,   cancellationToken, commandTimeout: 120));
+        var cardinalityRows = await Optional(Q(conn, CardinalitySql, cancellationToken, commandTimeout: 30));
+        var skewRows        = await Optional(Q(conn, SkewSql,        cancellationToken, commandTimeout: 30));
+        var planGuideRows   = await Optional(Q(conn, planGuidesSql,  cancellationToken, commandTimeout: 15));
 
         // ── Map summary ───────────────────────────────────────────────────────
         var sr = summaryRows.FirstOrDefault();

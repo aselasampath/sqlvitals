@@ -8,11 +8,8 @@ namespace SqlVitals.Engine.Repositories;
 /// log backup of each database in sys.databases. Read only; msdb keeps its times in the server's
 /// local time, and so does the list.
 /// </summary>
-public class BackupRepository(SqlTarget target) : BaseRepository(target), IBackupRepository
+public class BackupRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IBackupRepository
 {
-    // SELECT denied on an msdb table (229), or no access to msdb at all (916).
-    private static readonly int[] MsdbPermissionErrors = [229, 916];
-
     private const int AzureSqlDatabaseEdition = 5;
 
     // Kept to what every edition has, so Azure SQL Database gets its message rather than an error.
@@ -28,11 +25,11 @@ public class BackupRepository(SqlTarget target) : BaseRepository(target), IBacku
 
     internal static readonly string HistorySql = SqlScripts.Get("Backup/History");
 
-    public async Task<BackupList> GetBackupStatusAsync(BackupRpo rpo)
+    public async Task<BackupList> GetBackupStatusAsync(BackupRpo rpo, CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
 
-        var server  = await QFirst(conn, ServerSql);
+        var server  = await QFirst(conn, ServerSql, cancellationToken);
         int edition = server is null ? 0 : Convert.ToInt32(server.Edition);
         DateTime serverNow = server?.ServerNow as DateTime? ?? DateTime.Now;
         if (edition == AzureSqlDatabaseEdition)
@@ -44,9 +41,9 @@ public class BackupRepository(SqlTarget target) : BaseRepository(target), IBacku
         List<dynamic> rows;
         try
         {
-            rows = (await Q(conn, DatabasesSql)).ToList();
+            rows = (await Q(conn, DatabasesSql, cancellationToken)).ToList();
         }
-        catch (WaitStatsException ex) when (MsdbPermissionErrors.Contains(ex.SqlErrorNumber))
+        catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
             return BackupList.Unavailable(
                 "This login can't read the backup history in msdb. Members of sysadmin can; " +
@@ -57,10 +54,10 @@ public class BackupRepository(SqlTarget target) : BaseRepository(target), IBacku
         return BackupList.From(rows.Select(r => (DatabaseBackupRow)ToRow(r)), serverNow, rpo);
     }
 
-    public async Task<IReadOnlyList<BackupHistoryEntry>> GetBackupHistoryAsync(string databaseName, DateTime createDate)
+    public async Task<IReadOnlyList<BackupHistoryEntry>> GetBackupHistoryAsync(string databaseName, DateTime createDate, CancellationToken cancellationToken = default)
     {
         using var conn = CreateConnection();
-        var rows = await Q(conn, HistorySql, new { databaseName, maxRows = BackupHistoryEntry.MaxRows });
+        var rows = await Q(conn, HistorySql, cancellationToken, new { databaseName, maxRows = BackupHistoryEntry.MaxRows });
         return rows.Select(r => new BackupHistoryEntry(
             (string)r.Type,
             (DateTime)r.StartDate,

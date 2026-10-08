@@ -6,11 +6,11 @@ namespace SqlVitals.Engine.Repositories;
 public interface ISessionRepository
 {
     // ── Process map ─────────────────────────────────────────────────
-    Task<IEnumerable<ProcessNode>> GetProcessesAsync();
+    Task<IEnumerable<ProcessNode>> GetProcessesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>The plan a session is running, or its last statement's cached plan (#147).</summary>
-    Task<SessionPlan> GetSessionPlanAsync(int sessionId);
+    Task<SessionPlan> GetSessionPlanAsync(int sessionId, CancellationToken cancellationToken = default);
 
     // ── Application connections ──────────────────────────────────────
-    Task<IEnumerable<ApplicationConnection>> GetApplicationConnectionsAsync();
+    Task<IEnumerable<ApplicationConnection>> GetApplicationConnectionsAsync(CancellationToken cancellationToken = default);
 }
