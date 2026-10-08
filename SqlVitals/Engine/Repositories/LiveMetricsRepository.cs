@@ -1,10 +1,9 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Live metrics: the dashboard's counters and ring buffers, and the Perfmon counters. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class LiveMetricsRepository(IConfiguration configuration) : BaseRepository(configuration), ILiveMetricsRepository
+public class LiveMetricsRepository(SqlTarget target) : BaseRepository(target), ILiveMetricsRepository
 {
     // ── 21. Live metrics dashboard (perf counters + ring buffers) ────
 

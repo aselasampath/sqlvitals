@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Backups;
@@ -38,9 +39,14 @@ public class ConnectionSettingsService : ISectionFolds
     // switching back to such a connection doesn't ask for the password again.
     private readonly Dictionary<Guid, string> _sessionPasswords = new();
 
+    // A settings file that couldn't be read, and channels that were dropped.
+    private readonly ILogger _log;
+
     /// <param name="settingsDir">The folder settings.dat is in; %AppData%\SqlVitals when null. Tests use a temp folder.</param>
-    public ConnectionSettingsService(string? settingsDir = null)
+    /// <param name="log">The app log; <see cref="AppLog"/>'s when null (tests).</param>
+    public ConnectionSettingsService(string? settingsDir = null, ILogger<ConnectionSettingsService>? log = null)
     {
+        _log         = log ?? AppLog.For<ConnectionSettingsService>();
         SettingsDir  = settingsDir ?? DefaultSettingsDir;
         SettingsFile = Path.Combine(SettingsDir, "settings.dat");
     }
@@ -366,7 +372,7 @@ public class ConnectionSettingsService : ISectionFolds
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AppLog.Error("The settings file couldn't be read, so it won't be saved over until it can", ex);
+            _log.Error("The settings file couldn't be read, so it won't be saved over until it can", ex);
             return new ConnectionStore { ReadFailed = true };
         }
 
@@ -461,8 +467,8 @@ public class ConnectionSettingsService : ISectionFolds
                 }
                 catch (Exception ex) when (ex is CryptographicException or FormatException or JsonException)
                 {
-                    AppLog.Info($"The chat channels in the settings file couldn't be read ({ex.GetType().Name}), " +
-                                "so they were dropped. Add them again in Settings → Alerts & chat.");
+                    _log.Info($"The chat channels in the settings file couldn't be read ({ex.GetType().Name}), " +
+                              "so they were dropped. Add them again in Settings → Alerts & chat.");
                     store.ChatChannelsDropped = true;
                 }
             }
@@ -513,7 +519,7 @@ public class ConnectionSettingsService : ISectionFolds
         // Every Load reads the file again until the next save replaces it: say so once.
         if (_unreadableCopied)
             return true;
-        AppLog.Error("The settings file couldn't be read", ex);
+        _log.Error("The settings file couldn't be read", ex);
 
         try
         {
@@ -524,7 +530,7 @@ public class ConnectionSettingsService : ISectionFolds
         }
         catch (Exception copyEx) when (copyEx is IOException or UnauthorizedAccessException)
         {
-            AppLog.Error("Could not keep a copy of the unreadable settings file", copyEx);
+            _log.Error("Could not keep a copy of the unreadable settings file", copyEx);
             return false;
         }
     }

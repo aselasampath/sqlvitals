@@ -90,9 +90,13 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     // Set once the choices are filled in, so filling them doesn't show or save anything.
     private readonly bool _ready;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="settings">The thresholds and interval, and where the verdict's and Measuring's folds are remembered.</param>
-    public FileIoPage(IWaitStatsRepository repo, ConnectionSettingsService settings)
+    public FileIoPage(IWaitStatsRepository repo, ConnectionSettingsService settings, IShellStatus? shell = null)
     {
+        _shell    = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo     = repo;
         _settings = settings;
         InitializeComponent();
@@ -323,7 +327,7 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         UpdateCountdown();
         if (_ready) SaveSettings();
         if (_ready) ShowMeasuring();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // The top bar's Pause and Resume (#140); the page's own Pause went with the page template (#150).
@@ -343,7 +347,7 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         }
         if (_list is not null) TxtStatus.Text = StatusText(_list);
         ShowMeasuring();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private async void BtnStartOver_Click(object sender, RoutedEventArgs e)
@@ -366,27 +370,27 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             // The readings so far are kept: the next one is compared with the last that worked.
-            MainWindow.ReportBackgroundError(this, "File I/O", ex);
+            _shell.ReportError(this, "File I/O", ex, PageRead.Timed);
         }
     }
 
-    // Start over reports its own errors; the top bar's Refresh reports through MainWindow.
+    // Start over reports its own errors; the top bar's Refresh reports through the view model.
     private async Task ReadNowAsync()
     {
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             AppLog.Error("File I/O: read failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
         }
     }
 

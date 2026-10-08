@@ -1,5 +1,4 @@
 using System.Data;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.ConfigChecks;
 using SqlVitals.Engine.Errors;
 
@@ -10,7 +9,7 @@ namespace SqlVitals.Engine.Repositories;
 /// processors and memory, TempDB's data files and each database's options. Read only. The
 /// processors and memory need VIEW SERVER STATE; without it the rest is still checked.
 /// </summary>
-public class ConfigurationRepository(IConfiguration configuration) : BaseRepository(configuration), IConfigurationRepository
+public class ConfigurationRepository(SqlTarget target) : BaseRepository(target), IConfigurationRepository
 {
     // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022) is missing.
     private static readonly int[] PermissionErrors = [297, 300];

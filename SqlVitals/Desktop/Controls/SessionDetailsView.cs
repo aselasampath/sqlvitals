@@ -144,7 +144,7 @@ public sealed class SessionDetailsView : StackPanel
         {
             if (version != _planVersion)
                 return;
-            _planNote.Text       = "The plan couldn't be read: " + MainWindow.FormatErrorStatus(ex);
+            _planNote.Text       = "The plan couldn't be read: " + ErrorStatus.Format(ex);
             _planNote.Visibility = Visibility.Visible;
             _showPlan.Content    = "Try again";
         }

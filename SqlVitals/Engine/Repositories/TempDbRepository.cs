@@ -1,9 +1,8 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
-public class TempDbRepository(IConfiguration configuration) : BaseRepository(configuration), ITempDbRepository
+public class TempDbRepository(SqlTarget target) : BaseRepository(target), ITempDbRepository
 {
     // Run in tempdb's own context: FILEPROPERTY only sees the current database's files, and
     // sys.master_files holds tempdb's startup size rather than its size now.

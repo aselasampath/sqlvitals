@@ -1,10 +1,9 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Database storage and configuration: settings, files, TempDB files and the largest tables. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class StorageRepository(IConfiguration configuration) : BaseRepository(configuration), IStorageRepository
+public class StorageRepository(SqlTarget target) : BaseRepository(target), IStorageRepository
 {
     // ── 19. Database storage & configuration ─────────────────────────
     // Detects Azure SQL (EngineEdition 5/8) and switches to compatible queries.

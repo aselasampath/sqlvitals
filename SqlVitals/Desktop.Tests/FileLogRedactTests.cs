@@ -3,7 +3,7 @@ using SqlVitals.Desktop.Services;
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>The app log's last line of defence: a webhook URL echoed back never reaches the file (#120).</summary>
-public sealed class AppLogRedactTests
+public sealed class FileLogRedactTests
 {
     [Theory]
     [InlineData("https://hooks.slack.com/services/T0001/B0002/abcdEFGHijklMNOP")]
@@ -13,7 +13,7 @@ public sealed class AppLogRedactTests
     [InlineData("https://outlook.office.com/webhook/abc@def/IncomingWebhook/123/456")]
     public void AWebhookUrl_IsRemoved(string url)
     {
-        var redacted = AppLog.Redact($"Posting to {url} failed: 404 (\"{url}\")");
+        var redacted = FileLog.Redact($"Posting to {url} failed: 404 (\"{url}\")");
 
         Assert.DoesNotContain(url, redacted);
         Assert.Contains("[webhook URL removed]", redacted);
@@ -25,13 +25,13 @@ public sealed class AppLogRedactTests
     {
         const string text = "See https://learn.microsoft.com/sql for details.";
 
-        Assert.Equal(text, AppLog.Redact(text));
+        Assert.Equal(text, FileLog.Redact(text));
     }
 
     [Fact]
     public void ConnectionStrings_AreStillRemoved()
     {
-        var redacted = AppLog.Redact("Failed: Server=sql01;User ID=sa;Password=s3cret;");
+        var redacted = FileLog.Redact("Failed: Server=sql01;User ID=sa;Password=s3cret;");
 
         Assert.DoesNotContain("s3cret", redacted);
     }

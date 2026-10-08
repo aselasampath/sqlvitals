@@ -93,9 +93,13 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(30) };
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's and the source's folds are remembered; none in some tests.</param>
-    public AgentJobsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public AgentJobsPage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
 
@@ -236,7 +240,7 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
         if (_ready) Show();
     }
 
-    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through the view model; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
 
     private async void Timer_Tick(object? sender, EventArgs e) => await ReadAgainAsync();
@@ -246,12 +250,12 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             AppLog.Error("Agent Jobs: read failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
         }
     }
 
@@ -259,7 +263,7 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
     {
         if (ChkAutoRefresh.IsChecked == true) _timer.Start();
         else _timer.Stop();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // ── Selected job ──────────────────────────────────────────────────────────
@@ -301,7 +305,7 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
             AppLog.Error("Agent Jobs: reading a job's runs failed", ex);
             if (version != _runsVersion) return;
             RunsGrid.ItemsSource = null;
-            ShowRunsProblem("Its runs could not be read: " + MainWindow.FormatErrorStatus(ex));
+            ShowRunsProblem("Its runs could not be read: " + ErrorStatus.Format(ex));
             return;
         }
         if (version != _runsVersion) return;

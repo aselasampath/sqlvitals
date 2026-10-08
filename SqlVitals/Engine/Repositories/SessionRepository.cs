@@ -1,11 +1,10 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Sessions: the process map, a session's plan, and the applications connected. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class SessionRepository(IConfiguration configuration) : BaseRepository(configuration), ISessionRepository
+public class SessionRepository(SqlTarget target) : BaseRepository(target), ISessionRepository
 {
     // ── 20. Process map (Active sessions + blocking) ─────────────────
     // A head blocker is often a sleeping session with an open transaction: it has no request, so

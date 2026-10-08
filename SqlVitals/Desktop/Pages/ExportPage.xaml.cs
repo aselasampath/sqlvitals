@@ -5,7 +5,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
-using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Verdicts;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -67,10 +66,11 @@ public partial class ExportPage : Page, ICodeBehindPage, IPageContext
     // What the last export from this page did; null before the first.
     private ExportOutcome? _last;
 
+    /// <param name="export">Writes the report from the open connection (#166: made by the container).</param>
     /// <param name="folds">Where the verdict's and the explanation's folds are remembered; none in some tests.</param>
-    public ExportPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public ExportPage(ExportService export, ISectionFolds? folds = null)
     {
-        _svc = new ExportService(repo);
+        _svc = export;
         InitializeComponent();
 
         ViewModel = new ExportViewModel(export: async () => await ExportAsync(), open: OpenLast);

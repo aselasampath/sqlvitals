@@ -1,5 +1,4 @@
 using System.Data;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Scripting;
 using SqlVitals.Engine.Security;
@@ -12,7 +11,7 @@ namespace SqlVitals.Engine.Repositories;
 /// Read only: catalog views, nothing written. Without VIEW ANY DEFINITION the logins and users
 /// can't all be seen, so those checks are left out rather than guessed.
 /// </summary>
-public class SecurityAuditRepository(IConfiguration configuration) : BaseRepository(configuration), ISecurityAuditRepository
+public class SecurityAuditRepository(SqlTarget target) : BaseRepository(target), ISecurityAuditRepository
 {
     internal static readonly string ServerSql = SqlScripts.Get("SecurityAudit/Server");
 

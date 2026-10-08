@@ -27,7 +27,6 @@ public sealed class MvvmGuardTests
         "Pages/ConfigChecksPage.xaml.cs",
         "Pages/DatabaseStoragePage.xaml.cs",
         "Pages/DeadlocksPage.xaml.cs",
-        "Pages/ExportPage.xaml.cs",
         "Pages/FileIoPage.xaml.cs",
         "Pages/ImplicitConversionsPage.xaml.cs",
         "Pages/IndexHealthPage.xaml.cs",
@@ -180,6 +179,43 @@ public sealed class MvvmGuardTests
 
     private static readonly Lazy<IReadOnlyList<Offence>> LazyRepositoryOffences = new(() =>
         Models("Pages/").SelectMany(m => MvvmRules.RepositoryReferences(m.Model, m.File)).ToList());
+
+    // ── Only the shell refers to the main window (#166) ──────────────────
+
+    [Fact]
+    public void PagesControlsWindowsAndHelpers_DoNotReferToMainWindow()
+    {
+        var broken = new[] { "Pages/", "Controls/", "Windows/", "Helpers/" }
+            .SelectMany(Models)
+            .SelectMany(m => MvvmRules.WindowReferences(m.Model, m.File))
+            .ToList();
+
+        Fail(broken, "Only the shell refers to MainWindow (docs/Architecture.md, The composition root): " +
+                     "report to IShellStatus, open pages through INavigator, and ask the constructor for services:");
+    }
+
+    [Fact]
+    public void WindowReferences_FindsTheWindow_ByNameMemberOrType()
+    {
+        AssertFinds("""
+            using System.Windows;
+
+            namespace SqlVitals.Desktop { public class MainWindow : Window { public static void Report(object page) { } public void Open(string tag) { } } }
+
+            namespace SqlVitals.Desktop.Pages
+            {
+                /// <summary>Not <see cref="MainWindow"/>: comments don't count.</summary>
+                public class SomePage : System.Windows.Controls.Page
+                {
+                    public void Read() => MainWindow.Report(this);                          // ✗ MainWindow
+                    public void Open() { if (Window.GetWindow(this) is MainWindow main)     // ✗ MainWindow
+                                             main.Open("Settings"); }                       // ✗ MainWindow
+                    public Window? Owner => Application.Current.MainWindow;
+                    public string Name => "MainWindow";
+                }
+            }
+            """, MvvmRules.WindowReferences);
+    }
 
     // ── Click= in the pages' XAML doesn't grow ───────────────────────────
 

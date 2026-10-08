@@ -1,12 +1,11 @@
 using System.Globalization;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Scripting;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Indexes and statistics: missing and unused indexes, usage, fragmentation and stale statistics. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class IndexRepository(IConfiguration configuration) : BaseRepository(configuration), IIndexRepository
+public class IndexRepository(SqlTarget target) : BaseRepository(target), IIndexRepository
 {
     // ── 11. Index health ──────────────────────────────────────────────
     public async Task<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)> GetIndexHealthAsync()

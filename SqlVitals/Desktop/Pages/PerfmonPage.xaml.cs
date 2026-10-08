@@ -204,11 +204,15 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
     // The page template's verdict (#150): the counters past a known limit, and the ones rising.
     internal PerfmonViewModel ViewModel { get; }
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
     /// <param name="navigator">Where the verdict's cause goes; the app's (#182) when null.</param>
     public PerfmonPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null,
-                       INavigator? navigator = null)
+                       INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell   = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo    = repo;
         _history = history;
         if (history is not null)
@@ -351,7 +355,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         if (!live)
             StopTimer();
         CmbInterval.IsEnabled    = live;
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
 
         // A baseline belongs to the range it was read for.
         _baseline?.Clear();
@@ -379,7 +383,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
             if (_range != range)
                 return;
             ShowStatus($"Could not read the history: {ex.Message}");
-            MainWindow.ReportBackgroundError(this, "Perfmon history", ex);
+            _shell.ReportError(this, "Perfmon history", ex, PageRead.Timed);
         }
     }
 
@@ -405,7 +409,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         RebuildSeries();
         UpdateChart();
         ShowStatus(load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList()));
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
 
         await LoadBaselineAsync();
     }
@@ -466,7 +470,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         {
             _baselineNote = $"Could not read the baseline: {ex.Message}";
             ShowStatus(_statusMain);
-            MainWindow.ReportBackgroundError(this, "Perfmon baseline", ex);
+            _shell.ReportError(this, "Perfmon baseline", ex, PageRead.Timed);
         }
     }
 
@@ -681,7 +685,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         _remainingSec = _intervalSec;
         UpdateCountdown();
         _timer.Start();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
 
@@ -692,7 +696,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
             return;
         _timer.Stop();
         TxtCountdown.Text = "--";
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
 
@@ -709,11 +713,11 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
-            MainWindow.ReportBackgroundError(this, "Perfmon", ex);
+            _shell.ReportError(this, "Perfmon", ex, PageRead.Timed);
         }
         finally
         {
@@ -731,7 +735,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         _remainingSec = _intervalSec;
         if (_timer.IsEnabled)
             UpdateCountdown();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private void CmbGroup_SelectionChanged(object sender, SelectionChangedEventArgs e)

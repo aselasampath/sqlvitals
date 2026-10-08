@@ -1,10 +1,9 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Wait statistics: cumulative, active, signal versus resource, and the top wait types. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class WaitsRepository(IConfiguration configuration) : BaseRepository(configuration), IWaitsRepository
+public class WaitsRepository(SqlTarget target) : BaseRepository(target), IWaitsRepository
 {
     // ── Helper: category → hex color ─────────────────────────────────
     internal static string CategoryColor(string cat) => cat switch

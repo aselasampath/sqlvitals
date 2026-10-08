@@ -85,7 +85,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         _paused = paused;
         if (!paused && _range.IsLive)
             ShowNewSamples();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     public FrameworkElement? TakeBarTools()
@@ -202,11 +202,20 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     // Named in the health score's breakdown.
     private readonly string               _connectionName;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
+    // The link to Settings, where monitoring is turned on.
+    private readonly INavigator _navigator;
+
     /// <param name="monitoring">Owns the saved connections' sessions, and starts and stops them.</param>
     /// <param name="connectionId">The active saved connection; null for one from appsettings.json only.</param>
     public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringManager? monitoring = null, Guid? connectionId = null,
-                                    ConnectionHistory? history = null, string? connectionName = null)
+                                    ConnectionHistory? history = null, string? connectionName = null,
+                                    INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell       = shell ?? CompositionRoot.Get<IShellStatus>();
+        _navigator   = navigator ?? CompositionRoot.Get<INavigator>();
         _repo        = repo;
         _connectionName = connectionName ?? "This connection";
         _monitoring  = monitoring;
@@ -368,7 +377,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         if (_range.IsLive)
         {
             ShowNewSamples();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         _ = RefreshProcessMapAsync();
     }
@@ -388,7 +397,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
     {
         _range = range;
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
 
         // A baseline belongs to the range it was read for.
         _baseline?.Clear();
@@ -412,7 +421,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
             if (_range == range)
             {
                 ShowStatus($"Could not read the history: {ex.Message}");
-                MainWindow.ReportBackgroundError(this, "Live Metrics history", ex);
+                _shell.ReportError(this, "Live Metrics history", ex, PageRead.Timed);
             }
         }
     }
@@ -463,7 +472,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         ShowStatus(load.Items.Count == 0
             ? load.NoData("Live Metrics samples are recorded while SqlVitals monitors this connection.")
             : load.Describe(load.Items.Select(p => p.TimeUtc).ToList(), "the server's clock"));
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
 
         PlotBaseline();
         ApplyXAxisLimits();
@@ -526,7 +535,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         {
             _baselineNote = $"Could not read the baseline: {ex.Message}";
             ShowStatus(_historyNote);
-            MainWindow.ReportBackgroundError(this, "Live Metrics baseline", ex);
+            _shell.ReportError(this, "Live Metrics baseline", ex, PageRead.Timed);
         }
     }
 
@@ -609,7 +618,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         SyncRunButton();
         UpdateCountdown();
         UpdateHealthScore();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // Why nothing is collected, for the banner and the health score while not monitored.
@@ -689,11 +698,11 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         {
             var nodes = (await _repo.GetProcessesAsync()).ToList();
             _activeProcessMap?.UpdateNodes(nodes);
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
-            MainWindow.ReportBackgroundError(this, "Live Metrics process map", ex);
+            _shell.ReportError(this, "Live Metrics process map", ex, PageRead.Timed);
         }
         finally
         {
@@ -772,11 +781,8 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         Session_StateChanged(_session);
     }
 
-    private async void LnkMonitoringSetting_Click(object sender, RoutedEventArgs e)
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenPageAsync("Settings");
-    }
+    private async void LnkMonitoringSetting_Click(object sender, RoutedEventArgs e) =>
+        await _navigator.GoToAsync("Settings");
 
     // ?? Snapshot ? ring buffers ????????????????????????????????????????
     // Rates are computed by LiveMetricSample.From in the session; the page only plots them.

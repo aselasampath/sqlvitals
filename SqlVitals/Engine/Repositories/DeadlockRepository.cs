@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.Errors;
 
@@ -10,7 +9,7 @@ namespace SqlVitals.Engine.Repositories;
 /// <c>xml_deadlock_report</c> events are read. The XML is shredded here, in
 /// <see cref="DeadlockReportParser"/>.
 /// </summary>
-public class DeadlockRepository(IConfiguration configuration) : BaseRepository(configuration), IDeadlockRepository
+public class DeadlockRepository(SqlTarget target) : BaseRepository(target), IDeadlockRepository
 {
     // Reading the event files goes through every rollover file system_health keeps.
     private const int FileReadTimeoutSec = 120;

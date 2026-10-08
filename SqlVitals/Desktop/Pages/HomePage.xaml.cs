@@ -56,8 +56,12 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
     // reading means decrypting the file.
     private ConnectionStore _store = new();
 
-    public HomePage(MonitoringManager monitoring, ConnectionSettingsService settings)
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
+    public HomePage(MonitoringManager monitoring, ConnectionSettingsService settings, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _monitoring = monitoring;
         _settings   = settings;
         InitializeComponent();
@@ -205,7 +209,7 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
             ShowBreakdown(connectionId, tile.Tile.Name);
         Reorder();
         UpdateSummary(_store.Connections.Count);
-        MainWindow.ReportBackgroundSuccess(this);
+        _shell.ReportRead(this, PageRead.Timed);
     }
 
     // A connection added, removed, renamed or made active. After the save has been applied.

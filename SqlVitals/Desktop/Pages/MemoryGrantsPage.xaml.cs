@@ -52,7 +52,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
             return;
         GrantsGrid.ItemsSource = (_pendingOnly ? _grants.Where(g => g.IsPending) : _grants)
             .OrderByDescending(g => g.GrantedMemoryKB).ToList();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // Live while trending. The bar's Resume and Pause start and stop it: the page's own Start and
@@ -93,9 +93,13 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
     // The page template's verdict (#150): queries waiting for a memory grant, or how memory is used.
     internal MemoryGrantsViewModel ViewModel { get; }
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's, the figures' and the trend's folds are remembered; none in some tests.</param>
-    public MemoryGrantsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public MemoryGrantsPage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
         _timer.Tick += Timer_Tick;
@@ -318,11 +322,11 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
             ApplyKpi(snap);
             AppendSnapshot(snap);
             ViewModel.Show(snap, null);   // the counter says whether queries wait; the grants are read on Refresh
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
-            MainWindow.ReportBackgroundError(this, "Memory Grants", ex);
+            _shell.ReportError(this, "Memory Grants", ex, PageRead.Timed);
         }
     }
 
@@ -349,7 +353,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
         TxtCountdown.Text = $"{_countdown}s";
         _timer.Start();
         ShowTrendSummary();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // What Stop did.
@@ -360,7 +364,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
         TxtCountdown.Text = "--";
         _timer.Stop();
         ShowTrendSummary();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // Another interval: used from the next read on, while reading.
@@ -375,7 +379,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
             TxtCountdown.Text = $"{_countdown}s";
             ShowTrendSummary();
         }
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     // ── helper ───────────────────────────────────────────────────────

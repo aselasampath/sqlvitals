@@ -14,7 +14,7 @@ internal partial class ActivityCategory : UserControl, ISettingsCategory
 
         var store = context.Service.Load();
         ActivityLogView.Initialize(context.Monitoring.HistoryReader, store.Connections.Select(c => (c.Id, c.DisplayName)));
-        TxtLogInfo.Text = $"{AppLog.Directory} — one file per day, kept for {AppLog.RetentionDays} days. " +
+        TxtLogInfo.Text = $"{FileLog.Directory} — one file per day, kept for {FileLog.RetentionDays} days. " +
                           "Passwords and connection strings are never written. Attach the latest file to a bug report.";
     }
 
@@ -28,10 +28,10 @@ internal partial class ActivityCategory : UserControl, ISettingsCategory
         try
         {
             // Created up front so the button works before anything has been logged.
-            System.IO.Directory.CreateDirectory(AppLog.Directory);
+            System.IO.Directory.CreateDirectory(FileLog.Directory);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName        = AppLog.Directory,
+                FileName        = FileLog.Directory,
                 UseShellExecute = true,
             });
         }

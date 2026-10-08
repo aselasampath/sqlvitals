@@ -1,11 +1,10 @@
 using System.Globalization;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>Memory: grants, clerks and counters, and the memory KPI snapshot. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class MemoryRepository(IConfiguration configuration) : BaseRepository(configuration), IMemoryRepository
+public class MemoryRepository(SqlTarget target) : BaseRepository(target), IMemoryRepository
 {
     // ── 9. Memory grants ──────────────────────────────────────────────
     public async Task<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)> GetMemoryGrantsAsync()

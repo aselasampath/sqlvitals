@@ -20,7 +20,8 @@ public enum PageRead
 /// is no longer on screen is only logged.
 /// </summary>
 /// <remarks>
-/// #166 moves the pages' remaining static <c>MainWindow.Report*</c> calls here.
+/// A code-behind page that reads on its own (a timer, Read again) reports here too, with itself
+/// as the page: it takes the service in its constructor (#166). No page refers to the window.
 /// </remarks>
 public interface IShellStatus
 {

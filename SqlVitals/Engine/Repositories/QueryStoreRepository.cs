@@ -1,7 +1,6 @@
 using System.Data;
 using System.Globalization;
 using Dapper;
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
@@ -14,7 +13,7 @@ namespace SqlVitals.Engine.Repositories;
 /// Only sys.query_store_* and sys.database_query_store_options are read. Every query groups and
 /// ranks on the server, so only the top N rows come back, never the raw runtime stats.
 /// </summary>
-public class QueryStoreRepository(IConfiguration configuration) : BaseRepository(configuration), IQueryStoreRepository
+public class QueryStoreRepository(SqlTarget target) : BaseRepository(target), IQueryStoreRepository
 {
     // Up to 30 days of a large Query Store can take a while, as on Query Regressions.
     private const int ExtendedTimeoutSec = 120;

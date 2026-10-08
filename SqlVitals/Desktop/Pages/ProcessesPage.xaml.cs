@@ -40,11 +40,8 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
     }
 
     // Active Waits filtered to the session and the sessions it blocks (#145).
-    private async void OpenActiveWaits(int sessionId)
-    {
-        if (Window.GetWindow(this) is MainWindow main)
-            await main.OpenLinkAsync("ActiveWaits", new FocusFilter(FocusKind.Session, sessionId), "Processes");
-    }
+    private async void OpenActiveWaits(int sessionId) =>
+        await _navigator.GoToAsync("ActiveWaits", new FocusFilter(FocusKind.Session, sessionId), "Processes");
 
     // ── A blocking alert's evidence (#145): one chain, until Show all ─────
     public void ShowFocus(PageFocus focus)
@@ -90,8 +87,17 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
     private static readonly int[] Intervals =
         Enumerable.Range(1, 24).Select(i => i * 5).ToArray(); // 5,10,15,...,120
 
-    public ProcessesPage(IWaitStatsRepository repo, ConnectionSettingsService settings)
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
+    // A session's link to Active Waits (#145).
+    private readonly INavigator _navigator;
+
+    public ProcessesPage(IWaitStatsRepository repo, ConnectionSettingsService settings, INavigator? navigator = null,
+                         IShellStatus? shell = null)
     {
+        _shell     = shell ?? CompositionRoot.Get<IShellStatus>();
+        _navigator = navigator ?? CompositionRoot.Get<INavigator>();
         _repo     = repo;
         _settings = settings;
         InitializeComponent();
@@ -116,7 +122,7 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         ProcessMap.GroupByLogin = store.ProcessesGroupByLogin;
         if (store.ProcessesView == ProcessesView.Grid) BtnGrid.IsChecked = true;
         ProcessMap.GroupByLoginChanged += (_, _) => SaveViewChoice();
-        ProcessMap.FocusChanged        += (_, _) => MainWindow.ReportContextChanged(this);
+        ProcessMap.FocusChanged        += (_, _) => _shell.ReportContextChanged(this);
         ProcessMap.SessionSelected     += ShowSession;
 
         // Wire timer (ticks every second for the countdown display)
@@ -212,11 +218,11 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
-            MainWindow.ReportBackgroundError(this, "Processes", ex);
+            _shell.ReportError(this, "Processes", ex, PageRead.Timed);
         }
         finally
         {
@@ -242,7 +248,7 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
             _remainingSec = sec;
             UpdateCountdown();
             SaveRefreshChoice();
-            MainWindow.ReportContextChanged(this);
+            _shell.ReportContextChanged(this);
         }
     }
 
@@ -251,7 +257,7 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         BtnAutoRefresh.Content = "Stop";
         StartTimer();
         SaveRefreshChoice();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
@@ -260,6 +266,6 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         _timer.Stop();
         TxtCountdown.Text = "--";
         SaveRefreshChoice();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 }

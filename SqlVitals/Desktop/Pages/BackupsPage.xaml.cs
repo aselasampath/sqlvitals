@@ -61,8 +61,12 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
     // While Show() replaces the rows, which clears the selection before it selects the database again.
     private bool _showing;
 
-    public BackupsPage(IWaitStatsRepository repo, ConnectionSettingsService settings)
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
+    public BackupsPage(IWaitStatsRepository repo, ConnectionSettingsService settings, IShellStatus? shell = null)
     {
+        _shell    = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo     = repo;
         _settings = settings;
         InitializeComponent();
@@ -247,7 +251,7 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
         if (_ready) Show();
     }
 
-    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through the view model; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
 
     private async Task ReadAgainAsync()
@@ -255,12 +259,12 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             AppLog.Error("Backups: read failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
         }
     }
 
@@ -296,7 +300,7 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
             AppLog.Error("Backups: reading a database's backup history failed", ex);
             if (version != _historyVersion) return;
             HistoryGrid.ItemsSource = null;
-            TxtHistoryLabel.Text    = "Its backups could not be read: " + MainWindow.FormatErrorStatus(ex);
+            TxtHistoryLabel.Text    = "Its backups could not be read: " + ErrorStatus.Format(ex);
             return;
         }
         if (version != _historyVersion) return;

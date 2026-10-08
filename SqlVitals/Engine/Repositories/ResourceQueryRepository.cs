@@ -1,10 +1,9 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Engine.Repositories;
 
 /// <summary>The plan cache's costliest queries, an object's plan, and implicit conversions. Split from <see cref="WaitStatsRepository"/> (#47).</summary>
-public class ResourceQueryRepository(IConfiguration configuration) : BaseRepository(configuration), IResourceQueryRepository
+public class ResourceQueryRepository(SqlTarget target) : BaseRepository(target), IResourceQueryRepository
 {
     // ── 13 + 14. Resource-intensive queries (logical reads + CPU) ─────
     public async Task<(IEnumerable<ResourceIntensiveQuery> ByReads,

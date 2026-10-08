@@ -89,7 +89,7 @@ public partial class DatabaseStoragePage : Page, ICodeBehindPage, IPageContext, 
         if (_files is null)
             return;
         GridFiles.ItemsSource = FilesShown;
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private readonly IWaitStatsRepository _repo;
@@ -99,9 +99,13 @@ public partial class DatabaseStoragePage : Page, ICodeBehindPage, IPageContext, 
 
     private DatabaseFile? _subject;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's and the sizes' folds are remembered; none in some tests.</param>
-    public DatabaseStoragePage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public DatabaseStoragePage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
 

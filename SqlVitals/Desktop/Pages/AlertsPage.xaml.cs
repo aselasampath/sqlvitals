@@ -82,12 +82,16 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     // Bumped per load; a slower, earlier load's result is dropped.
     private int _loadVersion;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="connectionId">The connection to filter on at first, e.g. the one a notification was about; null for all.</param>
     /// <param name="settings">The connections, and where the verdict's fold is remembered.</param>
     /// <param name="navigator">Where Investigate goes; the app's (#182) when null.</param>
     public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings, Guid? connectionId = null,
-                      INavigator? navigator = null)
+                      INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _monitoring = monitoring;
         _settings   = settings;
         _navigator  = navigator ?? CompositionRoot.Get<INavigator>();
@@ -308,18 +312,18 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
             await RefreshQuietlyAsync();
     }
 
-    // The top bar's Refresh reports errors through MainWindow; a load started here reports its own.
+    // The top bar's Refresh reports errors through the view model; a load started here reports its own.
     private async Task RefreshQuietlyAsync()
     {
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             AppLog.Error("Alerts: load failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
         }
     }
 

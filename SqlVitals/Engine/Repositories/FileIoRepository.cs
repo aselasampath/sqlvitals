@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.FileIo;
 
@@ -10,7 +9,7 @@ namespace SqlVitals.Engine.Repositories;
 /// the time between them (<see cref="FileIoTracker"/>). Read only. Keeps which volume each file
 /// is on, so sys.dm_os_volume_stats is only asked about files it hasn't seen.
 /// </summary>
-public class FileIoRepository(IConfiguration configuration) : BaseRepository(configuration), IFileIoRepository
+public class FileIoRepository(SqlTarget target) : BaseRepository(target), IFileIoRepository
 {
     // VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022; VIEW DATABASE STATE on
     // Azure SQL Database) is missing.

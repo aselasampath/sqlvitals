@@ -45,9 +45,13 @@ public partial class DeadlocksPage : Page, ICodeBehindPage, IPageContext
     // Set once the range choices are filled in, so filling them doesn't filter.
     private readonly bool _ready;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's and the source's folds are remembered; none in some tests.</param>
-    public DeadlocksPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public DeadlocksPage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
+        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
 
@@ -178,18 +182,18 @@ public partial class DeadlocksPage : Page, ICodeBehindPage, IPageContext
         if (_ready) Show();
     }
 
-    // The top bar's Refresh reports errors through MainWindow; a read started here reports its own.
+    // The top bar's Refresh reports errors through the view model; a read started here reports its own.
     private async void BtnReload_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             await RefreshAsync();
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
         }
         catch (Exception ex)
         {
             AppLog.Error("Deadlocks: read failed", ex);
-            TxtStatus.Text = MainWindow.FormatErrorStatus(ex);
+            TxtStatus.Text = ErrorStatus.Format(ex);
         }
     }
 

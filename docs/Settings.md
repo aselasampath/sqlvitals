@@ -171,7 +171,7 @@ SqlVitals writes errors and warnings to a daily log file. **Open log folder** op
 |---|---|---|
 | Connections, chat channels (with their webhook URLs), command timeout (since 0.54.0 saved on its own), Start monitoring automatically, thresholds, alert samples, muted connections, notification-area choice, history settings, regression criteria, the Backups page's RPO ages, the File I/O page's latency thresholds and reading interval, the Processes page's auto-refresh interval and Start/Stop, its Map or Grid view and Group by login, the page last open, the sidebar's state, when each server's Overview was last opened (from 0.59.0) | `%AppData%\SqlVitals\settings.dat` | Per Windows user, DPAPI-encrypted. Roams with your profile. |
 | Monitoring history and the activity log | `%LocalAppData%\SqlVitals\history.db` | Local, not roaming. See [Monitoring History Database](Monitoring-History-Database.md). |
-| Logs | `%AppData%\SqlVitals\logs\` | 14-day retention (`Services/AppLog.cs`) |
+| Logs | `%AppData%\SqlVitals\logs\` | 14-day retention (`Services/FileLog.cs`) |
 | Defaults | `appsettings.json` in the install folder | `QuerySettings:CommandTimeoutSeconds` (30), `QuerySettings:UseNoLock` (true), fallback `ConnectionStrings:SqlServer`, `TraceSettings:SessionName` |
 
 **`appsettings.json`** is for advanced use:

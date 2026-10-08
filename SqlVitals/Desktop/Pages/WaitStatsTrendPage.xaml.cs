@@ -111,11 +111,15 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     internal WaitStatsTrendViewModel ViewModel { get; }
 
     // ── constructor ───────────────────────────────────────────────────────────
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
     /// <param name="navigator">Where the verdict's Top Waits goes; the app's (#182) when null.</param>
     public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null,
-                              INavigator? navigator = null)
+                              INavigator? navigator = null, IShellStatus? shell = null)
     {
+        _shell   = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo    = repo;
         _history = history;
         if (history is not null)
@@ -226,7 +230,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
             }
 
             StoreValues(data, now);
-            MainWindow.ReportBackgroundSuccess(this);
+            _shell.ReportRead(this, PageRead.Timed);
 
             // A read that finishes after a past range was picked only fills the live buffers.
             if (!_range.IsLive)
@@ -261,7 +265,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         if (!live)
             StopReading();
         CmbInterval.IsEnabled    = live;
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
 
         // A baseline belongs to the range it was read for.
         _baseline?.Clear();
@@ -314,8 +318,8 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
 
             RebuildSeries();
             ShowStatus(load.Items.Count == 0 ? "No history in this range" : load.Describe(load.Items.Select(b => b.TimeUtc).ToList()));
-            MainWindow.ReportBackgroundSuccess(this);
-            MainWindow.ReportContextChanged(this);
+            _shell.ReportRead(this, PageRead.Timed);
+            _shell.ReportContextChanged(this);
         }
         catch (Exception ex)
         {
@@ -323,7 +327,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
                 return;
             ShowStatus($"Could not read the history: {ex.Message}");
             ViewModel.ShowError("the monitoring history", ex);
-            MainWindow.ReportBackgroundError(this, "Wait Stats Trend history", ex);
+            _shell.ReportError(this, "Wait Stats Trend history", ex, PageRead.Timed);
             return;
         }
 
@@ -398,7 +402,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         {
             _baselineNote = $"Could not read the baseline: {ex.Message}";
             ShowStatus(_statusMain);
-            MainWindow.ReportBackgroundError(this, "Wait Stats Trend baseline", ex);
+            _shell.ReportError(this, "Wait Stats Trend baseline", ex, PageRead.Timed);
         }
     }
 
@@ -672,7 +676,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         _countdown = _intervalSec;
         TxtCountdown.Text = $"{_countdown}s";
         _timer.Start();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
 
@@ -683,7 +687,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
             return;
         TxtCountdown.Text = "--";
         _timer.Stop();
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
 
@@ -698,6 +702,6 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
             _countdown = Math.Min(_countdown, _intervalSec);
             TxtCountdown.Text = $"{_countdown}s";
         }
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 }

@@ -69,11 +69,15 @@ public partial class ResourceQueriesPage : Page, ICodeBehindPage, IPageContext, 
     private DateTime? _cpuSinceUtc;
     private IReadOnlyList<ResourceIntensiveQuery>? _byCpu;
 
+    // The top bar: what this page read, what went wrong, and its kind or window (#166).
+    private readonly IShellStatus _shell;
+
     /// <param name="serverOffset">The server's clock from UTC, to compare the plan cache's last
     /// execution times with an alert's; this PC's when not known.</param>
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    public ResourceQueriesPage(IWaitStatsRepository repo, TimeSpan? serverOffset = null, ISectionFolds? folds = null)
+    public ResourceQueriesPage(IWaitStatsRepository repo, TimeSpan? serverOffset = null, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
+        _shell        = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo         = repo;
         _serverOffset = serverOffset ?? TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
         InitializeComponent();
@@ -143,7 +147,7 @@ public partial class ResourceQueriesPage : Page, ICodeBehindPage, IPageContext, 
         if (_byCpu is null)
             return;
         DataGridRefresh.SetItemsSource(CpuGrid, CpuShown);
-        MainWindow.ReportContextChanged(this);
+        _shell.ReportContextChanged(this);
     }
 
     private async void CmbTopN_SelectionChanged(object sender, SelectionChangedEventArgs e)
