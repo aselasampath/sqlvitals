@@ -178,7 +178,7 @@ public record YourFeatureRow(
 
 ### 3. Add the interface method
 
-Add it to its area's interface, for example `SqlVitals/Engine/Repositories/IIndexRepository.cs`, and hand it on in `WaitStatsRepository.cs` (`=> _indexes.GetYourFeatureAsync();`). A feature that is an area of its own gets its own `IYourFeatureRepository` and `YourFeatureRepository`: add the interface to `IWaitStatsRepository`'s list and a field to `WaitStatsRepository`.
+Add it to its area's interface, for example `SqlVitals/Engine/Repositories/IIndexRepository.cs`, and hand it on in `WaitStatsRepository.cs` (`=> _indexes.GetYourFeatureAsync();`). A feature that is an area of its own gets its own `IYourFeatureRepository` and `YourFeatureRepository`: add the interface to `IWaitStatsRepository`'s list and a field to `WaitStatsRepository`. The tests don't build until `Desktop.Tests/Fakes/FakeRepository.cs` has the method too: a property with its parameters and return type, and the method calling it, as for the others.
 
 ```csharp
 Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync();
@@ -210,7 +210,7 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 }
 ```
 
-> A part that depends on the server's version is a `/*MARKER*/` in the file, filled with `Replace` (see [Architecture → Where the SQL lives](Architecture.md#where-the-sql-lives)). `SqlScriptsTests` fails for a name that has no file.
+> A part that depends on the server's version is a `/*MARKER*/` in the file, filled with `Replace` (see [Architecture → Where the SQL lives](Architecture.md#where-the-sql-lives)). `SqlScriptsTests` fails for a name that has no file, and `SqlParseTests` for SQL that doesn't parse under SQL Server 2016's or 2022's grammar.
 >
 > Always `Q(conn, sql)`, never `conn.QueryAsync`. Always `Convert.To*` for numbers, never casts or `?? 0`. See [DBNull-safe mapping](Architecture.md#dbnull-safe-mapping).
 

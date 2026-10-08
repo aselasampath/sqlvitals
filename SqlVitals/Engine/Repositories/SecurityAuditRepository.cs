@@ -28,7 +28,7 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
 
     // SQL users made for a login (authentication_type 1) whose SID no login has. Users without a
     // login, contained users with a password, Windows users (who may get in through a group) and
-    // dbo, guest, INFORMATION_SCHEMA and sys (principal_id 1 to 4) are left out. {db} is the
+    // dbo, guest, INFORMATION_SCHEMA and sys (principal_id 1 to 4) are left out. /*DATABASE*/ is the
     // database's quoted name.
     internal static readonly string OrphanedUsersSql = SqlScripts.Get("SecurityAudit/OrphanedUsers");
 
@@ -40,7 +40,7 @@ public class SecurityAuditRepository(IConfiguration configuration) : BaseReposit
 
     /// <summary>The orphaned-user query for one database.</summary>
     internal static string OrphanedUsersIn(string database) =>
-        OrphanedUsersSql.Replace("{db}", UnusedIndexDropScript.QuoteName(database));
+        OrphanedUsersSql.Replace("/*DATABASE*/", UnusedIndexDropScript.QuoteName(database));
 
     public async Task<SecurityFindingList> GetSecurityAuditAsync()
     {

@@ -107,8 +107,8 @@ public class MemoryRepository(IConfiguration configuration) : BaseRepository(con
     /// <summary>The edition, and whether sys.dm_os_sys_info has sql_memory_model_desc.</summary>
     internal static readonly string MemorySnapshotProbeSql = SqlScripts.Get("Memory/MemorySnapshotProbe");
 
-    private const string MemoryModelColumnSql = "osi.sql_memory_model_desc";
-    private const string MemoryModelUnknownSql = "N'N/A'";
+    internal const string MemoryModelColumnSql = "osi.sql_memory_model_desc";
+    internal const string MemoryModelUnknownSql = "N'N/A'";
 
     /// <summary>
     /// The memory snapshot query for this server: counters only on Azure SQL Database, and

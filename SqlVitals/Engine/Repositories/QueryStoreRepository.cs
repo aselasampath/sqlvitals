@@ -140,14 +140,14 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
 
     internal static readonly string PeriodSql = SqlScripts.Get("QueryStore/Period");
 
-    private static readonly string RuntimeInPeriod = SqlScripts.Get("QueryStore/RuntimeInPeriod");
+    internal static readonly string RuntimeInPeriod = SqlScripts.Get("QueryStore/RuntimeInPeriod");
 
     // The procedure, function or trigger a statement is in; NULL for ad hoc SQL (object_id 0).
-    private const string ObjectNameSql =
+    internal const string ObjectNameSql =
         "CASE WHEN q.object_id <> 0 THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id) END";
 
     // Picks each query's plan with the most executions in the period, for View Plan.
-    private const string RankedPlans =
+    internal const string RankedPlans =
         "(SELECT *, ROW_NUMBER() OVER (PARTITION BY query_id ORDER BY n DESC, plan_id DESC) AS plan_rank FROM per_plan) ranked_plans";
 
     /// <summary>σ from N, Σnμ and Σn(σ² + μ²), clamped at 0 (see <see cref="CombinedStdDev"/>).</summary>
@@ -172,26 +172,30 @@ public class QueryStoreRepository(IConfiguration configuration) : BaseRepository
     internal static string TopQueriesSql(QueryStoreMetric metric, QueryStoreStatistic statistic)
     {
         var column = QueryStoreMetrics.Info(metric).Column;
-        var sums = column is null
-            ? "CAST(0 AS float) AS m_sum, CAST(0 AS float) AS m_sum_sq, CAST(0 AS float) AS m_max"
-            : $"SUM(rs.avg_{column} * rs.count_executions) AS m_sum,\n" +
-              $"               SUM(rs.count_executions * (SQUARE(rs.stdev_{column}) + SQUARE(rs.avg_{column}))) AS m_sum_sq,\n" +
-              $"               MAX(CAST(rs.max_{column} AS float)) AS m_max";
-        var rank = column is null ? "CAST(n AS float)" : statistic switch
-        {
-            QueryStoreStatistic.Average => "m_sum / NULLIF(n, 0)",
-            QueryStoreStatistic.Max     => "m_max",
-            QueryStoreStatistic.StdDev  => StdDevSql("m_sum", "m_sum_sq", "n"),
-            _                           => "m_sum",
-        };
         return TopQueriesSqlTemplate
             .Replace("/*PERIOD*/", PeriodSql)
             .Replace("/*RUNTIME_IN_PERIOD*/", RuntimeInPeriod)
-            .Replace("/*METRIC_SUMS*/", sums)
+            .Replace("/*METRIC_SUMS*/", MetricSumsSql(column))
             .Replace("/*RANKED_PLANS*/", RankedPlans)
-            .Replace("/*RANK*/", rank)
+            .Replace("/*RANK*/", RankSql(column, statistic))
             .Replace("/*OBJECT_NAME*/", ObjectNameSql);
     }
+
+    /// <summary>Each plan's sums of a metric's column; zeros when the metric is the execution count (no column).</summary>
+    internal static string MetricSumsSql(string? column) => column is null
+        ? "CAST(0 AS float) AS m_sum, CAST(0 AS float) AS m_sum_sq, CAST(0 AS float) AS m_max"
+        : $"SUM(rs.avg_{column} * rs.count_executions) AS m_sum,\n" +
+          $"               SUM(rs.count_executions * (SQUARE(rs.stdev_{column}) + SQUARE(rs.avg_{column}))) AS m_sum_sq,\n" +
+          $"               MAX(CAST(rs.max_{column} AS float)) AS m_max";
+
+    /// <summary>What the top queries are ranked by: the statistic over the sums, or the execution count.</summary>
+    internal static string RankSql(string? column, QueryStoreStatistic statistic) => column is null ? "CAST(n AS float)" : statistic switch
+    {
+        QueryStoreStatistic.Average => "m_sum / NULLIF(n, 0)",
+        QueryStoreStatistic.Max     => "m_max",
+        QueryStoreStatistic.StdDev  => StdDevSql("m_sum", "m_sum_sq", "n"),
+        _                           => "m_sum",
+    };
 
     private static readonly string TopQueriesSqlTemplate = SqlScripts.Get("QueryStore/TopQueries");
 

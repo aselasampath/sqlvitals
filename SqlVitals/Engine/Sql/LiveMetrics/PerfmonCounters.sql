@@ -6,3 +6,4 @@ SELECT
     cntr_type            AS CntrType,
     GETDATE()            AS CaptureTime
 FROM sys.dm_os_performance_counters
+/*COUNTER_FILTER*/
