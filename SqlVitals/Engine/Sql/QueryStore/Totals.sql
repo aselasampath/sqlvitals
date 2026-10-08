@@ -1,0 +1,11 @@
+SUM(rs.count_executions)                                                   AS Executions,
+       SUM(CASE WHEN rs.execution_type <> 0 THEN rs.count_executions ELSE 0 END) AS Failed,
+       SUM(rs.avg_cpu_time              * rs.count_executions)             AS CpuUs,
+       SUM(rs.avg_duration              * rs.count_executions)             AS DurationUs,
+       SUM(rs.avg_logical_io_reads      * rs.count_executions)             AS LogicalReads,
+       SUM(rs.avg_logical_io_writes     * rs.count_executions)             AS LogicalWrites,
+       SUM(rs.avg_physical_io_reads     * rs.count_executions)             AS PhysicalReads,
+       SUM(rs.avg_query_max_used_memory * rs.count_executions)             AS MemoryPages,
+       SUM(rs.avg_rowcount              * rs.count_executions)             AS ReturnedRows,
+       /*LOG_BYTES*/ AS LogBytes,
+       /*TEMPDB*/ AS TempDbPages

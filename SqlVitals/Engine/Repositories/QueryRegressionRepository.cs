@@ -14,39 +14,11 @@ public partial class QueryRegressionRepository(IConfiguration configuration) : B
 
     public async Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(RegressionWindows windows)
     {
-        const string stateSql = """
-            SELECT DB_NAME() AS DatabaseName, actual_state_desc AS ActualState
-            FROM sys.database_query_store_options
-            """;
+        var stateSql = SqlScripts.Get("QueryRegression/State");
 
         // Each Query Store interval counts in the period its start falls in, so none is counted
         // twice. The CTE's recent rows pick which queries are worth reading at all.
-        const string statsSql = """
-            DECLARE @now          datetimeoffset = SYSDATETIMEOFFSET();
-            DECLARE @recentFrom   datetimeoffset = DATEADD(MINUTE, -@recentMinutes,        @now);
-            DECLARE @baselineFrom datetimeoffset = DATEADD(MINUTE, -@baselineStartMinutes, @now);
-            DECLARE @baselineTo   datetimeoffset = DATEADD(MINUTE, -@baselineEndMinutes,   @now);
-
-            ;WITH s AS (
-                SELECT p.query_id, rs.plan_id,
-                       CASE WHEN i.start_time >= @recentFrom THEN 1 ELSE 0 END AS is_recent,
-                       rs.count_executions, rs.avg_duration, rs.avg_cpu_time
-                FROM sys.query_store_runtime_stats_interval i
-                JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = i.runtime_stats_interval_id
-                JOIN sys.query_store_plan p           ON p.plan_id = rs.plan_id
-                JOIN sys.query_store_query q          ON q.query_id = p.query_id
-                WHERE q.is_internal_query = 0
-                  AND (i.start_time >= @recentFrom
-                       OR (i.start_time >= @baselineFrom AND i.start_time < @baselineTo))
-            )
-            SELECT query_id AS QueryId, plan_id AS PlanId, is_recent AS IsRecent,
-                   SUM(count_executions)                AS Executions,
-                   SUM(avg_duration * count_executions) AS DurationUs,
-                   SUM(avg_cpu_time * count_executions) AS CpuUs
-            FROM s
-            WHERE query_id IN (SELECT query_id FROM s WHERE is_recent = 1)
-            GROUP BY query_id, plan_id, is_recent
-            """;
+        var statsSql = SqlScripts.Get("QueryRegression/Stats");
 
         using var conn = CreateConnection();
 
@@ -91,12 +63,7 @@ public partial class QueryRegressionRepository(IConfiguration configuration) : B
         if (queryIds.Count == 0)
             return new Dictionary<long, string>();
 
-        const string sql = """
-            SELECT q.query_id AS QueryId, qt.query_sql_text AS QueryText
-            FROM sys.query_store_query q
-            JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-            WHERE q.query_id IN @queryIds
-            """;
+        var sql = SqlScripts.Get("QueryRegression/QueryStoreTexts");
 
         using var conn = CreateConnection();
         return (await Q(conn, sql, new { queryIds }))
@@ -105,9 +72,7 @@ public partial class QueryRegressionRepository(IConfiguration configuration) : B
 
     public async Task<string?> GetQueryStorePlanAsync(long planId)
     {
-        const string sql = """
-            SELECT query_plan AS QueryPlan FROM sys.query_store_plan WHERE plan_id = @planId
-            """;
+        var sql = SqlScripts.Get("QueryRegression/QueryStorePlan");
 
         using var conn = CreateConnection();
         var r = await QFirst(conn, sql, new { planId });
@@ -120,13 +85,7 @@ public partial class QueryRegressionRepository(IConfiguration configuration) : B
         if (!QueryHashPattern().IsMatch(queryHash))
             return null;
 
-        const string sql = """
-            SELECT TOP 1 CAST(qp.query_plan AS NVARCHAR(MAX)) AS QueryPlan
-            FROM sys.dm_exec_query_stats qs
-            CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) qp
-            WHERE qs.query_hash = CONVERT(binary(8), @queryHash, 1) AND qp.query_plan IS NOT NULL
-            ORDER BY qs.last_execution_time DESC
-            """;
+        var sql = SqlScripts.Get("QueryRegression/CachedPlanForQueryHash");
 
         using var conn = CreateConnection();
         var r = await QFirst(conn, sql, new { queryHash });

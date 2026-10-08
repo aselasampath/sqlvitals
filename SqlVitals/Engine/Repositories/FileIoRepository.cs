@@ -18,53 +18,17 @@ public class FileIoRepository(IConfiguration configuration) : BaseRepository(con
 
     private const int AzureSqlDatabaseEdition = 5;
 
-    internal const string ServerSql = """
-        SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition,
-               si.sqlserver_start_time AS ServerStartTime
-        FROM sys.dm_os_sys_info si
-        """;
+    internal static readonly string ServerSql = SqlScripts.Get("FileIo/Server");
 
     // The server's clock comes with the rows, so the time between two readings is the time
     // between the totals. 32767 is the hidden, read-only resource database.
-    internal const string FilesSql = """
-        SELECT SYSDATETIME() AS ServerTime,
-               vfs.database_id AS DatabaseId,
-               ISNULL(DB_NAME(vfs.database_id), CONCAT('database ', vfs.database_id)) AS DatabaseName,
-               vfs.file_id AS FileId,
-               ISNULL(mf.name, CONCAT('file ', vfs.file_id)) AS FileName,
-               ISNULL(mf.type_desc, '') AS FileType,
-               ISNULL(mf.physical_name, '') AS PhysicalName,
-               vfs.num_of_reads AS Reads, vfs.num_of_bytes_read AS BytesRead, vfs.io_stall_read_ms AS ReadStallMs,
-               vfs.num_of_writes AS Writes, vfs.num_of_bytes_written AS BytesWritten, vfs.io_stall_write_ms AS WriteStallMs,
-               vfs.size_on_disk_bytes AS SizeBytes
-        FROM sys.dm_io_virtual_file_stats(NULL, NULL) vfs
-        LEFT JOIN sys.master_files mf ON mf.database_id = vfs.database_id AND mf.file_id = vfs.file_id
-        WHERE vfs.database_id <> 32767
-        """;
+    internal static readonly string FilesSql = SqlScripts.Get("FileIo/Files");
 
     // Azure SQL Database: only the current database's files, and no sys.master_files.
-    internal const string FilesAzureSql = """
-        SELECT SYSDATETIME() AS ServerTime,
-               vfs.database_id AS DatabaseId,
-               DB_NAME() AS DatabaseName,
-               vfs.file_id AS FileId,
-               ISNULL(df.name, CONCAT('file ', vfs.file_id)) AS FileName,
-               ISNULL(df.type_desc, '') AS FileType,
-               ISNULL(df.physical_name, '') AS PhysicalName,
-               vfs.num_of_reads AS Reads, vfs.num_of_bytes_read AS BytesRead, vfs.io_stall_read_ms AS ReadStallMs,
-               vfs.num_of_writes AS Writes, vfs.num_of_bytes_written AS BytesWritten, vfs.io_stall_write_ms AS WriteStallMs,
-               vfs.size_on_disk_bytes AS SizeBytes
-        FROM sys.dm_io_virtual_file_stats(DB_ID(), NULL) vfs
-        LEFT JOIN sys.database_files df ON df.file_id = vfs.file_id
-        """;
+    internal static readonly string FilesAzureSql = SqlScripts.Get("FileIo/FilesAzure");
 
     // Online databases only: a file of one that isn't has no volume to ask about.
-    internal const string VolumesSql = """
-        SELECT mf.database_id AS DatabaseId, mf.file_id AS FileId, vs.volume_mount_point AS Volume
-        FROM sys.master_files mf
-        JOIN sys.databases d ON d.database_id = mf.database_id AND d.state = 0
-        CROSS APPLY sys.dm_os_volume_stats(mf.database_id, mf.file_id) vs
-        """;
+    internal static readonly string VolumesSql = SqlScripts.Get("FileIo/Volumes");
 
     private const string AzureVolume = "Azure-managed storage";
 

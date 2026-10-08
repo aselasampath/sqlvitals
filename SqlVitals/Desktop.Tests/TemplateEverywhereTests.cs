@@ -249,7 +249,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         {
             [nameof(IWaitStatsRepository.GetPerfmonCountersAsync)] = Task.FromResult<IEnumerable<PerfmonCounter>>(
             [
-                Counter("Batch Requests/sec", 1_200_000, WaitStatsRepository.PerfmonRateCounterType),
+                Counter("Batch Requests/sec", 1_200_000, LiveMetricsRepository.PerfmonRateCounterType),
                 Counter("Memory Grants Pending", 3),
                 Counter("Target Server Memory (KB)", 28_000_000),
                 Counter("Total Server Memory (KB)", 24_000_000),

@@ -314,7 +314,7 @@ public sealed class MvvmGuardTests
             public class SomePage
             {
                 private readonly ITempDbRepository _repo = null!;                                      // ✗ ITempDbRepository
-                public async Task Load(Session session) => await session.Repository.GetProcessesAsync(); // ✗ IWaitStatsRepository
+                public async Task Load(Session session) => await session.Repository.GetProcessesAsync(); // ✗ IWaitStatsRepository, ISessionRepository
                 public string Name => "Repository";
             }
             """, MvvmRules.RepositoryReferences);

@@ -20,4 +20,9 @@
     <InternalsVisibleTo Include="SqlVitals.Engine.Tests" />
   </ItemGroup>
 
+  <!-- The repositories' queries, one file each (#47): SqlScripts.Get("Area/Name"). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Sql\**\*.sql" LogicalName="SqlVitals.Engine.Sql.%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

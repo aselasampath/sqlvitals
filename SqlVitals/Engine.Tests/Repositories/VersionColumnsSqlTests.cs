@@ -12,7 +12,7 @@ public class VersionColumnsSqlTests
     [Fact]
     public void The_column_probe_asks_sys_all_columns_for_that_view_and_column()
     {
-        var sql = WaitStatsRepository.HasColumnSql("sys.dm_exec_requests", "dop");
+        var sql = BaseRepository.HasColumnSql("sys.dm_exec_requests", "dop");
 
         Assert.Contains("FROM sys.all_columns", sql);
         Assert.Contains("OBJECT_ID(N'sys.dm_exec_requests')", sql);
@@ -25,13 +25,13 @@ public class VersionColumnsSqlTests
     [Fact]
     public void Active_waits_read_dop_where_the_server_has_it()
     {
-        Assert.Contains("r.dop AS DegreeOfParallelism", WaitStatsRepository.ActiveWaitsSql(hasDop: true));
+        Assert.Contains("r.dop AS DegreeOfParallelism", WaitsRepository.ActiveWaitsSql(hasDop: true));
     }
 
     [Fact]
     public void Active_waits_before_2016_read_a_dop_of_0()
     {
-        var sql = WaitStatsRepository.ActiveWaitsSql(hasDop: false);
+        var sql = WaitsRepository.ActiveWaitsSql(hasDop: false);
 
         Assert.DoesNotContain("r.dop", sql);
         Assert.Contains("0 AS DegreeOfParallelism", sql);
@@ -42,13 +42,13 @@ public class VersionColumnsSqlTests
     [Fact]
     public void Stale_statistics_read_is_incremental_where_the_server_has_it()
     {
-        Assert.Contains("s.is_incremental AS IsIncremental", WaitStatsRepository.StaleStatisticsSql(hasIncremental: true));
+        Assert.Contains("s.is_incremental AS IsIncremental", IndexRepository.StaleStatisticsSql(hasIncremental: true));
     }
 
     [Fact]
     public void Stale_statistics_before_2014_are_never_incremental()
     {
-        var sql = WaitStatsRepository.StaleStatisticsSql(hasIncremental: false);
+        var sql = IndexRepository.StaleStatisticsSql(hasIncremental: false);
 
         Assert.DoesNotContain("is_incremental", sql);
         Assert.Contains("CAST(0 AS BIT) AS IsIncremental", sql);
@@ -76,13 +76,13 @@ public class VersionColumnsSqlTests
     [Fact]
     public void Database_files_read_query_store_on_where_the_server_has_it()
     {
-        Assert.Contains("CAST(d.is_query_store_on", WaitStatsRepository.DatabaseFilesSql(hasQueryStore: true));
+        Assert.Contains("CAST(d.is_query_store_on", StorageRepository.DatabaseFilesSql(hasQueryStore: true));
     }
 
     [Fact]
     public void Database_files_before_2016_have_query_store_off()
     {
-        var sql = WaitStatsRepository.DatabaseFilesSql(hasQueryStore: false);
+        var sql = StorageRepository.DatabaseFilesSql(hasQueryStore: false);
 
         Assert.DoesNotContain("is_query_store_on", sql);
         Assert.Contains("CAST(0        AS BIT) AS QueryStoreOn", sql);
@@ -95,10 +95,10 @@ public class VersionColumnsSqlTests
     {
         foreach (var sql in new[]
                  {
-                     WaitStatsRepository.ActiveWaitsSql(has),
-                     WaitStatsRepository.StaleStatisticsSql(has),
+                     WaitsRepository.ActiveWaitsSql(has),
+                     IndexRepository.StaleStatisticsSql(has),
                      QueryStoreRepository.QueryStoreTopQueriesSql(has),
-                     WaitStatsRepository.DatabaseFilesSql(has),
+                     StorageRepository.DatabaseFilesSql(has),
                  })
             Assert.DoesNotContain("/*", sql);
     }

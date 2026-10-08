@@ -1,0 +1,7 @@
+SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.query_store_wait_stats') AND name = N'wait_category') THEN 1 ELSE 0 END                          AS WaitStats,
+       CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.database_query_store_options') AND name = N'wait_stats_capture_mode_desc') THEN 1 ELSE 0 END     AS WaitStatsCaptureMode,
+       CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.query_store_runtime_stats') AND name = N'avg_log_bytes_used') THEN 1 ELSE 0 END                  AS LogBytes,
+       CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.query_store_runtime_stats') AND name = N'avg_tempdb_space_used') THEN 1 ELSE 0 END               AS TempDb,
+       CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.query_store_plan') AND name = N'plan_forcing_type_desc') THEN 1 ELSE 0 END                       AS ForcingType,
+       CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.query_store_plan') AND name = N'plan_type_desc') THEN 1 ELSE 0 END                               AS PlanType,
+       CASE WHEN EXISTS (SELECT 1 FROM sys.all_columns WHERE object_id = OBJECT_ID(N'sys.query_store_query_hints') AND name = N'query_hint_text') THEN 1 ELSE 0 END                       AS Hints

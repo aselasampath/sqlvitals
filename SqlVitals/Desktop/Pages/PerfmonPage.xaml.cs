@@ -159,7 +159,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
 
     // cntr_type = 272696576  →  cumulative rate counter  (must diff)
     // everything else        →  instantaneous / absolute
-    private const int RateCntrType = WaitStatsRepository.PerfmonRateCounterType;
+    private const int RateCntrType = LiveMetricsRepository.PerfmonRateCounterType;
 
     // ── State ────────────────────────────────────────────────────────────────
     private readonly IWaitStatsRepository _repo;

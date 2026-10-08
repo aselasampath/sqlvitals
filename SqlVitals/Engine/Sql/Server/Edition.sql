@@ -1,0 +1,1 @@
+SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT) AS Edition

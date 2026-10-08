@@ -223,4 +223,4 @@ See [Execution Plans](Execution-Plans.md) for how to read the diagram.
   - *Combined std dev.* High Variation and the Std dev statistic use the std dev of **all** the query's executions, not the average of each interval's: with nᵢ, μᵢ and σᵢ per row, N = Σnᵢ, μ = Σnᵢμᵢ / N and σ² = Σnᵢ(σᵢ² + μᵢ²) / N − μ², clamped at 0. That counts the difference between intervals too.
   - *Time slots.* Over Time's points are one interval (periods up to 2 days), an hour (up to 14 days) or a day, never less than one interval. Day slots start at local midnight.
   - The timeout for these reads is 2 minutes, as on Query Regressions: 30 days of a large Query Store can take a while.
-- SQL lives in `WaitStatsRepository.cs`, `QueryStoreRepository.cs` and `PlanCacheHealthRepository.cs` as raw string literals. See [Architecture](Architecture.md#where-the-sql-lives).
+- SQL lives in `Engine/Sql/ResourceQuery/`, `Sql/QueryStore/` and `Sql/PlanCacheHealth/`, one `.sql` file per query, run by `ResourceQueryRepository`, `QueryStoreRepository` and `PlanCacheHealthRepository`. See [Architecture](Architecture.md#where-the-sql-lives).

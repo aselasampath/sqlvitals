@@ -23,117 +23,23 @@ public class PlanCacheHealthRepository(IConfiguration configuration)
         // Single SELECT with subqueries — avoids multi-statement DECLARE issues with Dapper.
         // Join hints detected via SQL text (OPTION + LOOP/HASH/MERGE JOIN keywords) rather
         // than scanning full plan XML, which would scan thousands of large XML blobs and time out.
-        const string summarySql = """
-            SELECT
-                -- Cache erased: server restarted < 24h ago OR oldest multi-use plan < 1h old
-                CAST(
-                    CASE
-                        WHEN DATEDIFF(HOUR, si.sqlserver_start_time, GETDATE()) < 24 THEN 1
-                        WHEN (
-                            SELECT MIN(qs2.creation_time)
-                            FROM sys.dm_exec_query_stats qs2
-                            WHERE qs2.execution_count > 1
-                        ) > DATEADD(MINUTE, -60, GETDATE()) THEN 1
-                        ELSE 0
-                    END
-                AS BIT)                                                      AS PlanCacheErasedRecently,
-
-                -- Parameterisation failures: same query_hash with > 5 distinct plans
-                (SELECT COUNT(*)
-                 FROM (
-                     SELECT query_hash
-                     FROM sys.dm_exec_query_stats
-                     WHERE query_hash <> 0x0000000000000000
-                     GROUP BY query_hash
-                     HAVING COUNT(DISTINCT plan_handle) > 5
-                 ) t)                                                        AS MultiPlanQueryCount,
-
-                -- Total cached plans
-                (SELECT COUNT(*) FROM sys.dm_exec_cached_plans)             AS TotalCachedPlans,
-
-                -- Active plan guides
-                (SELECT COUNT(*) FROM sys.plan_guides WHERE is_disabled = 0) AS PlanGuidesEnabled,
-
-                -- Join hints: scan SQL text for OPTION (...JOIN) keywords — fast, no XML needed
-                (SELECT COUNT(DISTINCT qs3.query_hash)
-                 FROM sys.dm_exec_query_stats qs3
-                 CROSS APPLY sys.dm_exec_sql_text(qs3.sql_handle) st3
-                 WHERE st3.text LIKE '%OPTION%'
-                   AND (  st3.text LIKE '%LOOP JOIN%'
-                       OR st3.text LIKE '%HASH JOIN%'
-                       OR st3.text LIKE '%MERGE JOIN%')
-                )                                                            AS JoinHintCount
-            FROM sys.dm_os_sys_info si;
-            """;
+        var summarySql = SqlScripts.Get("PlanCacheHealth/Summary");
 
         // ── 2. Multi-plan queries (parameterisation failure) ─────────────────
         // Same query hash with > 5 distinct plans. Top 30 by plan count.
-        const string multiPlanSql = """
-            SELECT TOP 30
-                pc                         AS PlanCount,
-                total_exec                 AS TotalExecutions,
-                CONVERT(VARCHAR(18), query_hash, 1) AS QueryHash,
-                query_text                 AS QueryText,
-                db_name                    AS DatabaseName
-            FROM (
-                SELECT
-                    COUNT(DISTINCT qs.plan_handle)          AS pc,
-                    SUM(qs.execution_count)                 AS total_exec,
-                    qs.query_hash,
-                    MIN(SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400)) AS query_text,
-                    MIN(DB_NAME(st.dbid))                   AS db_name
-                FROM sys.dm_exec_query_stats qs
-                CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
-                WHERE qs.query_hash <> 0x0000000000000000
-                GROUP BY qs.query_hash
-                HAVING COUNT(DISTINCT qs.plan_handle) > 5
-            ) t
-            ORDER BY pc DESC;
-            """;
+        var multiPlanSql = SqlScripts.Get("PlanCacheHealth/MultiPlan");
 
         // ── 3. RID / Key Lookups (plan cache search) ─────────────────────────
         // Pre-filter to TOP 500 queries by logical reads before scanning plan XML.
         // This limits the expensive XML scan to the most I/O-intensive plans only.
         // Uses dm_exec_text_query_plan (already NVARCHAR(MAX)) to avoid double CAST.
-        const string keyLookupSql = """
-            SELECT TOP 40
-                CASE
-                    WHEN tqp.query_plan LIKE '%RID Lookup%' THEN 'RID Lookup'
-                    ELSE 'Key Lookup'
-                END                               AS LookupType,
-                qs.execution_count                AS ExecutionCount,
-                qs.total_logical_reads            AS TotalLogicalReads,
-                CAST(qs.total_logical_reads AS FLOAT)/NULLIF(qs.execution_count,0) AS AvgLogicalReads,
-                DB_NAME(st.dbid)                  AS DatabaseName,
-                OBJECT_NAME(st.objectid, st.dbid) AS ObjectName,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
-            FROM (
-                SELECT TOP 500 plan_handle, sql_handle, execution_count, total_logical_reads
-                FROM sys.dm_exec_query_stats
-                ORDER BY total_logical_reads DESC
-            ) qs
-            CROSS APPLY sys.dm_exec_text_query_plan(qs.plan_handle, 0, -1) tqp
-            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
-            WHERE tqp.query_plan LIKE '%Key Lookup%'
-               OR tqp.query_plan LIKE '%RID Lookup%'
-            ORDER BY qs.total_logical_reads DESC;
-            """;
+        var keyLookupSql = SqlScripts.Get("PlanCacheHealth/KeyLookup");
 
         // ── 4. Cardinality misestimates: CardinalitySql (below) ───────────────
         // ── 5. Skewed parallelism: SkewSql (below) ────────────────────────────
 
         // ── 6. Plan guides ────────────────────────────────────────────────────
-        const string planGuidesSql = """
-            SELECT
-                pg.name                   AS GuideName,
-                pg.scope_type_desc        AS GuideType,
-                DB_NAME()                 AS DatabaseName,
-                CAST(NULL AS nvarchar(256))            AS ObjectName,
-                SUBSTRING(REPLACE(REPLACE(ISNULL(pg.query_text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText,
-                pg.is_disabled            AS IsDisabled
-            FROM sys.plan_guides pg
-            ORDER BY pg.is_disabled, pg.name;
-            """;
+        var planGuidesSql = SqlScripts.Get("PlanCacheHealth/PlanGuides");
 
         // ── Execute all queries ───────────────────────────────────────────────
         // The summary and multi-plan queries are the page: if they fail, it fails.
@@ -231,66 +137,13 @@ public class PlanCacheHealthRepository(IConfiguration configuration)
     /// 1000× apart. A parallel node's threads are summed first, as the DMV's documented
     /// example does, so each node is one row.
     /// </summary>
-    internal const string CardinalitySql = """
-        SELECT TOP 20
-            p.SessionId,
-            p.NodeId,
-            p.EstimatedRows,
-            p.ActualRows,
-            CAST(
-                CASE
-                    WHEN p.ActualRows > p.EstimatedRows
-                         THEN p.ActualRows * 1.0 / p.EstimatedRows
-                    ELSE p.EstimatedRows * 1.0 / p.ActualRows
-                END AS FLOAT)  AS MisestimateRatio,
-            DB_NAME(r.database_id) AS DatabaseName,
-            SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
-        FROM (
-            SELECT
-                qp.session_id               AS SessionId,
-                qp.request_id               AS RequestId,
-                qp.node_id                  AS NodeId,
-                SUM(qp.estimate_row_count)  AS EstimatedRows,
-                SUM(qp.row_count)           AS ActualRows
-            FROM sys.dm_exec_query_profiles qp
-            WHERE qp.session_id <> @@SPID
-            GROUP BY qp.session_id, qp.request_id, qp.node_id
-        ) p
-        JOIN sys.dm_exec_requests r ON r.session_id = p.SessionId AND r.request_id = p.RequestId
-        CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
-        WHERE p.EstimatedRows > 0
-          AND p.ActualRows > 0
-          AND (   p.ActualRows * 1.0 / p.EstimatedRows >= 1000
-               OR p.EstimatedRows * 1.0 / p.ActualRows >= 1000)
-        ORDER BY MisestimateRatio DESC;
-        """;
+    internal static readonly string CardinalitySql = SqlScripts.Get("PlanCacheHealth/Cardinality");
 
     /// <summary>
     /// Skewed parallelism in running queries: parallel nodes where one worker thread has
     /// produced 5× the rows of another. Thread 0 is the coordinator, so it's left out.
     /// </summary>
-    internal const string SkewSql = """
-        SELECT TOP 20
-            qp.session_id                      AS SessionId,
-            qp.node_id                         AS NodeId,
-            MAX(qp.row_count)                  AS MaxActualRows,
-            MIN(qp.row_count)                  AS MinActualRows,
-            CAST(MAX(qp.row_count) AS FLOAT)
-                / NULLIF(MIN(qp.row_count), 0) AS SkewRatio,
-            DB_NAME(r.database_id)             AS DatabaseName,
-            SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
-        FROM sys.dm_exec_query_profiles qp
-        JOIN sys.dm_exec_requests r ON r.session_id = qp.session_id AND r.request_id = qp.request_id
-        CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
-        WHERE qp.session_id <> @@SPID
-          AND qp.thread_id > 0
-        GROUP BY qp.session_id, qp.request_id, qp.node_id, r.database_id, st.text
-        HAVING COUNT(*) > 1
-           AND MAX(qp.row_count) > 0
-           AND CAST(MAX(qp.row_count) AS FLOAT)
-               / NULLIF(MIN(qp.row_count), 0) >= 5
-        ORDER BY SkewRatio DESC;
-        """;
+    internal static readonly string SkewSql = SqlScripts.Get("PlanCacheHealth/Skew");
 
     /// <summary>
     /// Runs an optional section's query: a missing column or object (207, 208) leaves just

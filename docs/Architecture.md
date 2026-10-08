@@ -19,10 +19,11 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **dire
 └────────────────────────────────┼───────────────────────────────────────────────────────────────────┘
                                  │ project reference (no HTTP)
 ┌────────────────────────────────▼─────────────── SqlVitals.Engine (net10.0 library) ───────────────┐
-│  Repositories/  WaitStatsRepository, SpTrace-, TempDb-, PlanCacheHealth-, History-, Configuration-,│
-│                 QueryRegression-, Deadlock-, AgentJob-, Backup-, FileIo-, SecurityAudit-           │
-│                 QueryStore-                                                                        │
-│                 ── base: BaseRepository                                                            │
+│  Repositories/  one per area: Waits-, Memory-, Index-, ResourceQuery-, Session-, LiveMetrics-,     │
+│                 Storage-, Server-, TempDb-, PlanCacheHealth-, SpTrace-, History-, Configuration-,  │
+│                 QueryRegression-, Deadlock-, AgentJob-, Backup-, FileIo-, SecurityAudit-,          │
+│                 QueryStore-; WaitStatsRepository hands each call on to its area's                  │
+│                 ── base: BaseRepository; SQL: Sql/<Area>/<Query>.sql, embedded (SqlScripts)        │
 │  Monitoring/    LiveMetricSample, HealthRules, HealthThresholds, HealthScore, BlockingChains       │
 │                 MonitoringPlan (which connections are monitored, and why)                          │
 │                 ProcessGroups (the Processes grid's login groups, problems first)                  │
@@ -174,7 +175,7 @@ Every start and stop of monitoring, app start and exit, settings change and hist
 
 ### 8a. Query Store
 
-`QueryStorePage` → `QueryStoreRepository` (delegated from `WaitStatsRepository`; one `sys.all_columns` probe per connection for what the version has, then `sys.database_query_store_options` for the settings) → `QueryStoreChecks.Run` (Engine, pure: the settings checks and their fixes). Each tab reads only when it's opened, after **Refresh** or a new period: the SQL groups `sys.query_store_runtime_stats` by query and plan on the server, ranks with `TOP (@top)`, and returns only those rows. The period is `QueryStorePeriod` (minutes back on the server's clock, or a fixed custom range), Over Time's points come from `QueryStoreTimeSlots`, and High Variation's std dev follows `CombinedStdDev`, the tested reference for the SQL. A missing view or column (207, 208) empties only its tab, with the reason. `QueryStoreQueryWindow` shows one query's intervals and plans. See [Query Performance → Query Store](Query-Performance.md#query-store).
+`QueryStorePage` → `QueryStoreRepository` (through `IWaitStatsRepository`; one `sys.all_columns` probe per connection for what the version has, then `sys.database_query_store_options` for the settings) → `QueryStoreChecks.Run` (Engine, pure: the settings checks and their fixes). Each tab reads only when it's opened, after **Refresh** or a new period: the SQL groups `sys.query_store_runtime_stats` by query and plan on the server, ranks with `TOP (@top)`, and returns only those rows. The period is `QueryStorePeriod` (minutes back on the server's clock, or a fixed custom range), Over Time's points come from `QueryStoreTimeSlots`, and High Variation's std dev follows `CombinedStdDev`, the tested reference for the SQL. A missing view or column (207, 208) empties only its tab, with the reason. `QueryStoreQueryWindow` shows one query's intervals and plans. See [Query Performance → Query Store](Query-Performance.md#query-store).
 
 ### 9. Deadlock history
 
@@ -232,7 +233,11 @@ r.FileSizeMB ?? 0m                       // ❌
 
 ### Where the SQL lives
 
-There are **no `.sql` files**. Each query is a C# raw string literal (`"""…"""`) in the repository that runs it, mostly `Engine/Repositories/WaitStatsRepository.cs`. Copy one into SSMS to try it by hand. Moving SQL to `.sql` resources is tracked in issue #47.
+Every query is a `.sql` file under `Engine/Sql/<Area>/`, one folder per repository (`Sql/Waits/ActiveWaits.sql` belongs to `WaitsRepository`), embedded in the assembly (#47). A repository reads one with `SqlScripts.Get("Waits/ActiveWaits")`; open the file in SSMS to try it by hand.
+
+- **Templates:** a query the server's version or edition changes has `/*NAME*/` markers that the repository fills with `Replace`: a column only newer versions have (`/*DOP*/`), the CPU figure on Azure SQL Database (`/*CPU*/`), the Query Store period (`/*PERIOD*/`). C# fills a marker only with a name, a number, a one-line expression or another `.sql` file (a shared part such as `QueryStore/RuntimeInPeriod.sql` or `History/BenignWaits.sql`); everything longer is a file. `Server/Edition.sql` is the one edition probe every repository shares.
+- **One repository per area.** `IWaitStatsRepository` is the sum of the area interfaces (`IWaitsRepository`, `IMemoryRepository`, `IIndexRepository`, `IResourceQueryRepository`, `ISessionRepository`, `ILiveMetricsRepository`, `IStorageRepository`, `IServerRepository`, and the older `ITempDbRepository`, `IQueryStoreRepository` and the rest); `WaitStatsRepository` runs no SQL, it holds one of each area's repository per connection and hands each call on. A page can take only its area's interface (`TempDbPage` takes `ITempDbRepository`).
+- `SqlScriptsTests` fails for a name the code asks for that isn't embedded, for a file nothing reads, and for a `.sql` file left out of the build.
 
 | Feature | Key DMVs |
 |---|---|

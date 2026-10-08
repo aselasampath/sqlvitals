@@ -204,7 +204,7 @@ public class BlockingChainsTests
     [Fact]
     public void ProcessesSql_ReadsWhatASleepingHeadBlockerLeaves()
     {
-        var sql = WaitStatsRepository.ProcessesSql;
+        var sql = SessionRepository.ProcessesSql;
 
         // No request: the connection's last batch, and the session's own open transactions.
         Assert.Contains("most_recent_sql_handle", sql);
