@@ -11,12 +11,11 @@ namespace SqlVitals.Engine.Repositories;
 /// </summary>
 public class FileIoRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IFileIoRepository
 {
-    private const int AzureSqlDatabaseEdition = 5;
-
     internal static readonly string ServerSql = SqlScripts.Get("FileIo/Server");
 
     // The server's clock comes with the rows, so the time between two readings is the time
-    // between the totals. 32767 is the hidden, read-only resource database.
+    // between the totals. 32761 and up are the engine's own hidden databases, in no sys.master_files:
+    // the resource database (32767), and on SQL Server 2022+ model_msdb and model_replicatedmaster (#46).
     internal static readonly string FilesSql = SqlScripts.Get("FileIo/Files");
 
     // Azure SQL Database: only the current database's files, and no sys.master_files.
@@ -43,7 +42,7 @@ public class FileIoRepository(SqlTarget target, ServerCapabilitiesCache? capabil
         {
             server  = await QFirst(conn, ServerSql, cancellationToken)
                       ?? throw new InvalidOperationException("Failed to read the server's start time.");
-            isAzure = Convert.ToInt32(server.Edition) == AzureSqlDatabaseEdition;
+            isAzure = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
             rows    = (await Q(conn, isAzure ? FilesAzureSql : FilesSql, cancellationToken)).ToList();
         }
         catch (WaitStatsException ex) when (ex.Failure.IsPermission)

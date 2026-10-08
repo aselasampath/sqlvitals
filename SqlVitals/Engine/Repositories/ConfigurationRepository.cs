@@ -34,8 +34,8 @@ public class ConfigurationRepository(SqlTarget target, ServerCapabilitiesCache? 
     {
         using var conn = CreateConnection();
 
+        int edition = (await CapabilitiesAsync(cancellationToken)).EngineEdition;
         var server  = await QFirst(conn, ServerSql, cancellationToken);
-        int edition = server is null ? 0 : Convert.ToInt32(server.Edition);
         var version = (string?)server?.ProductVersion ?? string.Empty;
         var isAzure = edition == ServerConfiguration.AzureSqlDatabaseEdition;
 

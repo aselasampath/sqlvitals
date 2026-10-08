@@ -10,4 +10,4 @@ SELECT SYSDATETIME() AS ServerTime,
        vfs.size_on_disk_bytes AS SizeBytes
 FROM sys.dm_io_virtual_file_stats(NULL, NULL) vfs
 LEFT JOIN sys.master_files mf ON mf.database_id = vfs.database_id AND mf.file_id = vfs.file_id
-WHERE vfs.database_id <> 32767
+WHERE vfs.database_id < 32761

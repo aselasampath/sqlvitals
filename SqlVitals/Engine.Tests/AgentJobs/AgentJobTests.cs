@@ -250,11 +250,11 @@ public class AgentJobTests
     }
 
     [Fact]
-    public void The_edition_check_reads_nothing_Azure_SQL_Database_lacks()
+    public void The_server_clock_reads_nothing_Azure_SQL_Database_lacks()
     {
-        // It runs first so Azure SQL Database gets its message; sys.configurations is read separately.
+        // The edition comes from the shared capabilities (#46); sys.configurations is read separately.
         Assert.DoesNotContain("sys.configurations", AgentJobRepository.ServerSql);
         Assert.DoesNotContain("msdb", AgentJobRepository.ServerSql);
-        Assert.Contains("EngineEdition", AgentJobRepository.ServerSql);
+        Assert.Contains("SYSDATETIME()", AgentJobRepository.ServerSql);
     }
 }

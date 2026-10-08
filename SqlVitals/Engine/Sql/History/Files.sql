@@ -6,3 +6,4 @@ SELECT ISNULL(DB_NAME(vfs.database_id), CONCAT('database ', vfs.database_id)) AS
        vfs.num_of_writes AS Writes, vfs.num_of_bytes_written AS BytesWritten, vfs.io_stall_write_ms AS WriteStallMs
 FROM sys.dm_io_virtual_file_stats(NULL, NULL) vfs
 LEFT JOIN sys.master_files mf ON mf.database_id = vfs.database_id AND mf.file_id = vfs.file_id
+WHERE vfs.database_id < 32761

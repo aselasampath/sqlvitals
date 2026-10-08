@@ -319,10 +319,10 @@ public class DatabaseBackupTests
     }
 
     [Fact]
-    public void The_edition_check_reads_nothing_Azure_SQL_Database_lacks()
+    public void The_server_clock_reads_nothing_Azure_SQL_Database_lacks()
     {
         Assert.DoesNotContain("msdb", BackupRepository.ServerSql);
-        Assert.Contains("EngineEdition", BackupRepository.ServerSql);
+        Assert.Contains("SYSDATETIME()", BackupRepository.ServerSql);
     }
 
     [Fact]

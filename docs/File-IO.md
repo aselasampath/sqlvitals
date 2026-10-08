@@ -94,7 +94,7 @@ A commit waits for its log write, so **log write latency** is felt by every tran
 - **Counters reset**: a file's totals went *down* between readings. Its database was taken offline and back, restored, or detached and attached again, which starts its totals from zero. It has no figure until the next reading.
 - **A SQL Server restart** starts every file's totals from zero, so the readings start again, and a line under **Measuring** says so.
 - **A file that appears between readings** (its database came online) is measured from zero: all its I/O happened in the interval.
-- Files of the hidden, read-only resource database aren't listed.
+- Files of the engine's own hidden databases aren't listed: the read-only resource database, and on SQL Server 2022 and later `model_msdb` and `model_replicatedmaster`. Before 0.69.1 those two were listed as *file 1* and *file 2* with no type or path, and the page said the login couldn't see some files, even for a sysadmin.
 - A login that can't see `sys.master_files` for some databases (it needs `VIEW ANY DEFINITION`, or to be able to see the database) gets them as *file n* with no type or path. They're held to the data threshold, and a line says so.
 
 ### History
