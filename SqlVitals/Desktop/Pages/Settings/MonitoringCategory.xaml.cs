@@ -18,8 +18,10 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
     private readonly SettingsContext _context;
 
     // The history file grows with every sample and shrinks after a purge, which the writer
-    // runs on its own schedule, so the size shown is re-read while the category is open.
-    private readonly DispatcherTimer _historySizeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    // runs on its own schedule, so the size shown is re-read while the category is open, on the
+    // app's refresh clock (#169).
+    private static readonly TimeSpan HistorySizeInterval = TimeSpan.FromSeconds(5);
+    private IRefreshSchedule? _historySizeTimer;
 
     // Set while the history choices are filled in or put back in code, so they aren't saved.
     private bool _isLoadingHistorySettings;
@@ -40,9 +42,21 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
         LoadHistorySettings(store);
         UpdateHistorySize();
 
-        _historySizeTimer.Tick += (_, _) => UpdateHistorySize();
-        Loaded   += (_, _) => { UpdateHistorySize(); _historySizeTimer.Start(); };
-        Unloaded += (_, _) => _historySizeTimer.Stop();
+        Loaded += (_, _) =>
+        {
+            UpdateHistorySize();
+            _historySizeTimer?.Dispose();
+            _historySizeTimer = CompositionRoot.Get<IRefreshScheduler>().Every(HistorySizeInterval, () =>
+            {
+                UpdateHistorySize();
+                return Task.CompletedTask;
+            });
+        };
+        Unloaded += (_, _) =>
+        {
+            _historySizeTimer?.Dispose();
+            _historySizeTimer = null;
+        };
     }
 
     public async Task<bool> TryLeaveAsync()
@@ -93,12 +107,12 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
         var n => $"{n} connections are monitored",
     };
 
-    private async void TxtTimeout_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => await SaveTimeoutAsync();
+    private async void TxtTimeout_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => await SaveTimeoutAsync().Reported("save the command timeout");
 
     private async void TxtTimeout_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
-            await SaveTimeoutAsync();
+            await SaveTimeoutAsync().Reported("save the command timeout");
     }
 
     /// <summary>Saves the command timeout when it changed and can be used; says why not otherwise.</summary>

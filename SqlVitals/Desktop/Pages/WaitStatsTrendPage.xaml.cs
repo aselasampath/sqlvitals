@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
+using System.Windows.Data;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
@@ -53,10 +53,10 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => _range.IsLive;
-    public bool IsPaused => !_timer.IsEnabled;
+    public bool IsPaused => ViewModel.IsPaused;
 
     // The bar's Resume and Pause start and stop the reads: the page's own Start and Stop were the
-    // same toggle, so they went with the page template (#149).
+    // same toggle, so they went with the page template (#149). They read on the view model's timer (#169).
     public void SetPaused(bool paused)
     {
         if (paused) StopReading();
@@ -71,9 +71,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
 
     // ── fields ────────────────────────────────────────────────────────────────
     private readonly IWaitStatsRepository _repo;
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private int _intervalSec = 10;
-    private int _countdown;
 
     // Wait type list (all items, used as the single source of truth for IsChecked)
     private readonly List<WaitTypeItem> _allItems = new();
@@ -127,11 +125,14 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _statusMain  = TxtStatus.Text;
-        _timer.Tick += Timer_Tick;
 
         ViewModel = new WaitStatsTrendViewModel(navigator ?? CompositionRoot.Get<INavigator>());
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
+        // Not reading until Resume (▶) in the top bar.
+        ViewModel.SetPaused(true);
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
+        TxtCountdown.SetBinding(TextBlock.TextProperty, new Binding(nameof(ViewModel.Countdown)) { Source = ViewModel });
         UpdateVerdict();
     }
 
@@ -152,7 +153,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
             .Select(i => new WaitTrendSeries(i.WaitType,
                 windows.TryGetValue(i.WaitType, out var points) ? points.Select(p => p.Value).ToList() : []))
             .ToList();
-        var state = !_range.IsLive ? WaitTrendState.History : _timer.IsEnabled ? WaitTrendState.Live : WaitTrendState.NotStarted;
+        var state = !_range.IsLive ? WaitTrendState.History : !IsPaused ? WaitTrendState.Live : WaitTrendState.NotStarted;
         var unit  = _metric == MetricType.WaitingTasks ? "tasks/s" : "ms/s";
         string? noData = _range.IsLive || _historyLoad is null ? null : _historyLoad.NoData(NotRecordedText);
         ViewModel.Show(series, state, unit, Over(windows), noData);
@@ -230,7 +231,6 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
             }
 
             StoreValues(data, now);
-            _shell.ReportRead(this, PageRead.Timed);
 
             // A read that finishes after a past range was picked only fills the live buffers.
             if (!_range.IsLive)
@@ -244,11 +244,12 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         }
         catch (Exception ex)
         {
-            if (_range.IsLive)
-            {
-                ShowStatus($"Error: {ex.Message}");
-                ViewModel.ShowError("the wait statistics", ex);
-            }
+            if (!_range.IsLive)
+                return;
+            ShowStatus($"Error: {ex.Message}");
+            ViewModel.ShowError("the wait statistics", ex);
+            // The view model reports it, once (#169).
+            throw;
         }
     }
 
@@ -282,7 +283,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
             return;
         }
 
-        await LoadHistoryAsync();
+        await ViewModel.ReportErrorsOf(LoadHistoryAsync());
     }
 
     private async Task LoadHistoryAsync()
@@ -381,6 +382,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
 
     // Reads the baseline for what the chart shows, when it doesn't have one yet: the past range
     // on screen, or the live window. Live, that is a new read only every half hour or so.
+    [ReportsItsErrors]
     private async Task LoadBaselineAsync()
     {
         if (_baseline is null || !RangePicker.CompareToBaseline)
@@ -603,20 +605,6 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         UpdateVerdict();
     }
 
-    // ── timer ─────────────────────────────────────────────────────────────────
-    private void Timer_Tick(object? sender, EventArgs e)
-    {
-        _countdown--;
-        TxtCountdown.Text = $"{_countdown}s";
-        if (_countdown <= 0)
-        {
-            _countdown = _intervalSec;
-            _ = LoadSnapshotAsync();
-        }
-    }
-
-    private void Page_Unloaded(object sender, RoutedEventArgs e) => _timer.Stop();
-
     // ── event handlers ────────────────────────────────────────────────────────
     private void BtnTopWaits_Click(object sender, RoutedEventArgs e)
     {
@@ -670,12 +658,11 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     // What Start did: read every interval, counting down to the next read.
     private void StartReading()
     {
-        if (_timer.IsEnabled)
+        if (!IsPaused)
             return;
         _intervalSec = SelectedIntervalSec;
-        _countdown = _intervalSec;
-        TxtCountdown.Text = $"{_countdown}s";
-        _timer.Start();
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
+        ViewModel.SetPaused(false);
         _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
@@ -683,25 +670,20 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     // What Stop did.
     private void StopReading()
     {
-        if (!_timer.IsEnabled)
+        if (IsPaused)
             return;
-        TxtCountdown.Text = "--";
-        _timer.Stop();
+        ViewModel.SetPaused(true);
         _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
 
-    // Another interval: used from the next read on, while reading.
+    // Another interval: the wait for the next read starts again.
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TxtCountdown is null)
+        if (ViewModel is null)
             return;   // during InitializeComponent
         _intervalSec = SelectedIntervalSec;
-        if (_timer.IsEnabled)
-        {
-            _countdown = Math.Min(_countdown, _intervalSec);
-            TxtCountdown.Text = $"{_countdown}s";
-        }
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
         _shell.ReportContextChanged(this);
     }
 }

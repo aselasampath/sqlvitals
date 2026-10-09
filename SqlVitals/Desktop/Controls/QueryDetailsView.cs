@@ -123,7 +123,7 @@ public sealed class QueryDetailsView : StackPanel
         text.Children.Add(line);
 
         Button? open = null;
-        open = DrawerParts.Button("Open in window", async () => await _openPlan(open!, plan.PlanId, _queryId, _queryText),
+        open = DrawerParts.Button("Open in window", () => _openPlan(open!, plan.PlanId, _queryId, _queryText),
                                   $"Plan {plan.PlanId}, drawn like SSMS, in its own window");
         open.Margin = new Thickness(8, 0, 0, 0);
         open.VerticalAlignment = VerticalAlignment.Center;

@@ -339,9 +339,9 @@ internal partial class ConnectionEditor : UserControl
 
     // ── Save, discard, leave ──────────────────────────────────────────────────
 
-    private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: false);
+    private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: false).Reported("save the connection");
 
-    private async void SaveAndConnect_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: true);
+    private async void SaveAndConnect_Click(object sender, RoutedEventArgs e) => await SaveAsync(connect: true).Reported("save the connection");
 
     private void Discard_Click(object sender, RoutedEventArgs e) => Discard();
 
@@ -471,7 +471,7 @@ internal partial class ConnectionEditor : UserControl
 
     private async void Back_Click(object sender, RoutedEventArgs e)
     {
-        if (await TryCloseAsync())
+        if (await TryCloseAsync().Reported("close the connection editor"))
             Closed?.Invoke();
     }
 

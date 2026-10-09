@@ -315,8 +315,10 @@ public sealed class TemplateRolloutTests : IDisposable
         {
             GetCumulativeWaitsAsync = () => Task.FromException<IEnumerable<WaitStatCumulative>>(new InvalidOperationException("Timeout expired.")),
         });
-        UiThread.Wait(page.RefreshAsync());   // the page reports the error in its status line, as before
+        // The page says so in its verdict, and rethrows for its view model to report it once (#169).
+        var error = Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
 
+        Assert.Equal("Timeout expired.", error.Message);
         Assert.Equal("Couldn't read the wait statistics", page.Shell.Verdict!.Headline);
     });
 

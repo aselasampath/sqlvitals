@@ -18,7 +18,7 @@ namespace SqlVitals.Desktop.Controls;
 public sealed class SessionDetailsView : StackPanel
 {
     private readonly Func<int, Task<SessionPlan>> _loadPlan;
-    private readonly Action<int> _openActiveWaits;
+    private readonly Func<int, Task> _openActiveWaits;
 
     private readonly Grid    _rows      = DrawerParts.Rows();
     private readonly TextBox _statement = DrawerParts.Code(maxHeight: 220);
@@ -37,7 +37,7 @@ public sealed class SessionDetailsView : StackPanel
 
     /// <param name="loadPlan">Reads a session's plan from the server.</param>
     /// <param name="openActiveWaits">Opens Active Waits filtered to a session (#145).</param>
-    public SessionDetailsView(Func<int, Task<SessionPlan>> loadPlan, Action<int> openActiveWaits)
+    public SessionDetailsView(Func<int, Task<SessionPlan>> loadPlan, Func<int, Task> openActiveWaits)
     {
         _loadPlan        = loadPlan;
         _openActiveWaits = openActiveWaits;
@@ -49,13 +49,13 @@ public sealed class SessionDetailsView : StackPanel
         Children.Add(_statement);
         var statementButtons = DrawerParts.Row(
             DrawerParts.Button("Copy SQL", () => ClipboardHelper.SetText(_statement.Text), "Copy the statement"),
-            DrawerParts.Button("Active waits →", () => { if (_node is { } n) _openActiveWaits(n.SessionId); },
+            DrawerParts.Button("Active waits →", () => _node is { } n ? _openActiveWaits(n.SessionId) : Task.CompletedTask,
                    "Open Active Waits filtered to this session and the sessions it blocks"));
         Children.Add(statementButtons);
 
         // The plan: read when asked, shown here, and in a window for a second monitor.
         Children.Add(DrawerParts.Heading("Execution plan"));
-        _showPlan   = DrawerParts.Button("Show the plan", async () => await ShowPlanAsync(), "Read the plan of what it runs, or of its last statement");
+        _showPlan   = DrawerParts.Button("Show the plan", ShowPlanAsync, "Read the plan of what it runs, or of its last statement");
         _planWindow = DrawerParts.Button("Open in window", OpenPlanWindow, "Open the plan in its own window, to keep it beside the grid or on another monitor");
         _planWindow.Visibility = Visibility.Collapsed;
         Children.Add(DrawerParts.Row(_showPlan, _planWindow));

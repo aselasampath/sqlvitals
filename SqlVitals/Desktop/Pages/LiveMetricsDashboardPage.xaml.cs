@@ -8,7 +8,6 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using System.Windows.Threading;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
@@ -103,14 +102,13 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     // ?? Repo & timer ??????????????????????????????????????????????????
     // Collection lives in the connection's MonitoringSession, which keeps running (and keeps
     // its history) while the user is on another page or another connection. The page only
-    // plots it; its own timer just drives the countdown. While the connection isn't monitored
+    // plots it; the view model's clock just drives the countdown (#169). While the connection isn't monitored
     // there is no session and nothing is sent to the server (#115).
     private readonly IWaitStatsRepository _repo;
     private readonly MonitoringManager?   _monitoring;
     private readonly Guid?                _connectionId;
     private readonly MonitoringSession?   _adHoc;          // when there is no saved connection
     private MonitoringSession?            _session;        // null while not monitored
-    private readonly DispatcherTimer      _timer    = new();
     private readonly bool                 _itemsReady;
     private DateTime?                     _lastPlotted;
     private bool                          _refreshingMap;
@@ -259,8 +257,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         // Build chip registry from XAML-named buttons
         // (populated in Loaded after InitializeComponent)
 
-        _timer.Interval = TimeSpan.FromSeconds(1);
-        _timer.Tick    += Timer_Tick;
+        ViewModel.TickWhileShown(TimeSpan.FromSeconds(1), UpdateCountdown);
 
         // Subscribed here rather than in Loaded: MainWindow calls RefreshAsync straight after
         // navigating, and that sample can arrive before the page has loaded. The manager's own
@@ -335,15 +332,12 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         }
 
         SyncRunButton();
-        _timer.Start();
         UpdateCountdown();
         UpdateHealthScore();
     }
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
-        _timer.Stop();
-
         // The session outlives the page; don't let it keep this page alive.
         Unsubscribe(_session);
         _monitoring?.SessionStateChanged -= Monitoring_SessionStateChanged;
@@ -513,6 +507,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
 
     // Reads the baseline for what the charts show, when they don't have one yet: the past range
     // on screen, or the live window. Live, that is a new read only every half hour or so.
+    [ReportsItsErrors]
     private async System.Threading.Tasks.Task LoadBaselineAsync()
     {
         if (_baseline is null || !RangePicker.CompareToBaseline)
@@ -711,8 +706,6 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     }
 
     // ?? Timer ?????????????????????????????????????????????????????????
-    private void Timer_Tick(object? sender, EventArgs e) => UpdateCountdown();
-
     private void UpdateCountdown()
     {
         if (!IsMonitoring)
@@ -782,7 +775,7 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     }
 
     private async void LnkMonitoringSetting_Click(object sender, RoutedEventArgs e) =>
-        await _navigator.GoToAsync("Settings");
+        await ViewModel.ReportErrorsOf(_navigator.GoToAsync("Settings"));
 
     // ?? Snapshot ? ring buffers ????????????????????????????????????????
     // Rates are computed by LiveMetricSample.From in the session; the page only plots them.

@@ -54,6 +54,9 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     private IRefreshSchedule? _schedule;
     private IRefreshSchedule? _countdownTick;
     private bool _showsCountdown;
+    private IRefreshSchedule? _soon;
+    private readonly List<(TimeSpan Every, Action Tick)> _viewTicks = [];
+    private readonly List<IRefreshSchedule> _viewSchedules = [];
     private CancellationTokenSource? _run;
     private PageLifetime? _lifetime;
     private Task _reading = Task.CompletedTask;
@@ -112,11 +115,18 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     /// <summary>Reads what the page shows. <paramref name="cancel"/> is cancelled when the page is left.</summary>
     protected abstract Task LoadAsync(CancellationToken cancel);
 
+    /// <summary>
+    /// Reads what the page shows, knowing why: a page whose timed read is narrower than its
+    /// Refresh (#169) overrides this. <see cref="LoadAsync(CancellationToken)"/> otherwise.
+    /// </summary>
+    protected virtual Task LoadAsync(PageRead read, CancellationToken cancel) => LoadAsync(cancel);
+
     /// <summary>The page is on screen: it loads, then its timed refresh starts.</summary>
     public async Task OnNavigatedToAsync()
     {
         _shown = true;
         _lifetime?.Begin();
+        StartViewTicks();
         await ReadAsync(PageRead.Load);
         Reschedule();
     }
@@ -130,11 +140,96 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         _shown = false;
         _run?.Cancel();
         _lifetime?.End();
+        _soon?.Dispose();
+        _soon = null;
+        StartViewTicks();
         Reschedule();
     }
 
     /// <inheritdoc cref="RefreshCommand"/>
+    [ReportsItsErrors]
     public Task RefreshAsync() => ReadAsync(PageRead.Refresh);
+
+    /// <summary>
+    /// What the page reads changed (a filter, a range): reads again, after the read in progress if
+    /// there is one, since that one reads the old choice. Refresh would only wait for it.
+    /// </summary>
+    [ReportsItsErrors]
+    public Task RereadAsync() => ReadAfterAsync(PageRead.Refresh);
+
+    /// <summary>
+    /// Reads once, <paramref name="delay"/> from now, as a timed read: after a change the page
+    /// was told of that is saved moments later (an alert). Asked again meanwhile, the wait starts
+    /// over, so a burst of changes reads once. Nothing while the page isn't shown.
+    /// </summary>
+    protected void RefreshSoon(TimeSpan delay)
+    {
+        _soon?.Dispose();
+        _soon = _shown && _scheduler is not null ? _scheduler.Every(delay, ReadSoonAsync) : null;
+    }
+
+    private Task ReadSoonAsync()
+    {
+        _soon?.Dispose();
+        _soon = null;
+        return ReadAfterAsync(PageRead.Timed);
+    }
+
+    /// <summary>
+    /// Calls <paramref name="tick"/> every <paramref name="every"/> while the page is shown, paused
+    /// or not: for what the page draws from the clock (a "next try in" it works out itself), never
+    /// to read. A page no longer needs a <c>DispatcherTimer</c> for it (#169).
+    /// </summary>
+    protected void WhileShownEvery(TimeSpan every, Action tick)
+    {
+        _viewTicks.Add((every, tick));
+        StartViewTicks();
+    }
+
+    // The view ticks run while the page is shown.
+    private void StartViewTicks()
+    {
+        foreach (var schedule in _viewSchedules)
+            schedule.Dispose();
+        _viewSchedules.Clear();
+        if (!_shown || _scheduler is null)
+            return;
+        foreach (var (every, tick) in _viewTicks)
+            _viewSchedules.Add(_scheduler.Every(every, () => { tick(); return Task.CompletedTask; }));
+    }
+
+    /// <summary>
+    /// Awaits what one of the page's events started that isn't a read (a link, a plan), and reports
+    /// what it throws as a failed read is: the top bar and the log (#169). An <c>async void</c>
+    /// handler awaits it rather than <paramref name="work"/> itself; a cancellation says nothing.
+    /// </summary>
+    [ReportsItsErrors]
+    public async Task ReportErrorsOf(Task work)
+    {
+        try
+        {
+            await work;
+        }
+        catch (OperationCanceledException)
+        {
+            // Left, or its server switched: nothing to say.
+        }
+        catch (Exception ex)
+        {
+            if (_shell is { } shell)
+                shell.ReportError(this, Tag, ex, PageRead.Refresh);
+            else
+                AppLog.Error($"{Tag}: failed", ex);
+        }
+    }
+
+    // A read that must see a change made during the one in progress: waits for it, then reads.
+    private async Task ReadAfterAsync(PageRead read)
+    {
+        while (IsBusy)
+            await _reading;
+        await ReadAsync(read);
+    }
 
     /// <summary>Pauses or resumes the timed refresh; resuming waits a whole interval again.</summary>
     public void SetPaused(bool paused)
@@ -186,7 +281,7 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         Status = read == PageRead.Load ? "Loading…" : read == PageRead.Refresh ? "Refreshing…" : Status;
         try
         {
-            await LoadAsync(run.Token);
+            await LoadAsync(read, run.Token);
             if (!run.IsCancellationRequested)
             {
                 Status = null;

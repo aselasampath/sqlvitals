@@ -3,8 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
-      Background="{StaticResource BgDeep}" Title="Memory"
-      Unloaded="Page_Unloaded">
+      Background="{StaticResource BgDeep}" Title="Memory">
     <!-- The page template (#150): the verdict on queries waiting for memory first; the figures and
          the trend fold to one line; then the clerks and the grants on tabs the Navigator keeps.
          Start and Stop are the top bar's Resume and Pause (#140). -->

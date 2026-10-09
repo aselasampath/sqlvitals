@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
+using System.Windows.Data;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
@@ -56,11 +56,12 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
     }
 
     // Live while trending. The bar's Resume and Pause start and stop it: the page's own Start and
-    // Stop were the same toggle, so they went with the page template (#150).
+    // Stop were the same toggle, so they went with the page template (#150). The trend reads on
+    // the view model's timer (#169).
     public PageKind Kind => PageKind.Live;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => true;
-    public bool IsPaused => !_timer.IsEnabled;
+    public bool IsPaused => ViewModel.IsPaused;
 
     public void SetPaused(bool paused)
     {
@@ -84,9 +85,7 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
     private readonly ObservableCollection<DateTimePoint> _winGrants = new();
 
     // ── timer ─────────────────────────────────────────────────────────
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private int _intervalSec = 10;
-    private int _countdown;
 
     private readonly IWaitStatsRepository _repo;
 
@@ -102,12 +101,15 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
         _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
-        _timer.Tick += Timer_Tick;
         BuildInitialChart(); // create series (empty windows) on startup
 
         ViewModel = new MemoryGrantsViewModel(showWaiting: ShowWaiting, showClerks: () => Tabs.SelectedItem = TabClerks);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
+        // Not trending until Resume (▶) in the top bar.
+        ViewModel.SetPaused(true);
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
+        TxtCountdown.SetBinding(TextBlock.TextProperty, new Binding(nameof(ViewModel.Countdown)) { Source = ViewModel });
         ShowTrendSummary();
     }
 
@@ -299,35 +301,15 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
         }};
     }
 
-    // ── page lifetime ────────────────────────────────────────────────
-    private void Page_Unloaded(object sender, RoutedEventArgs e) => _timer.Stop();
-
     // ── timer ─────────────────────────────────────────────────────────
-    private void Timer_Tick(object? sender, EventArgs e)
+    // The view model's timer (#169) reads only the snapshot for the trend; the grants are read on
+    // Refresh. It reports how the read went.
+    public async System.Threading.Tasks.Task ReadTimedAsync()
     {
-        _countdown--;
-        TxtCountdown.Text = $"{_countdown}s";
-        if (_countdown <= 0)
-        {
-            _countdown = _intervalSec;
-            _ = PollSnapshotAsync();
-        }
-    }
-
-    private async System.Threading.Tasks.Task PollSnapshotAsync()
-    {
-        try
-        {
-            var snap = await _repo.GetMemorySnapshotAsync();
-            ApplyKpi(snap);
-            AppendSnapshot(snap);
-            ViewModel.Show(snap, null);   // the counter says whether queries wait; the grants are read on Refresh
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            _shell.ReportError(this, "Memory Grants", ex, PageRead.Timed);
-        }
+        var snap = await _repo.GetMemorySnapshotAsync();
+        ApplyKpi(snap);
+        AppendSnapshot(snap);
+        ViewModel.Show(snap, null);   // the counter says whether queries wait; the grants are read on Refresh
     }
 
     private int SelectedIntervalSec => CmbInterval.SelectedIndex switch { 0 => 5, 1 => 10, 2 => 30, 3 => 60, _ => 10 };
@@ -340,18 +322,17 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
     {
         static double Gb(long kb) => Math.Round(kb / 1_048_576.0, 2);
         var reading = _last is { } s ? $"SQL Server {Gb(s.TotalServerMemoryKB):0.##} GB, grants {Gb(s.GrantedWorkspaceMemoryKB):0.##} GB · " : "";
-        TrendSection.FoldedSummary = reading + (_timer.IsEnabled ? $"every {_intervalSec} s" : "paused: Resume (▶) in the top bar trends it");
+        TrendSection.FoldedSummary = reading + (!IsPaused ? $"every {_intervalSec} s" : "paused: Resume (▶) in the top bar trends it");
     }
 
     // What Start did: read every interval, counting down to the next read.
     private void StartReading()
     {
-        if (_timer.IsEnabled)
+        if (!IsPaused)
             return;
         _intervalSec = SelectedIntervalSec;
-        _countdown = _intervalSec;
-        TxtCountdown.Text = $"{_countdown}s";
-        _timer.Start();
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
+        ViewModel.SetPaused(false);
         ShowTrendSummary();
         _shell.ReportContextChanged(this);
     }
@@ -359,26 +340,22 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
     // What Stop did.
     private void StopReading()
     {
-        if (!_timer.IsEnabled)
+        if (IsPaused)
             return;
-        TxtCountdown.Text = "--";
-        _timer.Stop();
+        ViewModel.SetPaused(true);
         ShowTrendSummary();
         _shell.ReportContextChanged(this);
     }
 
-    // Another interval: used from the next read on, while reading.
+    // Another interval: the wait for the next read starts again.
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TxtCountdown is null)
+        if (ViewModel is null)
             return;   // during InitializeComponent
         _intervalSec = SelectedIntervalSec;
-        if (_timer.IsEnabled)
-        {
-            _countdown = Math.Min(_countdown, _intervalSec);
-            TxtCountdown.Text = $"{_countdown}s";
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
+        if (!IsPaused)
             ShowTrendSummary();
-        }
         _shell.ReportContextChanged(this);
     }
 

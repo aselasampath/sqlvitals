@@ -104,6 +104,7 @@ public partial class ActivityLogView : UserControl
     }
 
     /// <summary>Reads the log again, showing a failure in the view rather than throwing.</summary>
+    [ReportsItsErrors]
     public async Task RefreshQuietlyAsync()
     {
         try

@@ -2,7 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
@@ -71,10 +70,10 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
 
     // A change is queued to the history writer, which saves it within moments; reading straight
     // away could miss it, so the list is re-read shortly after.
-    private readonly DispatcherTimer _reloadSoon = new() { Interval = TimeSpan.FromSeconds(1) };
+    private static readonly TimeSpan ReloadDelay = TimeSpan.FromSeconds(1);
 
     // Keeps the durations of active alerts moving while nothing else changes.
-    private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(30) };
+    private static readonly TimeSpan DurationsInterval = TimeSpan.FromSeconds(30);
 
     // Set once the choices are filled in, so filling them doesn't start a load.
     private readonly bool _ready;
@@ -82,16 +81,13 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     // Bumped per load; a slower, earlier load's result is dropped.
     private int _loadVersion;
 
-    // The top bar: what this page read, what went wrong, and its kind or window (#166).
-    private readonly IShellStatus _shell;
-
     /// <param name="connectionId">The connection to filter on at first, e.g. the one a notification was about; null for all.</param>
     /// <param name="settings">The connections, and where the verdict's fold is remembered.</param>
     /// <param name="navigator">Where Investigate goes; the app's (#182) when null.</param>
+    /// <remarks>It reports to the top bar through its view model only (#169), which reads it.</remarks>
     public AlertsPage(MonitoringManager monitoring, ConnectionSettingsService settings, Guid? connectionId = null,
-                      INavigator? navigator = null, IShellStatus? shell = null)
+                      INavigator? navigator = null)
     {
-        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _monitoring = monitoring;
         _settings   = settings;
         _navigator  = navigator ?? CompositionRoot.Get<INavigator>();
@@ -99,6 +95,8 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
 
         ViewModel = new AlertsViewModel(_navigator, activeOnly: () => CmbStatus.SelectedIndex = ActiveOnlyIndex);
         ViewModel.Attach(Shell);
+        // Both on the view model's timer (#169), while the page is shown.
+        ViewModel.ReadEvery(DurationsInterval);
         Shell.Folds = settings;
         DrawerParts.FollowSelection(AlertsGrid, ShowAlert, _drawer.Clear);
 
@@ -118,21 +116,15 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         AlertsGrid.MouseDoubleClick += AlertsGrid_MouseDoubleClick;
         AlertsGrid.PreviewKeyDown   += AlertsGrid_PreviewKeyDown;
 
-        _reloadSoon.Tick += async (_, _) => { _reloadSoon.Stop(); await RefreshQuietlyAsync(); };
-        _tick.Tick       += async (_, _) => await RefreshQuietlyAsync();
-
         Loaded += (_, _) =>
         {
             _monitoring.AlertsChanged     += OnAlertsChanged;
             _monitoring.MonitoringChanged += OnMonitoringChanged;
-            _tick.Start();
         };
         Unloaded += (_, _) =>
         {
             _monitoring.AlertsChanged     -= OnAlertsChanged;
             _monitoring.MonitoringChanged -= OnMonitoringChanged;
-            _tick.Stop();
-            _reloadSoon.Stop();
         };
 
         _ready = true;
@@ -144,14 +136,14 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     private async void AlertsGrid_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (e.OriginalSource is TextBlock { DataContext: AlertRow row } text && CellOf(text)?.Column == InvestigateColumn)
-            await InvestigateAsync(row.Alert);
+            await ViewModel.ReportErrorsOf(InvestigateAsync(row.Alert));
     }
 
     private async void AlertsGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         // Only a row: not the header or the scroll bar.
         if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(AlertsGrid, source) is DataGridRow { Item: AlertRow row })
-            await InvestigateAsync(row.Alert);
+            await ViewModel.ReportErrorsOf(InvestigateAsync(row.Alert));
     }
 
     private async void AlertsGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -159,7 +151,7 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         if (e.Key != System.Windows.Input.Key.Enter || AlertsGrid.SelectedItem is not AlertRow row)
             return;
         e.Handled = true;
-        await InvestigateAsync(row.Alert);
+        await ViewModel.ReportErrorsOf(InvestigateAsync(row.Alert));
     }
 
     private static DataGridCell? CellOf(DependencyObject? element)
@@ -266,11 +258,7 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     }
 
     // Monitoring started or stopped: whether alerts are raised changed, which the verdict says.
-    private void OnMonitoringChanged()
-    {
-        _reloadSoon.Stop();
-        _reloadSoon.Start();
-    }
+    private void OnMonitoringChanged() => ViewModel.ReadSoon(ReloadDelay);
 
     // "in the last 7 days", "in the history kept".
     private static string InPeriod(Period period) =>
@@ -300,31 +288,13 @@ public partial class AlertsPage : Page, ICodeBehindPage, IPageContext, IDetailsS
 
     // ── Live updates ──────────────────────────────────────────────────────────
 
-    private void OnAlertsChanged(Guid connectionId, IReadOnlyList<AlertChange> changes)
-    {
-        _reloadSoon.Stop();
-        _reloadSoon.Start();
-    }
+    private void OnAlertsChanged(Guid connectionId, IReadOnlyList<AlertChange> changes) => ViewModel.ReadSoon(ReloadDelay);
 
     private async void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        // A read in progress has the old filter: read again after it. The view model reports how it went.
         if (_ready && IsLoaded)
-            await RefreshQuietlyAsync();
-    }
-
-    // The top bar's Refresh reports errors through the view model; a load started here reports its own.
-    private async Task RefreshQuietlyAsync()
-    {
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Alerts: load failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-        }
+            await ViewModel.RereadAsync();
     }
 
     /// <summary>One alert as the grid shows it; times on this PC's clock.</summary>

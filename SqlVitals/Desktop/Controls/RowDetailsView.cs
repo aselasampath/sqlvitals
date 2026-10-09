@@ -140,8 +140,8 @@ public sealed class RowDetailsView : StackPanel
             _owner  = owner;
             _plan   = plan;
             Heading = DrawerParts.Heading(plan.Heading);
-            _show   = DrawerParts.Button("Show the plan", async () => await ShowAsync(), "Read the plan and draw it here");
-            _window = DrawerParts.Button("Open in window", async () => await OpenWindowAsync(),
+            _show   = DrawerParts.Button("Show the plan", ShowAsync, "Read the plan and draw it here");
+            _window = DrawerParts.Button("Open in window", OpenWindowAsync,
                                          "Open the plan in its own window, to keep it beside the grid or on another monitor");
             Panel.Children.Add(Heading);
             Panel.Children.Add(DrawerParts.Row(_show, _window));

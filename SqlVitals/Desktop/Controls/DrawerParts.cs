@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Controls;
@@ -45,6 +46,27 @@ internal static class DrawerParts
         var button = new Button { Content = text, Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 8, 6), ToolTip = toolTip };
         button.SetResourceReference(FrameworkElement.StyleProperty, "SecondaryButton");
         button.Click += (_, _) => click();
+        return button;
+    }
+
+    /// <summary>
+    /// A button whose click reads or opens something: the click awaits it, and an error it didn't
+    /// handle itself is logged (#169) rather than lost in an <c>async void</c>.
+    /// </summary>
+    public static Button Button(string text, Func<Task> click, string toolTip)
+    {
+        var button = Button(text, () => { }, toolTip);
+        button.Click += async (_, _) =>
+        {
+            try
+            {
+                await click();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error($"Details drawer: {text} failed", ex);
+            }
+        };
         return button;
     }
 

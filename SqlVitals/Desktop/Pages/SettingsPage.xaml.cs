@@ -176,7 +176,7 @@ public partial class SettingsPage : Page, IPageContext
     {
         if (_isSelecting || sender is not RadioButton { Tag: SettingsCategory category })
             return;
-        await OpenAsync(new SettingsLocation(category));
+        await ViewModel.ReportErrorsOf(OpenAsync(new SettingsLocation(category)));
     }
 
     private void MenuItem_KeyDown(object sender, KeyEventArgs e)
