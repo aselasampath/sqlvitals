@@ -290,8 +290,9 @@ public sealed class MonitoringManagerTests : IDisposable
         var monitoring = CreateHot();
         using var chat = new ChatNotificationService(sender, "DBA-PC01", _ => { }, time: new SteppingTime());
         chat.Apply(store);
-        monitoring.AlertsRaised += chat.OnAlertsRaised;
-        monitoring.AllStopped   += chat.OnAllStopped;
+        monitoring.AlertsRaised    += chat.OnAlertsRaised;
+        monitoring.AllStopped      += chat.OnAllStopped;
+        monitoring.WatchingChanged += chat.OnWatchingChanged;
         monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
         Pump(TimeSpan.FromSeconds(1.5));
         // Pump drives this thread's dispatcher and the chat queue finishes on the thread pool, so the
@@ -304,10 +305,146 @@ public sealed class MonitoringManagerTests : IDisposable
         monitoring.Dispose();
         chat.Shutdown(TimeSpan.FromSeconds(5));
 
-        Assert.Equal(2, sender.Json.Count);
-        Assert.Contains("Critical: CPU on", sender.Json.First());
-        Assert.Contains("stopped monitoring", sender.Json.Last());
-        Assert.Contains("with 1 alert still active (CPU). No further updates will be posted.", sender.Json.Last());
+        Assert.Equal(3, sender.Json.Count);
+        Assert.Contains("SqlVitals on DBA-PC01 started watching sqlHot.", sender.Json.First());
+        Assert.Contains("Critical: CPU on", sender.Json.ElementAt(1));
+        Assert.Contains("SqlVitals on DBA-PC01 stopped watching sqlHot because the app was closed.", sender.Json.Last());
+        Assert.Contains("sqlHot had 1 alert still active: CPU.", sender.Json.Last());
+    }
+
+    // ── What's watched (#170) ─────────────────────────────────────────────────
+
+    private (MonitoringManager Monitoring, List<WatchChange> Heard) Watched()
+    {
+        var monitoring = Create();
+        var heard = new List<WatchChange>();
+        monitoring.WatchingChanged += heard.Add;
+        return (monitoring, heard);
+    }
+
+    [Fact]
+    public void StartingAndStopping_SayWhatIsWatched_AndWhy()
+    {
+        var a = Conn("sqlA", background: true);
+        var b = Conn("sqlB", background: true);
+        var store = Store(true, a, b);
+        var (monitoring, heard) = Watched();
+        using (monitoring)
+        {
+            monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
+            monitoring.Stop(a.Id, ActivitySources.LiveMetrics);
+            store.StartMonitoringAutomatically = false;
+            monitoring.Sync(store, ActivitySources.Settings);
+        }
+
+        Assert.Equal(3, heard.Count);
+        Assert.Equal(["sqlA", "sqlB"], heard[0].Started.Select(s => s.Name));
+        Assert.All(heard[0].Started, s => Assert.Null(s.LastWatchedUtc)); // a new history
+        Assert.Equal([(a.Id, WatchStop.StoppedByUser)], heard[1].Stopped.Select(s => (s.Id, s.Why)));
+        Assert.Equal([(b.Id, WatchStop.AutomaticOff)], heard[2].Stopped.Select(s => (s.Id, s.Why)));
+    }
+
+    [Fact]
+    public void SwitchingAwayFromAConnectionNotInTheBackground_StopsWatchingIt()
+    {
+        var a = Conn("sqlA");
+        var b = Conn("sqlB");
+        var store = Store(true, a, b);
+        var (monitoring, heard) = Watched();
+        using (monitoring)
+        {
+            monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
+            store.ActiveConnectionId = b.Id;
+            monitoring.Sync(store, ActivitySources.ServerMenu);
+        }
+
+        Assert.Equal([(a.Id, WatchStop.BackgroundOff)], heard[1].Stopped.Select(s => (s.Id, s.Why)));
+        Assert.Equal([b.Id], heard[1].Started.Select(s => s.Id));
+    }
+
+    [Fact]
+    public void StartingAgain_SaysWhenItWasLastWatched()
+    {
+        var a = Conn("sqlA");
+        var (monitoring, heard) = Watched();
+        using (monitoring)
+        {
+            monitoring.Sync(Store(true, a), ActivitySources.AutomaticAtStartup);
+            var before = DateTime.UtcNow;
+            monitoring.Stop(a.Id, ActivitySources.LiveMetrics);
+            var after = DateTime.UtcNow;
+            monitoring.Start(a.Id, ActivitySources.LiveMetrics);
+
+            var again = Assert.Single(heard[2].Started);
+            Assert.InRange(again.LastWatchedUtc!.Value, before, after);
+        }
+    }
+
+    [Fact]
+    public void AfterARestart_TheGapComesFromTheHistory()
+    {
+        var a = Conn("sqlA");
+        using (var first = Create())
+        {
+            first.Sync(Store(true, a), ActivitySources.AutomaticAtStartup);
+            Pump(TimeSpan.FromSeconds(1.5)); // one sample, so one score in the history
+        }
+
+        var (monitoring, heard) = Watched();
+        using (monitoring)
+            monitoring.Sync(Store(true, a), ActivitySources.AutomaticAtStartup);
+
+        var again = Assert.Single(heard[0].Started);
+        Assert.NotNull(again.LastWatchedUtc);
+        Assert.InRange(DateTime.UtcNow - again.LastWatchedUtc.Value, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public void EditingAWatchedConnection_RestartsIt_WithoutStoppingWatching()
+    {
+        var a = Conn("sqlA");
+        var store = Store(true, a);
+        var (monitoring, heard) = Watched();
+        using (monitoring)
+        {
+            monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
+            a.Server = "sqlA2";
+            monitoring.Sync(store, ActivitySources.Settings);
+        }
+
+        Assert.Empty(heard[1].Started);
+        Assert.Empty(heard[1].Stopped);
+        Assert.Equal([a.Id], heard[1].Restarted);
+    }
+
+    [Fact]
+    public void RemovingAWatchedConnection_SaysSo_WithItsName()
+    {
+        var a = Conn("sqlA", background: true);
+        var b = Conn("sqlB", background: true);
+        var store = Store(true, a, b);
+        var (monitoring, heard) = Watched();
+        using (monitoring)
+        {
+            monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
+            store.Connections.Remove(b);
+            monitoring.Sync(store, ActivitySources.Settings);
+        }
+
+        Assert.Equal([(b.Id, "sqlB", WatchStop.ConnectionRemoved)], heard[1].Stopped.Select(s => (s.Id, s.Name, s.Why)));
+    }
+
+    [Fact]
+    public void ASyncThatChangesNothing_SaysNothing_AndExitIsLeftToAllStopped()
+    {
+        var a = Conn("sqlA");
+        var store = Store(true, a);
+        var (monitoring, heard) = Watched();
+        monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
+        monitoring.Sync(store, ActivitySources.Settings);
+        monitoring.Dispose();
+
+        Assert.Single(heard);
     }
 
     private sealed class RecordingSender : IWebhookSender

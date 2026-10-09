@@ -1,5 +1,6 @@
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Services;
 
@@ -15,7 +16,8 @@ namespace SqlVitals.Desktop.Services;
 /// #120: the channels and Send test message. #121: posting new and critical alerts. #122: pacing,
 /// retries, and the Failing status with one Windows notification. #123: Back to normal, stopped
 /// monitoring, and a few seconds at Exit to send what's waiting (<see cref="BeginExit"/>,
-/// <see cref="Shutdown"/>).
+/// <see cref="Shutdown"/>). #170: "stopped watching" whenever servers stop being watched (Stop,
+/// a setting, Exit, Windows ending, the PC going to sleep) and "watching again", with the gap.
 ///
 /// Used on the UI thread; the queues report back to it through its synchronization context.
 /// </summary>
@@ -37,6 +39,13 @@ public sealed class ChatNotificationService : IDisposable
     // Set by BeginExit; read by the queues' workers.
     private volatile bool _exiting;
     private bool _stopsQueued;
+    private WatchStop _exitWhy = WatchStop.AppExit;
+
+    // The connections being watched now, by name (#170), from MonitoringManager.WatchingChanged.
+    private readonly Dictionary<Guid, string> _watching = new();
+
+    // When the PC went to sleep, until it wakes (#170).
+    private DateTime? _asleepSinceUtc;
 
     // Replaced as a whole by Apply, so the queues' workers can read it at any time.
     private volatile IReadOnlyList<ChatChannel> _channels = [];
@@ -198,8 +207,8 @@ public sealed class ChatNotificationService : IDisposable
         return names.Count == 0 ? "no connections (none are chosen)" : ChatMessageBuilder.List(names);
     }
 
-    /// <summary>Completes once every queued message has been sent or dropped. For tests.</summary>
-    internal Task WhenIdleAsync() => Task.WhenAll(_queues.Values.Select(q => q.WhenIdleAsync()).ToList());
+    /// <summary>Completes once every queued message has been sent or dropped: before the PC sleeps (#170), and in tests.</summary>
+    public Task WhenIdleAsync() => Task.WhenAll(_queues.Values.Select(q => q.WhenIdleAsync()).ToList());
 
     private ChannelQueue Queue(Guid channelId)
     {
@@ -231,7 +240,7 @@ public sealed class ChatNotificationService : IDisposable
     private ChannelRouter Router(Guid channelId)
     {
         if (!_routers.TryGetValue(channelId, out var router))
-            _routers[channelId] = router = new ChannelRouter { CollectingStops = _exiting };
+            _routers[channelId] = router = new ChannelRouter();
         return router;
     }
 
@@ -269,21 +278,117 @@ public sealed class ChatNotificationService : IDisposable
     }
 
     /// <summary>
-    /// SqlVitals is exiting for real (#123). Call before <see cref="MonitoringManager.Dispose"/>
-    /// ends the active alerts: their stopped monitoring ends then collect into one message per
-    /// channel (F5), and nothing more reaches the status or the tray, which are closing.
+    /// SqlVitals started or stopped watching connections (<see cref="MonitoringManager.WatchingChanged"/>,
+    /// #170): queues each channel's one stopped watching message for the connections it takes,
+    /// with the alerts it was told about that were still active, and one watching again message
+    /// with how long each wasn't watched. A connection restarted with new details posts nothing:
+    /// its alerts are raised again by its new tracker if they're still happening.
     /// </summary>
-    public void BeginExit()
+    public void OnWatchingChanged(WatchChange change)
     {
+        foreach (var id in change.Restarted)
+            foreach (var router in _routers.Values)
+                router.TakeStops(id);
+
+        foreach (var stop in change.Stopped)
+            _watching.Remove(stop.Id);
+        foreach (var start in change.Started)
+            _watching[start.Id] = start.Name;
+
+        PostStopped(change.Stopped, _time.GetUtcNow().UtcDateTime);
+        PostWatching(change.Started);
+    }
+
+    /// <summary>
+    /// The PC is going to sleep (#170): each channel is told SqlVitals stopped watching, since
+    /// nothing is collected while it sleeps. Call on the UI thread, then give the queues a moment
+    /// (<see cref="WhenIdleAsync"/>) before Windows suspends. What isn't sent by then goes when
+    /// the PC wakes, with the time it stopped.
+    /// </summary>
+    public void OnGoingToSleep()
+    {
+        if (_exiting || _asleepSinceUtc is not null)
+            return;
+        var now = _time.GetUtcNow().UtcDateTime;
+        _asleepSinceUtc = now;
+        PostStopped(_watching.Select(w => new StoppedWatching(w.Key, w.Value, WatchStop.Sleep)).ToList(), now);
+    }
+
+    /// <summary>
+    /// The PC woke up (#170): each channel is told SqlVitals is watching again, after how long.
+    /// Nothing when SqlVitals didn't hear the PC go to sleep. Call on the UI thread.
+    /// </summary>
+    public void OnWokeUp()
+    {
+        if (_exiting || _asleepSinceUtc is not { } since)
+            return;
+        _asleepSinceUtc = null;
+        PostWatching(_watching.Select(w => new WatchedConnection(w.Key, w.Value, since)).ToList());
+    }
+
+    // One stopped watching message per channel that takes any of these connections, or was told
+    // about one of their alerts (ends follow starts, even after the channel's filters changed).
+    private void PostStopped(IReadOnlyList<StoppedWatching> stopped, DateTime nowUtc)
+    {
+        if (stopped.Count == 0)
+            return;
+        foreach (var channel in _channels.Where(c => c.Enabled))
+        {
+            try
+            {
+                var router  = Router(channel.Id);
+                var servers = stopped
+                    .Select(s => new StoppedServer(s, router.TakeStops(s.Id)))
+                    .Where(s => channel.Includes(s.Stop.Id) || s.ActiveAlerts.Count > 0)
+                    .ToList();
+                if (servers.Count > 0)
+                    Queue(channel.Id).Enqueue(ChatMessageBuilder.StoppedWatching(servers, _pcName, nowUtc));
+            }
+            catch (Exception ex)
+            {
+                _log($"Chat \"{channel.Name}\": couldn't write the stopped watching message ({ex.GetType().Name})");
+            }
+        }
+    }
+
+    // One watching again message per channel that takes any of these connections.
+    private void PostWatching(IReadOnlyList<WatchedConnection> started)
+    {
+        if (started.Count == 0)
+            return;
+        var now = _time.GetUtcNow().UtcDateTime;
+        foreach (var channel in _channels.Where(c => c.Enabled))
+        {
+            try
+            {
+                var servers = started.Where(s => channel.Includes(s.Id)).ToList();
+                if (servers.Count > 0)
+                    Queue(channel.Id).Enqueue(ChatMessageBuilder.WatchingAgain(servers, _pcName, now));
+            }
+            catch (Exception ex)
+            {
+                _log($"Chat \"{channel.Name}\": couldn't write the watching again message ({ex.GetType().Name})");
+            }
+        }
+    }
+
+    /// <summary>
+    /// SqlVitals is exiting for real (#123): Exit, or Windows shutting down or signing out (#170).
+    /// Call before <see cref="MonitoringManager.Dispose"/> ends the active alerts; from then on,
+    /// nothing more reaches the status or the tray, which are closing.
+    /// </summary>
+    public void BeginExit(WatchStop why = WatchStop.AppExit)
+    {
+        if (!_exiting)
+            _exitWhy = why;
         _exiting = true;
-        foreach (var router in _routers.Values)
-            router.CollectingStops = true;
     }
 
     /// <summary>
     /// Every connection has stopped (<see cref="MonitoringManager.AllStopped"/>, at Exit): queues
-    /// each channel's one stopped monitoring message, and hurries every queue: a message waiting
-    /// to retry is tried once straight away, and nothing is retried any more. Runs once; after
+    /// each channel's one stopped watching message, saying why, with the alerts it was told about
+    /// that were still active (F5, #170). Then hurries every queue: a message waiting to retry is
+    /// tried once straight away, and nothing is retried any more. Runs once; after
     /// <see cref="BeginExit"/> only.
     /// </summary>
     public void OnAllStopped()
@@ -292,18 +397,11 @@ public sealed class ChatNotificationService : IDisposable
             return;
         _stopsQueued = true;
 
-        foreach (var channel in _channels.Where(c => c.Enabled))
-        {
-            try
-            {
-                if (_routers.TryGetValue(channel.Id, out var router) && router.TakeStops(_pcName) is { } stopped)
-                    Queue(channel.Id).Enqueue(stopped);
-            }
-            catch (Exception ex)
-            {
-                _log($"Chat \"{channel.Name}\": couldn't write the stopped monitoring message ({ex.GetType().Name})");
-            }
-        }
+        // Asleep, the channels were told already; a message about the exit would say it twice.
+        if (_asleepSinceUtc is null)
+            PostStopped(_watching.Select(w => new StoppedWatching(w.Key, w.Value, _exitWhy)).ToList(),
+                        _time.GetUtcNow().UtcDateTime);
+        _watching.Clear();
 
         foreach (var queue in _queues.Values)
             queue.Hurry();

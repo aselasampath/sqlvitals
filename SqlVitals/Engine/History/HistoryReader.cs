@@ -282,6 +282,22 @@ public sealed class HistoryReader(string path)
         return row is null ? null : new ScoreHistoryPoint(HistoryStore.FromEpochMs((long)row.captured_utc), (int)(long)row.score, true);
     }
 
+    /// <summary>
+    /// When one connection was last watched: its last health score, reachable or not, since every
+    /// sample stores one (#170). Null when it has none, or the file is from before schema 5.
+    /// </summary>
+    public DateTime? ReadLastSampleTime(Guid connectionId)
+    {
+        using var conn = OpenOrNull(out var version);
+        if (conn is null || version < 5)
+            return null;
+
+        var last = conn.ExecuteScalar<long?>(
+            "SELECT MAX(captured_utc) FROM health_scores WHERE connection_id = @connectionId",
+            new { connectionId = connectionId.ToString("D") });
+        return last is { } ms ? HistoryStore.FromEpochMs(ms) : null;
+    }
+
     /// <summary>The most activity log rows <see cref="ReadActivity"/> returns.</summary>
     public const int MaxActivityRows = 10_000;
 

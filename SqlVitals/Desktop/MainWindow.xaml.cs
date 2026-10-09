@@ -2,10 +2,12 @@ using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
@@ -213,6 +215,8 @@ public partial class MainWindow : Window
         // Separate from the Windows notification: muting a connection doesn't stop its channels (#121).
         Monitoring.AlertsRaised        += Chat.OnAlertsRaised;
         Monitoring.AllStopped          += Chat.OnAllStopped;
+        // "Stopped watching" and "watching again" (#170); before the first Sync, which starts some.
+        Monitoring.WatchingChanged     += Chat.OnWatchingChanged;
         SyncConnections(store, ActivitySources.AutomaticAtStartup);
 
         Loaded += async (_, _) =>
@@ -709,11 +713,35 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    // Raised on a SystemEvents thread; OnResumed is thread-safe.
+    /// <summary>How long the PC's sleep waits for the chat channels' "stopped watching" (#170).</summary>
+    private static readonly TimeSpan SleepTime = TimeSpan.FromSeconds(2);
+
+    // Raised on a SystemEvents thread; OnResumed is thread-safe, the rest runs on the UI thread.
+    // Going to sleep waits here, holding Windows back up to SleepTime, so the channels hear that
+    // nothing is watched before the network goes; what isn't sent goes when the PC wakes.
     private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
     {
-        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
-            Chat.OnResumed();
+        try
+        {
+            if (e.Mode == Microsoft.Win32.PowerModes.Suspend)
+            {
+                var waited = System.Diagnostics.Stopwatch.StartNew();
+                Dispatcher.Invoke(Chat.OnGoingToSleep, DispatcherPriority.Send, CancellationToken.None, SleepTime);
+                var left = SleepTime - waited.Elapsed;
+                if (left > TimeSpan.Zero)
+                    Chat.WhenIdleAsync().Wait(left);
+            }
+            else if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+            {
+                Chat.OnResumed();
+                Dispatcher.BeginInvoke(Chat.OnWokeUp);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Nothing here may stop the PC sleeping, or reach SystemEvents' thread.
+            AppLog.Error("Chat: couldn't tell the channels the PC is sleeping or waking", ex);
+        }
     }
 
     // Once each time a chat channel starts failing, even while the window is hidden, and whatever
@@ -749,12 +777,17 @@ public partial class MainWindow : Window
         // A static event: it would keep this window alive.
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
 
-        // Background collectors hold no server-side state; just stop them polling. Their alerts'
-        // ends reach the chat channels as one "stopped monitoring" message each, which send while
-        // the history is flushed; then whatever is still waiting gets the rest of a few seconds
-        // (#123). Closing to the notification area doesn't come here.
+        // Background collectors hold no server-side state; just stop them polling. Each chat
+        // channel gets one "stopped watching" message, saying why and naming the alerts still
+        // active, which sends while the history is flushed; then whatever is still waiting gets
+        // the rest of a few seconds (#123, #170). Closing to the notification area doesn't come here.
         var exitStarted = System.Diagnostics.Stopwatch.StartNew();
-        Chat.BeginExit();
+        Chat.BeginExit(((App)Application.Current).SessionEndingReason switch
+        {
+            ReasonSessionEnding.Shutdown => WatchStop.WindowsShutdown,
+            ReasonSessionEnding.Logoff   => WatchStop.WindowsSignOut,
+            _                            => WatchStop.AppExit,
+        });
         Monitoring.Dispose();
         Chat.Shutdown(ChatNotificationService.ExitTime - exitStarted.Elapsed);
         Chat.Dispose();

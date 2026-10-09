@@ -15,8 +15,9 @@ namespace SqlVitals.Engine.ChatNotifications;
 /// <item>An alert <b>getting worse</b> posts nothing.</item>
 /// <item>An alert <b>ending</b> is posted only when the channel was told about it, even if the
 /// channel's filters changed since: ends follow starts. Back to normal is posted when the
-/// channel has <see cref="ChatChannel.PostEnds"/> on. Monitoring stopped is posted either way,
-/// as one message for the connection's alerts, because it says no more updates are coming.</item>
+/// channel has <see cref="ChatChannel.PostEnds"/> on. An end because monitoring stopped is kept
+/// instead (<see cref="TakeStops"/>), for the chat service's one stopped watching message, which
+/// lists the alerts still active (#123, #170).</item>
 /// </list>
 /// Nothing is remembered across restarts, so an alert still happening after one is posted again
 /// when a new tracker raises it.
@@ -32,18 +33,12 @@ public sealed class ChannelRouter
     // a removed connection's name is forgotten before its session stops and ends them (F8).
     private readonly Dictionary<Guid, string> _told = new();
 
-    // Stopped ends kept at Exit for one message (see CollectingStops).
-    private readonly List<StoppedConnection> _stops = new();
+    // Alerts the channel was told about that ended because monitoring stopped, by connection,
+    // until the chat service takes them for its stopped watching message.
+    private readonly Dictionary<Guid, List<Alert>> _stops = new();
 
     /// <summary>How many alerts the channel was told about that haven't ended.</summary>
     public int ToldCount => _told.Count;
-
-    /// <summary>
-    /// SqlVitals is exiting (#123, F5): the stopped monitoring ends of every connection are kept
-    /// for one message, <see cref="TakeStops"/>, instead of one per connection, so a channel's
-    /// last word fits in the few seconds SqlVitals has left to send.
-    /// </summary>
-    public bool CollectingStops { get; set; }
 
     /// <summary>The messages to post for one sample's changes of one connection: none, or one of each kind.</summary>
     /// <param name="connectionName">The connection's name now; null when it's no longer saved.</param>
@@ -52,7 +47,6 @@ public sealed class ChannelRouter
     {
         var raised    = new List<RaisedAlert>();
         var recovered = new List<Alert>();
-        var stopped   = new List<Alert>();
         string? toldName = null;
 
         foreach (var (alert, kind) in changes)
@@ -76,7 +70,7 @@ public sealed class ChannelRouter
                 case AlertChangeKind.Ended when _told.Remove(alert.Id, out var name):
                     toldName ??= name;
                     if (alert.EndReason == AlertEndReason.MonitoringStopped)
-                        stopped.Add(alert);
+                        (_stops.TryGetValue(connectionId, out var stops) ? stops : _stops[connectionId] = []).Add(alert);
                     else if (channel.PostEnds)
                         recovered.Add(alert);
                     break;
@@ -87,32 +81,19 @@ public sealed class ChannelRouter
         if (raised.Count > 0)
             messages.Add(ChatMessageBuilder.Raised(connectionName ?? DeletedConnection, raised, pcName));
 
-        var endedName = connectionName ?? toldName ?? DeletedConnection;
         if (recovered.Count > 0)
-            messages.Add(ChatMessageBuilder.Recovered(endedName, recovered, pcName));
-        if (stopped.Count > 0)
-        {
-            var connection = new StoppedConnection(endedName, stopped);
-            if (CollectingStops)
-                _stops.Add(connection);
-            else
-                messages.Add(ChatMessageBuilder.Stopped([connection], pcName));
-        }
+            messages.Add(ChatMessageBuilder.Recovered(connectionName ?? toldName ?? DeletedConnection, recovered, pcName));
         return messages;
     }
 
     /// <summary>
-    /// The one stopped monitoring message for the connections collected at Exit, or null when the
-    /// channel wasn't told about any alert that was still active.
+    /// The alerts of a connection the channel was told about that ended because its monitoring
+    /// stopped, since they were last taken; empty when there were none. Taken when SqlVitals
+    /// stops watching it, or dropped when it only restarted with new details: a new tracker
+    /// raises them again if they're still happening.
     /// </summary>
-    public ChatMessage? TakeStops(string pcName)
-    {
-        if (_stops.Count == 0)
-            return null;
-        var message = ChatMessageBuilder.Stopped(_stops.ToList(), pcName);
-        _stops.Clear();
-        return message;
-    }
+    public IReadOnlyList<Alert> TakeStops(Guid connectionId) =>
+        _stops.Remove(connectionId, out var stops) ? stops : [];
 
     /// <summary>Forgets every alert, when the channel is turned off.</summary>
     public void Forget()

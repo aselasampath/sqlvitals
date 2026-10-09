@@ -54,10 +54,10 @@ public sealed record ChatMessage(
     public ChatDigest? Digest { get; init; }
 
     /// <summary>
-    /// Whether it may be folded into a summary when the channel falls behind (#122). A stopped
-    /// monitoring message never is: "no further updates will be posted" mustn't become a count.
+    /// Whether it may be folded into a summary when the channel falls behind (#122). A stopped or
+    /// watching again message never is (#123, #170): "no alerts will be posted" mustn't become a count.
     /// </summary>
-    public bool CanFold => Digest?.Kind != ChatMessageKind.Stopped;
+    public bool CanFold => Digest?.Kind is not (ChatMessageKind.Stopped or ChatMessageKind.Watching);
 }
 
 /// <summary>What a message is about, for a summary it's folded into.</summary>
@@ -69,8 +69,11 @@ public enum ChatMessageKind
     /// <summary>Alerts back to normal (#123).</summary>
     Recovered,
 
-    /// <summary>SqlVitals stopped monitoring, with alerts still active (#123). Never folded.</summary>
+    /// <summary>SqlVitals stopped watching servers (#123, #170). Never folded.</summary>
     Stopped,
+
+    /// <summary>SqlVitals is watching servers again (#170). Never folded.</summary>
+    Watching,
 }
 
 /// <summary>
@@ -86,8 +89,11 @@ public sealed record ChatDigest(ChatMessageKind Kind, string Connection, IReadOn
 /// </param>
 public sealed record RaisedAlert(Alert Alert, bool NowCritical = false);
 
-/// <summary>A connection SqlVitals stopped monitoring, and the alerts a channel was told about that were still active (#123).</summary>
-public sealed record StoppedConnection(string Connection, IReadOnlyList<Alert> Alerts);
+/// <summary>
+/// A server SqlVitals stopped watching, and the alerts a channel was told about that were still
+/// active then (#123, #170).
+/// </summary>
+public sealed record StoppedServer(StoppedWatching Stop, IReadOnlyList<Alert> ActiveAlerts);
 
 /// <summary>Builds the messages SqlVitals posts, in the same words as the Alerts page and the Windows notifications.</summary>
 public static class ChatMessageBuilder
@@ -281,45 +287,139 @@ public static class ChatMessageBuilder
     }
 
     /// <summary>
-    /// The message when SqlVitals stops monitoring connections that had alerts the channel was
-    /// told about (#123): Stop, the connection edited or removed, or Exit. It replaces their end
-    /// messages, and is never folded into a summary, because it says no more updates are coming.
-    /// One connection normally; at Exit, every connection a channel was told about, in one
-    /// message, so it fits in the few seconds SqlVitals has to send it (F5).
+    /// Why SqlVitals stopped watching, to follow "because": "the PC is going to sleep" (#170).
     /// </summary>
-    public static ChatMessage Stopped(IReadOnlyList<StoppedConnection> connections, string pcName)
+    public static string Why(WatchStop why) => why switch
     {
-        if (connections.Count == 0)
-            throw new ArgumentException("There's nothing to post.", nameof(connections));
+        WatchStop.StoppedByUser     => "monitoring was stopped in SqlVitals",
+        WatchStop.AutomaticOff      => "Start monitoring automatically was turned off",
+        WatchStop.BackgroundOff     => "another server was opened, and Monitor in background is off",
+        WatchStop.NeedsSetup        => "a saved password or sign-in is missing",
+        WatchStop.ConnectionRemoved => "the connection was removed from SqlVitals",
+        WatchStop.AppExit           => "the app was closed",
+        WatchStop.WindowsShutdown   => "Windows is shutting down",
+        WatchStop.WindowsSignOut    => "the Windows user signed out",
+        WatchStop.Sleep             => "the PC is going to sleep",
+        _                           => "of a change in SqlVitals",
+    };
 
-        static List<string> Names(StoppedConnection c) =>
-            c.Alerts.OrderByDescending(a => a.Severity).ThenBy(a => a.Indicator)
-                    .Select(a => HealthThresholds.Info(a.Indicator).Name).ToList();
+    /// <summary>
+    /// The message when SqlVitals stops watching servers a channel takes (#170): Stop, a setting,
+    /// the connection removed, Exit, Windows shutting down or signing out, or the PC going to
+    /// sleep. Says why, and lists the alerts the channel was told about that were still active
+    /// (#123): their ends aren't posted, because nobody is watching any more. One message for
+    /// everything that stopped at once, so it fits in the few seconds SqlVitals may have left to
+    /// send it (F5). Never folded into a summary.
+    /// </summary>
+    /// <param name="stoppedUtc">When it stopped, shown in each reader's own time zone: the message may arrive after the PC wakes.</param>
+    public static ChatMessage StoppedWatching(IReadOnlyList<StoppedServer> servers, string pcName, DateTime stoppedUtc)
+    {
+        if (servers.Count == 0)
+            throw new ArgumentException("There's nothing to post.", nameof(servers));
 
-        string title, text, about;
-        if (connections.Count == 1)
+        static List<string> Indicators(StoppedServer s) =>
+            s.ActiveAlerts.OrderByDescending(a => a.Severity).ThenBy(a => a.Indicator)
+                          .Select(a => HealthThresholds.Info(a.Indicator).Name).ToList();
+        static string StillActive(StoppedServer s) =>
+            (s.ActiveAlerts.Count == 1 ? "1 alert still active: " : $"{s.ActiveAlerts.Count} alerts still active: ") +
+            string.Join(", ", Indicators(s));
+
+        var names    = servers.Select(s => s.Stop.Name).ToList();
+        var oneWhy   = servers.Select(s => s.Stop.Why).Distinct().Count() == 1;
+        var because  = oneWhy ? $" because {Why(servers[0].Stop.Why)}" : "";
+        var them     = servers.Count == 1 ? "it" : "them";
+        var text     = $"SqlVitals on {pcName} stopped watching {List(names)}{because}. " +
+                       $"No alerts will be posted for {them} until SqlVitals is watching again.";
+        string title, about;
+        var lines = new List<ChatLine>();
+
+        if (servers.Count == 1)
         {
-            var (name, alerts) = (connections[0].Connection, connections[0].Alerts);
-            var still = alerts.Count == 1 ? "1 alert still active" : $"{alerts.Count} alerts still active";
-            title = $"⏹ Stopped monitoring {name}";
-            text  = $"SqlVitals on {pcName} stopped monitoring {name} with {still} ({string.Join(", ", Names(connections[0]))}). " +
-                    "No further updates will be posted.";
-            about = $"stopped monitoring {name}";
+            title = $"⏹ SqlVitals stopped watching {names[0]}";
+            about = $"stopped watching {names[0]}";
+            if (servers[0].ActiveAlerts.Count > 0)
+                text += $" {names[0]} had {StillActive(servers[0])}.";
         }
         else
         {
-            title = $"⏹ Stopped monitoring {connections.Count} connections";
-            text  = $"SqlVitals on {pcName} stopped monitoring " +
-                    List(connections.Select(c => $"{c.Connection} ({string.Join(", ", Names(c))})").ToList()) +
-                    ", with alerts still active. No further updates will be posted.";
-            about = $"stopped monitoring {connections.Count} connections";
+            title = $"⏹ SqlVitals stopped watching {servers.Count} servers";
+            about = $"stopped watching {servers.Count} servers";
+            // A line per server, when there's more to say than its name: why, when the servers
+            // stopped for different reasons, and its alerts still active.
+            if (!oneWhy || servers.Any(s => s.ActiveAlerts.Count > 0))
+                lines = servers.Take(MaxLines).Select(s => new ChatLine(
+                    ChatTone.Neutral,
+                    s.Stop.Name,
+                    string.Join("; ", new[]
+                    {
+                        oneWhy ? null : $"stopped because {Why(s.Stop.Why)}",
+                        s.ActiveAlerts.Count > 0 ? StillActive(s) : null,
+                    }.OfType<string>()))).ToList();
         }
 
-        return new ChatMessage(ChatTone.Neutral, title, text, [], SentFrom: null)
+        return new ChatMessage(ChatTone.Neutral, title, text, [new ChatFact("Stopped", "", stoppedUtc)], SentFrom: null,
+                               Fallback: text)
         {
+            Lines  = lines,
+            More   = lines.Count == 0 ? 0 : servers.Count - lines.Count,
             About  = about,
-            Digest = new ChatDigest(ChatMessageKind.Stopped, List(connections.Select(c => c.Connection).ToList()),
-                                    connections.SelectMany(Names).ToList(), Critical: false),
+            Digest = new ChatDigest(ChatMessageKind.Stopped, List(names), servers.SelectMany(Indicators).ToList(), Critical: false),
+        };
+    }
+
+    /// <summary>
+    /// The message when SqlVitals starts watching servers a channel takes (#170): at startup, when
+    /// someone presses Start, or when the PC wakes. Says how long each server wasn't watched,
+    /// from its last sample, so the team knows how long the channel's quiet meant nothing. A
+    /// server never watched before (or whose history was cleared) says so instead. Never folded.
+    /// </summary>
+    public static ChatMessage WatchingAgain(IReadOnlyList<WatchedConnection> servers, string pcName, DateTime nowUtc)
+    {
+        if (servers.Count == 0)
+            throw new ArgumentException("There's nothing to post.", nameof(servers));
+
+        static string Gap(WatchedConnection s, DateTime now) => AlertText.Duration(now - s.LastWatchedUtc!.Value);
+
+        var names  = servers.Select(s => s.Name).ToList();
+        var again  = servers.Any(s => s.LastWatchedUtc is not null);
+        var digest = new ChatDigest(ChatMessageKind.Watching, List(names), [], Critical: false);
+
+        if (servers.Count == 1)
+        {
+            var server = servers[0];
+            if (server.LastWatchedUtc is not { } last)
+            {
+                var first = $"▶ SqlVitals is watching {server.Name}";
+                return new ChatMessage(ChatTone.Good, first, $"SqlVitals on {pcName} started watching {server.Name}.", [], SentFrom: null)
+                {
+                    About  = $"watching {server.Name}",
+                    Digest = digest,
+                };
+            }
+
+            var gap   = Gap(server, nowUtc);
+            var title = $"▶ SqlVitals is watching {server.Name} again";
+            var text  = $"SqlVitals on {pcName} is watching {server.Name} again, after {gap} without monitoring.";
+            return new ChatMessage(ChatTone.Good, title, text,
+                                   [new ChatFact("Not watched for", gap), new ChatFact("Last watched", "", last)], SentFrom: null)
+            {
+                About  = $"watching {server.Name} again",
+                Digest = digest,
+            };
+        }
+
+        var many  = again ? $"▶ SqlVitals is watching {servers.Count} servers again" : $"▶ SqlVitals is watching {servers.Count} servers";
+        var says  = again ? $"SqlVitals on {pcName} is watching {List(names)} again." : $"SqlVitals on {pcName} started watching {List(names)}.";
+        var lines = servers.Take(MaxLines).Select(s => s.LastWatchedUtc is { } last
+            ? new ChatLine(ChatTone.Good, s.Name, $"not watched for {Gap(s, nowUtc)}", last)
+            : new ChatLine(ChatTone.Good, s.Name, "watched for the first time")).ToList();
+
+        return new ChatMessage(ChatTone.Good, many, says, [], SentFrom: null)
+        {
+            Lines  = again ? lines : [],
+            More   = again ? servers.Count - lines.Count : 0,
+            About  = again ? $"watching {servers.Count} servers again" : $"watching {servers.Count} servers",
+            Digest = digest,
         };
     }
 

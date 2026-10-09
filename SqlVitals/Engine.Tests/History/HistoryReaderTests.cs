@@ -301,17 +301,34 @@ public sealed class HistoryReaderTests : IDisposable
     }
 
     [Fact]
+    public void ReadLastSampleTime_IsTheLatestScore_ReachableOrNot()
+    {
+        using (var store = OpenStore())
+            store.Write(
+            [
+                new HealthScoreRecord(Conn, T0,                92, Reachable: true),
+                new HealthScoreRecord(Conn, T0.AddMinutes(5),  0,  Reachable: false),
+            ]);
+        var reader = new HistoryReader(DbPath);
+
+        Assert.Equal(T0.AddMinutes(5), reader.ReadLastSampleTime(Conn.Id));
+        Assert.Null(reader.ReadLastSampleTime(Other.Id));
+    }
+
+    [Fact]
     public void ReadScores_WithoutAFileOrFromAVersion4FileReturnsNothing()
     {
         var reader = new HistoryReader(DbPath);
         Assert.Empty(reader.ReadScores(Conn.Id, T0, T0.AddHours(1), TimeSpan.FromMinutes(1)));
         Assert.Null(reader.ReadLastReachableScore(Conn.Id, T0));
+        Assert.Null(reader.ReadLastSampleTime(Conn.Id));
 
         Directory.CreateDirectory(_dir);
         using (var raw = Raw())
             raw.Execute("PRAGMA user_version = 4; CREATE TABLE metric_samples (x);");
         Assert.Empty(reader.ReadScores(Conn.Id, T0, T0.AddHours(1), TimeSpan.FromMinutes(1)));
         Assert.Null(reader.ReadLastReachableScore(Conn.Id, T0));
+        Assert.Null(reader.ReadLastSampleTime(Conn.Id));
     }
 
     [Fact]

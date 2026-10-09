@@ -21,6 +21,9 @@ public partial class App : System.Windows.Application
     /// </summary>
     public bool IsExiting { get; set; }
 
+    /// <summary>Why Windows is ending the session, when it is: shutting down, or signing out (#170).</summary>
+    public System.Windows.ReasonSessionEnding? SessionEndingReason { get; private set; }
+
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -46,7 +49,11 @@ public partial class App : System.Windows.Application
         { IsBackground = true, Name = "SqlVitals show listener" };
         showListener.Start();
 
-        SessionEnding += (_, _) => IsExiting = true;
+        SessionEnding += (_, args) =>
+        {
+            IsExiting           = true;
+            SessionEndingReason = args.ReasonSessionEnding;
+        };
 
         // The app's services (#182, #166), before anything asks; the main window is one of them.
         var services = Services.CompositionRoot.Start();
