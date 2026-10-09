@@ -37,12 +37,17 @@ internal static class UiThread
         return dispatcher!;
     }
 
-    /// <summary>Runs a test on the UI thread, one at a time, and rethrows what it threw.</summary>
+    /// <summary>
+    /// Runs a test on the UI thread, one at a time, and rethrows what it threw. Each starts with no
+    /// main window: the first window any test shows becomes <see cref="Application.MainWindow"/>,
+    /// and a test that runs after it would otherwise see it, depending on the order tests run in.
+    /// </summary>
     public static void Run(Action test)
     {
         Exception? error = null;
         Dispatcher.Value.Invoke(() =>
         {
+            Application.Current.MainWindow = null;
             try { test(); }
             catch (Exception ex) { error = ex; }
         });
