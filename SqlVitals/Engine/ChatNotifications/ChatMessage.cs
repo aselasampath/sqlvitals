@@ -57,7 +57,7 @@ public sealed record ChatMessage(
     /// Whether it may be folded into a summary when the channel falls behind (#122). A stopped or
     /// watching again message never is (#123, #170): "no alerts will be posted" mustn't become a count.
     /// </summary>
-    public bool CanFold => Digest?.Kind is not (ChatMessageKind.Stopped or ChatMessageKind.Watching);
+    public bool CanFold => Digest?.Kind is not (ChatMessageKind.Stopped or ChatMessageKind.Watching or ChatMessageKind.Heartbeat);
 }
 
 /// <summary>What a message is about, for a summary it's folded into.</summary>
@@ -74,6 +74,12 @@ public enum ChatMessageKind
 
     /// <summary>SqlVitals is watching servers again (#170). Never folded.</summary>
     Watching,
+
+    /// <summary>
+    /// SqlVitals is still running (#170). Never folded: a check for a missing heartbeat looks for
+    /// its title.
+    /// </summary>
+    Heartbeat,
 }
 
 /// <summary>
@@ -420,6 +426,48 @@ public static class ChatMessageBuilder
             More   = again ? servers.Count - lines.Count : 0,
             About  = again ? $"watching {servers.Count} servers again" : $"watching {servers.Count} servers",
             Digest = digest,
+        };
+    }
+
+    /// <summary>
+    /// What every heartbeat's title starts with (#170), for a Teams flow or a search that checks
+    /// for one: "💓 SqlVitals heartbeat".
+    /// </summary>
+    public const string HeartbeatTitle = "💓 SqlVitals heartbeat";
+
+    /// <summary>
+    /// The heartbeat (#170): SqlVitals is running, and which of the channel's servers it's
+    /// watching. Watching none is a warning: nothing will be alerted. Says when the next one is
+    /// due, so a missing one can be noticed.
+    /// </summary>
+    /// <param name="servers">The servers being watched that the channel takes, by name.</param>
+    /// <param name="nextUtc">When the next heartbeat is due, shown in each reader's own time zone.</param>
+    public static ChatMessage Heartbeat(IReadOnlyList<string> servers, string pcName, DateTime nextUtc, HeartbeatSchedule schedule)
+    {
+        var sorted = servers.OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList();
+        var facts  = new List<ChatFact> { new("Next heartbeat", "", nextUtc), new("Schedule", schedule.Describe()) };
+
+        if (sorted.Count == 0)
+        {
+            var none = $"{HeartbeatTitle}: watching no servers";
+            return new ChatMessage(ChatTone.Warning, none,
+                                   $"SqlVitals on {pcName} is running, but isn't watching any server this channel takes, " +
+                                   "so no alerts will be posted. Start monitoring in SqlVitals.",
+                                   facts, SentFrom: null)
+            {
+                About  = "heartbeat, watching no servers",
+                Digest = new ChatDigest(ChatMessageKind.Heartbeat, "", [], Critical: false),
+            };
+        }
+
+        var shown = sorted.Count <= MaxLines
+            ? List(sorted)
+            : $"{string.Join(", ", sorted.Take(MaxLines))} and {sorted.Count - MaxLines} more";
+        var title = sorted.Count == 1 ? $"{HeartbeatTitle}: watching {sorted[0]}" : $"{HeartbeatTitle}: watching {sorted.Count} servers";
+        return new ChatMessage(ChatTone.Neutral, title, $"SqlVitals on {pcName} is running and watching {shown}.", facts, SentFrom: null)
+        {
+            About  = sorted.Count == 1 ? "heartbeat, watching 1 server" : $"heartbeat, watching {sorted.Count} servers",
+            Digest = new ChatDigest(ChatMessageKind.Heartbeat, List(sorted), [], Critical: false),
         };
     }
 

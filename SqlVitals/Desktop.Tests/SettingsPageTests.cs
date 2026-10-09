@@ -7,6 +7,7 @@ using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -162,6 +163,49 @@ public sealed class SettingsPageTests : IDisposable
         // On the screen itself (#170), not only in the wiki, and whether or not there are channels.
         Assert.Equal(System.Windows.Visibility.Visible, alerts.ChatStopsWarning.Visibility);
         Assert.StartsWith("⚠  Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed", alerts.TxtChatStopsWarning.Text);
+    });
+
+    [Fact]
+    public void AChannelsHeartbeat_IsChosenInItsForm_WithItsPingUrlMaskedOnceSaved() => UiThread.Run(() =>
+    {
+        const string ping = "https://hc-ping.com/0f3b8a5e-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
+        var page = Open(new SettingsLocation(SettingsCategory.Alerts));
+        var alerts = Assert.IsType<AlertsCategory>(page.Shown);
+        Click(alerts.BtnAddChatChannel);
+        alerts.TxtChatName.Text = "DBA team";
+        alerts.TxtChatUrl.Text  = "https://prod-27.westeurope.logic.azure.com:443/workflows/0a1b/triggers/manual/paths/invoke?sig=AbCd";
+
+        // Daily at shows the time; the steps follow the service and the schedule.
+        alerts.CmbHeartbeat.SelectedIndex = 8;
+        Assert.Equal(System.Windows.Visibility.Visible, alerts.CmbHeartbeatAt.Visibility);
+        alerts.CmbHeartbeatAt.SelectedIndex = 19; // 09:30
+        Assert.Equal(HeartbeatSchedule.DailyAt(new TimeSpan(9, 30, 0)), alerts.ChosenHeartbeat());
+        alerts.ChkHeartbeatSteps.IsChecked = true;
+        Assert.Equal(System.Windows.Visibility.Visible, alerts.PnlHeartbeatSteps.Visibility);
+        Assert.Contains("Recurrence: every day, starting 10:00", alerts.TxtHeartbeatSteps.Text);
+
+        // A ping URL that isn't https blocks the save, and says why.
+        alerts.TxtPingUrl.Text = "http://hc-ping.com/abc";
+        Click(alerts.BtnSaveChatChannel);
+        Assert.Contains("must start with https://", alerts.TxtChatFormMessage.Text);
+        Assert.Empty(_settings!.Load().ChatChannels);
+
+        alerts.TxtPingUrl.Text = ping;
+        Click(alerts.BtnSaveChatChannel);
+
+        var saved = Assert.Single(_settings.Load().ChatChannels);
+        Assert.Equal((HeartbeatEvery.Daily, new TimeSpan(9, 30, 0), ping), (saved.HeartbeatEvery, saved.HeartbeatAt, saved.HeartbeatPingUrl));
+        // Reopened after saving: the ping URL is in no control until Show.
+        Assert.Equal(string.Empty, alerts.TxtPingUrl.Text);
+        Assert.StartsWith("hc-ping.com/…/4a5b", alerts.TxtPingUrlMasked.Text);
+        // The webhook's Show shows both secrets.
+        Click(alerts.BtnShowChatUrl);
+        Assert.Equal(ping, alerts.TxtPingUrl.Text);
+        // Copy steps is a bound command, not a Click= (the real clipboard is left alone here).
+        Assert.Same(alerts.CopyHeartbeatSteps, alerts.BtnCopyHeartbeatSteps.Command);
+        Assert.Equal(8, alerts.CmbHeartbeat.SelectedIndex);
+        var card = Assert.Single((IEnumerable<ChatChannelCard>)alerts.ChannelCards.ItemsSource);
+        Assert.Contains("Heartbeat daily 09:30 + ping", card.Tags);
     });
 
     [Fact]
@@ -542,6 +586,9 @@ public sealed class SettingsPageTests : IDisposable
     {
         public Task<Engine.ChatNotifications.WebhookResult> SendAsync(Uri url, string json, Engine.ChatNotifications.ChatService service,
                                                                       CancellationToken cancel = default) =>
+            throw new InvalidOperationException("No chat in these tests.");
+
+        public Task<Engine.ChatNotifications.WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
             throw new InvalidOperationException("No chat in these tests.");
     }
 

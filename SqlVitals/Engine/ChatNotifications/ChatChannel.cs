@@ -55,6 +55,25 @@ public sealed class ChatChannel
     /// </summary>
     public bool        PostEnds       { get; set; } = true;
 
+    /// <summary>How often a "still watching" heartbeat is posted (#170). Missing from older files, where it reads as off.</summary>
+    public HeartbeatEvery HeartbeatEvery { get; set; } = HeartbeatEvery.Off;
+
+    /// <summary>For every N hours: one of <see cref="HeartbeatSchedule.AllowedHours"/>.</summary>
+    public int         HeartbeatHours { get; set; } = 6;
+
+    /// <summary>For daily: the local time of day.</summary>
+    public TimeSpan    HeartbeatAt    { get; set; } = HeartbeatSchedule.DefaultAt;
+
+    /// <summary>
+    /// A second secret (#170): the dead man's switch URL each heartbeat also calls, or empty.
+    /// Never logged or shown unmasked unless the user asks, like <see cref="WebhookUrl"/>.
+    /// </summary>
+    public string      HeartbeatPingUrl { get; set; } = string.Empty;
+
+    /// <summary>The heartbeat as a schedule; <see cref="HeartbeatSchedule.IsOn"/> false when off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public HeartbeatSchedule Heartbeat => new(HeartbeatEvery, HeartbeatHours, HeartbeatAt);
+
     /// <summary>Whether this channel gets a connection's alerts.</summary>
     public bool Includes(Guid connectionId) => AllConnections || ConnectionIds.Contains(connectionId);
 

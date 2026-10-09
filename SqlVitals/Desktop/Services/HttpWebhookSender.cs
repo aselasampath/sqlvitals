@@ -44,7 +44,30 @@ public sealed class HttpWebhookSender : IWebhookSender, IDisposable
     /// <summary>How long a request may take; shorter in tests.</summary>
     internal TimeSpan Timeout { get; init; } = WebhookResult.Timeout;
 
-    public async Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default)
+    public Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default) =>
+        RequestAsync(() => new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        },
+        async (response, elapsed, token) =>
+        {
+            var body = await ReadStartAsync(response.Content, token).ConfigureAwait(false);
+            var retryAfter = WebhookResult.ParseRetryAfter(response.Headers.RetryAfter?.ToString(), DateTimeOffset.UtcNow);
+            return WebhookResult.FromResponse(service, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType,
+                                              body, elapsed(), retryAfter);
+        }, cancel);
+
+    /// <summary>A heartbeat's ping (#170): a GET, as Healthchecks.io, Cronitor and Better Stack take it.</summary>
+    public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
+        RequestAsync(() => new HttpRequestMessage(HttpMethod.Get, url),
+                     (response, elapsed, _) => Task.FromResult(
+                         WebhookResult.FromPing((int)response.StatusCode, response.Content.Headers.ContentType?.MediaType, elapsed())),
+                     cancel);
+
+    // Sends one request with the timeout, and maps every failure without its text.
+    private async Task<WebhookResult> RequestAsync(Func<HttpRequestMessage> create,
+                                                   Func<HttpResponseMessage, Func<TimeSpan>, CancellationToken, Task<WebhookResult>> read,
+                                                   CancellationToken cancel)
     {
         var started = Stopwatch.GetTimestamp();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
@@ -52,17 +75,10 @@ public sealed class HttpWebhookSender : IWebhookSender, IDisposable
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(json, Encoding.UTF8, "application/json"),
-            };
+            using var request  = create();
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
                                             .ConfigureAwait(false);
-            var body = await ReadStartAsync(response.Content, timeout.Token).ConfigureAwait(false);
-            var retryAfter = WebhookResult.ParseRetryAfter(response.Headers.RetryAfter?.ToString(), DateTimeOffset.UtcNow);
-
-            return WebhookResult.FromResponse(service, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType,
-                                              body, Stopwatch.GetElapsedTime(started), retryAfter);
+            return await read(response, () => Stopwatch.GetElapsedTime(started), timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {

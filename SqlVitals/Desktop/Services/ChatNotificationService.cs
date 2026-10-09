@@ -17,7 +17,9 @@ namespace SqlVitals.Desktop.Services;
 /// retries, and the Failing status with one Windows notification. #123: Back to normal, stopped
 /// monitoring, and a few seconds at Exit to send what's waiting (<see cref="BeginExit"/>,
 /// <see cref="Shutdown"/>). #170: "stopped watching" whenever servers stop being watched (Stop,
-/// a setting, Exit, Windows ending, the PC going to sleep) and "watching again", with the gap.
+/// a setting, Exit, Windows ending, the PC going to sleep) and "watching again", with the gap;
+/// and the heartbeat, a "still watching" message on each channel's schedule, which can also call
+/// a dead man's switch URL (<see cref="CheckHeartbeats"/>).
 ///
 /// Used on the UI thread; the queues report back to it through its synchronization context.
 /// </summary>
@@ -46,6 +48,16 @@ public sealed class ChatNotificationService : IDisposable
 
     // When the PC went to sleep, until it wakes (#170).
     private DateTime? _asleepSinceUtc;
+
+    /// <summary>How often the heartbeats are checked for one that's due (#170).</summary>
+    public static readonly TimeSpan HeartbeatCheckEvery = TimeSpan.FromSeconds(30);
+
+    // Each channel with a heartbeat: its schedule as applied, and when the next one is due.
+    private readonly Dictionary<Guid, (HeartbeatSchedule Schedule, DateTimeOffset Next)> _heartbeats = new();
+    private ITimer? _heartbeatTimer;
+
+    // Cancels the pings still running at Exit.
+    private readonly CancellationTokenSource _pings = new();
 
     // Replaced as a whole by Apply, so the queues' workers can read it at any time.
     private volatile IReadOnlyList<ChatChannel> _channels = [];
@@ -125,6 +137,97 @@ public sealed class ChatNotificationService : IDisposable
         var ids = channels.Select(c => c.Id).ToHashSet();
         foreach (var gone in _status.Keys.Where(id => !ids.Contains(id)).ToList())
             _status.TryRemove(gone, out _);
+
+        ScheduleHeartbeats(channels);
+    }
+
+    // A channel's first heartbeat is its next time from now, and again whenever its schedule
+    // changes; a channel turned off or without a heartbeat is forgotten. The check timer runs
+    // only while some channel has a heartbeat.
+    private void ScheduleHeartbeats(IReadOnlyList<ChatChannel> channels)
+    {
+        var now  = _time.GetUtcNow();
+        var with = channels.Where(c => c.Enabled && c.Heartbeat.IsOn).ToDictionary(c => c.Id, c => c.Heartbeat);
+
+        foreach (var id in _heartbeats.Keys.Where(id => !with.ContainsKey(id)).ToList())
+            _heartbeats.Remove(id);
+        foreach (var (id, schedule) in with)
+            if (!_heartbeats.TryGetValue(id, out var known) || known.Schedule != schedule)
+                _heartbeats[id] = (schedule, schedule.Next(now, _time.LocalTimeZone)!.Value);
+
+        if (_heartbeats.Count == 0)
+        {
+            _heartbeatTimer?.Dispose();
+            _heartbeatTimer = null;
+        }
+        else
+        {
+            _heartbeatTimer ??= _time.CreateTimer(_ => OnUi(CheckHeartbeats), null, HeartbeatCheckEvery, HeartbeatCheckEvery);
+        }
+    }
+
+    /// <summary>When a channel's next heartbeat is due; null when it has none. For Settings and tests.</summary>
+    public DateTimeOffset? NextHeartbeat(Guid channelId) =>
+        _heartbeats.TryGetValue(channelId, out var heartbeat) ? heartbeat.Next : null;
+
+    /// <summary>
+    /// Posts each heartbeat that's due (#170): which of the channel's servers SqlVitals is
+    /// watching, or that it's watching none, and when the next one is due; and, while it's
+    /// watching any, calls the channel's ping URL, when it has one. A heartbeat missed while the PC slept is sent once,
+    /// late, when it wakes, then the schedule carries on. Run by a timer on the UI thread.
+    /// </summary>
+    internal void CheckHeartbeats()
+    {
+        if (_exiting)
+            return;
+        var now = _time.GetUtcNow();
+        foreach (var (id, (schedule, next)) in _heartbeats.ToList())
+        {
+            if (now < next)
+                continue;
+            var following = schedule.Next(now, _time.LocalTimeZone)!.Value;
+            _heartbeats[id] = (schedule, following);
+
+            if (_channels.FirstOrDefault(c => c.Id == id) is not { Enabled: true } channel)
+                continue;
+            try
+            {
+                var servers = _watching.Where(w => channel.Includes(w.Key)).Select(w => w.Value).ToList();
+                Queue(id).Enqueue(ChatMessageBuilder.Heartbeat(servers, _pcName, following.UtcDateTime, schedule));
+                // Running but watching nothing isn't "fine": the dead man's switch should go off.
+                if (servers.Count > 0)
+                    Ping(channel);
+            }
+            catch (Exception ex)
+            {
+                _log($"Chat \"{channel.Name}\": couldn't send the heartbeat ({ex.GetType().Name})");
+            }
+        }
+    }
+
+    // Calls the dead man's switch on the thread pool, once: a missed ping is what it's there to
+    // notice. Logged without the URL.
+    private void Ping(ChatChannel channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel.HeartbeatPingUrl) ||
+            !Uri.TryCreate(channel.HeartbeatPingUrl.Trim(), UriKind.Absolute, out var url))
+            return;
+        var name = channel.Name;
+        var cancel = _pings.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await _sender.PingAsync(url, cancel).ConfigureAwait(false);
+                _log(result.IsSuccess
+                    ? $"Chat \"{name}\": heartbeat ping answered ({result.StatusCode})"
+                    : $"Chat \"{name}\": heartbeat ping failed: {result.LogText()}");
+            }
+            catch (Exception ex)
+            {
+                _log($"Chat \"{name}\": heartbeat ping failed ({ex.GetType().Name})");
+            }
+        }, CancellationToken.None);
     }
 
     public ChannelStatus Status(Guid channelId) =>
@@ -424,8 +527,18 @@ public sealed class ChatNotificationService : IDisposable
         catch { /* whatever is left is dropped and logged by Dispose */ }
     }
 
+    private bool _disposed;
+
     public void Dispose()
     {
+        // MainWindow disposes it once; a test may too, after Shutdown.
+        if (_disposed)
+            return;
+        _disposed = true;
+        _heartbeatTimer?.Dispose();
+        _pings.Cancel();
+        _pings.Dispose();
+
         // Exiting: what's still waiting after Shutdown's few seconds isn't sent. Every queue is
         // stopped first, cancelling their requests together, so each Dispose's wait is short and
         // several channels stuck on a request don't add a second each to the exit.

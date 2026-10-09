@@ -9,6 +9,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/SqlVitals.Desktop;component/Pages/Settings/SettingsStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="HeartbeatStepsShown" />
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -152,9 +153,11 @@
                                 <RowDefinition Height="Auto" />  <!-- 3 Service -->
                                 <RowDefinition Height="Auto" />  <!-- 4 Connections -->
                                 <RowDefinition Height="Auto" />  <!-- 5 Post -->
-                                <RowDefinition Height="Auto" />  <!-- 6 On -->
-                                <RowDefinition Height="Auto" />  <!-- 7 Message -->
-                                <RowDefinition Height="Auto" />  <!-- 8 Buttons -->
+                                <RowDefinition Height="Auto" />  <!-- 6 Heartbeat -->
+                                <RowDefinition Height="Auto" />  <!-- 7 Heartbeat ping URL -->
+                                <RowDefinition Height="Auto" />  <!-- 8 On -->
+                                <RowDefinition Height="Auto" />  <!-- 9 Message -->
+                                <RowDefinition Height="Auto" />  <!-- 10 Buttons -->
                             </Grid.RowDefinitions>
 
                             <TextBlock x:Name="TxtChatFormTitle" Grid.ColumnSpan="2" Text="New channel" Style="{StaticResource CardTitle}"
@@ -185,7 +188,8 @@
 
                             <TextBlock Grid.Row="3" Text="Service" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
                             <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,12,0,0">
-                                <ComboBox x:Name="CmbChatService" Width="200" HorizontalAlignment="Left" AutomationProperties.Name="Chat service">
+                                <ComboBox x:Name="CmbChatService" Width="200" HorizontalAlignment="Left" AutomationProperties.Name="Chat service"
+                                          SelectionChanged="Heartbeat_Changed">
                                     <ComboBoxItem Content="Slack" Tag="Slack" />
                                     <ComboBoxItem Content="Microsoft Teams" Tag="Teams" />
                                 </ComboBox>
@@ -223,19 +227,58 @@
                                            Text="A message is posted when an alert starts or turns critical. On Critical only, a warning that turns critical is posted as a new critical alert." />
                                 <CheckBox x:Name="ChkChatPostEnds" Content="Also post when an alert ends" IsChecked="True" Margin="0,10,0,0" />
                                 <TextBlock Style="{StaticResource FieldHint}"
-                                           Text="Back to normal, for the alerts this channel was told about. When SqlVitals stops monitoring a connection with alerts still active, the channel is told either way, because no more updates will come." />
+                                           Text="Back to normal, for the alerts this channel was told about. When SqlVitals stops or starts watching a server, the channel is told either way, with the alerts still active." />
                             </StackPanel>
 
+                            <!-- Heartbeat (#170) -->
+                            <TextBlock Grid.Row="6" Text="Heartbeat" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
                             <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox x:Name="CmbHeartbeat" Width="200" AutomationProperties.Name="Heartbeat schedule"
+                                              SelectionChanged="Heartbeat_Changed" />
+                                    <ComboBox x:Name="CmbHeartbeatAt" Width="96" Margin="8,0,0,0" Visibility="Collapsed"
+                                              AutomationProperties.Name="Heartbeat time" SelectionChanged="Heartbeat_Changed" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource FieldHint}"
+                                           Text="A short &quot;💓 SqlVitals heartbeat&quot; message: SqlVitals is still running, and which of this channel's servers it's watching, at these times on this PC's clock. Set up an alert for when one doesn't arrive, and a quiet channel really means the servers are fine." />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="7" Text="Heartbeat ping URL" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
+                            <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,12,0,0">
+                                <!-- A secret too: out of every control until the webhook's Show is pressed, which shows both. -->
+                                <TextBlock x:Name="TxtPingUrlMasked" Visibility="Collapsed" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                <TextBox x:Name="TxtPingUrl" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Heartbeat ping URL" />
+                                <TextBlock Style="{StaticResource FieldHint}"
+                                           Text="Optional. A dead man's switch check (Healthchecks.io, Cronitor or Better Stack) that each heartbeat also calls while SqlVitals is watching a server. The service alerts the channel when the calls stop. It's the only way to get that alert in Slack. Stored encrypted, like the webhook." />
+                                <!-- View-only: shows the steps, which are kept up to date with the form. -->
+                                <CheckBox x:Name="ChkHeartbeatSteps" Margin="0,10,0,0"
+                                          Content="Show how to get an alert when a heartbeat is missing" />
+                                <Border x:Name="PnlHeartbeatSteps" Margin="0,8,0,0" Padding="10,8"
+                                        BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6"
+                                        Visibility="{Binding IsChecked, ElementName=ChkHeartbeatSteps, Converter={StaticResource HeartbeatStepsShown}}">
+                                    <StackPanel>
+                                        <!-- Read-only, so the steps and the expression can be selected as well as copied. -->
+                                        <TextBox x:Name="TxtHeartbeatSteps" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                                 Background="Transparent" Foreground="{DynamicResource TextPrimary}" FontSize="11"
+                                                 AutomationProperties.Name="Heartbeat setup steps" />
+                                        <Button x:Name="BtnCopyHeartbeatSteps" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"
+                                                Padding="12,4" Margin="0,8,0,0" Content="Copy steps"
+                                                Command="{Binding CopyHeartbeatSteps, ElementName=Root}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,12,0,0">
                                 <CheckBox x:Name="ChkChatEnabled" Content="On" IsChecked="True" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="Turn off to pause the channel without removing it. A test message can still be sent." />
                             </StackPanel>
 
-                            <TextBlock x:Name="TxtChatFormMessage" Grid.Row="7" Grid.ColumnSpan="2"
+                            <TextBlock x:Name="TxtChatFormMessage" Grid.Row="9" Grid.ColumnSpan="2"
                                        FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed" />
 
-                            <DockPanel Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                            <DockPanel Grid.Row="10" Grid.ColumnSpan="2" Margin="0,14,0,0">
                                 <Button x:Name="BtnRemoveChatChannel" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}"
                                         Padding="14,6" Click="BtnRemoveChatChannel_Click" Foreground="{DynamicResource Danger}"
                                         Content="Remove channel…" />

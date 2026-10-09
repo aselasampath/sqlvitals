@@ -137,6 +137,7 @@ Monitoring runs **only while SqlVitals runs on this PC**. When the PC sleeps, sh
 
 - Every [chat channel](Chat-Notifications.md#stopped-watching-and-watching-again) is told: *⏹ SqlVitals stopped watching Sales-Prod because the PC is going to sleep*, on **Stop**, a setting that stops a connection, removing it, **Exit**, Windows shutting down or signing out, and sleep. The next start (or wake, or **Start**) posts *▶ SqlVitals is watching Sales-Prod again, after 7 h 05 min without monitoring*. Since 0.70.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170)).
 - If SqlVitals is killed or the PC loses power, there's no *stopped* message; the *watching again* message still gives the real gap, from the last sample in the history.
+- To be told **even then**, turn on a channel's [heartbeat](Chat-Notifications.md#heartbeat) (every few hours, or daily) and set up an alert for when one doesn't arrive: a dead man's switch service, or for Teams a Power Automate flow. Since 0.71.0.
 - To keep watching while the window is closed, keep SqlVitals [running in the notification area](Notifications-and-Tray.md#running-in-the-notification-area), and stop the PC sleeping while it monitors (Windows **Settings → System → Power**).
 
 ### While a connection is monitored

@@ -102,6 +102,16 @@ public sealed record WebhookResult(
     }
 
     /// <summary>
+    /// Maps a ping's answer to an outcome (#170): any 2xx that isn't an HTML page (a proxy's or a
+    /// sign-in page) is a success, since each monitoring service says "OK" its own way.
+    /// </summary>
+    public static WebhookResult FromPing(int status, string? mediaType, TimeSpan elapsed)
+    {
+        var result = FromResponse(ChatService.Teams, status, mediaType, body: null, elapsed);
+        return result.Outcome == WebhookOutcome.Accepted ? result with { Outcome = WebhookOutcome.Posted } : result;
+    }
+
+    /// <summary>
     /// Maps a failed request to an outcome, from the exception's type only: its message may name
     /// the host or the URL, so it's never kept.
     /// </summary>
@@ -266,4 +276,10 @@ public interface IWebhookSender
     /// throws for an HTTP or network failure: it returns a <see cref="WebhookResult"/> instead.
     /// </summary>
     Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default);
+
+    /// <summary>
+    /// Calls a heartbeat's ping URL (#170) with a GET, as dead man's switch services expect, and
+    /// says how it went (<see cref="WebhookResult.FromPing"/>). Never throws for a failure.
+    /// </summary>
+    Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default);
 }

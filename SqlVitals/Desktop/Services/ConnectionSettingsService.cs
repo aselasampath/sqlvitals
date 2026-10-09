@@ -310,6 +310,7 @@ public class ConnectionSettingsService : ISectionFolds
         var copy  = channel.Clone();
         copy.Name       = copy.Name.Trim();
         copy.WebhookUrl = copy.WebhookUrl.Trim();
+        copy.HeartbeatPingUrl = (copy.HeartbeatPingUrl ?? string.Empty).Trim();
         if (index >= 0)
             store.ChatChannels[index] = copy;
         else
@@ -489,7 +490,10 @@ public class ConnectionSettingsService : ISectionFolds
 
             // Likewise a chat channel's chosen connections (#121).
             foreach (var channel in store.ChatChannels)
-                channel.ConnectionIds = (channel.ConnectionIds ?? []).Where(known.Contains).Distinct().ToList();
+            {
+                channel.ConnectionIds    = (channel.ConnectionIds ?? []).Where(known.Contains).Distinct().ToList();
+                channel.HeartbeatPingUrl ??= string.Empty;
+            }
 
             // Guard against hand-edited files; persist so the Ids stay stable.
             var missingIds = store.Connections.Where(c => c.Id == Guid.Empty).ToList();

@@ -68,7 +68,8 @@ internal static class SettingsActivity
             return new ConnectionSnapshot(c.Id, c.DisplayName, fields);
         }).ToList();
 
-        // Chat channels (#120), by name. "Webhook URL" is in SettingsDiff.SecretNames: compared, never logged.
+        // Chat channels (#120), by name. "Webhook URL" and "Heartbeat ping URL" (#170) are in
+        // SettingsDiff.SecretNames: compared, never logged.
         var names = store.Connections.ToDictionary(c => c.Id, c => c.DisplayName);
         var channels = store.ChatChannels.Select(c => new ConnectionSnapshot(c.Id, c.Name,
         [
@@ -82,6 +83,8 @@ internal static class SettingsActivity
                                                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase))),
             new("Post", c.CriticalOnly ? "Critical only" : "Warnings and critical"),
             new("Also post when an alert ends", OnOff(c.PostEnds)),
+            new("Heartbeat", c.Heartbeat.Describe()),
+            new("Heartbeat ping URL", c.HeartbeatPingUrl),
         ])).ToList();
 
         return new SettingsSnapshot(settings, connections, channels);
