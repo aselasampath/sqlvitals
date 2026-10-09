@@ -9,4 +9,10 @@ namespace SqlVitals.Desktop.Pages;
 public interface ICodeBehindPage
 {
     Task RefreshAsync();
+
+    /// <summary>
+    /// What the view model's timer reads (#169): the same as <see cref="RefreshAsync"/> unless the
+    /// page's timed read is narrower, such as a poll of a running trace.
+    /// </summary>
+    Task ReadTimedAsync() => RefreshAsync();
 }

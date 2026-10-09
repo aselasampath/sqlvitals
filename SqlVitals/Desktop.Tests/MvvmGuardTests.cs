@@ -79,32 +79,6 @@ public sealed class MvvmGuardTests
         ["Pages/WaitStatsTrendPage.xaml"]                = 2,
     };
 
-    /// <summary>How many <c>async void</c> methods and lambdas each file has that aren't event handlers.</summary>
-    private static readonly Dictionary<string, int> AsyncVoidAllowed = new()
-    {
-        ["Controls/QueryDetailsView.cs"]       = 1,
-        ["Controls/RowDetailsView.cs"]         = 2,
-        ["Controls/SessionDetailsView.cs"]     = 1,
-        ["Pages/ExportPage.xaml.cs"]           = 1,
-        ["Pages/ProcessesPage.xaml.cs"]        = 1,
-    };
-
-    /// <summary>
-    /// How many <c>DispatcherTimer</c>s each page still makes (#169): a page's timed reads, and its
-    /// countdown, are its view model's (<c>ReadEvery</c>). Pages leave this list as they move to it.
-    /// </summary>
-    private static readonly Dictionary<string, int> DispatcherTimersAllowed = new()
-    {
-        ["Pages/AlertsPage.xaml.cs"]                   = 2,
-        ["Pages/LiveMetricsDashboardPage.xaml.cs"]     = 1,
-        ["Pages/MemoryGrantsPage.xaml.cs"]             = 1,
-        ["Pages/OverviewPage.xaml.cs"]                 = 2,
-        ["Pages/PerfmonPage.xaml.cs"]                  = 1,
-        ["Pages/Settings/MonitoringCategory.xaml.cs"]  = 1,
-        ["Pages/SpTracePage.xaml.cs"]                  = 1,
-        ["Pages/WaitStatsTrendPage.xaml.cs"]           = 1,
-    };
-
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
     private static readonly string[] CodeBehindPagesAllowed =
     [
@@ -250,35 +224,36 @@ public sealed class MvvmGuardTests
 
     // ── async void only in event handlers ────────────────────────────────
 
+    // None left since #169: the rule has no allowlist.
     [Fact]
     public void AsyncVoid_OnlyInEventHandlers() =>
-        Fail(Grown(AsyncVoidOffences(), AsyncVoidAllowed),
+        Fail(InEveryFile(MvvmRules.AsyncVoid),
              "async void outside an event handler: its caller can't await it or catch what it throws. Return a Task, or use an async command:");
 
+    // ── An async void handler catches what it awaits (#169) ──────────────
+
     [Fact]
-    public void AsyncVoid_AllowlistShrinksWithIt() =>
-        Fail(Shrunk(AsyncVoidOffences(), AsyncVoidAllowed, nameof(AsyncVoidAllowed)), "The allowlist only shrinks:");
+    public void AsyncVoidHandlers_CatchWhatTheyAwait() =>
+        Fail(InEveryFile(MvvmRules.UncaughtAwaits),
+             "An async void event handler awaits something that can throw, which would reach the dispatcher instead of the user. " +
+             "Wrap it in try/catch (Exception) and report it (IShellStatus, the page's status, or AppLog), or await a [ReportsItsErrors] " +
+             "method such as ViewModel.RefreshAsync():");
 
-    private static IReadOnlyList<Offence> AsyncVoidOffences() => LazyAsyncVoidOffences.Value;
-
-    private static readonly Lazy<IReadOnlyList<Offence>> LazyAsyncVoidOffences = new(() =>
+    // A rule over every file of the app, with the file's XAML when it is code-behind.
+    private static List<Offence> InEveryFile(Func<SemanticModel, string, string?, IEnumerable<Offence>> rule) =>
         Models("").SelectMany(m =>
         {
             var xaml = m.Path.EndsWith(".xaml.cs", StringComparison.OrdinalIgnoreCase) && File.Exists(m.Path[..^3])
                 ? File.ReadAllText(m.Path[..^3]) : null;
-            return MvvmRules.AsyncVoid(m.Model, m.File, xaml);
-        }).ToList());
+            return rule(m.Model, m.File, xaml);
+        }).ToList();
 
     // ── No page runs its own timer (#169) ────────────────────────────────
 
     [Fact]
     public void Pages_DontMakeTheirOwnDispatcherTimer() =>
-        Fail(Grown(DispatcherTimerOffences(), DispatcherTimersAllowed),
-             "A page makes its own DispatcherTimer: read on the view model's timer instead (ReadEvery, PageViewModel.RefreshInterval):");
-
-    [Fact]
-    public void DispatcherTimers_AllowlistShrinksWithIt() =>
-        Fail(Shrunk(DispatcherTimerOffences(), DispatcherTimersAllowed, nameof(DispatcherTimersAllowed)), "The allowlist only shrinks:");
+        Fail(DispatcherTimerOffences(),
+             "A page makes its own DispatcherTimer: use its view model's clock instead (ReadEvery, ReadSoon, TickWhileShown) or IRefreshScheduler:");
 
     private static List<Offence> DispatcherTimerOffences() =>
         Models("Pages/").SelectMany(m => m.Model.SyntaxTree.GetRoot().DescendantNodes()
@@ -428,6 +403,73 @@ public sealed class MvvmGuardTests
                     <Button x:Name="Refresh" Content="Open"/>
                 </UserControl>
                 """));
+    }
+
+    [Fact]
+    public void UncaughtAwaits_InHandlersOnly_CatchAllOrReportsItsErrors()
+    {
+        AssertFinds("""
+            namespace SqlVitals.Desktop.Pages;
+
+            [AttributeUsage(AttributeTargets.Method)] public sealed class ReportsItsErrorsAttribute : Attribute;
+
+            public partial class SomePage : System.Windows.Controls.UserControl
+            {
+                public SomePage()
+                {
+                    Loaded += async (_, _) => await Task.Yield();                         // ✗ uncaught await
+                    Loaded += async (_, _) => await Reads();
+                    Loaded += OnLoaded;
+                    Loaded += OnTried;
+                    Loaded += OnFiltered;
+                    Loaded += OnNarrow;
+                    Loaded += OnNested;
+                }
+
+                [ReportsItsErrors] private static Task Reads() => Task.CompletedTask;
+
+                private async void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
+                {
+                    await Reads();
+                    await Task.Delay(1);                                                    // ✗ uncaught await
+                }
+
+                private async void OnTried(object sender, System.Windows.RoutedEventArgs e)
+                {
+                    try { await Task.Delay(1); }
+                    catch (Exception ex) { _ = ex; }
+                    try { await Task.Delay(2); }
+                    catch { }
+                    try { } finally { await Task.Delay(3); }                               // ✗ uncaught await
+                }
+
+                private async void OnFiltered(object sender, System.Windows.RoutedEventArgs e)
+                {
+                    try { await Task.Delay(1); }                                            // ✗ uncaught await
+                    catch (Exception ex) when (ex is TimeoutException) { }
+                }
+
+                private async void OnNarrow(object sender, System.Windows.RoutedEventArgs e)
+                {
+                    try { await Task.Delay(1); }                                            // ✗ uncaught await
+                    catch (InvalidOperationException) { }
+                }
+
+                private async void OnNested(object sender, System.Windows.RoutedEventArgs e)
+                {
+                    try
+                    {
+                        Func<Task> later = async () => await Task.Delay(1);
+                        await later();
+                    }
+                    catch (Exception) { }
+                }
+
+                // Not a handler: AsyncVoid's to find, not this rule's.
+                private async void Open() => await Task.Delay(1);
+                private async Task LoadAsync() => await Task.Delay(1);
+            }
+            """, (model, file) => MvvmRules.UncaughtAwaits(model, file, xaml: null));
     }
 
     [Fact]

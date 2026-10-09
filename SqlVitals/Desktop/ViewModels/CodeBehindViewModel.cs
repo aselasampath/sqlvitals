@@ -1,4 +1,5 @@
 using SqlVitals.Desktop.Pages;
+using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.ViewModels;
 
@@ -32,9 +33,19 @@ public abstract class CodeBehindViewModel : PageViewModel
     /// <inheritdoc cref="ReadEvery"/>
     public TimeSpan? ReadInterval => RefreshInterval;
 
+    /// <inheritdoc cref="PageViewModel.RefreshSoon"/>
+    public void ReadSoon(TimeSpan delay) => RefreshSoon(delay);
+
+    /// <inheritdoc cref="PageViewModel.WhileShownEvery"/>
+    public void TickWhileShown(TimeSpan every, Action tick) => WhileShownEvery(every, tick);
+
     // The code-behind doesn't take a token: its repository is bound to the page's lifetime instead
     // (#167), so leaving the page cancels what it reads, and the base class keeps it off the screen.
     protected override Task LoadAsync(CancellationToken cancel) => _page?.RefreshAsync() ?? Task.CompletedTask;
+
+    // A timed read is the page's own, when narrower than Refresh (ICodeBehindPage.ReadTimedAsync).
+    protected override Task LoadAsync(PageRead read, CancellationToken cancel) =>
+        read == PageRead.Timed && _page is { } page ? page.ReadTimedAsync() : LoadAsync(cancel);
 
     // The page has already put it in its verdict, saying what it couldn't read.
     protected override void ShowLoadError(Exception exception) { }

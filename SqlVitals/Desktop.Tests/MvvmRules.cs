@@ -135,6 +135,68 @@ internal static partial class MvvmRules
         }
     }
 
+    // ── An async void handler catches what it awaits (#169) ──────────────
+
+    /// <summary>
+    /// Each <c>await</c> in an <c>async void</c> event handler that nothing catches: it isn't in the
+    /// <c>try</c> of a catch that takes every exception (<c>catch</c> or <c>catch (Exception …)</c>,
+    /// with no <c>when</c>), and the method it awaits isn't marked <c>[ReportsItsErrors]</c>. What
+    /// it throws would reach the dispatcher instead of the user. The awaits of a lambda or local
+    /// function inside a handler are that one's.
+    /// </summary>
+    /// <param name="xaml">The file's XAML, when it is code-behind: the handlers it names.</param>
+    public static IEnumerable<Offence> UncaughtAwaits(SemanticModel model, string file, string? xaml)
+    {
+        foreach (var node in model.SyntaxTree.GetRoot().DescendantNodes())
+        {
+            var (body, name) = node switch
+            {
+                MethodDeclarationSyntax m when IsAsyncVoid(m.Modifiers, m.ReturnType) && IsHandler(model.Compilation, m, m.Identifier.Text, xaml)
+                    => ((SyntaxNode?)m.Body ?? m.ExpressionBody, m.Identifier.Text),
+                LocalFunctionStatementSyntax f when IsAsyncVoid(f.Modifiers, f.ReturnType) && IsHandler(model.Compilation, f, f.Identifier.Text, xaml: null)
+                    => ((SyntaxNode?)f.Body ?? f.ExpressionBody, f.Identifier.Text),
+                AnonymousFunctionExpressionSyntax lambda when lambda.AsyncKeyword != default && IsSubscribed(lambda)
+                    => (lambda.Body, "a subscribed async lambda"),
+                _ => (null, null),
+            };
+            if (body is null)
+                continue;
+
+            foreach (var awaited in body.DescendantNodesAndSelf(n => n == body || n is not (AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax))
+                                        .OfType<AwaitExpressionSyntax>())
+            {
+                if (!Caught(model, awaited, body) && !ReportsItsErrors(model, awaited))
+                    yield return new(file, Line(awaited.AwaitKeyword), "uncaught await",
+                                     $"{name} awaits {Short(awaited.Expression)} without catching what it throws");
+            }
+        }
+    }
+
+    // In the try block of a catch-all, between the await and the handler's body.
+    private static bool Caught(SemanticModel model, SyntaxNode awaited, SyntaxNode body)
+    {
+        foreach (var tryStatement in awaited.Ancestors().TakeWhile(a => a != body).OfType<TryStatementSyntax>())
+        {
+            if (tryStatement.Block.Span.Contains(awaited.Span)
+                && tryStatement.Catches.Any(c => c.Filter is null
+                                                 && (c.Declaration is null
+                                                     || model.GetTypeInfo(c.Declaration.Type).Type?.ToDisplayString() == "System.Exception")))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool ReportsItsErrors(SemanticModel model, AwaitExpressionSyntax awaited) =>
+        awaited.Expression is InvocationExpressionSyntax call
+        && model.GetSymbolInfo(call).Symbol is IMethodSymbol method
+        && (method.ReducedFrom ?? method).OriginalDefinition.GetAttributes().Any(a => a.AttributeClass?.Name == "ReportsItsErrorsAttribute");
+
+    private static string Short(ExpressionSyntax expression)
+    {
+        var text = string.Join(' ', expression.ToString().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return text.Length <= 60 ? text : text[..57] + "...";
+    }
+
     private static bool IsAsyncVoid(SyntaxTokenList modifiers, TypeSyntax returns) =>
         modifiers.Any(SyntaxKind.AsyncKeyword) && returns is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword };
 

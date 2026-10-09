@@ -58,11 +58,8 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     /// <summary>What "Since you last looked" covers: from when the Overview was opened before to when it was opened now.</summary>
     public LookWindow Look { get; }
 
-    // Ticks the "next try in" countdown while the server can't be reached.
-    private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
-
     // An alert change is queued to the history writer; reading straight away could miss it.
-    private readonly DispatcherTimer _reloadAlertsSoon = new() { Interval = TimeSpan.FromSeconds(1) };
+    private static readonly TimeSpan ReloadAlertsDelay = TimeSpan.FromSeconds(1);
 
     private ConnectionStore     _store;
     private ConnectionSettings? _conn;
@@ -112,16 +109,15 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         TakeLiveScore();
         Render();
 
-        _tick.Tick             += (_, _) => RenderOutageCountdown();
-        _reloadAlertsSoon.Tick += async (_, _) => { _reloadAlertsSoon.Stop(); await RefreshQuietlyAsync(); };
-        SizeChanged            += (_, e) => ChartsGrid.Columns = e.NewSize.Width < 1000 ? 2 : 3;
+        // The "next try in" countdown while the server can't be reached, on the view model's clock (#169).
+        ViewModel.TickWhileShown(TimeSpan.FromSeconds(1), RenderOutageCountdown);
+        SizeChanged += (_, e) => ChartsGrid.Columns = e.NewSize.Width < 1000 ? 2 : 3;
         Loaded += (_, _) =>
         {
             _monitoring.SessionStateChanged += OnSessionStateChanged;
             _monitoring.MonitoringChanged   += OnMonitoringChanged;
             _monitoring.AlertsChanged       += OnAlertsChanged;
             _settings.Changed               += OnSettingsChanged;
-            _tick.Start();
             // MainWindow loads the page before it's shown, when the sessions can't be read yet.
             _ = RefreshBlockingAsync();
         };
@@ -131,8 +127,6 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
             _monitoring.MonitoringChanged   -= OnMonitoringChanged;
             _monitoring.AlertsChanged       -= OnAlertsChanged;
             _settings.Changed               -= OnSettingsChanged;
-            _tick.Stop();
-            _reloadAlertsSoon.Stop();
         };
     }
 
@@ -227,11 +221,8 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         await RefreshBlockingAsync();
     }
 
-    private async Task RefreshQuietlyAsync()
-    {
-        try { await LoadAsync(sinceToo: false); }
-        catch (Exception ex) { AppLog.Error("Overview: load failed", ex); }
-    }
+    // The view model's timed read (#169): after an alert changed, without "Since you last looked".
+    public Task ReadTimedAsync() => LoadAsync(sinceToo: false);
 
     // The live window: the samples the session keeps, and at least ten minutes.
     private (DateTime From, DateTime To, TimeSpan Bucket) LiveWindow(DateTime nowUtc)
@@ -401,8 +392,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     {
         if (connectionId != _id)
             return;
-        _reloadAlertsSoon.Stop();
-        _reloadAlertsSoon.Start();
+        ViewModel.ReadSoon(ReloadAlertsDelay);
     }
 
     // Renamed, removed, made active, or its thresholds changed.

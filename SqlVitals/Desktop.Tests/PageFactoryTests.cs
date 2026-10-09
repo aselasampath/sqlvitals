@@ -62,6 +62,28 @@ public sealed class PageFactoryTests : IDisposable
 
     public static TheoryData<string> Tags => [.. PageCatalog.Types.Keys];
 
+    // #169: every page in the catalog refreshes through its view model, the one refresh path, and
+    // says how it went once. Its server can't be reached here, so most fail, and that's said once too.
+    [Theory]
+    [MemberData(nameof(Tags))]
+    public void EachPage_RefreshesThroughItsViewModel_AndReportsOnce(string tag) => UiThread.Run(() =>
+    {
+        var made = Factory().Create(tag, Args(tag, new FakeRepository { Unreachable = true }));
+        UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
+        var before = _shell.Reports.Count;
+
+        UiThread.Wait(made.ViewModel.RefreshAsync());
+
+        var refreshes = _shell.Reports.Skip(before)
+            .Select((report, i) => (Report: report, From: _shell.From[before + i]))
+            .Where(r => r.Report == "Read Refresh" || r.Report.StartsWith("Error Refresh", StringComparison.Ordinal))
+            .ToList();
+        var (_, from) = Assert.Single(refreshes);
+        Assert.Same(made.ViewModel, from);
+        Assert.False(made.ViewModel.IsBusy);
+        made.ViewModel.OnNavigatedFrom();
+    });
+
     [Theory]
     [MemberData(nameof(Tags))]
     public void EachPage_ComesWithItsViewModel_AsItsDataContext(string tag) => UiThread.Run(() =>

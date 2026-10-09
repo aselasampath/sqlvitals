@@ -6,6 +6,7 @@ namespace SqlVitals.Desktop.Services;
 public static class ConnectionTest
 {
     /// <summary>Opens a connection and closes it; null on success, otherwise why not, with any credentials masked.</summary>
+    [ReportsItsErrors]
     public static async Task<string?> TryOpenAsync(string connectionString)
     {
         try

@@ -334,15 +334,16 @@ public partial class QueryRegressionsPage : Page, ICodeBehindPage, IPageContext,
             cell = System.Windows.Media.VisualTreeHelper.GetParent(cell);
         if ((cell as DataGridCell)?.Column != QueryColumn)
             return;
-        await _navigator.GoToAsync("QueryStore", new FocusFilter(FocusKind.Query, id), "Query Regressions");
+        await ViewModel.ReportErrorsOf(_navigator.GoToAsync("QueryStore", new FocusFilter(FocusKind.Query, id), "Query Regressions"));
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
 
     private async void Choice_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        // Other criteria: checked again after a check in progress, which used the old ones (#169).
         if (_ready && IsLoaded)
-            await CheckFromToolbarAsync();
+            await ViewModel.RereadAsync();
     }
 
     private async void Criteria_KeyDown(object sender, KeyEventArgs e)
@@ -350,38 +351,23 @@ public partial class QueryRegressionsPage : Page, ICodeBehindPage, IPageContext,
         if (e.Key != Key.Enter)
             return;
         e.Handled = true;
-        await CheckFromToolbarAsync();
+        await ViewModel.RereadAsync();
     }
 
-    private async void BtnCheck_Click(object sender, RoutedEventArgs e) => await CheckFromToolbarAsync();
-
-    // The top bar's Refresh reports errors through the view model; a check started here reports its own.
-    private async Task CheckFromToolbarAsync()
-    {
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("QueryRegressions: check failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-        }
-    }
+    private async void BtnCheck_Click(object sender, RoutedEventArgs e) => await ViewModel.RereadAsync();
 
     // ── Execution plans ───────────────────────────────────────────────────────
 
     private async void ViewRecentPlan_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: QueryRegression r } btn)
-            await ShowPlanAsync(btn, r, baseline: false);
+            await ViewModel.ReportErrorsOf(ShowPlanAsync(btn, r, baseline: false));
     }
 
     private async void ViewBaselinePlan_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: QueryRegression r } btn)
-            await ShowPlanAsync(btn, r, baseline: true);
+            await ViewModel.ReportErrorsOf(ShowPlanAsync(btn, r, baseline: true));
     }
 
     private async Task ShowPlanAsync(Button btn, QueryRegression r, bool baseline)

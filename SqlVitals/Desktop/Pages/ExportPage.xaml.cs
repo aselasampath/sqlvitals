@@ -73,7 +73,7 @@ public partial class ExportPage : Page, ICodeBehindPage, IPageContext
         _svc = export;
         InitializeComponent();
 
-        ViewModel = new ExportViewModel(export: async () => await ExportAsync(), open: OpenLast);
+        ViewModel = new ExportViewModel(export: ExportAsync, open: OpenLast);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
 
@@ -186,7 +186,7 @@ public partial class ExportPage : Page, ICodeBehindPage, IPageContext
 
     // ── Export ─────────────────────────────────────────────────────────────────
 
-    private async void BtnExport_Click(object sender, RoutedEventArgs e) => await ExportAsync();
+    private async void BtnExport_Click(object sender, RoutedEventArgs e) => await ViewModel.ReportErrorsOf(ExportAsync());
 
     // Export Now, from the button or the verdict.
     private async Task ExportAsync()

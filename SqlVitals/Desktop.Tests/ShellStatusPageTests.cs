@@ -10,7 +10,8 @@ namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
 /// A page tells the top bar what it read through <see cref="IShellStatus"/> (#166), not through
-/// the main window: these run with no window at all, and a fake writes the reports down.
+/// the main window: these run with no window at all, and a fake writes the reports down. Its own
+/// Read again goes through its view model, as Refresh does (#169).
 /// </summary>
 public sealed class ShellStatusPageTests : IDisposable
 {
@@ -33,37 +34,45 @@ public sealed class ShellStatusPageTests : IDisposable
             UiThread.Wait(Task.Delay(10));
     }
 
+    // The page as the page factory makes it: its view model reads through it and reports to the fake.
+    private DeadlocksPage Connected(DeadlocksPage page)
+    {
+        page.ViewModel.LoadThrough(page);
+        page.ViewModel.Connect("Deadlocks", _shell, new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
+        return page;
+    }
+
     [Fact]
     public void ReadAgain_ReportsTheRead_ToTheShell_WithoutAWindow() => UiThread.Run(() =>
     {
         Assert.Null(Application.Current.MainWindow);
         var reads = 0;
-        var page  = new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => { reads++; return Task.FromResult(NoDeadlocks); } },
-                                      Settings(), shell: _shell);
+        var page  = Connected(new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => { reads++; return Task.FromResult(NoDeadlocks); } },
+                                                Settings()));
 
         page.BtnReload.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         Until(() => _shell.Reports.Count > 0);
 
         Assert.Equal(1, reads);
-        Assert.Equal(["Read Timed"], _shell.Reports);
-        Assert.Same(page, _shell.From.Single());
+        Assert.Equal(["Read Refresh"], _shell.Reports);
+        Assert.Same(page.ViewModel, _shell.From.Single());
     });
 
     [Fact]
-    public void ReadAgain_ThatFails_SaysSoOnThePage_AndReportsNoRead() => UiThread.Run(() =>
+    public void ReadAgain_ThatFails_IsReportedOnce_AsARefresh() => UiThread.Run(() =>
     {
         var failed = 0;
-        var page   = new DeadlocksPage(new FakeRepository
+        var page   = Connected(new DeadlocksPage(new FakeRepository
         {
             GetDeadlockHistoryAsync = () => { failed++; return Task.FromException<DeadlockHistory>(new InvalidOperationException("Timeout expired.")); },
-        }, Settings(), shell: _shell);
+        }, Settings()));
 
         page.BtnReload.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-        Until(() => page.TxtStatus.Text.Contains("Timeout", StringComparison.Ordinal));
+        Until(() => _shell.Reports.Count > 0);
 
         Assert.Equal(1, failed);
-        Assert.Equal("Error: Timeout expired.", page.TxtStatus.Text);
-        Assert.Empty(_shell.Reports);
+        Assert.Equal(["Error Refresh: Timeout expired."], _shell.Reports);
+        Assert.False(page.ViewModel.IsBusy);
     });
 
     public void Dispose()

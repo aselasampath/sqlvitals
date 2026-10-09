@@ -61,12 +61,8 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
     // While Show() replaces the rows, which clears the selection before it selects the database again.
     private bool _showing;
 
-    // The top bar: what this page read, what went wrong, and its kind or window (#166).
-    private readonly IShellStatus _shell;
-
-    public BackupsPage(IWaitStatsRepository repo, ConnectionSettingsService settings, IShellStatus? shell = null)
+    public BackupsPage(IWaitStatsRepository repo, ConnectionSettingsService settings)
     {
-        _shell    = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo     = repo;
         _settings = settings;
         InitializeComponent();
@@ -234,14 +230,15 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
         return true;
     }
 
-    private async void BtnApply_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
+    // Another RPO: read again, after a read in progress, which judged the old one (#169).
+    private async void BtnApply_Click(object sender, RoutedEventArgs e) => await ViewModel.RereadAsync();
 
     private async void Rpo_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)
             return;
         e.Handled = true;
-        await ReadAgainAsync();
+        await ViewModel.RereadAsync();
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -251,22 +248,8 @@ public partial class BackupsPage : Page, ICodeBehindPage, IPageContext
         if (_ready) Show();
     }
 
-    // The top bar's Refresh reports errors through the view model; a read started here reports its own.
-    private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
-
-    private async Task ReadAgainAsync()
-    {
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Backups: read failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-        }
-    }
+    // As the top bar's Refresh: the view model reads, and reports how it went (#169).
+    private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshAsync();
 
     // ── Selected database ─────────────────────────────────────────────────────
 

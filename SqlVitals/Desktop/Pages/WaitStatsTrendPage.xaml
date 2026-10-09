@@ -3,8 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
-      Background="{StaticResource BgDeep}" Title="Wait Stats Trend"
-      Unloaded="Page_Unloaded">
+      Background="{StaticResource BgDeep}" Title="Wait Stats Trend">
     <!-- The page template (#149): the verdict on the wait type that waits most first, then the wait
          types and the chart. Start and Stop are the top bar's Resume and Pause (#140). -->
     <controls:PageShell x:Name="Shell" Margin="16,12,16,12" Title="Wait Stats — Trend" PageKey="WaitTrend">

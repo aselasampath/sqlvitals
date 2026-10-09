@@ -467,7 +467,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
             ClipboardHelper.SetText(fix);
     }
 
-    private async void BtnRegressions_Click(object sender, RoutedEventArgs e) => await _navigator.GoToAsync("QueryRegressions");
+    private async void BtnRegressions_Click(object sender, RoutedEventArgs e) => await ViewModel.ReportErrorsOf(_navigator.GoToAsync("QueryRegressions"));
 
     // ── Period ────────────────────────────────────────────────────────────────
 
@@ -481,7 +481,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
             CustomPanel.Visibility    = Visibility.Collapsed;
             TxtPeriodError.Visibility = Visibility.Collapsed;
             if (preset != _period)
-                await SetPeriodAsync(preset);
+                await ViewModel.ReportErrorsOf(SetPeriodAsync(preset));
             return;
         }
 
@@ -495,14 +495,14 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         FromTime.Focus();
     }
 
-    private async void BtnApplyCustom_Click(object sender, RoutedEventArgs e) => await ApplyCustomAsync();
+    private async void BtnApplyCustom_Click(object sender, RoutedEventArgs e) => await ViewModel.ReportErrorsOf(ApplyCustomAsync());
 
     private async void CustomTime_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)
             return;
         e.Handled = true;
-        await ApplyCustomAsync();
+        await ViewModel.ReportErrorsOf(ApplyCustomAsync());
     }
 
     private async Task ApplyCustomAsync()
@@ -551,7 +551,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         if (!ReferenceEquals(e.OriginalSource, Tabs) || !_ready || Tabs.SelectedItem is not TabItem tab)
             return;
         if (!_tabs[tab].IsCurrent)
-            await LoadTabAsync(tab);
+            await ViewModel.ReportErrorsOf(LoadTabAsync(tab));
     }
 
     // ── Top Queries ───────────────────────────────────────────────────────────
@@ -587,7 +587,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         // Executions are a count: there is no average or std dev of it per execution.
         CmbStatistic.IsEnabled = SelectedRank != QueryStoreMetric.Executions;
         if (_ready && IsLoaded)
-            await LoadTabAsync(TabTop);
+            await ViewModel.ReportErrorsOf(LoadTabAsync(TabTop));
     }
 
     private async Task<Action> ReadTopQueriesAsync()
@@ -769,7 +769,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
         if (!ReferenceEquals(Tabs.SelectedItem, TabTop))
             Tabs.SelectedItem = TabTop;   // loads it
         else
-            await LoadTabAsync(TabTop);
+            await ViewModel.ReportErrorsOf(LoadTabAsync(TabTop));
     }
 
     // ── High Variation ────────────────────────────────────────────────────────
@@ -779,7 +779,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
     private async void CmbVariationMetric_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_ready && IsLoaded)
-            await LoadTabAsync(TabVariation);
+            await ViewModel.ReportErrorsOf(LoadTabAsync(TabVariation));
     }
 
     private async Task<Action> ReadVariationAsync()
@@ -911,7 +911,7 @@ public partial class QueryStorePage : Page, ICodeBehindPage, IPageContext, IFocu
     {
         if (sender is not Button btn || RowQuery(btn.Tag) is not { PlanId: { } planId } q)
             return;
-        await ShowPlanAsync(_repo, btn, planId, q.QueryId, q.QueryText);
+        await ViewModel.ReportErrorsOf(ShowPlanAsync(_repo, btn, planId, q.QueryId, q.QueryText));
     }
 
     /// <summary>Opens a Query Store plan in the graphical plan window, as Query Regressions does.</summary>

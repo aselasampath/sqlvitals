@@ -339,13 +339,13 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, ICodeBehind
         return true;
     }
 
-    private async void BtnRefreshFrag_Click(object sender, RoutedEventArgs e) => await RefreshFragmentationAsync();
+    private async void BtnRefreshFrag_Click(object sender, RoutedEventArgs e) => await ViewModel.ReportErrorsOf(RefreshFragmentationAsync());
 
     private async void FragParam_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
         e.Handled = true;
-        await RefreshFragmentationAsync();
+        await ViewModel.ReportErrorsOf(RefreshFragmentationAsync());
     }
 
     private async System.Threading.Tasks.Task RefreshFragmentationAsync()

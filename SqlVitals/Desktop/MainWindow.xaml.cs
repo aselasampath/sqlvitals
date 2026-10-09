@@ -118,16 +118,16 @@ public partial class MainWindow : Window
                 MainFrame.RemoveBackEntry();
         };
 
-        Bar.BackRequested     += async () => await GoAsync(back: true);
-        Bar.ForwardRequested  += async () => await GoAsync(back: false);
-        Bar.RefreshRequested  += async () => await RefreshPageAsync();
+        Bar.BackRequested     += async () => await Reported(GoAsync(back: true), "go back or forward");
+        Bar.ForwardRequested  += async () => await Reported(GoAsync(back: false), "go back or forward");
+        Bar.RefreshRequested  += async () => await Reported(RefreshPageAsync(), "refresh the page");
         Bar.PauseRequested    += PausePage;
-        Bar.CrumbRequested    += async route => await OpenAsync(route, settingsMessage: null, _history.Visit);
-        Bar.ServerRequested   += async id => await SwitchServerAsync(id);
+        Bar.CrumbRequested    += async route => await Reported(OpenAsync(route, settingsMessage: null, _history.Visit), "open the page");
+        Bar.ServerRequested   += async id => await Reported(SwitchServerAsync(id), "switch server");
         Bar.DatabaseRequested += async () =>
         {
             if (_activeConnectionId is { } id)
-                await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
+                await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id)), "open the page");
         };
 
         // Ctrl+K, or the bar's search button (#144). What it opens goes through the navigator, so
@@ -137,7 +137,7 @@ public partial class MainWindow : Window
         Switcher.PageHost = MainFrame;
         Switcher.OpenRequested += async (route, intoPage) =>
         {
-            await OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.QuickSwitcher);
+            await Reported(OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.QuickSwitcher), "open the page");
             if (intoPage && (Keyboard.FocusedElement is not DependencyObject focused || ReferenceEquals(focused, this) || Switcher.IsAncestorOf(focused)))
                 MainFrame.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
         };
@@ -148,7 +148,7 @@ public partial class MainWindow : Window
         FocusBar.HistoryRequested += async () =>
         {
             if (_history.Current is { } current && EvidenceRoutes.History(current) is { } history)
-                await OpenAsync(history, settingsMessage: null, _history.Visit, ActivitySources.Sidebar);
+                await Reported(OpenAsync(history, settingsMessage: null, _history.Visit, ActivitySources.Sidebar), "open the page");
         };
 
         var store  = SettingsService.Load();
@@ -174,15 +174,15 @@ public partial class MainWindow : Window
         {
             ShowFromTray();
             if (connectionId is { } id && Item(id) is not null)
-                await NavigateTo("Overview", serverId: id);
+                await Reported(NavigateTo("Overview", serverId: id), "open the page");
             else
-                await NavigateTo("Alerts", alertsConnectionId: connectionId);
+                await Reported(NavigateTo("Alerts", alertsConnectionId: connectionId), "open the page");
         };
         // A notification about one alert opens its evidence (#145).
         _tray.EvidenceRequested += async alert =>
         {
             ShowFromTray();
-            await OpenEvidenceAsync(alert, ActivitySources.Notification);
+            await Reported(OpenEvidenceAsync(alert, ActivitySources.Notification), "open the alert's evidence");
         };
         _tray.ExitRequested   += ExitApp;
         _tray.StartAllRequested += () => Monitoring.StartAll(ActivitySources.TrayMenu);
@@ -221,22 +221,22 @@ public partial class MainWindow : Window
             {
                 // First run, or the active connection was removed: send the user to Settings
                 // instead of letting every page fail against an empty connection string.
-                await NavigateTo("Settings", store.Connections.Count == 0
+                await Reported(NavigateTo("Settings", store.Connections.Count == 0
                     ? "Welcome to SqlVitals! Click + New connection to add your SQL Server, then Save & make active."
                     : "No server is open. Open one from All servers, or add a new connection.",
-                    new SettingsLocation(SettingsCategory.Connections));
+                    new SettingsLocation(SettingsCategory.Connections)), "open the page");
                 return;
             }
 
             if (active is { NeedsPassword: true })
             {
                 // "Remember password" was off last session, so every query would fail the login.
-                await NavigateTo("Settings", PasswordPrompt(active), SettingsLocation.Connection(active.Id));
+                await Reported(NavigateTo("Settings", PasswordPrompt(active), SettingsLocation.Connection(active.Id)), "open the page");
                 return;
             }
 
-            await DisablePagesAzureSqlLacksAsync();
-            await OpenAsync(StartRoute(store), settingsMessage: null, _history.Visit);
+            await Reported(DisablePagesAzureSqlLacksAsync(), "check the server's edition");
+            await Reported(OpenAsync(StartRoute(store), settingsMessage: null, _history.Visit), "open the page");
         };
     }
 
@@ -264,7 +264,7 @@ public partial class MainWindow : Window
     {
         _sidebar = Shell.Menu;
         // A server's page opens on the server whose pages are shown, switching to it if need be.
-        Shell.PageRequested          += async tag => await NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar);
+        Shell.PageRequested          += async tag => await Reported(NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar), "open the page");
         Shell.ScoreRequested         += ShowWorkspaceScore;
         Shell.MonitorToggleRequested += ToggleWorkspaceMonitoring;
 
@@ -816,6 +816,54 @@ public partial class MainWindow : Window
                 "Data Error");
     }
 
+    /// <summary>
+    /// Awaits what one of the window's events started (a page to open, Back, a server to switch to),
+    /// and reports what it throws (#169): on the top bar, and in the log. Its handlers await this.
+    /// </summary>
+    /// <param name="what">What failed, as the top bar says it: "open the page".</param>
+    [ReportsItsErrors]
+    private async System.Threading.Tasks.Task Reported(System.Threading.Tasks.Task work, string what)
+    {
+        try
+        {
+            await work;
+        }
+        catch (OperationCanceledException)
+        {
+            // Another move or switch replaced it: nothing to say.
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(what, ex);
+        }
+    }
+
+    /// <inheritdoc cref="Reported(System.Threading.Tasks.Task, string)"/>
+    /// <returns>Its result, or the default after a failure.</returns>
+    [ReportsItsErrors]
+    private async System.Threading.Tasks.Task<T?> Reported<T>(System.Threading.Tasks.Task<T> work, string what)
+    {
+        try
+        {
+            return await work;
+        }
+        catch (OperationCanceledException)
+        {
+            return default;
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(what, ex);
+            return default;
+        }
+    }
+
+    private void ShowFailure(string what, Exception ex)
+    {
+        AppLog.Error($"Could not {what}", ex);
+        Bar.ShowMessage($"Could not {what}: {ConnectionSettingsService.RedactSecrets(ex.Message)}", isError: true);
+    }
+
     /// <summary>The page's kind, window or pause changed.</summary>
     internal void ShowContextOf(object page)
     {
@@ -854,27 +902,27 @@ public partial class MainWindow : Window
 
     private void Wire(HomePage page)
     {
-        page.OpenRequested          += async id => await NavigateTo("Overview", serverId: id);
-        page.InvestigateRequested   += async alert => await OpenEvidenceAsync(alert, ActivitySources.Home);
-        page.AddConnectionRequested += async () => await NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage);
-        page.EditRequested          += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
+        page.OpenRequested          += async id => await Reported(NavigateTo("Overview", serverId: id), "open the page");
+        page.InvestigateRequested   += async alert => await Reported(OpenEvidenceAsync(alert, ActivitySources.Home), "open the alert's evidence");
+        page.AddConnectionRequested += async () => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage), "open the page");
+        page.EditRequested          += async id => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id)), "open the page");
     }
 
     private void Wire(OverviewPage page)
     {
-        page.EditRequested       += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id));
-        page.ThresholdsRequested += async id => await NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id, ConnectionTab.Thresholds));
-        page.AlertsRequested     += async id => await NavigateTo("Alerts", alertsConnectionId: id);
+        page.EditRequested       += async id => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id)), "open the page");
+        page.ThresholdsRequested += async id => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id, ConnectionTab.Thresholds)), "open the page");
+        page.AlertsRequested     += async id => await Reported(NavigateTo("Alerts", alertsConnectionId: id), "open the page");
         page.MakeActiveRequested += async id =>
         {
-            if (await SwitchToAsync(id, ActivitySources.Overview))
+            if (await Reported(SwitchToAsync(id, ActivitySources.Overview), "switch server"))
                 Bar.ShowMessage($"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".");
         };
         // A page about the server: Deadlocks, Live charts, the rest of "Since you last looked"… It
         // queries the active connection, so opening it makes this one active (see OpenAsync).
-        page.OpenPageRequested += async (id, tag) => await NavigateTo(tag, serverId: id, switchSource: ActivitySources.Overview);
+        page.OpenPageRequested += async (id, tag) => await Reported(NavigateTo(tag, serverId: id, switchSource: ActivitySources.Overview), "open the page");
         // An alert's or a check's evidence, filtered and set to its time (#145).
-        page.EvidenceRequested += async route => await OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.Overview);
+        page.EvidenceRequested += async route => await Reported(OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.Overview), "open the page");
     }
 
     // ── An alert's evidence (#145) ────────────────────────────────────────────
@@ -965,8 +1013,8 @@ public partial class MainWindow : Window
     private void Wire(SettingsPage page)
     {
         page.CategoryShown   += category => _settingsCategory = category;
-        page.ServerRequested += async id => await NavigateTo("Overview", serverId: id);
-        page.ThemeChanged    += async () => await NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Appearance));
+        page.ServerRequested += async id => await Reported(NavigateTo("Overview", serverId: id), "open the page");
+        page.ThemeChanged    += async () => await Reported(NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Appearance)), "open the page");
     }
 
     /// <summary>Opens another page, as its sidebar button would; for links between pages (<see cref="INavigator"/>).</summary>
@@ -1108,7 +1156,7 @@ public partial class MainWindow : Window
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;
-            await RefreshPageAsync();
+            await Reported(RefreshPageAsync(), "refresh the page");
             return;
         }
 
@@ -1146,7 +1194,7 @@ public partial class MainWindow : Window
         if (back is null)
             return;
         e.Handled = true;
-        await GoAsync(back.Value);
+        await Reported(GoAsync(back.Value), "go back or forward");
     }
 
     // Esc closes a floating details drawer (#147), once nothing in the page has used it: a filter
@@ -1171,7 +1219,7 @@ public partial class MainWindow : Window
         if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2) || Switcher.IsOpen)
             return;
         e.Handled = true;
-        await GoAsync(back: e.ChangedButton == MouseButton.XButton1);
+        await Reported(GoAsync(back: e.ChangedButton == MouseButton.XButton1), "go back or forward");
     }
 
     /// <summary>

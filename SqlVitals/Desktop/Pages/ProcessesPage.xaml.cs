@@ -40,8 +40,8 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
     }
 
     // Active Waits filtered to the session and the sessions it blocks (#145).
-    private async void OpenActiveWaits(int sessionId) =>
-        await _navigator.GoToAsync("ActiveWaits", new FocusFilter(FocusKind.Session, sessionId), "Processes");
+    private Task OpenActiveWaits(int sessionId) =>
+        _navigator.GoToAsync("ActiveWaits", new FocusFilter(FocusKind.Session, sessionId), "Processes");
 
     // ── A blocking alert's evidence (#145): one chain, until Show all ─────
     public void ShowFocus(PageFocus focus)

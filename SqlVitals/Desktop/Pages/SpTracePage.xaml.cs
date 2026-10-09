@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
+using System.Windows.Data;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -77,10 +77,10 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
     // The trace's events as they arrive, once started (#140); Start and Stop stay on the page.
     public PageKind Kind => PageKind.Live;
 
-    // Polled every few seconds while the trace runs; stopped, nothing moves.
-    public TimeSpan? LiveInterval => _timer.IsEnabled ? TimeSpan.FromSeconds(_intervalSec) : null;
+    // Polled every few seconds on the view model's timer (#169) while the trace runs; stopped, nothing moves.
+    public TimeSpan? LiveInterval => ViewModel.ReadInterval;
 
-    public bool IsPaused => !_timer.IsEnabled;
+    public bool IsPaused => ViewModel.ReadInterval is null;
 
     /// <summary>Cap on retained call rows. Oldest are dropped first.</summary>
     private const int MaxRowsRetained = 5000;
@@ -88,7 +88,6 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
     private static readonly int[] Intervals = [1, 2, 3, 5, 10, 15, 30];
 
     private readonly IWaitStatsRepository _repo;
-    private readonly DispatcherTimer      _timer = new();
 
     // Full unfiltered history; CallsGrid is bound to the filtered projection.
     private readonly List<SpTraceEvent>             _allCalls  = [];
@@ -96,8 +95,6 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
 
     private TraceSessionStatus _status = TraceSessionStatus.Stopped("SqlVitals_SpTrace");
     private int  _intervalSec  = 2;
-    private int  _remainingSec;
-    private bool _polling;
 
     /// <summary>First item of every filter combo; selecting it disables that filter.</summary>
     private const string AllOption = "(All)";
@@ -132,13 +129,11 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
         CallsGrid.ItemsSource = _visibleCalls;
         DrawerParts.FollowSelection(CallsGrid, ShowCall);
 
-        _timer.Interval = TimeSpan.FromSeconds(1);
-        _timer.Tick += Timer_Tick;
-
         ViewModel = new SpTraceViewModel(
             start:       () => BtnTrace.IsChecked = true,
             stop:        () => BtnTrace.IsChecked = false,
             showSlowest: ShowSlowest);
+        TxtCountdown.SetBinding(TextBlock.TextProperty, new Binding(nameof(ViewModel.Countdown)) { Source = ViewModel });
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         UpdateVerdict();
@@ -243,45 +238,22 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
 
     // ── Polling ──────────────────────────────────────────────────────────
 
+    // The view model polls (ReadTimedAsync) while the trace runs, and reports a failed poll to the
+    // top bar; the trace keeps running.
     private void StartTimer()
     {
-        _remainingSec = _intervalSec;
-        UpdateCountdown();
-        _timer.Start();
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
         _shell.ReportContextChanged(this);
     }
 
     private void StopTimer()
     {
-        _timer.Stop();
-        TxtCountdown.Text = "--";
+        ViewModel.ReadEvery(null, countdown: true);
         _shell.ReportContextChanged(this);
     }
 
-    private async void Timer_Tick(object? sender, EventArgs e)
-    {
-        _remainingSec--;
-        UpdateCountdown();
-
-        if (_remainingSec > 0 || _polling) return;
-
-        _polling = true;
-        try
-        {
-            await PollOnceAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch
-        {
-            // Skip failed ticks silently — a transient error must not stop the trace.
-        }
-        finally
-        {
-            _polling      = false;
-            _remainingSec = _intervalSec;
-            UpdateCountdown();
-        }
-    }
+    /// <summary>One poll of the running trace: the view model's timed read (#169).</summary>
+    public Task ReadTimedAsync() => PollOnceAsync();
 
     private async Task PollOnceAsync()
     {
@@ -321,8 +293,6 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
         var excess = _allCalls.Count - MaxRowsRetained;
         if (excess > 0) _allCalls.RemoveRange(0, excess);
     }
-
-    private void UpdateCountdown() => TxtCountdown.Text = $"{Math.Max(0, _remainingSec)}s";
 
     // ── Filtering ────────────────────────────────────────────────────────
 
@@ -471,9 +441,10 @@ public partial class SpTracePage : Page, ICodeBehindPage, IPageContext, IDetails
     {
         if (CmbInterval.SelectedItem is not ComboBoxItem { Tag: int sec }) return;
 
-        _intervalSec  = sec;
-        _remainingSec = sec;
-        UpdateCountdown();
+        _intervalSec = sec;
+        // Set while the combo is filled in, before the view model exists; used from the next Start then.
+        if (ViewModel?.ReadInterval is not null)
+            StartTimer();
         _shell.ReportContextChanged(this);
     }
 

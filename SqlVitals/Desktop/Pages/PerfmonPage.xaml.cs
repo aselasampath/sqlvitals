@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Threading;
+using System.Windows.Data;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
@@ -46,10 +46,10 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => _range.IsLive;
-    public bool IsPaused => !_timer.IsEnabled;
+    public bool IsPaused => ViewModel.IsPaused;
 
     // The bar's Resume and Pause start and stop the reads: the page's own Start and Stop were the
-    // same toggle, so they went with the page template (#150).
+    // same toggle, so they went with the page template (#150). They read on the view model's timer (#169).
     public void SetPaused(bool paused)
     {
         if (paused) StopTimer();
@@ -163,10 +163,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
 
     // ── State ────────────────────────────────────────────────────────────────
     private readonly IWaitStatsRepository _repo;
-    private readonly DispatcherTimer      _timer       = new();
     private int  _intervalSec;
-    private int  _remainingSec;
-    private bool _refreshing;
     private bool _suppressEvents;
 
     // All known counter items (full master list populated on first load)
@@ -218,8 +215,10 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         if (history is not null)
             _baseline = new BaselineTracker<CounterHistoryBucket>(history, (reader, id, from, to, bucket) => reader.ReadCounters(id, from, to, bucket));
 
-        // Before the controls: picking the first group of counters below judges them already.
+        // Before the controls: picking the first group of counters below judges them already, and
+        // the interval picked below is its timer's. Not reading until Resume (▶) in the top bar.
         ViewModel = new PerfmonViewModel(navigator ?? CompositionRoot.Get<INavigator>());
+        ViewModel.SetPaused(true);
         InitializeComponent();
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _statusMain = TxtStatus.Text;
@@ -230,9 +229,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
         CmbGroup.ItemsSource   = GroupNames;
         CmbGroup.SelectedIndex = 0;
 
-        _timer.Interval = TimeSpan.FromSeconds(1);
-        _timer.Tick    += Timer_Tick;
-
+        TxtCountdown.SetBinding(TextBlock.TextProperty, new Binding(nameof(ViewModel.Countdown)) { Source = ViewModel });
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         UpdateVerdict();
@@ -250,25 +247,10 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
             .Select(name => new PerfmonSeries(name,
                 windows.TryGetValue(name, out var w) ? w.Select(p => p.Value).ToList() : []))
             .ToList();
-        var state  = !_range.IsLive ? WaitTrendState.History : _timer.IsEnabled ? WaitTrendState.Live : WaitTrendState.NotStarted;
+        var state  = !_range.IsLive ? WaitTrendState.History : !IsPaused ? WaitTrendState.Live : WaitTrendState.NotStarted;
         var noData = !_range.IsLive && _historyLoad is { Items.Count: 0 } load ? load.NoData(NotRecordedText) : null;
         ViewModel.Show(selected, state, noData);
     }
-
-    // ── Page lifetime ────────────────────────────────────────────────────────
-    private void Page_Loaded(object sender, RoutedEventArgs e)
-    {
-        NavigationService?.Navigating += OnFrameNavigating;
-    }
-
-    private void Page_Unloaded(object sender, RoutedEventArgs e)
-    {
-        NavigationService?.Navigating -= OnFrameNavigating;
-        StopTimer();
-    }
-
-    private void OnFrameNavigating(object sender,
-        System.Windows.Navigation.NavigatingCancelEventArgs e) => StopTimer();
 
     // ── IRefreshable — manual refresh (also called by timer) ─────────────────
     // A past range is read again, so "last hour" moves up to now.
@@ -448,6 +430,7 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
 
     // Reads the baseline for what the chart shows, when it doesn't have one yet: the past range
     // on screen, or the live window. Live, that is a new read only every half hour or so.
+    [ReportsItsErrors]
     private async System.Threading.Tasks.Task LoadBaselineAsync()
     {
         if (_baseline is null || !RangePicker.CompareToBaseline)
@@ -679,62 +662,32 @@ public partial class PerfmonPage : Page, ICodeBehindPage, IPageContext
     // What Start did: read every interval, counting down to the next read.
     private void StartTimer()
     {
-        if (_timer.IsEnabled)
+        if (!IsPaused)
             return;
         _intervalSec = CmbInterval.SelectedIndex >= 0 ? Intervals[CmbInterval.SelectedIndex] : 10;
-        _remainingSec = _intervalSec;
-        UpdateCountdown();
-        _timer.Start();
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
+        ViewModel.SetPaused(false);
         _shell.ReportContextChanged(this);
         UpdateVerdict();
     }
 
-    // What Stop did; also when the page is left.
+    // What Stop did; leaving the page stops the view model's timer itself.
     private void StopTimer()
     {
-        if (!_timer.IsEnabled)
+        if (IsPaused)
             return;
-        _timer.Stop();
-        TxtCountdown.Text = "--";
+        ViewModel.SetPaused(true);
         _shell.ReportContextChanged(this);
         UpdateVerdict();
-    }
-
-    private void UpdateCountdown() =>
-        TxtCountdown.Text = $"{_remainingSec}s";
-
-    private async void Timer_Tick(object? sender, EventArgs e)
-    {
-        _remainingSec--;
-        UpdateCountdown();
-        if (_remainingSec > 0 || _refreshing) return;
-
-        _refreshing = true;
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            _shell.ReportError(this, "Perfmon", ex, PageRead.Timed);
-        }
-        finally
-        {
-            _refreshing   = false;
-            _remainingSec = _intervalSec;
-        }
     }
 
     // ── UI event handlers ────────────────────────────────────────────────────
-    // Another interval: used from the next read on; the countdown shows only while reading.
+    // Another interval: the wait for the next read starts again; the countdown shows only while reading.
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CmbInterval.SelectedIndex < 0) return;
-        _intervalSec  = Intervals[CmbInterval.SelectedIndex];
-        _remainingSec = _intervalSec;
-        if (_timer.IsEnabled)
-            UpdateCountdown();
+        _intervalSec = Intervals[CmbInterval.SelectedIndex];
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(_intervalSec), countdown: true);
         _shell.ReportContextChanged(this);
     }
 

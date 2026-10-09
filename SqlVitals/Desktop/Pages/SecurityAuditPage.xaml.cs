@@ -84,13 +84,9 @@ public partial class SecurityAuditPage : Page, ICodeBehindPage, IPageContext, ID
 
     private bool _refreshing;
 
-    // The top bar: what this page read, what went wrong, and its kind or window (#166).
-    private readonly IShellStatus _shell;
-
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    public SecurityAuditPage(IWaitStatsRepository repo, string? serverName, ISectionFolds? folds = null, IShellStatus? shell = null)
+    public SecurityAuditPage(IWaitStatsRepository repo, string? serverName, ISectionFolds? folds = null)
     {
-        _shell      = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo       = repo;
         _serverName = string.IsNullOrWhiteSpace(serverName) ? "this server" : serverName;
         InitializeComponent();
@@ -201,20 +197,8 @@ public partial class SecurityAuditPage : Page, ICodeBehindPage, IPageContext, ID
         if (_ready) Show();
     }
 
-    // The top bar's Refresh reports errors through the view model; a read started here reports its own.
-    private async void BtnReload_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Security Audit: read failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-        }
-    }
+    // As the top bar's Refresh: the view model reads, and reports how it went (#169).
+    private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshAsync();
 
     private void BtnScript_Click(object sender, RoutedEventArgs e) => OpenScript();
 

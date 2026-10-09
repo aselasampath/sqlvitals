@@ -113,6 +113,143 @@ public sealed class PageRefreshTests : IDisposable
         }
     }
 
+    // ── Timed reads, read soon, read again, view ticks ───────────────────
+
+    /// <summary>A code-behind page whose timed read is narrower than its Refresh, as SP Trace's poll is.</summary>
+    private sealed class TwoReadsPage : ICodeBehindPage
+    {
+        public int Refreshes, Timed;
+        public TaskCompletionSource? Gate;
+
+        public Task RefreshAsync()
+        {
+            Refreshes++;
+            return Gate?.Task ?? Task.CompletedTask;
+        }
+
+        public Task ReadTimedAsync()
+        {
+            Timed++;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class PlainViewModel : CodeBehindViewModel;
+
+    private (TwoReadsPage Page, PlainViewModel Model) TwoReads()
+    {
+        var page  = new TwoReadsPage();
+        var model = Connect(page, new PlainViewModel(), "Test");
+        return (page, model);
+    }
+
+    [Fact]
+    public async Task ATimedRead_IsThePagesOwn_RefreshIsItsFullRead()
+    {
+        var (page, model) = TwoReads();
+        model.ReadEvery(TimeSpan.FromSeconds(10));
+        await model.OnNavigatedToAsync();
+        Assert.Equal((1, 0), (page.Refreshes, page.Timed));
+
+        Step(TimeSpan.FromSeconds(10));
+        Assert.Equal((1, 1), (page.Refreshes, page.Timed));
+        Assert.Equal("Read Timed", _shell.Reports[^1]);
+
+        await model.RefreshAsync();
+        Assert.Equal((2, 1), (page.Refreshes, page.Timed));
+    }
+
+    [Fact]
+    public async Task ReadSoon_ReadsOnceAfterTheDelay_ABurstWaitsAgain_AndLeavingDropsIt()
+    {
+        var (page, model) = TwoReads();
+        var delay = TimeSpan.FromSeconds(1);
+
+        // Not shown: nothing to read for.
+        model.ReadSoon(delay);
+        _time.Advance(delay);
+        _ui.RunPosted();
+        Assert.Equal(0, page.Timed);
+
+        await model.OnNavigatedToAsync();
+        model.ReadSoon(delay);
+        _time.Advance(TimeSpan.FromMilliseconds(600));
+        model.ReadSoon(delay);
+        _time.Advance(TimeSpan.FromMilliseconds(600));
+        _ui.RunPosted();
+        Assert.Equal(0, page.Timed);
+
+        _time.Advance(TimeSpan.FromMilliseconds(400));
+        _ui.RunPosted();
+        Assert.Equal(1, page.Timed);
+        _time.Advance(TimeSpan.FromSeconds(5));
+        _ui.RunPosted();
+        Assert.Equal(1, page.Timed);
+
+        model.ReadSoon(delay);
+        model.OnNavigatedFrom();
+        _time.Advance(delay);
+        _ui.RunPosted();
+        Assert.Equal(1, page.Timed);
+    }
+
+    [Fact]
+    public async Task Reread_WaitsForTheReadInProgress_ThenReadsAgain()
+    {
+        var (page, model) = TwoReads();
+        page.Gate = new TaskCompletionSource();
+
+        var refresh = model.RefreshAsync();
+        var reread  = model.RereadAsync();
+        Assert.Equal(1, page.Refreshes);
+
+        // The read in progress had the old choice: once it ends, another reads the new one.
+        var gate = page.Gate;
+        page.Gate = null;
+        gate.SetResult();
+        await Task.WhenAll(refresh, reread);
+
+        Assert.Equal(2, page.Refreshes);
+        Assert.Equal(["Read Refresh", "Read Refresh"], _shell.Reports);
+    }
+
+    [Fact]
+    public async Task ViewTicks_RunWhileShown_PausedOrNot()
+    {
+        var (_, model) = TwoReads();
+        var ticks = 0;
+        model.TickWhileShown(TimeSpan.FromSeconds(1), () => ticks++);
+
+        Step(TimeSpan.FromSeconds(3));
+        Assert.Equal(0, ticks);
+
+        await model.OnNavigatedToAsync();
+        Step(TimeSpan.FromSeconds(3));
+        Assert.Equal(3, ticks);
+
+        model.SetPaused(true);
+        Step(TimeSpan.FromSeconds(2));
+        Assert.Equal(5, ticks);
+
+        model.OnNavigatedFrom();
+        Step(TimeSpan.FromSeconds(3));
+        Assert.Equal(5, ticks);
+    }
+
+    [Fact]
+    public async Task ReportErrorsOf_ReportsAFailureOnce_AndNothingForACancellation()
+    {
+        var (_, model) = TwoReads();
+
+        await model.ReportErrorsOf(Task.CompletedTask);
+        await model.ReportErrorsOf(Task.FromCanceled(new CancellationToken(canceled: true)));
+        Assert.Empty(_shell.Reports);
+
+        await model.ReportErrorsOf(Task.FromException(new InvalidOperationException("Timeout expired.")));
+        Assert.Equal(["Error Refresh: Timeout expired."], _shell.Reports);
+        Assert.Same(model, _shell.From.Single());
+    }
+
     // ── A pilot page: Agent Jobs, every 30 s when ticked ─────────────────
 
     [Fact]
