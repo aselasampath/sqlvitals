@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
+using System.Windows.Data;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -60,11 +60,12 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         : ProcessMap.HasSnapshot ? $"Show all {ProcessMap.SessionCount:N0} sessions"
         : "Show all sessions";
 
-    // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140).
+    // Live while auto-refresh is on; the bar's Pause and Resume are its Stop and Start (#140), and
+    // pause the view model's timer (#169).
     public PageKind Kind => PageKind.Live;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => true;
-    public bool IsPaused => BtnAutoRefresh.IsChecked != true;
+    public bool IsPaused => ViewModel.IsPaused;
     public void SetPaused(bool paused) => BtnAutoRefresh.IsChecked = !paused;
 
     private readonly IWaitStatsRepository _repo;
@@ -76,11 +77,8 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
     // The active connection's blocking threshold, which colours the verdict as it does the health dot.
     private readonly HealthThreshold _blocking;
 
-    // ?? Auto-refresh ??????????????????????????????????????????????????
-    private readonly DispatcherTimer _timer = new();
+    // ?? Auto-refresh: the view model's timer (#169) ????????????????????
     private int _intervalSec   = ConnectionStore.DefaultProcessesRefreshSeconds;
-    private int _remainingSec;
-    private bool _refreshing;
     private bool _restoring    = true;   // no saving while the saved choice is applied, or while leaving
 
     // Interval choices: 5 s increments up to 120 s
@@ -115,6 +113,9 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         _blocking = (store.Active is { } active ? store.ThresholdsFor(active) : store.HealthThresholds).Get(HealthIndicator.Blocking);
         ViewModel = new ProcessesViewModel(goToSession: ProcessMap.ShowSession, chainsOnly: ProcessMap.ShowChainsOnly);
         ViewModel.Attach(Shell);
+        // Stopped until the saved choice starts it, once the page is loaded.
+        ViewModel.SetPaused(true);
+        TxtCountdown.SetBinding(TextBlock.TextProperty, new Binding(nameof(ViewModel.Countdown)) { Source = ViewModel });
         Shell.Folds = settings;
         CmbInterval.SelectedIndex = Math.Max(0, Array.IndexOf(Intervals, store.ProcessesRefreshSeconds));
 
@@ -125,22 +126,14 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         ProcessMap.FocusChanged        += (_, _) => _shell.ReportContextChanged(this);
         ProcessMap.SessionSelected     += ShowSession;
 
-        // Wire timer (ticks every second for the countdown display)
-        _timer.Interval = TimeSpan.FromSeconds(1);
-        _timer.Tick    += Timer_Tick;
-
         Loaded += (_, _) =>
         {
             if (store.ProcessesAutoRefresh) BtnAutoRefresh.IsChecked = true;
             _restoring = false;
         };
 
-        // Stop timer when page is unloaded (navigation away), keeping the saved choice
-        Unloaded += (_, _) =>
-        {
-            _restoring = true;
-            StopTimer();
-        };
+        // Leaving stops the timer (the view model's OnNavigatedFrom); the saved choice is kept.
+        Unloaded += (_, _) => _restoring = true;
     }
 
     private void SaveRefreshChoice()
@@ -191,62 +184,13 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
         ViewModel.Show(ProcessMap.Snapshot, _blocking);
     }
 
-    // ?? Timer logic ???????????????????????????????????????????????????
-    private void StartTimer()
-    {
-        _remainingSec = _intervalSec;
-        UpdateCountdown();
-        _timer.Start();
-    }
-
-    private void StopTimer()
-    {
-        _timer.Stop();
-        TxtCountdown.Text = "--";
-        if (BtnAutoRefresh.IsChecked == true)
-            BtnAutoRefresh.IsChecked = false;
-    }
-
-    private async void Timer_Tick(object? sender, EventArgs e)
-    {
-        _remainingSec--;
-        UpdateCountdown();
-
-        if (_remainingSec > 0 || _refreshing) return;
-
-        _refreshing = true;
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            _shell.ReportError(this, "Processes", ex, PageRead.Timed);
-        }
-        finally
-        {
-            _refreshing   = false;
-            _remainingSec = _intervalSec;   // reset countdown
-            UpdateCountdown();
-        }
-    }
-
-    private void UpdateCountdown()
-    {
-        TxtCountdown.Text = _remainingSec >= 60
-            ? $"{_remainingSec / 60}:{_remainingSec % 60:00}"
-            : $"{_remainingSec}s";
-    }
-
     // ?? UI event handlers ?????????????????????????????????????????????
     private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CmbInterval.SelectedItem is ComboBoxItem item && item.Tag is int sec)
         {
-            _intervalSec  = sec;
-            _remainingSec = sec;
-            UpdateCountdown();
+            _intervalSec = sec;
+            ViewModel.ReadEvery(TimeSpan.FromSeconds(sec), countdown: true);
             SaveRefreshChoice();
             _shell.ReportContextChanged(this);
         }
@@ -255,7 +199,7 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
     private void BtnAutoRefresh_Checked(object sender, RoutedEventArgs e)
     {
         BtnAutoRefresh.Content = "Stop";
-        StartTimer();
+        ViewModel.SetPaused(false);
         SaveRefreshChoice();
         _shell.ReportContextChanged(this);
     }
@@ -263,8 +207,7 @@ public partial class ProcessesPage : Page, ICodeBehindPage, IPageContext, IFocus
     private void BtnAutoRefresh_Unchecked(object sender, RoutedEventArgs e)
     {
         BtnAutoRefresh.Content = "Start";
-        _timer.Stop();
-        TxtCountdown.Text = "--";
+        ViewModel.SetPaused(true);
         SaveRefreshChoice();
         _shell.ReportContextChanged(this);
     }

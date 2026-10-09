@@ -192,7 +192,7 @@ Every start and stop of monitoring, app start and exit, settings change and hist
 
 ### 12. File I/O latency
 
-`FileIoPage` (a `DispatcherTimer` while the page is open) → `FileIoRepository.ReadFileIoAsync` (the edition and `sqlserver_start_time`, then every file's totals from `sys.dm_io_virtual_file_stats` with `SYSDATETIME()`; volumes from `sys.dm_os_volume_stats`, cached per file) → `FileIoTracker.Add` (Engine, pure: keeps the first, previous and last readings, starts again after a restart) → `FileLatencyList.Between` (the change per file between two readings: latency, rates, status against the `FileLatencyThresholds` saved in `settings.dat`; totals per volume). Changing the thresholds or the window re-grades the readings already held. See [File I/O](File-IO.md#under-the-hood).
+`FileIoPage` (its view model's timer while the page is open, #169) → `FileIoRepository.ReadFileIoAsync` (the edition and `sqlserver_start_time`, then every file's totals from `sys.dm_io_virtual_file_stats` with `SYSDATETIME()`; volumes from `sys.dm_os_volume_stats`, cached per file) → `FileIoTracker.Add` (Engine, pure: keeps the first, previous and last readings, starts again after a restart) → `FileLatencyList.Between` (the change per file between two readings: latency, rates, status against the `FileLatencyThresholds` saved in `settings.dat`; totals per volume). Changing the thresholds or the window re-grades the readings already held. See [File I/O](File-IO.md#under-the-hood).
 
 ### 13. Configuration checks
 
@@ -297,6 +297,14 @@ var sql = capabilities.IsAzureSqlDatabase ? AzureSql : OnPremSql;
 
 Pages are moving from code-behind to view models one at a time (epic #180). Every page that moves follows the rules below, and `Desktop.Tests/MvvmGuardTests.cs` (#181) checks them so that no page slides back.
 
+### The decision (#169)
+
+**Full view models, page by page.** Each page gets a view model that reads its data, decides what it shows and owns its refresh. The code-behind keeps only what is view (see [What stays in code-behind](#what-stays-in-code-behind)). The other choice, keeping code-behind and using view models only for the verdicts (the state at 0.65.0), was turned down. It would have left 28 pages, each with its own refresh, re-entrancy guard and error handling, which is what let some pages freeze, read twice or hide a failure.
+
+- **Every page refreshes, pauses and reports errors one way:** through `PageViewModel` ([The page lifecycle](#the-page-lifecycle)). It is the shared refresh helper: it owns the timer, one read at a time, cancellation on leave, pause, and reporting to `IShellStatus`. A page that hasn't moved yet reaches the same helper from its code-behind (`CodeBehindViewModel.ReadEvery`).
+- **No page makes its own `DispatcherTimer`** to read or count down. The guard tests hold the pages that still do, and the list only shrinks.
+- **Order:** #183 built the lifecycle, #169 moves every page's timer onto it, and the waves of #180 (#184–#191) move each page's reading into its view model.
+
 ### Naming and place
 
 | View | View model |
@@ -362,15 +370,16 @@ Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wp
 | `OnNavigatedToAsync()` | The window calls it once the page is on screen: it loads, then the timed refresh starts |
 | `OnNavigatedFrom()` | The page was left, or its connection switched: the read is cancelled and the timer stops |
 | `RefreshCommand`, `RefreshAsync()` | Reads again. While a read runs, it waits for that one instead of starting another (`CanExecute` is false meanwhile) |
-| `RefreshInterval` | How often the page reads on its own, through `IRefreshScheduler`; null for a page that doesn't |
+| `RefreshInterval` | How often the page reads on its own, through `IRefreshScheduler`; null for a page that doesn't. A timed read joins the one in progress rather than starting another |
+| `ShowsCountdown`, `Countdown` | The page shows when it reads next: *12s*, *1:05*, or *--* while nothing is timed, updated every second from `IRefreshSchedule.Remaining` (#169). The page binds its countdown to it |
 | `SetPaused(bool)`, `IsPaused` | The top bar's Pause and Resume: the timer stops, and Refresh still reads. Resuming waits a whole interval, as File I/O's did |
 | `Verdict`, `Status`, `IsBusy` | Observable: the verdict, *Loading…* / *Refreshing…* or the error as one line, and whether it is reading |
 | `SaveState()`, `RestoreState(object)` | What the page keeps when it is left, put back when its route is opened again (#139); the window keeps the grids' sort and scrolling (`ViewState`) |
 
 - A failure is reported once: to `IShellStatus.ReportError` and in the verdict (`PageVerdict.Unreadable`). A read that fails after the page was left is only logged, and a cancelled read says nothing.
 - Each read is reported with how it came: `PageRead.Load` (a failure also shows a message box), `Refresh` or `Timed` (only the top bar and the log).
-- **Code-behind pages:** until its wave of #180, a page reads in its code-behind. It implements `Pages/ICodeBehindPage` (`RefreshAsync`), and its view model derives from `CodeBehindViewModel`, whose `LoadAsync` calls it; the page shows its own errors in its verdict, and runs its own timer. `CodeBehindPagesAllowed` in the guard tests lists these pages, so a new page can't be one.
-- `PageLifecycleTests` checks the base with a fake shell and a stepped clock (`SteppingTime`); `PageFactoryTests` creates every page in `PageCatalog` through the factory.
+- **Code-behind pages:** until its wave of #180, a page reads in its code-behind. It implements `Pages/ICodeBehindPage` (`RefreshAsync`), and its view model derives from `CodeBehindViewModel`, whose `LoadAsync` calls it; the page shows its own errors in its verdict. Its timed reads are the base class's (#169): the page calls `ReadEvery(interval, countdown)`, its Start / Stop and the top bar's Pause call `SetPaused`, its own *Read again* or *Start over* runs `RefreshAsync`, and its countdown binds to `Countdown`. Agent Jobs, Processes and File I/O went first; `DispatcherTimersAllowed` lists the pages that still run their own timer. `CodeBehindPagesAllowed` in the guard tests lists these pages, so a new page can't be one.
+- `PageLifecycleTests` checks the base with a fake shell and a stepped clock (`SteppingTime`), and `PageRefreshTests` the countdown and the pages that read on its timer; `PageFactoryTests` creates every page in `PageCatalog` through the factory.
 
 ### Adding a page
 
@@ -407,6 +416,7 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | Page code doesn't use a repository | `Pages/**/*.cs` | `RepositoryReferencesAllowed`: 25 pages |
 | Only the shell refers to `MainWindow`: pages report to `IShellStatus` and open pages through `INavigator` (#166) | `Pages/**`, `Controls/**`, `Windows/**`, `Helpers/**` | none |
 | A page's XAML gains no `Click=` (comments aren't counted) | `Pages/**/*.xaml` | `ClicksAllowed`: 98 in 27 files |
+| No page makes its own `DispatcherTimer` (#169) | `Pages/**/*.cs` | `DispatcherTimersAllowed`: 10 in 8 files |
 | `async void` only in event handlers | all of `Desktop/` | `AsyncVoidAllowed`: 6 in 5 files |
 | A page reads through its view model, not in its code-behind (`ICodeBehindPage`) | the pages | `CodeBehindPagesAllowed`: 28 pages |
 | One file per view model, named after its page | `ViewModels/**` | none |

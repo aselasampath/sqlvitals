@@ -89,6 +89,22 @@ public sealed class MvvmGuardTests
         ["Pages/ProcessesPage.xaml.cs"]        = 1,
     };
 
+    /// <summary>
+    /// How many <c>DispatcherTimer</c>s each page still makes (#169): a page's timed reads, and its
+    /// countdown, are its view model's (<c>ReadEvery</c>). Pages leave this list as they move to it.
+    /// </summary>
+    private static readonly Dictionary<string, int> DispatcherTimersAllowed = new()
+    {
+        ["Pages/AlertsPage.xaml.cs"]                   = 2,
+        ["Pages/LiveMetricsDashboardPage.xaml.cs"]     = 1,
+        ["Pages/MemoryGrantsPage.xaml.cs"]             = 1,
+        ["Pages/OverviewPage.xaml.cs"]                 = 2,
+        ["Pages/PerfmonPage.xaml.cs"]                  = 1,
+        ["Pages/Settings/MonitoringCategory.xaml.cs"]  = 1,
+        ["Pages/SpTracePage.xaml.cs"]                  = 1,
+        ["Pages/WaitStatsTrendPage.xaml.cs"]           = 1,
+    };
+
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
     private static readonly string[] CodeBehindPagesAllowed =
     [
@@ -252,6 +268,24 @@ public sealed class MvvmGuardTests
                 ? File.ReadAllText(m.Path[..^3]) : null;
             return MvvmRules.AsyncVoid(m.Model, m.File, xaml);
         }).ToList());
+
+    // ── No page runs its own timer (#169) ────────────────────────────────
+
+    [Fact]
+    public void Pages_DontMakeTheirOwnDispatcherTimer() =>
+        Fail(Grown(DispatcherTimerOffences(), DispatcherTimersAllowed),
+             "A page makes its own DispatcherTimer: read on the view model's timer instead (ReadEvery, PageViewModel.RefreshInterval):");
+
+    [Fact]
+    public void DispatcherTimers_AllowlistShrinksWithIt() =>
+        Fail(Shrunk(DispatcherTimerOffences(), DispatcherTimersAllowed, nameof(DispatcherTimersAllowed)), "The allowlist only shrinks:");
+
+    private static List<Offence> DispatcherTimerOffences() =>
+        Models("Pages/").SelectMany(m => m.Model.SyntaxTree.GetRoot().DescendantNodes()
+            .OfType<BaseObjectCreationExpressionSyntax>()
+            .Where(n => m.Model.GetTypeInfo(n).Type is { Name: "DispatcherTimer" })
+            .Select(n => new Offence(m.File, n.GetLocation().GetLineSpan().StartLinePosition.Line + 1, "DispatcherTimer", "new DispatcherTimer")))
+            .ToList();
 
     // ── Where view models live ───────────────────────────────────────────
 
