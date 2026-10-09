@@ -79,6 +79,24 @@ public sealed class OverviewPageTests : IDisposable
         return (_monitoring, _settings);
     }
 
+    // A day of a connection's scores in the history (#170): every 5 minutes, except a 10-hour
+    // night with none, ending a minute ago. Written before the monitoring opens the file.
+    private void SeedADayWithANightOff(ConnectionSettings conn)
+    {
+        var now   = DateTime.UtcNow;
+        var night = (From: now.AddHours(-20), To: now.AddHours(-10));
+        var who   = new HistoryConnection(conn.Id, conn.DisplayName, conn.Server, "");
+        var records = new List<HistoryRecord>();
+        for (var t = now.AddHours(-24).AddMinutes(1); t < now; t = t.AddMinutes(5))
+            if (t < night.From || t > night.To)
+                records.Add(new HealthScoreRecord(who, t, 90, Reachable: true));
+
+        Directory.CreateDirectory(_dir);
+        using var store = new HistoryStore(Path.Combine(_dir, "history.db"));
+        store.Open();
+        store.Write(records);
+    }
+
     // The page, laid out, loaded, and its server reads finished.
     private OverviewPage Open(ConnectionSettings conn)
     {
@@ -309,6 +327,19 @@ public sealed class OverviewPageTests : IDisposable
 
         Assert.Equal(Visibility.Visible, page.TxtMissing.Visibility);
         Assert.Equal(Visibility.Collapsed, page.Main.Visibility);
+    });
+
+    [Fact]
+    public void TheScore_SaysHowMuchOfTheLastDayWasMonitored() => UiThread.Run(() =>
+    {
+        SeedADayWithANightOff(_calm);
+        Setup();
+
+        var page = Open(_calm);
+
+        Assert.Equal("Monitored 14 h of the last 24 h", page.TxtCoverage.Text);
+        Assert.Equal(Visibility.Visible, page.TxtCoverage.Visibility);
+        Assert.Contains("grey: not monitored", page.TxtChartsNote.Text);
     });
 
     public void Dispose()

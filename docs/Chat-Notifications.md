@@ -2,7 +2,7 @@
 
 A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start, turn critical and end, so the whole team sees a problem when it starts and knows when it's over, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)) · *Stopped watching* and *watching again* since 0.70.0, the [heartbeat](#heartbeat) since 0.71.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170))
+> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)) · *Stopped watching* and *watching again* since 0.70.0, the [heartbeat](#heartbeat) since 0.71.0; how much was [monitored](Your-Servers.md#how-much-was-monitored) shows on Home and the Overview since 0.72.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170))
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 

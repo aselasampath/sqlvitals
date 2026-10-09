@@ -17,7 +17,7 @@ public sealed record ScoreChartData(
 /// <summary>
 /// A health score over time (#130): a Home tile's sparkline, or with <see cref="ShowAxes"/> the
 /// Overview's chart (#143) with its 0/50/100 lines, times, alert markers, and the times the server
-/// couldn't be reached shaded. Drawn in one pass rather than built from elements, so a page of
+/// couldn't be reached shaded red, and the times nobody was watching it grey (#170). Drawn in one pass rather than built from elements, so a page of
 /// tiles costs a single visual each, however many points they hold.
 /// </summary>
 public sealed class ScoreChart : FrameworkElement
@@ -89,6 +89,14 @@ public sealed class ScoreChart : FrameworkElement
         foreach (var (from, to) in ScoreTrend.UnreachableSpans(_points, _fromUtc, _toUtc, _bucket))
             dc.DrawRectangle(shade, null, new Rect(plot.Left + from * plot.Width, plot.Top,
                                                     Math.Max(2, (to - from) * plot.Width), plot.Height));
+
+        // The times nobody was watching (#170): the PC slept, the app was closed, or it was stopped.
+        var unwatched = muted.Clone();
+        unwatched.Opacity = 0.18;
+        unwatched.Freeze();
+        foreach (var (from, to) in ScoreTrend.GapSpans(_points, _fromUtc, _toUtc, _bucket))
+            dc.DrawRectangle(unwatched, null, new Rect(plot.Left + from * plot.Width, plot.Top,
+                                                        Math.Max(2, (to - from) * plot.Width), plot.Height));
 
         if (ShowAxes)
             DrawAxes(dc, plot, muted, border);

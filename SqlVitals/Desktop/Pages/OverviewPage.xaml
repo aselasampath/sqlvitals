@@ -182,6 +182,7 @@
                             </TextBlock>
                             <TextBlock x:Name="TxtLevel" FontSize="13" FontWeight="SemiBold" Margin="0,2,0,4"/>
                             <TextBlock x:Name="TxtContext" Style="{StaticResource Muted}"/>
+                            <TextBlock x:Name="TxtCoverage" Style="{StaticResource Muted}" Margin="0,2,0,0" Visibility="Collapsed"/>
 
                             <TextBlock x:Name="TxtCostsTitle" Text="What is costing points" Style="{StaticResource CardTitle}" Margin="0,16,0,0"/>
                             <TextBlock x:Name="TxtNoCosts" Style="{StaticResource Muted}" Margin="0,4,0,0" Visibility="Collapsed"/>

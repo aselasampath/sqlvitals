@@ -14,8 +14,8 @@ public readonly record struct ChartPoint(double X, double Y);
 
 /// <summary>
 /// Lays out a health score's history (#130) for the Home sparklines and the server detail chart:
-/// 100 at the top and 0 at the bottom, a break wherever monitoring stopped, and the times the
-/// server couldn't be reached as spans to shade.
+/// 100 at the top and 0 at the bottom, a break wherever monitoring stopped, and as spans to shade
+/// the times the server couldn't be reached and the times nobody was watching it (#170).
 /// </summary>
 public static class ScoreTrend
 {
@@ -84,6 +84,22 @@ public static class ScoreTrend
         }
         Close();
         return spans;
+    }
+
+    /// <summary>
+    /// The times nobody was watching (#170), as [from, to] fractions of the width: the
+    /// <see cref="Coverage"/> gaps of the points in the range. None without points: an empty
+    /// chart says so in words.
+    /// </summary>
+    public static IReadOnlyList<(double From, double To)> GapSpans(
+        IReadOnlyList<ScorePoint> points, DateTime fromUtc, DateTime toUtc, TimeSpan bucket)
+    {
+        var times = points.Where(p => p.TimeUtc >= fromUtc && p.TimeUtc <= toUtc).Select(p => p.TimeUtc).ToList();
+        if (times.Count == 0)
+            return [];
+        return Coverage.Of(times, fromUtc, toUtc, bucket).Gaps
+            .Select(g => (X(g.FromUtc, fromUtc, toUtc), X(g.ToUtc, fromUtc, toUtc)))
+            .ToList();
     }
 
     /// <summary>

@@ -20,7 +20,7 @@ Each tile shows:
 |---|---|
 | **Name and status** | The health dot, the connection's name, and its status in words: **CRITICAL**, **WARNING**, **HEALTHY**, **UNREACHABLE**, **WAITING** or **OFF**. The active connection also says **ACTIVE** and has an accent border. |
 | **Server / database** | The connection's server and database |
-| **Score** | 0 to 100, in the dot's colour, with a sparkline of the **last hour**. |
+| **Score** | 0 to 100, in the dot's colour, with a sparkline of the **last hour**: shaded red where the server couldn't be reached, grey where it wasn't monitored. Under it, how much of the last day was watched: *Monitored 14 h of the last 24 h* (point at it for the longest gap). See [How much was monitored](#how-much-was-monitored). |
 | **Why** | What lowered it, in the words of the score's breakdown: *Lowered by Page life expectancy −8.* |
 | **Six bars** | One per check (CPU, Blocking, PLE, Grants, Log, TempDB), each in its own colour. Point at a bar for its figure and thresholds. |
 | **Footer** | When the last sample was taken, and whether it's the active connection or monitored in the background |
@@ -70,7 +70,7 @@ With none: *None: no check has stayed past its threshold long enough to alert*, 
 
 ### Health score
 
-The score, its status, and how it got there: *Was 100 at 21:45 · lowest today 70 at 21:52*.
+The score, its status, and how it got there: *Was 100 at 21:45 · lowest today 70 at 21:52*. Under it, *Monitored 14 h of the last 24 h* ([below](#how-much-was-monitored)).
 
 ### What is costing points
 
@@ -124,7 +124,7 @@ Deadlocks and jobs are read from the server when the Overview opens, only while 
 
 Six charts over the **time window in the top bar**: **Live** (the samples kept for the server, at least the last 10 minutes), or **1h**, **24h**, **7d** or **Custom…** from the [history](History-Time-Ranges-and-Baselines.md).
 
-- **Health score**: the lowest score in each slice of time; **shading** marks when the server couldn't be reached.
+- **Health score**: the lowest score in each slice of time; **red shading** marks when the server couldn't be reached, **grey** when nobody was watching it.
 - **CPU (%)**, **Waits (ms/s)** by category (CPU, I/O, locks, memory, network), **Throughput** (batch requests and transactions per second), **Page life expectancy** and **Physical I/O** (page reads and writes per second).
 - **Dashed lines** mark where alerts started, on every chart, labelled with the time and the check on the health score: *21:52 Block*.
 - The line breaks where monitoring was off. Times are on this PC's clock.
@@ -152,7 +152,17 @@ The Overview of an unreachable server replaces the score, the headline numbers a
 - **Before it went down**: the last score taken while the server could be reached, and when.
 - **What happened**: the last good sample, when collections started failing, monitoring starting and stopping, alerts starting and ending, and that it's still failing.
 
-The charts stay below, with the time it couldn't be reached shaded.
+The charts stay below, with the time it couldn't be reached shaded red.
+
+## How much was monitored
+
+A server with no alerts looks the same whether it was fine or nobody was watching. So Home's tiles and the Overview say how much of the **last 24 hours** SqlVitals was watching it (since 0.72.0, [#170](https://github.com/aselasampath/sqlvitals/issues/170)):
+
+- *Monitored all of the last 24 h*, *Monitored 14 h of the last 24 h*, *Monitored 25 min of the last 24 h* or *Not monitored in the last 24 h*. Hours are rounded to the nearest; *all* means nothing over a few minutes is missing. Point at it for the longest gap: *Longest gap 18:02–04:10 (10 h 08 min)*.
+- It's read from the scores in the [history](Monitoring-History-Database.md): every sample stores one, reachable or not. A stretch with none, longer than three times the usual spacing (15 minutes at the 5-minute steps it's read in), is a time nobody was watching: the PC slept or was off, SqlVitals was closed, or monitoring was stopped. A server that couldn't be reached **was** watched; that's the red shading.
+- The score charts shade those gaps **grey**: the tile's last hour, and the Overview's chart over the top bar's window.
+- Clearing the history clears it too, and a connection added today has only been watched since then.
+- To be told when watching stops, use the chat channels' [stopped watching and heartbeat](Chat-Notifications.md#stopped-watching-and-watching-again) messages.
 
 A healthy server's Overview, for comparison:
 

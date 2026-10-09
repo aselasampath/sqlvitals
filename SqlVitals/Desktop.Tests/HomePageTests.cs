@@ -65,6 +65,24 @@ public sealed class HomePageTests : IDisposable
         return (_monitoring, _settings);
     }
 
+    // A day of a connection's scores in the history (#170): every 5 minutes, except a 10-hour
+    // night with none, ending a minute ago. Written before the monitoring opens the file.
+    private void SeedADayWithANightOff(ConnectionSettings conn)
+    {
+        var now   = DateTime.UtcNow;
+        var night = (From: now.AddHours(-20), To: now.AddHours(-10));
+        var who   = new HistoryConnection(conn.Id, conn.DisplayName, conn.Server, "");
+        var records = new List<HistoryRecord>();
+        for (var t = now.AddHours(-24).AddMinutes(1); t < now; t = t.AddMinutes(5))
+            if (t < night.From || t > night.To)
+                records.Add(new HealthScoreRecord(who, t, 90, Reachable: true));
+
+        Directory.CreateDirectory(_dir);
+        using var store = new HistoryStore(Path.Combine(_dir, "history.db"));
+        store.Open();
+        store.Write(records);
+    }
+
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
     private static Button ButtonOn(FrameworkElement page, string content, string tileName) =>
@@ -208,6 +226,23 @@ public sealed class HomePageTests : IDisposable
         UiThread.Wait(page.RefreshAsync());
 
         Assert.Equal(before, _calls.Count);
+    });
+
+    [Fact]
+    public void ATile_SaysHowMuchOfTheLastDayWasMonitored() => UiThread.Run(() =>
+    {
+        SeedADayWithANightOff(_quiet);
+        var (monitoring, settings) = Setup();
+
+        var page = new HomePage(monitoring, settings);
+        UiThread.Layout(page, 1100, 900);
+        UiThread.Wait(page.RefreshAsync());
+
+        var quiet = page.TilesShown.Single(t => t.Tile.Id == _quiet.Id);
+        Assert.Equal("Monitored 14 h of the last 24 h", quiet.CoverageText);
+        Assert.StartsWith("Longest gap ", quiet.CoverageToolTip);
+        Assert.Contains("(10 h", quiet.CoverageToolTip);
+        Assert.Contains("Grey: not monitored", quiet.TrendToolTip);
     });
 
     public void Dispose()

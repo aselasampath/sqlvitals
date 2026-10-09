@@ -72,6 +72,8 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     private IReadOnlyList<Alert>         _alerts   = [];
     private IReadOnlyList<ActivityEntry> _activity = [];
     private ScoreHistoryPoint?           _lastReachable;
+    // How much of the last day was monitored (#170); null until the history is read.
+    private Coverage?                    _coverage;
     private HistoryLoad<MetricHistoryPoint>? _metrics;   // a past range's metrics; null while live
     private string?                      _historyProblem;
 
@@ -194,14 +196,16 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
                                                                                      reader.ReadMetrics(_id, fromUtc, toUtc, bucket)),
                 Activity:  failing is { } f ? reader.ReadActivity(f.AddHours(-2), ahead, _id).Select(r => r.Entry).ToList() : [],
                 Reachable: failing is { } since ? reader.ReadLastReachableScore(_id, since) : null,
+                Coverage:  Coverage.Of(reader.ReadScores(_id, nowUtc - HomePage.CoverageSpan, ahead, HomePage.CoverageBucket).Select(p => p.TimeUtc),
+                                       nowUtc - HomePage.CoverageSpan, nowUtc, HomePage.CoverageBucket),
                 Regressed: sinceToo ? QueryRegressionDetector.Detect(QueryRegressionDetector.FromHistory(
                                reader.ReadQueryTotals(_id, SinceLastLooked.Baseline(look).FromUtc, SinceLastLooked.Baseline(look).ToUtc),
                                reader.ReadQueryTotals(_id, look.FromUtc, look.ToUtc)), criteria).Count : (int?)null));
             if (version != _loadVersion)
                 return;
 
-            (_windowScores, _todayScores, _alerts, _metrics, _activity, _lastReachable) =
-                (data.Window, data.Today, data.Alerts, data.Metrics, data.Activity, data.Reachable);
+            (_windowScores, _todayScores, _alerts, _metrics, _activity, _lastReachable, _coverage) =
+                (data.Window, data.Today, data.Alerts, data.Metrics, data.Activity, data.Reachable, data.Coverage);
             if (data.Regressed is { } regressed)
                 _regressions = RegressionsRow(regressed, criteria);
             _historyProblem = null;
@@ -542,6 +546,11 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
                                  score.Value, Clock);
         TxtContext.Visibility = TxtContext.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
 
+        // Whether a quiet day means a healthy one (#170): how much of it SqlVitals was watching.
+        TxtCoverage.Text       = _coverage?.Text() ?? string.Empty;
+        TxtCoverage.ToolTip    = _coverage?.LongestGapText(Clock);
+        TxtCoverage.Visibility = TxtCoverage.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+
         var graded = score is { Level: not HealthLevel.Unavailable, Checks.Count: > 0 } ? score : null;
         var costs  = graded is null ? [] : ScoreCosts.Lowering(graded);
         Show(CostsList, costs.Select(c =>
@@ -717,7 +726,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
                 ? "Nothing recorded in this range: metrics are recorded while SqlVitals monitors this connection. "
                 : $"Averages per {ConnectionHistory.FormatBucket(bucket)} from the monitoring history. ")
             + (markers.Count > 0 ? "Dashed lines: alerts starting. " : string.Empty)
-            + "Shaded: the server couldn't be reached. Times on this PC's clock.";
+            + "Shaded red: the server couldn't be reached; grey: not monitored. Times on this PC's clock.";
 
         AutomationProperties.SetName(ChartScore, scores.Count == 0
             ? "Health score: no scores recorded in this window"
