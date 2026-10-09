@@ -94,7 +94,7 @@ public class MemoryRepository(SqlTarget target, ServerCapabilitiesCache? capabil
     // Naming a missing column fails the whole query with error 207.
     // Azure SQL DB (EngineEdition 5): sys.dm_os_sys_memory not exposed → counters only.
 
-    /// <summary>The edition, and whether sys.dm_os_sys_info has sql_memory_model_desc.</summary>
+    /// <summary>Whether sys.dm_os_sys_info has sql_memory_model_desc.</summary>
     internal static readonly string MemorySnapshotProbeSql = SqlScripts.Get("Memory/MemorySnapshotProbe");
 
     internal const string MemoryModelColumnSql = "osi.sql_memory_model_desc";
@@ -122,10 +122,10 @@ public class MemoryRepository(SqlTarget target, ServerCapabilitiesCache? capabil
     {
         using var conn = CreateConnection();
 
-        // EngineEdition 5 = Azure SQL DB; 8 = Managed Instance (MI has the DMVs).
+        // Azure SQL DB lacks the DMVs; Managed Instance has them.
         // No probe row: leave the memory model out rather than risk error 207.
+        bool isAzureSqlDb = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
         var meta = await QFirst(conn, MemorySnapshotProbeSql, cancellationToken);
-        bool isAzureSqlDb = meta is not null && (int)meta.Edition == 5;
         bool hasMemoryModel = meta is not null && (int)meta.HasMemoryModel == 1;
 
         var r = await QFirst(conn, MemorySnapshotSql(isAzureSqlDb, hasMemoryModel), cancellationToken);

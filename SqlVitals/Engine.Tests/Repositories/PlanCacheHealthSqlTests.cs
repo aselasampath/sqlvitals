@@ -33,6 +33,19 @@ public class PlanCacheHealthSqlTests
 
     [Theory]
     [MemberData(nameof(QueryProfileSql))]
+    public void QueryProfiles_NeverDivideByZero(string sql)
+    {
+        // SQL Server needn't apply "EstimatedRows > 0" before a division in the SELECT or the
+        // WHERE: on 2019+ any running request has profile rows, and a node with 0 estimated
+        // rows failed the whole page with error 8134 (#46). Every divisor is NULLIF(…, 0).
+        var divisors = System.Text.RegularExpressions.Regex.Matches(sql, @"/\s*(\S+)");
+
+        Assert.NotEmpty(divisors);
+        Assert.All(divisors, d => Assert.StartsWith("NULLIF(", d.Groups[1].Value, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(QueryProfileSql))]
     public void QueryProfiles_JoinTheirOwnRequest(string sql)
     {
         // A MARS session can have more than one request.

@@ -8,9 +8,6 @@ public class HistoryRepository(SqlTarget target, ServerCapabilitiesCache? capabi
     // every interval on an idle server and say nothing about a problem.
     internal static readonly string BenignWaits =SqlScripts.Get("History/BenignWaits");
 
-    // EngineEdition 5 = Azure SQL Database: no sys.master_files, and waits are per database.
-    private bool? _isAzureSqlDb;
-
     public async Task<HistoryDetailSnapshot> GetHistoryDetailAsync(DateTime? queriesExecutedSince, int maxQueries, CancellationToken cancellationToken = default)
     {
         var clockSql = SqlScripts.Get("History/Clock");
@@ -32,8 +29,8 @@ public class HistoryRepository(SqlTarget target, ServerCapabilitiesCache? capabi
 
         var clock = await QFirst(conn, clockSql, cancellationToken)
                     ?? throw new InvalidOperationException("Failed to read the server clock.");
-        _isAzureSqlDb ??= Convert.ToInt32(clock.Edition) == 5;
-        var isAzure = _isAzureSqlDb.Value;
+        // Azure SQL Database: no sys.master_files, and waits are per database.
+        var isAzure = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
 
         var waitsSql = SqlScripts.Get("History/Waits")
             .Replace("/*WAIT_STATS*/", isAzure ? "sys.dm_db_wait_stats" : "sys.dm_os_wait_stats")

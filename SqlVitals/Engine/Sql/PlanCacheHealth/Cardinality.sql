@@ -6,8 +6,8 @@ SELECT TOP 20
     CAST(
         CASE
             WHEN p.ActualRows > p.EstimatedRows
-                 THEN p.ActualRows * 1.0 / p.EstimatedRows
-            ELSE p.EstimatedRows * 1.0 / p.ActualRows
+                 THEN p.ActualRows * 1.0 / NULLIF(p.EstimatedRows, 0)
+            ELSE p.EstimatedRows * 1.0 / NULLIF(p.ActualRows, 0)
         END AS FLOAT)  AS MisestimateRatio,
     DB_NAME(r.database_id) AS DatabaseName,
     SUBSTRING(REPLACE(REPLACE(ISNULL(st.text,''),CHAR(13),' '),CHAR(10),' '),1,400) AS QueryText
@@ -26,6 +26,6 @@ JOIN sys.dm_exec_requests r ON r.session_id = p.SessionId AND r.request_id = p.R
 CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
 WHERE p.EstimatedRows > 0
   AND p.ActualRows > 0
-  AND (   p.ActualRows * 1.0 / p.EstimatedRows >= 1000
-       OR p.EstimatedRows * 1.0 / p.ActualRows >= 1000)
+  AND (   p.ActualRows * 1.0 / NULLIF(p.EstimatedRows, 0) >= 1000
+       OR p.EstimatedRows * 1.0 / NULLIF(p.ActualRows, 0) >= 1000)
 ORDER BY MisestimateRatio DESC;

@@ -15,8 +15,9 @@
 git clone https://github.com/aselasampath/sqlvitals.git
 cd sqlvitals
 
-dotnet build SqlVitals.slnx              # all six projects
+dotnet build SqlVitals.slnx              # all seven projects
 dotnet test                              # Engine.Tests + Desktop.Tests + Installer.Tests
+                                         # (+ Engine.IntegrationTests, skipped without a server)
 dotnet run --project SqlVitals\Desktop   # start the app
 ```
 
@@ -43,6 +44,23 @@ dotnet test SqlVitals\Desktop.Tests      # the app's services; Windows only (WPF
 dotnet test SqlVitals\Installer.Tests
 ```
 
+### Against a real SQL Server
+
+`Engine.IntegrationTests` (#46) runs every repository method against a SQL Server: the queries, and the C# that maps their rows, so a column of another type than the code reads fails too. Without a server its tests are skipped. Give it one where the login is **sysadmin**, on a machine you can throw away, such as a container:
+
+```powershell
+docker run -d --name sqlvitals-sql -p 1433:1433 -e ACCEPT_EULA=Y -e MSSQL_PID=Developer `
+  -e MSSQL_AGENT_ENABLED=true -e "MSSQL_SA_PASSWORD=Your-Strong-Pa55" mcr.microsoft.com/mssql/server:2022-latest
+$env:SQLVITALS_TEST_SERVER = "Server=localhost,1433;User ID=sa;Password=Your-Strong-Pa55;TrustServerCertificate=True"
+dotnet test SqlVitals\Engine.IntegrationTests
+```
+
+The fixture (`SqlServerFixture`) drops and creates the **SqlVitalsIT** database (`Setup/Database.sql`: tables, procedures, Query Store, a plan guide, an orphaned user, a full, differential and log backup), runs a workload, forces a plan, makes a deadlock, creates and runs two Agent jobs (`Setup/AgentJobs.sql`, only where Agent runs), and holds a blocking chain open until the tests end. It leaves the database, the jobs and the backup files behind; the next run replaces them.
+
+- `RepositoryCoverageTests` fails for a method of `IWaitStatsRepository` that no test names in a `[Covers(...)]`, and runs without a server.
+- `AzureSqlDatabasePathTests` tells the repositories the server is Azure SQL Database (through the `ServerCapabilitiesCache` they share) and runs the Azure queries that SQL Server can run too. The Azure-only DMVs (`sys.dm_db_wait_stats`, `sys.dm_db_resource_stats`) and database-scoped event sessions are covered by `SqlParseTests` only.
+- On GitHub Actions a missing `SQLVITALS_TEST_SERVER` fails the tests rather than skipping them.
+
 **Rebuild while the app is running** (otherwise the build fails with *file locked*). Closing the window doesn't exit SqlVitals by default: it keeps running in the notification area. Choose **Exit** from its icon's menu, or:
 
 ```powershell
@@ -61,6 +79,7 @@ Start-Process "SqlVitals\Desktop\bin\Debug\net10.0-windows\SqlVitals.Desktop.exe
 SqlVitals.slnx
 .github/workflows/pr-setup.yml   CI: tests + coverage + Setup build on every PR to main
 .github/workflows/release.yml    Release: tag vX.Y.Z → tests, Setup build, GitHub Release
+.github/workflows/sql-integration.yml   The repositories' SQL against SQL Server 2017–2025 (Linux containers)
 .github/scripts/Test-WithCoverage.ps1   Both workflows' test step: tests, coverlet, ReportGenerator
 Directory.Build.props            Build rules for every project: warnings are errors, analyzers on
 .editorconfig                    Code style; which rules fail the build
@@ -70,6 +89,7 @@ SqlVitals/
   Engine/           Models/, Repositories/, History/, Regressions/, Scripting/, Export/,
                     Filtering/, Monitoring/, Errors/ (a class library)
   Engine.Tests/     xUnit
+  Engine.IntegrationTests/   xUnit against a real SQL Server (SQLVITALS_TEST_SERVER)
   Desktop.Tests/    xUnit for the app's services (settings file, monitoring), pages,
                     and the MVVM guard tests over the app's sources
   Installer/        Setup wizard: Core/ (logic, no WPF), Views/, Build-Installer.ps1
@@ -104,6 +124,8 @@ The script publishes `SqlVitals.Desktop` **self-contained** for win-x64 and zips
 6. Uploads `SqlVitals-Setup-<version>-pr<N>` and `SqlVitals-<version>-win-x64-portable-pr<N>` as artifacts, kept for **14 days** (Actions tab → run → *Artifacts*).
 
 A new push cancels the build still running for the previous one. PR builds are unsigned, so Windows SmartScreen may ask to confirm (*More info → Run anyway*).
+
+`.github/workflows/sql-integration.yml` (#46) runs on the same pull requests, on pushes to `main` and on version tags, on `ubuntu-latest`: one job per SQL Server version, **2017, 2019, 2022 and 2025**, each with that version's container (Developer edition, Agent on) as a service, running `Engine.IntegrationTests` (see [Against a real SQL Server](#against-a-real-sql-server)). A version's failure doesn't cancel the others, and its test results are uploaded as an artifact. Each job takes about a minute and a half.
 
 ## Release a new version
 
@@ -213,6 +235,8 @@ public async Task<IEnumerable<YourFeatureRow>> GetYourFeatureAsync()
 > A part that depends on the server's version is a `/*MARKER*/` in the file, filled with `Replace` (see [Architecture → Where the SQL lives](Architecture.md#where-the-sql-lives)). `SqlScriptsTests` fails for a name that has no file, and `SqlParseTests` for SQL that doesn't parse under SQL Server 2016's or 2022's grammar.
 >
 > Always `Q(conn, sql)`, never `conn.QueryAsync`. Always `Convert.To*` for numbers, never casts or `?? 0`. See [DBNull-safe mapping](Architecture.md#dbnull-safe-mapping).
+>
+> Run it against a server in `Engine.IntegrationTests`: a test marked `[SqlServerFact]` and `[Covers(nameof(IIndexRepository.GetYourFeatureAsync))]`, with whatever the query needs to return rows added to `Setup/Database.sql`. `RepositoryCoverageTests` fails until a test covers the method.
 
 ### 5. Create the page
 

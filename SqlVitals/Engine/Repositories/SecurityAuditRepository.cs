@@ -45,8 +45,8 @@ public class SecurityAuditRepository(SqlTarget target, ServerCapabilitiesCache? 
     {
         using var conn = CreateConnection();
 
+        int edition     = (await CapabilitiesAsync(cancellationToken)).EngineEdition;
         var server      = await QFirst(conn, ServerSql, cancellationToken);
-        int edition     = server is null ? 0 : Convert.ToInt32(server.Edition);
         bool windowsOnly = server is not null && Convert.ToInt32(server.WindowsAuthenticationOnly) == 1;
         bool canView     = server is not null && Convert.ToInt32(server.CanViewDefinitions) == 1;
 

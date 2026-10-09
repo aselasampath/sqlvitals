@@ -104,7 +104,7 @@ dotnet_diagnostic.CA1859.severity = suggestion
 
 # ── Test projects ───────────────────────────────────────────────────
 # Rules that don't fit tests. Each is still on for the code under test.
-[SqlVitals/{Engine.Tests,Desktop.Tests,Installer.Tests}/**.cs]
+[SqlVitals/{Engine.Tests,Engine.IntegrationTests,Desktop.Tests,Installer.Tests}/**.cs]
 # Test names are Method_Scenario_Result.
 dotnet_diagnostic.CA1707.severity = none
 # Inline expected arrays read better than static fields, and a test runs once.

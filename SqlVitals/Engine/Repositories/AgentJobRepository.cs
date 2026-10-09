@@ -10,9 +10,7 @@ namespace SqlVitals.Engine.Repositories;
 /// </summary>
 public class AgentJobRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IAgentJobRepository
 {
-    private const int AzureSqlDatabaseEdition = 5;
-
-    // Kept to what every edition has, so Azure SQL Database gets its message rather than an error.
+    // The server's clock; the edition comes from the shared capabilities (#46).
     internal static readonly string ServerSql = SqlScripts.Get("AgentJob/Server");
 
     // Agent turns this option on as it starts and off as it stops.
@@ -31,13 +29,15 @@ public class AgentJobRepository(SqlTarget target, ServerCapabilitiesCache? capab
     {
         using var conn = CreateConnection();
 
-        var server  = await QFirst(conn, ServerSql, cancellationToken);
-        int edition = server is null ? 0 : Convert.ToInt32(server.Edition);
-        DateTime serverNow = server?.ServerNow as DateTime? ?? DateTime.Now;
-        if (edition == AzureSqlDatabaseEdition)
+        var capabilities = await CapabilitiesAsync(cancellationToken);
+        int edition = capabilities.EngineEdition;
+        if (capabilities.IsAzureSqlDatabase)
             return AgentJobList.Unavailable(
                 "Azure SQL Database has no SQL Server Agent, so there are no jobs to monitor. Elastic Jobs or Azure " +
                 "Automation run scheduled work there; SQL Server and Azure SQL Managed Instance are supported here.");
+
+        var server = await QFirst(conn, ServerSql, cancellationToken);
+        DateTime serverNow = server?.ServerNow as DateTime? ?? DateTime.Now;
 
         string? serviceStatus = null;
         try

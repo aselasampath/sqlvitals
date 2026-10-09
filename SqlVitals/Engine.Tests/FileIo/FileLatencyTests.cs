@@ -315,13 +315,14 @@ public class FileLatencyTests
     // ── SQL ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void The_reading_takes_the_server_clock_with_the_totals_and_skips_the_resource_database()
+    public void The_reading_takes_the_server_clock_with_the_totals_and_skips_the_hidden_databases()
     {
         Assert.Contains("SYSDATETIME() AS ServerTime", FileIoRepository.FilesSql);
         Assert.Contains("sys.dm_io_virtual_file_stats(NULL, NULL)", FileIoRepository.FilesSql);
         Assert.Contains("io_stall_read_ms", FileIoRepository.FilesSql);
         Assert.Contains("io_stall_write_ms", FileIoRepository.FilesSql);
-        Assert.Contains("vfs.database_id <> 32767", FileIoRepository.FilesSql);
+        // The resource database (32767), and model_msdb (32761) and model_replicatedmaster (32762) on 2022+.
+        Assert.Contains("vfs.database_id < 32761", FileIoRepository.FilesSql);
         Assert.Contains("sqlserver_start_time", FileIoRepository.ServerSql);
     }
 

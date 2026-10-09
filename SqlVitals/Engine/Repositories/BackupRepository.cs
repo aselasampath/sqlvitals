@@ -10,9 +10,7 @@ namespace SqlVitals.Engine.Repositories;
 /// </summary>
 public class BackupRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IBackupRepository
 {
-    private const int AzureSqlDatabaseEdition = 5;
-
-    // Kept to what every edition has, so Azure SQL Database gets its message rather than an error.
+    // The server's clock; the edition comes from the shared capabilities (#46).
     internal static readonly string ServerSql = SqlScripts.Get("Backup/Server");
 
     // One row per database except tempdb and snapshots, which can't be backed up. backupset is
@@ -29,14 +27,14 @@ public class BackupRepository(SqlTarget target, ServerCapabilitiesCache? capabil
     {
         using var conn = CreateConnection();
 
-        var server  = await QFirst(conn, ServerSql, cancellationToken);
-        int edition = server is null ? 0 : Convert.ToInt32(server.Edition);
-        DateTime serverNow = server?.ServerNow as DateTime? ?? DateTime.Now;
-        if (edition == AzureSqlDatabaseEdition)
+        if ((await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase)
             return BackupList.Unavailable(
                 "Azure SQL Database backs up every database itself (full, differential and log backups, kept for " +
                 "point-in-time restore) and records none of them in msdb. The Azure portal shows the restore points " +
                 "under the database's Backups. SQL Server and Azure SQL Managed Instance are supported here.", rpo);
+
+        var server = await QFirst(conn, ServerSql, cancellationToken);
+        DateTime serverNow = server?.ServerNow as DateTime? ?? DateTime.Now;
 
         List<dynamic> rows;
         try
