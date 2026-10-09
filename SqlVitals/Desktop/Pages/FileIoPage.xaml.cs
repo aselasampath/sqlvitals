@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
 using SqlVitals.Desktop.Controls;
@@ -23,11 +24,11 @@ namespace SqlVitals.Desktop.Pages;
 /// </summary>
 public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsSource
 {
-    // Live: read every few seconds; the bar's Pause and Resume are the page's own (#140).
+    // Live: read every few seconds on the view model's timer (#169); the bar's Pause and Resume pause it (#140).
     public PageKind Kind => PageKind.Live;
     public TimeSpan? LiveInterval => TimeSpan.FromSeconds(_intervalSec);
     public bool CanPause => true;
-    public bool IsPaused => _paused;
+    public bool IsPaused => ViewModel.IsPaused;
 
     // ── The details drawer (#150): the selected file ──────────────────────────
     private const string SelectHint = "Select a file to see why it's highlighted, its figures and where it is.";
@@ -82,11 +83,6 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     // Why the last reading couldn't be taken (no permission); readings stop until Start over.
     private string? _problem;
 
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
-    private int _remainingSec;
-    private bool _reading;
-    private bool _paused;
-
     // Set once the choices are filled in, so filling them doesn't show or save anything.
     private readonly bool _ready;
 
@@ -105,6 +101,7 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         ViewModel.Attach(Shell);
         Shell.Folds = settings;
         ViewModel.Show(null);
+        TxtCountdown.SetBinding(TextBlock.TextProperty, new Binding(nameof(ViewModel.Countdown)) { Source = ViewModel });
         DrawerParts.FollowSelection(FilesGrid, ShowFile, _drawer.Clear);
 
         foreach (var (label, _, _) in Filters)
@@ -121,28 +118,23 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
             CmbInterval.Items.Add(new ComboBoxItem { Content = $"{sec}s", Tag = sec });
         CmbInterval.SelectedIndex = Math.Max(0, Array.IndexOf(ConnectionStore.FileIoIntervalChoices, _intervalSec));
 
-        _timer.Tick += Timer_Tick;
-
         // Reading stops when the page is left; a new page starts from a new first reading.
         Loaded += (_, _) =>
         {
-            if (!_paused) _timer.Start();
             if (_tracker.Latest is not null || _problem is not null)
                 Dispatcher.BeginInvoke(Show, DispatcherPriority.Background);
         };
-        Unloaded += (_, _) => _timer.Stop();
 
         _ready = true;
     }
 
     /// <summary>
-    /// Takes a reading and shows the latency since the one it's compared with. Called on
-    /// navigate, by the top bar's Refresh, and by the timer.
+    /// Takes a reading and shows the latency since the one it's compared with. Called by the view
+    /// model (#169), one reading at a time: on navigate, by the top bar's Refresh or Start over,
+    /// and on its timer.
     /// </summary>
     public async Task RefreshAsync()
     {
-        if (_reading) return;
-        _reading = true;
         if (_tracker.Latest is null && _problem is null)
             TxtStatus.Text = "Reading the file I/O totals…";
         try
@@ -159,12 +151,6 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
             // Nothing measured yet: the verdict says why. Later, the readings so far stay shown.
             ViewModel.ShowError("the file I/O totals", ex);
             throw;
-        }
-        finally
-        {
-            _reading      = false;
-            _remainingSec = _intervalSec;
-            UpdateCountdown();
         }
     }
 
@@ -229,14 +215,14 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     // Folded, Measuring says it in one line (#150): "the last interval · every 10 s · data files over 20 ms, log files over 10 ms".
     private void ShowMeasuring() =>
         MeasureSection.FoldedSummary = $"{(MeasureWindow == FileIoWindow.SinceFirstReading ? "Since the first reading" : "The last interval")} · " +
-                                       $"every {_intervalSec} s{(_paused ? " (paused)" : "")} · {_thresholds.Describe()}";
+                                       $"every {_intervalSec} s{(IsPaused ? " (paused)" : "")} · {_thresholds.Describe()}";
 
     private string StatusText(FileLatencyList list)
     {
         if (!list.Available)
             return string.Empty;
 
-        var paused = _paused ? " Paused: the top bar's Refresh takes a reading." : "";
+        var paused = IsPaused ? " Paused: the top bar's Refresh takes a reading." : "";
         if (list.Measuring)
             return $"First reading taken at {list.To:HH:mm:ss} (server time). Latency needs a second: it's the change " +
                    $"between two readings, not the totals since startup.{paused}";
@@ -322,9 +308,8 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         if (CmbInterval.SelectedItem is not ComboBoxItem { Tag: int sec })
             return;
 
-        _intervalSec  = sec;
-        _remainingSec = sec;
-        UpdateCountdown();
+        _intervalSec = sec;
+        ViewModel.ReadEvery(TimeSpan.FromSeconds(sec), countdown: true);
         if (_ready) SaveSettings();
         if (_ready) ShowMeasuring();
         _shell.ReportContextChanged(this);
@@ -333,18 +318,7 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
     // The top bar's Pause and Resume (#140); the page's own Pause went with the page template (#150).
     public void SetPaused(bool paused)
     {
-        _paused = paused;
-        if (paused)
-        {
-            _timer.Stop();
-            TxtCountdown.Text = "--";
-        }
-        else
-        {
-            _remainingSec = _intervalSec;
-            UpdateCountdown();
-            if (IsLoaded) _timer.Start();
-        }
+        ViewModel.SetPaused(paused);
         if (_list is not null) TxtStatus.Text = StatusText(_list);
         ShowMeasuring();
         _shell.ReportContextChanged(this);
@@ -355,49 +329,7 @@ public partial class FileIoPage : Page, ICodeBehindPage, IPageContext, IDetailsS
         _tracker.StartOver();
         _problem = null;
         SetPaused(false);
-        await ReadNowAsync();
-    }
-
-    // ── Reading on a timer ────────────────────────────────────────────────────
-
-    private async void Timer_Tick(object? sender, EventArgs e)
-    {
-        if (_reading) return;
-        _remainingSec--;
-        UpdateCountdown();
-        if (_remainingSec > 0) return;
-
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            // The readings so far are kept: the next one is compared with the last that worked.
-            _shell.ReportError(this, "File I/O", ex, PageRead.Timed);
-        }
-    }
-
-    // Start over reports its own errors; the top bar's Refresh reports through the view model.
-    private async Task ReadNowAsync()
-    {
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("File I/O: read failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-        }
-    }
-
-    private void UpdateCountdown()
-    {
-        if (_paused)
-            return;
-        TxtCountdown.Text = $"{Math.Max(0, _remainingSec)}s";
+        // As the top bar's Refresh: the view model reads, and reports how it went (#169).
+        await ViewModel.RefreshAsync();
     }
 }

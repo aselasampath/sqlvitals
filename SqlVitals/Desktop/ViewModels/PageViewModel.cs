@@ -39,10 +39,21 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     [ObservableProperty]
     private bool _isPaused;
 
+    /// <summary>
+    /// When the timed refresh reads next, for a page that shows it (<see cref="ShowsCountdown"/>):
+    /// "12s", "1:05", or "--" while nothing is timed. A page's countdown binds to it (#169).
+    /// </summary>
+    [ObservableProperty]
+    private string _countdown = NoCountdown;
+
+    private const string NoCountdown = "--";
+
     private IShellStatus? _shell;
     private IRefreshScheduler? _scheduler;
     private TimeSpan? _refreshInterval;
-    private IDisposable? _schedule;
+    private IRefreshSchedule? _schedule;
+    private IRefreshSchedule? _countdownTick;
+    private bool _showsCountdown;
     private CancellationTokenSource? _run;
     private PageLifetime? _lifetime;
     private Task _reading = Task.CompletedTask;
@@ -80,6 +91,20 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         set
         {
             _refreshInterval = value;
+            Reschedule();
+        }
+    }
+
+    /// <summary>
+    /// The page shows how long until its next timed read: <see cref="Countdown"/> then follows it
+    /// every second while the timer runs.
+    /// </summary>
+    protected bool ShowsCountdown
+    {
+        get => _showsCountdown;
+        set
+        {
+            _showsCountdown = value;
             Reschedule();
         }
     }
@@ -192,13 +217,34 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         }
     }
 
-    // The timer runs while the page is shown, has an interval and isn't paused.
+    // The timer runs while the page is shown, has an interval and isn't paused; so does its countdown.
     private void Reschedule()
     {
         _schedule?.Dispose();
+        _countdownTick?.Dispose();
         _schedule = _shown && !IsPaused && _refreshInterval is { } interval && _scheduler is not null
             ? _scheduler.Every(interval, () => ReadAsync(PageRead.Timed))
             : null;
+        _countdownTick = _schedule is not null && _showsCountdown && _refreshInterval > Second
+            ? _scheduler!.Every(Second, ShowCountdownAsync)
+            : null;
+        Countdown = _schedule is null ? NoCountdown : CountdownText(_schedule.Remaining);
+    }
+
+    private static readonly TimeSpan Second = TimeSpan.FromSeconds(1);
+
+    private Task ShowCountdownAsync()
+    {
+        if (_schedule is { } schedule)
+            Countdown = CountdownText(schedule.Remaining);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>"12s" under a minute, "1:05" from one; whole seconds, rounded up, so it reaches 0s as it reads.</summary>
+    internal static string CountdownText(TimeSpan left)
+    {
+        var seconds = (int)Math.Ceiling(Math.Max(0, left.TotalSeconds));
+        return seconds >= 60 ? $"{seconds / 60}:{seconds % 60:00}" : $"{seconds}s";
     }
 
     // Concurrent: a press while another page opens isn't held back, as before the actions could await.

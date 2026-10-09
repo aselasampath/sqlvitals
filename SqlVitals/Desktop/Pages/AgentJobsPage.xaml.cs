@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
@@ -58,7 +57,9 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
 
     // A snapshot, or live while "Auto-refresh every 30 s" is ticked (#140).
     public PageKind Kind => ChkAutoRefresh.IsChecked == true ? PageKind.Live : PageKind.Snapshot;
-    public TimeSpan? LiveInterval => _timer.Interval;
+    public TimeSpan? LiveInterval => AutoRefreshInterval;
+
+    private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(30);
 
     private static readonly (string Label, Func<AgentJob, bool> Keep, string Empty)[] Filters =
     [
@@ -82,16 +83,12 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
     // Set once the filter choices are filled in, so filling them doesn't filter.
     private readonly bool _ready;
 
-    private bool _refreshing;
-
     // Bumped per job selection, so the runs of a job selected earlier don't land on a later one.
     private int _runsVersion;
 
     // While Show() replaces the rows: the job selected before, and the start of the run open in it.
     private bool _showing;
     private (Guid JobId, DateTime? RunStart)? _keep;
-
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(30) };
 
     // The top bar: what this page read, what went wrong, and its kind or window (#166).
     private readonly IShellStatus _shell;
@@ -118,18 +115,15 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
             CmbFilter.Items.Add(label);
         CmbFilter.SelectedIndex = 0;
 
-        _timer.Tick += Timer_Tick;
-        Loaded   += (_, _) => { if (ChkAutoRefresh.IsChecked == true) _timer.Start(); };
-        Unloaded += (_, _) => _timer.Stop();
-
         _ready = true;
     }
 
-    /// <summary>Reads the jobs from msdb. Called on navigate, by the top bar's Refresh and every 30 s when chosen.</summary>
+    /// <summary>
+    /// Reads the jobs from msdb. Called by the view model (#169), one read at a time: on navigate,
+    /// by the top bar's Refresh or Read again, and every 30 s when chosen.
+    /// </summary>
     public async Task RefreshAsync()
     {
-        if (_refreshing) return;
-        _refreshing = true;
         BtnReload.IsEnabled = false;
         if (_jobs is null)
             TxtStatus.Text = "Reading SQL Agent jobs from msdb…";
@@ -146,7 +140,6 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
         }
         finally
         {
-            _refreshing = false;
             BtnReload.IsEnabled = true;
         }
     }
@@ -240,29 +233,12 @@ public partial class AgentJobsPage : Page, ICodeBehindPage, IPageContext, IDetai
         if (_ready) Show();
     }
 
-    // The top bar's Refresh reports errors through the view model; a read started here reports its own.
-    private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ReadAgainAsync();
-
-    private async void Timer_Tick(object? sender, EventArgs e) => await ReadAgainAsync();
-
-    private async Task ReadAgainAsync()
-    {
-        try
-        {
-            await RefreshAsync();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Agent Jobs: read failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-        }
-    }
+    // As the top bar's Refresh: the view model reads, and reports how it went (#169).
+    private async void BtnReload_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshAsync();
 
     private void ChkAutoRefresh_Changed(object sender, RoutedEventArgs e)
     {
-        if (ChkAutoRefresh.IsChecked == true) _timer.Start();
-        else _timer.Stop();
+        ViewModel.ReadEvery(ChkAutoRefresh.IsChecked == true ? AutoRefreshInterval : null);
         _shell.ReportContextChanged(this);
     }
 

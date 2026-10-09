@@ -11,5 +11,12 @@ public interface IRefreshScheduler
     /// Calls <paramref name="tick"/> every <paramref name="interval"/>, first one interval from now,
     /// until the result is disposed. A tick due while the last one still runs is skipped.
     /// </summary>
-    IDisposable Every(TimeSpan interval, Func<Task> tick);
+    IRefreshSchedule Every(TimeSpan interval, Func<Task> tick);
+}
+
+/// <summary>A running <see cref="IRefreshScheduler.Every"/>; disposing it stops it.</summary>
+public interface IRefreshSchedule : IDisposable
+{
+    /// <summary>How long until the next tick, for a page's "next read in" countdown (#169).</summary>
+    TimeSpan Remaining { get; }
 }

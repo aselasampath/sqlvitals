@@ -1,1 +1,1 @@
-SqlVitals 0.69.1 · [Repository](https://github.com/aselasampath/sqlvitals) · [Releases](https://github.com/aselasampath/sqlvitals/releases) · [Report an issue](https://github.com/aselasampath/sqlvitals/issues) · MIT License
+SqlVitals 0.69.2 · [Repository](https://github.com/aselasampath/sqlvitals) · [Releases](https://github.com/aselasampath/sqlvitals/releases) · [Report an issue](https://github.com/aselasampath/sqlvitals/issues) · MIT License
