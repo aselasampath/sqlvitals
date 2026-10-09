@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
@@ -38,6 +39,10 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
     private string? _savedChannelUrl;
     private bool    _channelUrlShown;
     private bool    _isFillingChatUrl;
+
+    // The same for the heartbeat's ping URL (#170), the channel's second secret.
+    private string? _savedPingUrl;
+    private bool    _pingUrlShown;
 
     public AlertsCategory(SettingsContext context)
     {
@@ -268,6 +273,7 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
         ChkChatEnabled.IsChecked     = channel?.Enabled ?? true;
         CmbChatPost.SelectedIndex    = channel?.CriticalOnly == true ? 1 : 0;
         ChkChatPostEnds.IsChecked    = channel?.PostEnds ?? true;
+        ShowHeartbeat(channel);
         LstChatConnections.ItemsSource = store.Connections
             .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .Select(c => new ChatConnectionItem(c.Id, c.DisplayName) { Chosen = channel?.ConnectionIds.Contains(c.Id) == true })
@@ -287,7 +293,9 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
     {
         ChatChannelForm.Visibility = Visibility.Collapsed;
         TxtChatUrl.Text   = string.Empty;
+        TxtPingUrl.Text   = string.Empty;
         _savedChannelUrl  = null;
+        _savedPingUrl     = null;
         _editingChannelId = null;
     }
 
@@ -300,6 +308,7 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
         finally { _isFillingChatUrl = false; }
         PnlChatUrlMasked.Visibility = Visibility.Collapsed;
         TxtChatUrl.Visibility       = Visibility.Visible;
+        ShowPingUrl();
         TxtChatUrl.Focus();
     }
 
@@ -352,6 +361,17 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
             return;
         }
 
+        var pingUrl = _pingUrlShown ? TxtPingUrl.Text.Trim() : _savedPingUrl ?? string.Empty;
+        if (HeartbeatPing.Check(pingUrl, url) is { } pingError)
+        {
+            ShowChatFormMessage(pingError, success: false);
+            if (!_pingUrlShown)
+                BtnShowChatUrl_Click(sender, e);
+            TxtPingUrl.Focus();
+            return;
+        }
+        var heartbeat = ChosenHeartbeat();
+
         var channel = new ChatChannel
         {
             Id             = id,
@@ -363,6 +383,10 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
             ConnectionIds  = chosen,
             CriticalOnly   = CmbChatPost.SelectedIndex == 1,
             PostEnds       = ChkChatPostEnds.IsChecked == true,
+            HeartbeatEvery = heartbeat.Every,
+            HeartbeatHours = heartbeat.Every == HeartbeatEvery.Hours ? heartbeat.Hours : HeartbeatSchedule.EveryHours(6).Hours,
+            HeartbeatAt    = heartbeat.At,
+            HeartbeatPingUrl = pingUrl,
         };
 
         try
@@ -449,6 +473,93 @@ internal partial class AlertsCategory : UserControl, ISettingsCategory
             SettingsContext.ShowStatus(TxtChatFormMessage, message, success);
     }
 
+    // ── Heartbeat (#170) ──────────────────────────────────────────────────────
+
+    // The schedule choices, in order: Off, every 1…12 hours, Daily at (with a time).
+    private const int HeartbeatDailyIndex = 8;
+    private static readonly IReadOnlyList<TimeSpan> HeartbeatTimes =
+        Enumerable.Range(0, 48).Select(i => TimeSpan.FromMinutes(30 * i)).ToList();
+
+    private bool _isFillingHeartbeat;
+
+    private void ShowHeartbeat(ChatChannel? channel)
+    {
+        _isFillingHeartbeat = true;
+        try
+        {
+            if (CmbHeartbeat.Items.Count == 0)
+            {
+                CmbHeartbeat.Items.Add("Off");
+                foreach (var hours in HeartbeatSchedule.AllowedHours)
+                    CmbHeartbeat.Items.Add(hours == 1 ? "Every hour" : $"Every {hours} hours");
+                CmbHeartbeat.Items.Add("Daily at");
+                foreach (var time in HeartbeatTimes)
+                    CmbHeartbeatAt.Items.Add(HeartbeatSchedule.Clock(time));
+            }
+
+            var schedule = channel?.Heartbeat ?? HeartbeatSchedule.Off;
+            CmbHeartbeat.SelectedIndex = !schedule.IsOn                          ? 0
+                                       : schedule.Every == HeartbeatEvery.Daily  ? HeartbeatDailyIndex
+                                       : 1 + HeartbeatSchedule.AllowedHours.ToList().IndexOf(schedule.Hours);
+            var at = HeartbeatTimes.ToList().IndexOf(schedule.At);
+            CmbHeartbeatAt.SelectedIndex = at >= 0 ? at : HeartbeatTimes.ToList().IndexOf(HeartbeatSchedule.DefaultAt);
+        }
+        finally { _isFillingHeartbeat = false; }
+
+        _savedPingUrl = channel?.HeartbeatPingUrl;
+        _pingUrlShown = string.IsNullOrWhiteSpace(_savedPingUrl);
+        TxtPingUrl.Text             = string.Empty;
+        TxtPingUrlMasked.Text       = $"{WebhookUrl.Mask(_savedPingUrl)} · press Show above to see or change it";
+        TxtPingUrlMasked.Visibility = _pingUrlShown ? Visibility.Collapsed : Visibility.Visible;
+        TxtPingUrl.Visibility       = _pingUrlShown ? Visibility.Visible : Visibility.Collapsed;
+        ChkHeartbeatSteps.IsChecked = false;
+        ShowHeartbeatChoice();
+    }
+
+    /// <summary>The heartbeat chosen in the form.</summary>
+    internal HeartbeatSchedule ChosenHeartbeat() => CmbHeartbeat.SelectedIndex switch
+    {
+        <= 0                => HeartbeatSchedule.Off,
+        HeartbeatDailyIndex => HeartbeatSchedule.DailyAt(HeartbeatTimes[Math.Max(0, CmbHeartbeatAt.SelectedIndex)]),
+        var i               => HeartbeatSchedule.EveryHours(HeartbeatSchedule.AllowedHours[i - 1]),
+    };
+
+    private void Heartbeat_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isFillingHeartbeat)
+            ShowHeartbeatChoice();
+    }
+
+    // The time box only for Daily at, and the steps for what's chosen now.
+    private void ShowHeartbeatChoice()
+    {
+        CmbHeartbeatAt.Visibility = CmbHeartbeat.SelectedIndex == HeartbeatDailyIndex ? Visibility.Visible : Visibility.Collapsed;
+        TxtHeartbeatSteps.Text    = HeartbeatSteps();
+    }
+
+    private string HeartbeatSteps() =>
+        HeartbeatSetup.Steps(CmbChatService.SelectedIndex == 1 ? ChatService.Teams : ChatService.Slack,
+                             ChosenHeartbeat(), Environment.MachineName);
+
+    /// <summary>Copy steps: a command, since a page's XAML gains no Click= (docs/Architecture.md, MVVM).</summary>
+    public ICommand CopyHeartbeatSteps => _copyHeartbeatSteps ??= new RelayCommand(() =>
+    {
+        ClipboardHelper.SetText(HeartbeatSteps());
+        ShowChatFormMessage("Copied the heartbeat setup steps.", success: true);
+    });
+    private ICommand? _copyHeartbeatSteps;
+
+    // With the webhook's Show: the channel's other secret.
+    private void ShowPingUrl()
+    {
+        if (_pingUrlShown)
+            return;
+        _pingUrlShown = true;
+        TxtPingUrl.Text             = _savedPingUrl ?? string.Empty;
+        TxtPingUrlMasked.Visibility = Visibility.Collapsed;
+        TxtPingUrl.Visibility       = Visibility.Visible;
+    }
+
     private void ChatConnectionsChoice_Changed(object sender, RoutedEventArgs e)
     {
         LstChatConnections?.IsEnabled = RadChatChosenConnections.IsChecked == true;
@@ -497,6 +608,8 @@ public sealed record ChatChannelCard(
         };
         if (!channel.PostEnds)
             tags.Add("No end messages");
+        if (channel.Heartbeat is { IsOn: true } heartbeat)
+            tags.Add(HeartbeatTag(heartbeat, !string.IsNullOrWhiteSpace(channel.HeartbeatPingUrl)));
 
         return new ChatChannelCard(
             channel.Id,
@@ -509,4 +622,12 @@ public sealed record ChatChannelCard(
             status.Text(nowLocal),
             status.IsFailing ? HealthBrushes.Red : HealthBrushes.Grey);
     }
+
+    /// <summary>"Heartbeat daily 09:00", "Heartbeat every 6 h + ping" (#170).</summary>
+    internal static string HeartbeatTag(HeartbeatSchedule heartbeat, bool pings) =>
+        "Heartbeat " +
+        (heartbeat.Every == HeartbeatEvery.Daily ? $"daily {HeartbeatSchedule.Clock(heartbeat.At)}"
+         : heartbeat.Hours == 1                  ? "hourly"
+         : $"every {heartbeat.Hours} h") +
+        (pings ? " + ping" : "");
 }

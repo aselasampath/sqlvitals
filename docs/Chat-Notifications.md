@@ -2,7 +2,7 @@
 
 A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start, turn critical and end, so the whole team sees a problem when it starts and knows when it's over, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)) · *Stopped watching* and *watching again* since 0.70.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170))
+> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)) · *Stopped watching* and *watching again* since 0.70.0, the [heartbeat](#heartbeat) since 0.71.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170))
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 
@@ -15,7 +15,7 @@ Both services take a **webhook**: a URL you create for one channel. Anything tha
 
 Messages are sent **only while SqlVitals is running on this PC**, over HTTPS from this PC to Slack or Microsoft. Nothing is installed or changed on your SQL Servers.
 
-> ⚠️ **Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed.** Nothing is watched while it isn't running. Each channel is told when SqlVitals [stops watching and starts again](#stopped-watching-and-watching-again), but not if the PC loses power or SqlVitals is ended by force. A quiet channel doesn't mean the servers are fine. The *Chat channels* card in Settings says this too.
+> ⚠️ **Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed.** Nothing is watched while it isn't running. Each channel is told when SqlVitals [stops watching and starts again](#stopped-watching-and-watching-again), but not if the PC loses power or SqlVitals is ended by force. A quiet channel doesn't mean the servers are fine. The *Chat channels* card in Settings says this too. To be told even then, turn on the channel's [heartbeat](#heartbeat) and set up an alert for when one doesn't arrive.
 
 ## Slack
 
@@ -58,6 +58,8 @@ In **⚙️ Settings → Alerts & chat → Chat channels**, click **+ Add channe
 | **Connections** | **All monitored connections** (the default): every connection SqlVitals is monitoring at the time, including ones you add later. Or **Only these**, ticked from your saved connections. A connection you remove is taken off the list. |
 | **Post** | **Warnings and critical** (the default), or **Critical only**. |
 | **Also post when an alert ends** | On by default: *Back to normal* for the alerts this channel was told about. Off, only starts and escalations are posted. *Stopped watching* and *watching again* are posted either way. |
+| **Heartbeat** | **Off** (the default), **Every hour** … **Every 12 hours**, or **Daily at** a time: a *💓 SqlVitals heartbeat* message saying it's still watching. See [Heartbeat](#heartbeat). |
+| **Heartbeat ping URL** | Optional: a dead man's switch check that each heartbeat also calls. Stored encrypted and shown masked once saved, like the webhook. See [Heartbeat](#heartbeat). |
 | **On** | Turn off to pause the channel without removing it. What it had waiting is dropped. A test message can still be sent. |
 
 Click **💾 Save channel**. The URL is checked first:
@@ -164,6 +166,47 @@ The gap runs from its last sample in the [history](Monitoring-History-Database.m
 
 **If SqlVitals is killed** (Task Manager, a crash) **or the PC loses power**, there's no *stopped watching*: nothing is left running to send it. The next start still posts *watching again* with the real gap. The alerts that were active are ended then, as the Alerts page shows, but that posts nothing: it would be late and could mislead.
 
+### Heartbeat
+
+*Stopped watching* can't be sent when the PC loses power or SqlVitals is killed, and not every sleep is announced. The **heartbeat** covers that: a short message on a schedule you pick, so that **a missing heartbeat** is the alert.
+
+> **💓 SqlVitals heartbeat: watching 2 servers**
+> SqlVitals on DBA-PC01 is running and watching HR-DB and Sales-Prod.
+> **Next heartbeat** Tomorrow 09:00 · **Schedule** Daily at 09:00
+
+- Choose it per channel, in the channel's form: **Off** (the default), **Every hour**, **Every 2, 3, 4, 6, 8 or 12 hours**, or **Daily at** a time (on the hour or half past).
+- Times are **this PC's clock**, and hours count from midnight: *every 6 hours* is 00:00, 06:00, 12:00 and 18:00, whenever SqlVitals started, so a check knows when to look. A time that doesn't exist when clocks go forward is sent an hour later; one that happens twice when they go back is sent once.
+- It lists the servers being watched **that this channel takes**. Watching none, it says so as a warning (*watching no servers*): SqlVitals is running, but nothing will be alerted.
+- A heartbeat missed while the PC slept is sent **once**, late, when it wakes; then the schedule carries on.
+- It's never [combined](#a-channel-that-falls-behind) into a summary, and the card shows a *Heartbeat daily 09:00* tag (*+ ping* with a ping URL).
+
+#### Get an alert when a heartbeat is missing
+
+In the channel's form, **How to get an alert when a heartbeat is missing** shows the steps for that channel's service and schedule, and **Copy steps** copies them.
+
+**Any service: a dead man's switch (the only way for Slack).** Slack can't notice that a message didn't arrive, so a monitoring service does it:
+
+1. Create a check at [Healthchecks.io](https://healthchecks.io) (it has a free plan), [Cronitor](https://cronitor.io) or [Better Stack](https://betterstack.com/uptime).
+2. Expect a ping at the heartbeat's interval (every day, every 6 hours…), with a grace time of 30 minutes.
+3. Connect the service to Slack or Teams, so it posts to the channel when the check goes down.
+4. Paste the check's **ping URL** into **Heartbeat ping URL**, and save the channel.
+
+SqlVitals calls the ping URL (an HTTPS `GET`) with each heartbeat **while it's watching at least one server the channel takes**, so the check also goes down when SqlVitals runs but watches nothing. A ping is tried once; whether it was answered is written to the [app log](Settings.md#diagnostics), never the URL. The URL must start with `https://` and can't be the channel's webhook.
+
+**Teams only: a scheduled Power Automate flow.** In Teams (**Workflows**) or at make.powerautomate.com, create a scheduled cloud flow:
+
+1. **Recurrence**: at the heartbeat's interval, starting 30 minutes after a heartbeat (09:30 for *Daily at 09:00*; 00:30 for *every 6 hours*), in the PC's time zone.
+2. **Microsoft Teams → Get messages**: the team and channel.
+3. **Data operation → Filter array**: from the value of *Get messages*, in advanced mode (6 is the interval in hours; 24 for daily):
+   ```
+   @and(contains(string(item()?['attachments']), 'SqlVitals heartbeat'), greater(ticks(item()?['createdDateTime']), ticks(addHours(utcNow(), -6))))
+   ```
+   SqlVitals' messages are cards, so their text is in the attachments, not the message body.
+4. **Condition**: `length(body('Filter_array'))` is equal to 0.
+5. **If yes → Microsoft Teams → Post message in a chat or channel**: *⚠ No heartbeat from SqlVitals on DBA-PC01. Check that it's running and the PC is awake.*
+
+*Get messages* is a preview action. If the flow starts alerting while heartbeats arrive, look at its output in the flow's run history.
+
 ### Separate from Windows notifications
 
 Muting a connection's Windows notifications (on its **Monitoring & alerts** tab in Settings, or the tray menu) doesn't stop its chat messages, and a channel's **Connections** don't change who gets Windows notifications.
@@ -174,7 +217,7 @@ Only what the message shows: connection names, indicator names, figures and thre
 
 ### Limits
 
-- **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area). Each channel hears when it [stops and starts watching](#stopped-watching-and-watching-again), but not when the PC loses power or SqlVitals is killed.
+- **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area). Each channel hears when it [stops and starts watching](#stopped-watching-and-watching-again), but not when the PC loses power or SqlVitals is killed; a [heartbeat](#heartbeat) with an alert for a missing one covers that.
 - **One PC's view.** Two copies of SqlVitals watching the same server both post; the *Sent from* line tells them apart.
 - **Not remembered across restarts.** After SqlVitals restarts, an alert that's still happening is raised again and posted again as a new alert. That's expected. An alert already active when a channel is added or turned on isn't posted until it turns critical, and then its end is posted too.
 - Each channel sends its messages in order, one at a time and at most one a second, without holding up monitoring, the window or other channels.
@@ -204,7 +247,7 @@ Messages go at most **one a second** per channel, Slack's limit. If more than **
 > 🔴 **Sales-Prod** new or critical: CPU and Log space used
 > 🟠 **HR-DB** new or critical: Blocking; back to normal: CPU
 
-Once it's sent, messages go one by one again. A **stopped watching** or **watching again** message is never combined: it's sent on its own after the summary, because "no alerts will be posted" mustn't become a count.
+Once it's sent, messages go one by one again. A **stopped watching**, **watching again** or **heartbeat** message is never combined: it's sent on its own after the summary, because "no alerts will be posted" mustn't become a count.
 
 ### ⚠ Failing
 
@@ -270,6 +313,7 @@ Anyone who has a webhook URL can post to the channel, so SqlVitals treats it lik
 - **Sending:** `IWebhookSender` is the only way out, so tests use a fake. `Desktop/Services/HttpWebhookSender.cs` is one `HttpClient` over a `SocketsHttpHandler` with the system proxy and default credentials, no redirects, and a 10-second timeout per request. It reads at most 1 KB of the answer.
 - **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message of each kind, and remembers in memory the alert ids it told the channel about, with the connection's name then (forgotten when the alert ends or the channel is turned off). An `Ended` change of a told alert is `ChatMessageBuilder.Recovered` (when `ChatChannel.PostEnds`) or, with `AlertEndReason.MonitoringStopped`, kept per connection for `TakeStops`. `ChatMessageBuilder` words them with `AlertText` (`Figure`, `Context`, `Duration`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests`, `AlertMessageTests`, `EndMessageTests` and `WatchMessageTests` (expected Slack and Teams JSON).
 - **Stopped watching and watching again (#170):** `MonitoringManager.Sync` raises `WatchingChanged` with a `WatchChange` (Engine/Monitoring/Watching.cs): the connections it started, each with `LastWatchedUtc` (when it stopped earlier in the run, else `HistoryReader.ReadLastSampleTime`, the last `health_scores` row), the ones it stopped with a `WatchStop` reason, and the ones restarted with new details. `ChatNotificationService.OnWatchingChanged` keeps the set being watched, and per channel queues `ChatMessageBuilder.StoppedWatching` (with the router's `TakeStops`) and `WatchingAgain`; restarts drop their stops. `MainWindow.OnPowerModeChanged` calls `OnGoingToSleep` on the UI thread and waits up to 2 s for the queues (`WhenIdleAsync`), and `OnWokeUp` after `Resume`. The exit reason comes from `App.SessionEndingReason` into `BeginExit(WatchStop)`. Tested in `WatchMessageTests` (each reason), `MonitoringManagerTests` and `ChatNotificationServiceTests` (fake clock).
+- **Heartbeat (#170):** `ChatChannel.HeartbeatEvery`/`HeartbeatHours`/`HeartbeatAt`/`HeartbeatPingUrl` (inside the encrypted channel list; the ping URL is in `SettingsDiff.SecretNames`). `HeartbeatSchedule.Next(after, zone)` gives the next local time, across daylight saving changes; `ChatNotificationService` keeps each channel's next one, recomputed when its schedule changes, and checks every 30 s on a `TimeProvider` timer (`CheckHeartbeats`), queueing `ChatMessageBuilder.Heartbeat` and calling `IWebhookSender.PingAsync` (a GET; `WebhookResult.FromPing`: any 2xx that isn't HTML). `HeartbeatSetup.Steps` writes the copyable steps; `HeartbeatPing.Check` the URL rules. Tested in `HeartbeatTests` (Europe/Berlin daylight saving), `ChatNotificationServiceTests` (fake clock), `ChatChannelSettingsTests` and `SettingsPageTests`.
 - **Exit:** `MonitoringManager.Dispose` clears the window's `AlertsChanged` before it stops the sessions, but raises `AlertsRaised` with their ends, then `AllStopped`, before it waits for the history writer. `MainWindow.OnClosing` calls `ChatNotificationService.BeginExit(why)` first (no more status or tray updates), and `OnAllStopped` queues one *stopped watching* message per channel for everything being watched, with the alerts still active, and calls `ChannelQueue.Hurry` (a wait to retry is cut short, and nothing is retried), so the channels send while the history is saved. `Shutdown(5 s − time already spent)` then waits for what's left, off any UI dependency, and `Dispose` drops and logs the rest. Tested in `MonitoringManagerTests` and `ChatNotificationServiceTests`.
 - **Sending:** `ChannelQueue`, one per channel, sends on a worker of its own, one message at a time and in order, at most one a second measured start to start; `Enqueue` never waits. The Slack or Teams JSON is written when the message is sent, so an edit to the channel applies to what's waiting and to a retry. Past 20 waiting messages, the rest fold into one `ChatMessageBuilder.Summary`, built from each message's `ChatDigest` when it's sent. `RetryPolicy` decides each retry; `NetworkGrace` is the minute after `PowerModes.Resume`. Waits run on a `TimeProvider`, so tests use `FakeTimeProvider` and never wait in real time, and are measured on its timestamps, which a change to the PC's clock doesn't move. Unit tested in `ChannelQueueTests`, `RetryPolicyTests` and `SummaryMessageTests`.
 - **Status:** `ChannelStatus` (*Never used*, *Last posted*, *Failing since*). The queue reports every try as a `ChannelReport`; the service marks the channel posted or failing on the UI thread and raises `StartedFailing` only on the change into *Failing*, which the main window shows with `TrayIcon.Inform`.

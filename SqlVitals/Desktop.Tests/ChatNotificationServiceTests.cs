@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Time.Testing;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
@@ -26,6 +27,14 @@ public sealed class ChatNotificationServiceTests
         public Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default)
         {
             Sent.Enqueue((url, json, service));
+            return Task.FromResult(answer(url));
+        }
+
+        public readonly ConcurrentQueue<Uri> Pinged = new();
+
+        public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default)
+        {
+            Pinged.Enqueue(url);
             return Task.FromResult(answer(url));
         }
 
@@ -769,6 +778,176 @@ public sealed class ChatNotificationServiceTests
         {
             await Task.Delay(Timeout.Infinite, cancel);
             return Ok;
+        }
+
+        public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) => SendAsync(url, "", ChatService.Slack, cancel);
+    }
+
+    // ── Heartbeat (#170) ──────────────────────────────────────────────────────
+
+    private const string PingUrl = "https://hc-ping.com/0f3b8a5e-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
+
+    // A clock that only moves when told, so each heartbeat check runs inside Advance, on this thread.
+    private static FakeTimeProvider Clock(int hour = 8)
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 10, hour, 0, 0, TimeSpan.Zero));
+        time.SetLocalTimeZone(TimeZoneInfo.Utc);
+        return time;
+    }
+
+    private static ChatChannel Beating(HeartbeatSchedule schedule, string? ping = null, string name = "DBA team", string url = SlackUrl)
+    {
+        var channel = Channel(name, url: url);
+        channel.HeartbeatEvery   = schedule.Every;
+        channel.HeartbeatHours   = schedule.Hours;
+        channel.HeartbeatAt      = schedule.At;
+        channel.HeartbeatPingUrl = ping ?? string.Empty;
+        return channel;
+    }
+
+    private ChatNotificationService Beat(FakeSender sender, FakeTimeProvider time, params ChatChannel[] channels)
+    {
+        var service = new ChatNotificationService(sender, "DBA-PC01", _log.Enqueue, time: time);
+        service.Apply(Store(channels));
+        return service;
+    }
+
+    [Fact]
+    public async Task ADailyHeartbeat_IsPostedAtItsTime_SayingWhatsWatched_AndPings()
+    {
+        var time    = Clock(hour: 8);
+        var sender  = new FakeSender(() => Ok);
+        var channel = Beating(HeartbeatSchedule.DailyAt(TimeSpan.FromHours(9)), PingUrl);
+        using var chat = Beat(sender, time, channel);
+        chat.OnWatchingChanged(Start(Sales, Hr));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(new DateTimeOffset(2026, 10, 10, 9, 0, 0, TimeSpan.Zero), chat.NextHeartbeat(channel.Id));
+
+        time.Advance(TimeSpan.FromMinutes(59));
+        Assert.Single(sender.Sent); // not yet: only "watching"
+        time.Advance(TimeSpan.FromMinutes(1));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        await WaitUntil(() => !sender.Pinged.IsEmpty);
+
+        Assert.Equal("💓 SqlVitals heartbeat: watching 2 servers", sender.TitlesTo(SlackUrl).Last());
+        Assert.Equal([new Uri(PingUrl)], sender.Pinged);
+        Assert.Equal(new DateTimeOffset(2026, 10, 11, 9, 0, 0, TimeSpan.Zero), chat.NextHeartbeat(channel.Id));
+        Assert.All(_log, line => Assert.DoesNotContain("hc-ping", line));
+        await WaitUntil(() => _log.Any(l => l.Contains("heartbeat ping answered (200)")));
+    }
+
+    [Fact]
+    public async Task AHeartbeatWatchingNothing_Warns_AndDoesntPing()
+    {
+        var time    = Clock();
+        var sender  = new FakeSender(() => Ok);
+        var channel = Beating(HeartbeatSchedule.EveryHours(1), PingUrl);
+        using var chat = Beat(sender, time, channel);
+
+        time.Advance(TimeSpan.FromHours(1));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(["💓 SqlVitals heartbeat: watching no servers"], sender.TitlesTo(SlackUrl));
+        Assert.Empty(sender.Pinged);
+    }
+
+    [Fact]
+    public async Task AHeartbeat_NamesOnlyTheServersTheChannelTakes()
+    {
+        var time    = Clock();
+        var sender  = new FakeSender(() => Ok);
+        var channel = Beating(HeartbeatSchedule.EveryHours(1));
+        channel.AllConnections = false;
+        channel.ConnectionIds  = [Hr.Id];
+        using var chat = Beat(sender, time, channel);
+        chat.OnWatchingChanged(Start(Sales, Hr));
+        // Sent before the clock moves: the queue's pacing waits on it.
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        time.Advance(TimeSpan.FromHours(1));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("💓 SqlVitals heartbeat: watching HR-DB", sender.TitlesTo(SlackUrl).Last());
+    }
+
+    [Fact]
+    public async Task HeartbeatsMissedWhileThePcSlept_AreSentOnce_ThenTheScheduleCarriesOn()
+    {
+        var time    = Clock(hour: 8);
+        var sender  = new FakeSender(() => Ok);
+        var channel = Beating(HeartbeatSchedule.EveryHours(6));
+        using var chat = Beat(sender, time, channel);
+
+        // A sleeping PC's timers don't fire: the clock jumps, and the first check finds them due.
+        time.AdjustTime(time.GetUtcNow().AddDays(2).AddHours(1));
+        time.Advance(ChatNotificationService.HeartbeatCheckEvery);
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Single(sender.TitlesTo(SlackUrl));
+        Assert.Equal(new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero), chat.NextHeartbeat(channel.Id));
+    }
+
+    [Fact]
+    public async Task ChangingTheSchedule_StartsItAgain_AndTurningItOffOrTheChannelOff_StopsIt()
+    {
+        var time    = Clock(hour: 8);
+        var sender  = new FakeSender(() => Ok);
+        var channel = Beating(HeartbeatSchedule.DailyAt(TimeSpan.FromHours(9)));
+        using var chat = Beat(sender, time, channel);
+
+        var hourly = Beating(HeartbeatSchedule.EveryHours(1));
+        hourly.Id = channel.Id;
+        chat.Apply(Store(hourly));
+        Assert.Equal(new DateTimeOffset(2026, 10, 10, 9, 0, 0, TimeSpan.Zero), chat.NextHeartbeat(channel.Id));
+
+        hourly.Enabled = false;
+        chat.Apply(Store(hourly));
+        Assert.Null(chat.NextHeartbeat(channel.Id));
+
+        chat.Apply(Store(Channel()));
+        time.Advance(TimeSpan.FromDays(1));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Empty(sender.Sent);
+    }
+
+    [Fact]
+    public async Task AFailedPing_IsLogged_WithoutItsUrl()
+    {
+        var time    = Clock();
+        var sender  = new FakeSender(url => url.Host == "hc-ping.com" ? NotFound : Ok);
+        using var chat = Beat(sender, time, Beating(HeartbeatSchedule.EveryHours(1), PingUrl));
+        chat.OnWatchingChanged(Start(Sales));
+
+        time.Advance(TimeSpan.FromHours(1));
+        await WaitUntil(() => _log.Any(l => l.Contains("heartbeat ping failed")));
+
+        Assert.All(_log, line => Assert.DoesNotContain("0f3b8a5e", line));
+    }
+
+    [Fact]
+    public async Task AtExit_NoMoreHeartbeats()
+    {
+        var time   = Clock();
+        var sender = new FakeSender(() => Ok);
+        var chat   = Beat(sender, time, Beating(HeartbeatSchedule.EveryHours(1), PingUrl));
+
+        chat.BeginExit();
+        chat.Shutdown(TimeSpan.FromSeconds(1));
+        chat.Dispose();
+        time.Advance(TimeSpan.FromHours(2));
+        await Task.Delay(50);
+
+        Assert.Empty(sender.Sent);
+        Assert.Empty(sender.Pinged);
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (!condition())
+        {
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "Timed out waiting.");
+            await Task.Delay(10);
         }
     }
 

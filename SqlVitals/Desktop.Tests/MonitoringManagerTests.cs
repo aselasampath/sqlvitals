@@ -456,6 +456,9 @@ public sealed class MonitoringManagerTests : IDisposable
             Json.Enqueue(json);
             return Task.FromResult(new WebhookResult(WebhookOutcome.Posted, 200, "ok", TimeSpan.Zero));
         }
+
+        public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
+            Task.FromResult(new WebhookResult(WebhookOutcome.Posted, 200, null, TimeSpan.Zero));
     }
 
     public void Dispose()

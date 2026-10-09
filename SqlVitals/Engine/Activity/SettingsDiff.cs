@@ -37,6 +37,7 @@ public static class SettingsDiff
     public static IReadOnlySet<string> SecretNames { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "Password", "Additional parameters", "Connection string", "Access token", "Webhook URL",
+        "Heartbeat ping URL",
     };
 
     public static bool IsSecret(string name) => SecretNames.Contains(name);

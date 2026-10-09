@@ -134,6 +134,42 @@ public sealed class ChatChannelSettingsTests : IDisposable
     }
 
     [Fact]
+    public void TheHeartbeat_SurvivesSaveAndLoad_AndItsPingUrlIsLoggedAsASecret()
+    {
+        const string ping = "https://hc-ping.com/0f3b8a5e-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
+        var service = Create();
+        var raised  = new List<ActivityEntry>();
+        var channel = Channel();
+        service.SaveChatChannel(channel);
+        service.Changed += raised.AddRange;
+
+        var edited = channel.Clone();
+        edited.HeartbeatEvery   = HeartbeatEvery.Daily;
+        edited.HeartbeatAt      = new TimeSpan(9, 30, 0);
+        edited.HeartbeatPingUrl = $"  {ping}  ";
+        service.SaveChatChannel(edited);
+
+        var loaded = Assert.Single(Create().Load().ChatChannels);
+        Assert.Equal((HeartbeatEvery.Daily, new TimeSpan(9, 30, 0), ping), (loaded.HeartbeatEvery, loaded.HeartbeatAt, loaded.HeartbeatPingUrl));
+        Assert.Contains(raised, r => (r.Setting, r.OldValue, r.NewValue) == ("DBA team (Slack): Heartbeat", "Off", "Daily at 09:30"));
+        Assert.Contains(raised, r => (r.Setting, r.Detail) == ("DBA team (Slack): Heartbeat ping URL", SettingsDiff.SecretChanged));
+        foreach (var text in raised.SelectMany(r => new[] { r.Setting, r.OldValue, r.NewValue, r.Detail }).OfType<string>())
+            Assert.DoesNotContain("hc-ping", text);
+        Assert.DoesNotContain("hc-ping", File.ReadAllText(SettingsFile));
+    }
+
+    [Fact]
+    public void AChannelFromBeforeTheHeartbeat_HasNone()
+    {
+        Create().SaveChatChannel(Channel());
+
+        var loaded = Assert.Single(Create().Load().ChatChannels);
+
+        Assert.False(loaded.Heartbeat.IsOn);
+        Assert.Equal(string.Empty, loaded.HeartbeatPingUrl);
+    }
+
+    [Fact]
     public void SavingAChannelUnchanged_RaisesNoRows()
     {
         var service = Create();

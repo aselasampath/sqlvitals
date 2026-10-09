@@ -34,6 +34,9 @@ public sealed class ChannelQueueTests
             return await answer(title);
         }
 
+        public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
+            throw new InvalidOperationException("The queue never pings.");
+
         /// <summary>When each try of a message started, in seconds after the clock's start.</summary>
         public double[] SecondsOf(string title) =>
             Tries.Where(t => t.Title == title).Select(t => (t.At - SteppingTime.T0).TotalSeconds).ToArray();
@@ -556,5 +559,8 @@ public sealed class ChannelQueueTests
             Services.Enqueue(service);
             return Task.FromResult(answer?.Invoke(url) ?? Ok);
         }
+
+        public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
+            throw new InvalidOperationException("The queue never pings.");
     }
 }
