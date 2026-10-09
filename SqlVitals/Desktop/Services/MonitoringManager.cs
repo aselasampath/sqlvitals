@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -44,6 +45,9 @@ public sealed class MonitoringManager : IDisposable
 
     // The store the last Sync applied: Start and Stop decide again from it.
     private ConnectionStore? _store;
+
+    // When each connection stopped being watched this run, for the gap in "watching again" (#170).
+    private readonly Dictionary<Guid, DateTime> _stoppedUtc = new();
 
     // Sessions' failures, and handlers that throw.
     private readonly ILogger _log;
@@ -93,6 +97,13 @@ public sealed class MonitoringManager : IDisposable
     /// <see cref="Dispose"/>, for the ends of the alerts that were active at Exit (#123).
     /// </summary>
     public event Action<Guid, IReadOnlyList<AlertChange>>? AlertsRaised;
+
+    /// <summary>
+    /// Raised on the UI thread after a <see cref="Sync"/> started or stopped watching connections,
+    /// with why each stopped and how long each started one wasn't watched (#170). Not raised at
+    /// Exit: <see cref="AllStopped"/> says that everything stopped.
+    /// </summary>
+    public event Action<WatchChange>? WatchingChanged;
 
     /// <summary>
     /// Raised once during <see cref="Dispose"/> (Exit), after every session has stopped and
@@ -315,12 +326,17 @@ public sealed class MonitoringManager : IDisposable
             _overrides);
 
         var changed = false;
+        var stopped   = new List<StoppedWatching>();
+        var started   = new List<WatchedConnection>();
+        var restarted = new List<Guid>();
         foreach (var (id, session) in _sessions.ToList())
         {
             var conn = store.Connections.FirstOrDefault(c => c.Id == id);
             if (conn is null)
             {
+                var name = session.History?.Connection.Name ?? ChannelRouter.DeletedConnection;
                 Remove(id, ActivitySources.ConnectionEdited, "The connection was removed.");
+                stopped.Add(new StoppedWatching(id, name, WatchStop.ConnectionRemoved));
                 changed = true;
             }
             else if (!_decisions[id].Monitor)
@@ -332,6 +348,7 @@ public sealed class MonitoringManager : IDisposable
                     MonitoringReason.BackgroundOff => "Another connection is active, and Monitor in background is off for this one.",
                     _                              => _decisions[id].Text,
                 });
+                stopped.Add(new StoppedWatching(id, conn.DisplayName, WatchChange.StopFor(_decisions[id].Reason)));
                 changed = true;
             }
             else if (RepositoryFactory.Fingerprint(conn, store.CommandTimeoutSeconds) != session.Fingerprint)
@@ -347,9 +364,24 @@ public sealed class MonitoringManager : IDisposable
             if (!_decisions[conn.Id].Monitor || _sessions.ContainsKey(conn.Id))
                 continue;
 
-            var restarted = previous.TryGetValue(conn.Id, out var was) && was.Monitor;
-            Add(conn, store, restarted ? ActivitySources.ConnectionEdited : source, _decisions[conn.Id]);
+            var again = previous.TryGetValue(conn.Id, out var was) && was.Monitor;
+            // Read before its session starts, so its first sample can't be taken for the last one.
+            if (again)
+                restarted.Add(conn.Id);
+            else
+                started.Add(new WatchedConnection(conn.Id, conn.DisplayName, LastWatched(conn.Id)));
+            Add(conn, store, again ? ActivitySources.ConnectionEdited : source, _decisions[conn.Id]);
             changed = true;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var stop in stopped)
+            _stoppedUtc[stop.Id] = now;
+        var watching = new WatchChange(started, stopped, restarted);
+        if (!watching.IsEmpty)
+        {
+            try { WatchingChanged?.Invoke(watching); }
+            catch (Exception ex) { _log.Error("Monitoring: a background service failed when monitoring started or stopped", ex); }
         }
 
         // Thresholds aren't part of the fingerprint, so an edit reaches the running sessions here.
@@ -362,6 +394,23 @@ public sealed class MonitoringManager : IDisposable
 
         if (changed || !previous.Keys.ToHashSet().SetEquals(_decisions.Keys))
             MonitoringChanged?.Invoke();
+    }
+
+    // When a connection was last watched: when it stopped this run, else its last sample in the
+    // history. Read only when someone listens (the chat channels); a history that can't be read
+    // gives no gap rather than failing the start.
+    private DateTime? LastWatched(Guid id)
+    {
+        if (WatchingChanged is null)
+            return null;
+        if (_stoppedUtc.TryGetValue(id, out var stopped))
+            return stopped;
+        try { return HistoryReader.ReadLastSampleTime(id); }
+        catch (Exception ex)
+        {
+            _log.Error("Monitoring: couldn't read when a connection was last watched", ex);
+            return null;
+        }
     }
 
     private void Add(ConnectionSettings conn, ConnectionStore store, string source, MonitoringDecision decision)
@@ -452,6 +501,7 @@ public sealed class MonitoringManager : IDisposable
     {
         SessionStateChanged = null;   // the window is closing; nothing left to update
         MonitoringChanged   = null;
+        WatchingChanged     = null;   // Exit is AllStopped's
         AlertsChanged       = null;   // the window and the Alerts page stop here…
         foreach (var id in _sessions.Keys.ToList())
             Remove(id, ActivitySources.AppExit, "SqlVitals exited.");

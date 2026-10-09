@@ -154,6 +154,17 @@ public sealed class SettingsPageTests : IDisposable
     });
 
     [Fact]
+    public void TheChatChannels_SayPlainly_ThatAlertsStopWhenThePcSleepsOrTheAppCloses() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Alerts));
+        var alerts = Assert.IsType<AlertsCategory>(page.Shown);
+
+        // On the screen itself (#170), not only in the wiki, and whether or not there are channels.
+        Assert.Equal(System.Windows.Visibility.Visible, alerts.ChatStopsWarning.Visibility);
+        Assert.StartsWith("⚠  Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed", alerts.TxtChatStopsWarning.Text);
+    });
+
+    [Fact]
     public void ADeepLink_OpensThatConnectionsTab() => UiThread.Run(() =>
     {
         var page = Open(SettingsLocation.Connection(_down.Id, ConnectionTab.Thresholds));

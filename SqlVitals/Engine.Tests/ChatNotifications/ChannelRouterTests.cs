@@ -185,71 +185,44 @@ public sealed class ChannelRouterTests
     }
 
     [Fact]
-    public void MonitoringStopping_PostsOneMessage_ListingOnlyWhatTheChannelWasTold_WithNoBackToNormal()
+    public void MonitoringStopping_PostsNothing_ButKeepsOnlyWhatTheChannelWasTold_ForTheStoppedMessage()
     {
         var channel = Channel(criticalOnly: true);
-        channel.PostEnds = false; // posted either way
+        channel.PostEnds = false; // kept either way
         var (cpu, blocking, log) = (Cpu(), Blocking(HealthLevel.Warning), Log());
         Route(channel, Started(cpu), Started(blocking), Started(log));
 
-        var message = Assert.Single(Route(channel, Stopped(cpu), Stopped(blocking), Stopped(log)));
+        Assert.Empty(Route(channel, Stopped(cpu), Stopped(blocking), Stopped(log)));
 
-        Assert.Equal("⏹ Stopped monitoring Sales-Prod", message.Title);
-        Assert.Equal("SqlVitals on DBA-PC01 stopped monitoring Sales-Prod with 2 alerts still active (CPU, Log space used). " +
-                     "No further updates will be posted.", message.Text);
+        Assert.Equal([HealthIndicator.Cpu, HealthIndicator.LogSpace], _router.TakeStops(Connection).Select(a => a.Indicator));
         Assert.Equal(0, _router.ToldCount);
     }
 
     [Fact]
-    public void MonitoringStopping_WithNothingTheChannelWasTold_PostsNothing()
+    public void MonitoringStopping_WithNothingTheChannelWasTold_KeepsNothing()
     {
         var channel = Channel(criticalOnly: true);
         var warning = Blocking(HealthLevel.Warning);
         Route(channel, Started(warning));
 
         Assert.Empty(Route(channel, Stopped(warning)));
+        Assert.Empty(_router.TakeStops(Connection));
     }
 
     [Fact]
-    public void AnEnd_OfARemovedConnection_UsesTheNameTheChannelWasToldWith()
-    {
-        var channel = Channel();
-        var alert = Cpu();
-        Route(channel, Started(alert));
-
-        // Settings forget a removed connection's name before its session ends the alerts (F8).
-        var message = Assert.Single(_router.Route(channel, Connection, null, [Stopped(alert)], "DBA-PC01"));
-
-        Assert.Equal("⏹ Stopped monitoring Sales-Prod", message.Title);
-    }
-
-    [Fact]
-    public void AtExit_StopsCollect_IntoOneMessageForEveryConnection()
+    public void Stops_AreKeptPerConnection_AndTakenOnce()
     {
         var channel = Channel();
         var (sales, hr) = (Cpu(), Log() with { ConnectionId = Other });
         Route(channel, Started(sales));
         _router.Route(channel, Other, "HR-DB", [Started(hr)], "DBA-PC01");
-        _router.CollectingStops = true;
 
-        Assert.Empty(Route(channel, Stopped(sales)));
-        Assert.Empty(_router.Route(channel, Other, "HR-DB", [Stopped(hr)], "DBA-PC01"));
-        var message = _router.TakeStops("DBA-PC01");
+        Route(channel, Stopped(sales));
+        _router.Route(channel, Other, null, [Stopped(hr)], "DBA-PC01");
 
-        Assert.NotNull(message);
-        Assert.Equal("⏹ Stopped monitoring 2 connections", message.Title);
-        Assert.Equal("SqlVitals on DBA-PC01 stopped monitoring Sales-Prod (CPU) and HR-DB (Log space used), " +
-                     "with alerts still active. No further updates will be posted.", message.Text);
-        Assert.Null(_router.TakeStops("DBA-PC01"));
-    }
-
-    [Fact]
-    public void AtExit_WithNothingTold_ThereIsNoStoppedMessage()
-    {
-        _router.CollectingStops = true;
-
-        Assert.Empty(Route(Channel(), Stopped(Cpu())));
-        Assert.Null(_router.TakeStops("DBA-PC01"));
+        Assert.Equal([sales.Id], _router.TakeStops(Connection).Select(a => a.Id));
+        Assert.Empty(_router.TakeStops(Connection));
+        Assert.Equal([hr.Id], _router.TakeStops(Other).Select(a => a.Id));
     }
 
     [Fact]

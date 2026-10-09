@@ -105,14 +105,14 @@ What raises an alert is set by the [health thresholds](#health-thresholds).
 
 ### Chat channels
 
-From 0.52.0, the Slack and Microsoft Teams channels alerts are posted to, as cards two a row. Each card shows:
+From 0.52.0, the Slack and Microsoft Teams channels alerts are posted to, as cards two a row. Above them, a warning says plainly that alerts stop when this PC sleeps or SqlVitals closes, and that each channel is told when SqlVitals [stops and starts watching](Chat-Notifications.md#stopped-watching-and-watching-again) (0.70.0). Each card shows:
 
 - the name, the service and the webhook URL masked (`hooks.slack.com/…/x7Qa`);
 - tags for its connections (*All monitored connections*, or their names) and severity (*Warnings and critical* or *Critical only*), and *No end messages* when it doesn't post ends;
 - a label: **WORKING** (a message got through), **FAILING** (messages aren't getting through, [#122](Chat-Notifications.md#-failing)), **NOT USED YET** or **OFF** (paused), and under it *Last posted 10:42*, *Never used* or *⚠ Failing since 10:42: webhook not found (404)*;
 - **Send test**, which posts a test message to the channel as saved and shows the result under the cards, and **Edit**.
 
-**+ Add channel** and **Edit** open the channel form: **Name**, **Webhook URL** (masked once saved; **Show** reveals it), **Service** (picked from the URL), **Connections** (all monitored connections, or only the ones you tick), **Post** (warnings and critical, or critical only), **Also post when an alert ends** (on by default: *Back to normal* for the alerts the channel was told about; *Stopped monitoring* is posted either way) and **On** (off pauses the channel without removing it). **Save channel** checks the URL first and applies straight away; **Remove channel…** removes it after a confirmation.
+**+ Add channel** and **Edit** open the channel form: **Name**, **Webhook URL** (masked once saved; **Show** reveals it), **Service** (picked from the URL), **Connections** (all monitored connections, or only the ones you tick), **Post** (warnings and critical, or critical only), **Also post when an alert ends** (on by default: *Back to normal* for the alerts the channel was told about; *stopped watching* and *watching again* are posted either way) and **On** (off pauses the channel without removing it). **Save channel** checks the URL first and applies straight away; **Remove channel…** removes it after a confirmation.
 
 The webhook URLs are stored encrypted and never logged. Setup steps for each service, what each test result means and the URL checks are on [Chat Notifications](Chat-Notifications.md).
 

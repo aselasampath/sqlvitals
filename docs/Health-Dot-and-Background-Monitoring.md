@@ -131,6 +131,14 @@ Whatever the setting, you can start and stop monitoring whenever you like:
 
 Every start and stop, with who or what caused it, is written to the [activity log](Settings.md#activity-log), so a gap in the history can be explained later.
 
+### When nothing is watching
+
+Monitoring runs **only while SqlVitals runs on this PC**. When the PC sleeps, shuts down or loses power, you sign out, or SqlVitals is closed, nothing is collected and no alert is raised, so a quiet dot or channel isn't proof the servers are fine.
+
+- Every [chat channel](Chat-Notifications.md#stopped-watching-and-watching-again) is told: *⏹ SqlVitals stopped watching Sales-Prod because the PC is going to sleep*, on **Stop**, a setting that stops a connection, removing it, **Exit**, Windows shutting down or signing out, and sleep. The next start (or wake, or **Start**) posts *▶ SqlVitals is watching Sales-Prod again, after 7 h 05 min without monitoring*. Since 0.70.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170)).
+- If SqlVitals is killed or the PC loses power, there's no *stopped* message; the *watching again* message still gives the real gap, from the last sample in the history.
+- To keep watching while the window is closed, keep SqlVitals [running in the notification area](Notifications-and-Tray.md#running-in-the-notification-area), and stop the PC sleeping while it monitors (Windows **Settings → System → Power**).
+
 ### While a connection is monitored
 
 - its **health dot and score stay current**;

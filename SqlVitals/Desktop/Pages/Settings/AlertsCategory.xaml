@@ -66,6 +66,15 @@
                         </StackPanel>
                     </DockPanel>
 
+                    <!-- Said here, not only in the wiki (#170): a quiet channel isn't a healthy server. -->
+                    <Border x:Name="ChatStopsWarning" Background="{DynamicResource HealthWarningTint}"
+                            BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="6"
+                            Padding="12,8" Margin="0,0,12,10">
+                        <TextBlock x:Name="TxtChatStopsWarning" TextWrapping="Wrap" FontSize="12"
+                                   Foreground="{DynamicResource TextPrimary}"
+                                   Text="⚠  Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed: nothing is watched while it isn't running. Each channel is told when SqlVitals stops watching and when it starts again, but if the PC loses power or SqlVitals is ended by force, there's no message. A quiet channel doesn't mean the servers are fine." />
+                    </Border>
+
                     <TextBlock x:Name="TxtChatChannelsDropped" Visibility="Collapsed"
                                Foreground="{DynamicResource Warning}" FontSize="11" FontWeight="SemiBold"
                                TextWrapping="Wrap" Margin="0,0,0,8"

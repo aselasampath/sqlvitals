@@ -2,7 +2,7 @@
 
 A Windows notification only reaches the person at the PC that runs SqlVitals. **Chat channels** post alerts to a **Slack** or **Microsoft Teams** channel when they start, turn critical and end, so the whole team sees a problem when it starts and knows when it's over, even when nobody is looking at that PC.
 
-> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108))
+> **Where:** ⚙️ Settings → *Alerts & chat* → *Chat channels* · **Since:** 0.52.0 ([epic #108](https://github.com/aselasampath/sqlvitals/issues/108)) · *Stopped watching* and *watching again* since 0.70.0 ([#170](https://github.com/aselasampath/sqlvitals/issues/170))
 
 Both services take a **webhook**: a URL you create for one channel. Anything that sends it a message appears in that channel. SqlVitals needs no app, bot, API key or account of its own.
 
@@ -14,6 +14,8 @@ Both services take a **webhook**: a URL you create for one channel. Anything tha
 | **Microsoft Teams** | A **Microsoft 365 work or school account** (any business plan) | The free personal Teams can't do it. No Power Automate Premium licence and no Azure subscription are needed. |
 
 Messages are sent **only while SqlVitals is running on this PC**, over HTTPS from this PC to Slack or Microsoft. Nothing is installed or changed on your SQL Servers.
+
+> ⚠️ **Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed.** Nothing is watched while it isn't running. Each channel is told when SqlVitals [stops watching and starts again](#stopped-watching-and-watching-again), but not if the PC loses power or SqlVitals is ended by force. A quiet channel doesn't mean the servers are fine. The *Chat channels* card in Settings says this too.
 
 ## Slack
 
@@ -55,7 +57,7 @@ In **⚙️ Settings → Alerts & chat → Chat channels**, click **+ Add channe
 | **Service** | Slack or Microsoft Teams. Picked from the URL when SqlVitals recognises it; you can change it. |
 | **Connections** | **All monitored connections** (the default): every connection SqlVitals is monitoring at the time, including ones you add later. Or **Only these**, ticked from your saved connections. A connection you remove is taken off the list. |
 | **Post** | **Warnings and critical** (the default), or **Critical only**. |
-| **Also post when an alert ends** | On by default: *Back to normal* for the alerts this channel was told about. Off, only starts and escalations are posted. *Stopped monitoring* is posted either way. |
+| **Also post when an alert ends** | On by default: *Back to normal* for the alerts this channel was told about. Off, only starts and escalations are posted. *Stopped watching* and *watching again* are posted either way. |
 | **On** | Turn off to pause the channel without removing it. What it had waiting is dropped. A test message can still be sent. |
 
 Click **💾 Save channel**. The URL is checked first:
@@ -81,7 +83,8 @@ A channel gets a message when an alert starts or turns critical, the same moment
 | A warning a channel skipped **turns critical** | 🔴 *Critical: CPU on Sales-Prod*, as a new alert | *Critical only* channels, and a channel that was off (or not yet added) when the warning started |
 | An alert **gets worse** | Nothing | |
 | An alert is **back to normal** | ✅ *Back to normal: CPU on Sales-Prod* ([below](#back-to-normal)) | Channels that were told about the alert and have **Also post when an alert ends** on |
-| **Monitoring stops** with alerts active | ⏹ *Stopped monitoring Sales-Prod* ([below](#stopped-monitoring)) | Channels that were told about any of them, whatever **Also post when an alert ends** says |
+| SqlVitals **stops watching** a server | ⏹ *SqlVitals stopped watching Sales-Prod*, with why and the alerts still active ([below](#stopped-watching-and-watching-again)) | Channels that take the connection, or were told about one of its alerts, whatever **Also post when an alert ends** says |
+| SqlVitals **starts watching** it again | ▶ *SqlVitals is watching Sales-Prod again*, with how long it wasn't watched | Channels that take the connection |
 
 **Ends follow starts.** A channel only hears the end of an alert it was told about. It isn't told the end of an alert it filtered out (another connection, or a warning on a *Critical only* channel), and it is told the end of one it was told about even if its **Connections** or **Post** changed since. A warning that turned critical and was posted to a *Critical only* channel posts its end.
 
@@ -120,27 +123,46 @@ Alerts of one connection that end on the same sample share one message: *✅ 2 a
 
 An alert that keeps ending and starting again, a figure hovering around its threshold, posts each time. The run of samples an alert needs to start and to end already stops most of that; if a channel gets noisy, raise **Settings → Alerts & chat → Raise an alert after**, or turn off **Also post when an alert ends** for that channel.
 
-### Stopped monitoring
+### Stopped watching and watching again
 
-An alert needs someone watching. When SqlVitals stops monitoring a connection that has alerts still active, the channel gets **one** message for that connection instead of *Back to normal* ones:
+A quiet channel should mean the servers are fine, not that nobody is looking. So whenever SqlVitals **stops watching** servers, each channel that takes them gets one message saying so, and why:
 
-> **⏹ Stopped monitoring Sales-Prod**
-> SqlVitals on DBA-PC01 stopped monitoring Sales-Prod with 2 alerts still active (CPU, Blocking). No further updates will be posted.
+> **⏹ SqlVitals stopped watching Sales-Prod**
+> SqlVitals on DBA-PC01 stopped watching Sales-Prod because the PC is going to sleep. No alerts will be posted for it until SqlVitals is watching again. Sales-Prod had 2 alerts still active: CPU, Blocking.
+> **Stopped** Today 18:02
 
-- That's when you press **Stop** (a server's Overview or Live charts, the sidebar's server header or a tile's **⋯** menu, or **Stop monitoring all** in the tray menu), turn off **Start monitoring automatically**, edit or remove the connection, or **Exit** SqlVitals.
-- It lists only the alerts that channel was told about, and isn't sent when there are none.
-- It's sent whether or not **Also post when an alert ends** is on, because it says no more updates are coming.
-- **Editing a connection** (its server, sign-in or timeout) restarts its monitoring: the channel gets *Stopped monitoring*, then new alerts after the usual run of samples if the problem is still there.
-- **A removed connection** is named as it was when the channel was told.
+| What happened | The message says *because…* |
+|---|---|
+| You pressed **Stop** (a server's Overview or Live charts, the sidebar's server header, a tile's **⋯** menu, or **Stop monitoring all** in the tray menu) | monitoring was stopped in SqlVitals |
+| You turned off **Start monitoring automatically** | Start monitoring automatically was turned off |
+| You opened another server, and **Monitor in background** is off for this one | another server was opened, and Monitor in background is off |
+| Its saved password or Microsoft sign-in is missing now | a saved password or sign-in is missing |
+| You removed the connection | the connection was removed from SqlVitals |
+| You chose **Exit**, or closed the window with *Keep SqlVitals running in the notification area* off | the app was closed |
+| Windows is shutting down or restarting | Windows is shutting down |
+| You signed out of Windows | the Windows user signed out |
+| The PC is going to sleep or hibernating | the PC is going to sleep |
 
-**On Exit**, every connection stops at once, so each channel gets one message for all of them:
+- It names **the alerts still active** that the channel was told about. Their *Back to normal* isn't posted, because nobody is watching any more: an alert's end needs someone to see it.
+- Servers that stop at once share one message: *⏹ SqlVitals stopped watching 3 servers*, with a line each when they stopped for different reasons or had alerts active.
+- The **Stopped** time is shown in each reader's own time zone, so a message that only gets out after the PC wakes still says when it stopped.
+- It's sent whether or not **Also post when an alert ends** is on, and never [combined](#a-channel-that-falls-behind) into a summary.
+- **Editing a connection** (its server, sign-in or timeout) restarts its monitoring without a message: it was never unwatched. Its alerts end, and are posted again as new ones after the usual run of samples if the problem is still there.
+- **A removed connection** is named as it was.
 
-> **⏹ Stopped monitoring 2 connections**
-> SqlVitals on DBA-PC01 stopped monitoring Sales-Prod (CPU, Blocking) and HR-DB (Log space used), with alerts still active. No further updates will be posted.
+When SqlVitals **starts watching** again (when it starts, you press **Start**, or the PC wakes), each channel that takes the server is told how long it wasn't watched:
 
-SqlVitals then gives the channels **up to 5 seconds** to send what's waiting, while it saves its history. A message waiting to retry gets one try straight away, and nothing is retried. What's still waiting after that is dropped and written to the [app log](Settings.md#diagnostics). Closing or minimizing the window to the [notification area](Notifications-and-Tray.md#running-in-the-notification-area) isn't an exit: monitoring and posting carry on.
+> **▶ SqlVitals is watching Sales-Prod again**
+> SqlVitals on DBA-PC01 is watching Sales-Prod again, after 7 h 05 min without monitoring.
+> **Not watched for** 7 h 05 min · **Last watched** Today 01:12
 
-**If SqlVitals is killed** (Task Manager, a crash) **or the PC turns off**, the channel isn't told. The alerts that were active are ended the next time SqlVitals starts, as the Alerts page shows, but that posts nothing: it would be late and could mislead. A Windows sign-out or shutdown is an exit, but Windows may cut it short, or the network may already be down.
+The gap runs from its last sample in the [history](Monitoring-History-Database.md), or from when it stopped earlier in the same run, so it's right after a crash too. A server SqlVitals has never watched (or whose history was cleared) says *SqlVitals is watching Sales-Prod* instead. Several servers starting at once share one message, with a line each: *Sales-Prod not watched for 7 h 05 min · since 01:12*.
+
+**On Exit**, Windows shutting down or signing out, every server stops at once, so each channel gets one *stopped watching* message for all of them. SqlVitals then gives the channels **up to 5 seconds** to send what's waiting, while it saves its history. A message waiting to retry gets one try straight away, and nothing is retried. What's still waiting after that is dropped and written to the [app log](Settings.md#diagnostics). Windows may cut a shutdown short, or the network may already be down. Closing or minimizing the window to the [notification area](Notifications-and-Tray.md#running-in-the-notification-area) isn't an exit: monitoring and posting carry on.
+
+**When the PC goes to sleep**, SqlVitals keeps running but collects nothing. It holds the sleep back for **up to 2 seconds** to send *stopped watching*; what isn't sent by then goes when the PC wakes, followed by *watching again*. On some laptops (Modern Standby) Windows doesn't say it's going to sleep, and then neither message is posted.
+
+**If SqlVitals is killed** (Task Manager, a crash) **or the PC loses power**, there's no *stopped watching*: nothing is left running to send it. The next start still posts *watching again* with the real gap. The alerts that were active are ended then, as the Alerts page shows, but that posts nothing: it would be late and could mislead.
 
 ### Separate from Windows notifications
 
@@ -152,7 +174,7 @@ Only what the message shows: connection names, indicator names, figures and thre
 
 ### Limits
 
-- **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area).
+- **Only while SqlVitals runs on this PC**, and only for the connections it's monitoring at the time (see [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring)). Keep it running in the [notification area](Notifications-and-Tray.md#running-in-the-notification-area). Each channel hears when it [stops and starts watching](#stopped-watching-and-watching-again), but not when the PC loses power or SqlVitals is killed.
 - **One PC's view.** Two copies of SqlVitals watching the same server both post; the *Sent from* line tells them apart.
 - **Not remembered across restarts.** After SqlVitals restarts, an alert that's still happening is raised again and posted again as a new alert. That's expected. An alert already active when a channel is added or turned on isn't posted until it turns critical, and then its end is posted too.
 - Each channel sends its messages in order, one at a time and at most one a second, without holding up monitoring, the window or other channels.
@@ -182,7 +204,7 @@ Messages go at most **one a second** per channel, Slack's limit. If more than **
 > 🔴 **Sales-Prod** new or critical: CPU and Log space used
 > 🟠 **HR-DB** new or critical: Blocking; back to normal: CPU
 
-Once it's sent, messages go one by one again. A **Stopped monitoring** message is never combined: it's sent on its own after the summary, because "no further updates will be posted" mustn't become a count.
+Once it's sent, messages go one by one again. A **stopped watching** or **watching again** message is never combined: it's sent on its own after the summary, because "no alerts will be posted" mustn't become a count.
 
 ### ⚠ Failing
 
@@ -246,8 +268,9 @@ Anyone who has a webhook URL can post to the channel, so SqlVitals treats it lik
 
 - **Pure logic** (`SqlVitals/Engine/ChatNotifications/`, unit tested in `Engine.Tests/ChatNotifications/`): `ChatChannel`; `WebhookUrl` checks, compares and masks URLs; `ChatMessageBuilder` builds a `ChatMessage`, which `ChatFormatter` writes as Slack Block Kit (with a `text` fallback, and `&`, `<`, `>` escaped so a name can't mention `@channel`) or as an Adaptive Card 1.4 in the `{"type":"message","attachments":[…]}` envelope Teams workflows take; `WebhookResult` maps an answer or an exception to an outcome, from the status code and the exception's type only, never its message.
 - **Sending:** `IWebhookSender` is the only way out, so tests use a fake. `Desktop/Services/HttpWebhookSender.cs` is one `HttpClient` over a `SocketsHttpHandler` with the system proxy and default credentials, no redirects, and a 10-second timeout per request. It reads at most 1 KB of the answer.
-- **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message of each kind, and remembers in memory the alert ids it told the channel about, with the connection's name then (forgotten when the alert ends or the channel is turned off). An `Ended` change of a told alert is `ChatMessageBuilder.Recovered` (when `ChatChannel.PostEnds`) or, with `AlertEndReason.MonitoringStopped`, `ChatMessageBuilder.Stopped`. `ChatMessageBuilder` words them with `AlertText` (`Figure`, `Context`, `Duration`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests`, `AlertMessageTests` and `EndMessageTests` (expected Slack and Teams JSON).
-- **Exit:** `MonitoringManager.Dispose` clears the window's `AlertsChanged` before it stops the sessions, but raises `AlertsRaised` with their ends, then `AllStopped`, before it waits for the history writer. `MainWindow.OnClosing` calls `ChatNotificationService.BeginExit` first (routers collect the stopped ends; no more status or tray updates), and `OnAllStopped` queues one *Stopped monitoring* message per channel and calls `ChannelQueue.Hurry` (a wait to retry is cut short, and nothing is retried), so the channels send while the history is saved. `Shutdown(5 s − time already spent)` then waits for what's left, off any UI dependency, and `Dispose` drops and logs the rest. Tested in `MonitoringManagerTests` and `ChatNotificationServiceTests`.
+- **What to post:** `ChannelRouter`, one per channel, turns a connection's `AlertChange`s from one sample into at most one message of each kind, and remembers in memory the alert ids it told the channel about, with the connection's name then (forgotten when the alert ends or the channel is turned off). An `Ended` change of a told alert is `ChatMessageBuilder.Recovered` (when `ChatChannel.PostEnds`) or, with `AlertEndReason.MonitoringStopped`, kept per connection for `TakeStops`. `ChatMessageBuilder` words them with `AlertText` (`Figure`, `Context`, `Duration`), as the Alerts page and `AlertNotification` do. Unit tested in `ChannelRouterTests`, `AlertMessageTests`, `EndMessageTests` and `WatchMessageTests` (expected Slack and Teams JSON).
+- **Stopped watching and watching again (#170):** `MonitoringManager.Sync` raises `WatchingChanged` with a `WatchChange` (Engine/Monitoring/Watching.cs): the connections it started, each with `LastWatchedUtc` (when it stopped earlier in the run, else `HistoryReader.ReadLastSampleTime`, the last `health_scores` row), the ones it stopped with a `WatchStop` reason, and the ones restarted with new details. `ChatNotificationService.OnWatchingChanged` keeps the set being watched, and per channel queues `ChatMessageBuilder.StoppedWatching` (with the router's `TakeStops`) and `WatchingAgain`; restarts drop their stops. `MainWindow.OnPowerModeChanged` calls `OnGoingToSleep` on the UI thread and waits up to 2 s for the queues (`WhenIdleAsync`), and `OnWokeUp` after `Resume`. The exit reason comes from `App.SessionEndingReason` into `BeginExit(WatchStop)`. Tested in `WatchMessageTests` (each reason), `MonitoringManagerTests` and `ChatNotificationServiceTests` (fake clock).
+- **Exit:** `MonitoringManager.Dispose` clears the window's `AlertsChanged` before it stops the sessions, but raises `AlertsRaised` with their ends, then `AllStopped`, before it waits for the history writer. `MainWindow.OnClosing` calls `ChatNotificationService.BeginExit(why)` first (no more status or tray updates), and `OnAllStopped` queues one *stopped watching* message per channel for everything being watched, with the alerts still active, and calls `ChannelQueue.Hurry` (a wait to retry is cut short, and nothing is retried), so the channels send while the history is saved. `Shutdown(5 s − time already spent)` then waits for what's left, off any UI dependency, and `Dispose` drops and logs the rest. Tested in `MonitoringManagerTests` and `ChatNotificationServiceTests`.
 - **Sending:** `ChannelQueue`, one per channel, sends on a worker of its own, one message at a time and in order, at most one a second measured start to start; `Enqueue` never waits. The Slack or Teams JSON is written when the message is sent, so an edit to the channel applies to what's waiting and to a retry. Past 20 waiting messages, the rest fold into one `ChatMessageBuilder.Summary`, built from each message's `ChatDigest` when it's sent. `RetryPolicy` decides each retry; `NetworkGrace` is the minute after `PowerModes.Resume`. Waits run on a `TimeProvider`, so tests use `FakeTimeProvider` and never wait in real time, and are measured on its timestamps, which a change to the PC's clock doesn't move. Unit tested in `ChannelQueueTests`, `RetryPolicyTests` and `SummaryMessageTests`.
 - **Status:** `ChannelStatus` (*Never used*, *Last posted*, *Failing since*). The queue reports every try as a `ChannelReport`; the service marks the channel posted or failing on the UI thread and raises `StartedFailing` only on the change into *Failing*, which the main window shows with `TrayIcon.Inform`.
 - **Service:** `Desktop/Services/ChatNotificationService.cs`, owned by the main window, subscribes to `MonitoringManager.AlertsRaised`, which is raised beside the window's `AlertsChanged`. Each subscriber runs in its own try/catch, so a bug in one can't stop the other or show the connection as failing. The service takes the saved channels and connection names at startup and after every settings save; a settings file that couldn't be read just then is ignored, so it can't look like "no channels".

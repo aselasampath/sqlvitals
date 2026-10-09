@@ -9,7 +9,8 @@ namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
 /// The chat service over a fake sender and a fake clock: the test message (#120), posting alerts
-/// (#121), and the Failing status and its notification (#122).
+/// (#121), the Failing status and its notification (#122), ends and Exit (#123), and stopped
+/// watching and watching again (#170).
 /// </summary>
 public sealed class ChatNotificationServiceTests
 {
@@ -506,22 +507,77 @@ public sealed class ChatNotificationServiceTests
         Assert.Empty(sender.TitlesTo(SlackUrl + "L"));
     }
 
+    // What MonitoringManager.WatchingChanged says.
+    private static WatchChange Start(params ConnectionSettings[] connections) =>
+        new(connections.Select(c => new WatchedConnection(c.Id, c.DisplayName)).ToList(), [], []);
+
+    private static WatchChange Stop(WatchStop why, params ConnectionSettings[] connections) =>
+        new([], connections.Select(c => new StoppedWatching(c.Id, c.DisplayName, why)).ToList(), []);
+
+    private static AlertChange StoppedEnd(Alert alert) => Ended(alert, AlertEndReason.MonitoringStopped);
+
     [Fact]
-    public async Task StoppingAConnection_PostsOneStoppedMessage_WhetherOrNotEndsAreOn()
+    public async Task StoppingAConnection_PostsOneStoppedWatchingMessage_WithTheAlertsStillActive_WhetherOrNotEndsAreOn()
     {
         var channel = Channel();
         channel.PostEnds = false;
         var sender = new FakeSender(() => Ok);
         using var chat = Create(sender, channel);
+        chat.OnWatchingChanged(Start(Sales));
         var (cpu, log) = (Alert(Sales.Id), Alert(Sales.Id, HealthIndicator.LogSpace));
         chat.OnAlertsRaised(Sales.Id, Started(cpu, log));
 
-        chat.OnAlertsRaised(Sales.Id, [Ended(cpu, AlertEndReason.MonitoringStopped), Ended(log, AlertEndReason.MonitoringStopped)]);
+        // As MonitoringManager does it: the session's ends, then what stopped.
+        chat.OnAlertsRaised(Sales.Id, [StoppedEnd(cpu), StoppedEnd(log)]);
+        chat.OnWatchingChanged(Stop(WatchStop.StoppedByUser, Sales));
         await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-        Assert.Equal("⏹ Stopped monitoring Sales-Prod", sender.TitlesTo(SlackUrl).Last());
-        Assert.Contains("SqlVitals on DBA-PC01 stopped monitoring Sales-Prod with 2 alerts still active", sender.Sent.Last().Json);
-        Assert.Equal(2, sender.Sent.Count);
+        Assert.Equal(["▶ SqlVitals is watching Sales-Prod", "🔴 2 alerts on Sales-Prod (2 critical)", "⏹ SqlVitals stopped watching Sales-Prod"],
+                     sender.TitlesTo(SlackUrl));
+        Assert.Contains("SqlVitals on DBA-PC01 stopped watching Sales-Prod because monitoring was stopped in SqlVitals.", sender.Sent.Last().Json);
+        Assert.Contains("Sales-Prod had 2 alerts still active: CPU, Log space used.", sender.Sent.Last().Json);
+    }
+
+    [Fact]
+    public async Task StoppedAndWatchingAgain_GoOnlyToChannelsThatTakeTheConnection_WithNothingTold()
+    {
+        var all   = Channel("All");
+        var hr    = Channel("HR only", url: SlackUrl + "H");
+        hr.AllConnections = false;
+        hr.ConnectionIds  = [Hr.Id];
+        var off   = Channel("Off", url: SlackUrl + "O");
+        off.Enabled = false;
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, all, hr, off);
+
+        chat.OnWatchingChanged(Start(Sales));
+        chat.OnWatchingChanged(Stop(WatchStop.AutomaticOff, Sales));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(["▶ SqlVitals is watching Sales-Prod", "⏹ SqlVitals stopped watching Sales-Prod"], sender.TitlesTo(SlackUrl));
+        Assert.Empty(sender.TitlesTo(SlackUrl + "H"));
+        Assert.Empty(sender.TitlesTo(SlackUrl + "O"));
+    }
+
+    [Fact]
+    public async Task AChannelToldAboutAnAlert_HearsTheStop_EvenAfterItsFiltersChanged()
+    {
+        var channel = Channel();
+        var sender  = new FakeSender(() => Ok);
+        using var chat = Create(sender, channel);
+        var alert = Alert(Sales.Id);
+        chat.OnAlertsRaised(Sales.Id, Started(alert));
+
+        var narrowed = Channel();
+        narrowed.Id = channel.Id;
+        narrowed.AllConnections = false;
+        narrowed.ConnectionIds  = [Hr.Id];
+        chat.Apply(Store(narrowed));
+        chat.OnAlertsRaised(Sales.Id, [StoppedEnd(alert)]);
+        chat.OnWatchingChanged(Stop(WatchStop.StoppedByUser, Sales));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("⏹ SqlVitals stopped watching Sales-Prod", sender.TitlesTo(SlackUrl).Last());
     }
 
     [Fact]
@@ -530,36 +586,127 @@ public sealed class ChatNotificationServiceTests
         var channel = Channel();
         var sender  = new FakeSender(() => Ok);
         using var chat = Create(sender, channel);
+        chat.OnWatchingChanged(Start(Sales));
         var alert = Alert(Sales.Id);
         chat.OnAlertsRaised(Sales.Id, Started(alert));
 
         // Removing a connection saves the settings (forgetting its name) before its session stops (F8).
         chat.Apply(new ConnectionStore { Connections = [Hr], ChatChannels = [channel] });
-        chat.OnAlertsRaised(Sales.Id, [Ended(alert, AlertEndReason.MonitoringStopped)]);
+        chat.OnAlertsRaised(Sales.Id, [StoppedEnd(alert)]);
+        chat.OnWatchingChanged(Stop(WatchStop.ConnectionRemoved, Sales));
         await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-        Assert.Equal("⏹ Stopped monitoring Sales-Prod", sender.TitlesTo(SlackUrl).Last());
+        Assert.Equal("⏹ SqlVitals stopped watching Sales-Prod", sender.TitlesTo(SlackUrl).Last());
+        Assert.Contains("because the connection was removed from SqlVitals.", sender.Sent.Last().Json);
     }
 
     [Fact]
-    public async Task AtExit_EachChannelGetsOneStoppedMessage_ForEveryConnection()
+    public async Task AConnectionRestartedWithNewDetails_PostsNothing()
     {
         var sender = new FakeSender(() => Ok);
         using var chat = Create(sender, Channel());
+        chat.OnWatchingChanged(Start(Sales));
+        var alert = Alert(Sales.Id);
+        chat.OnAlertsRaised(Sales.Id, Started(alert));
+
+        chat.OnAlertsRaised(Sales.Id, [StoppedEnd(alert)]);
+        chat.OnWatchingChanged(new WatchChange([], [], [Sales.Id]));
+        // Its alerts gone, a later stop lists none.
+        chat.OnWatchingChanged(Stop(WatchStop.StoppedByUser, Sales));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(3, sender.Sent.Count);
+        Assert.DoesNotContain("still active", sender.Sent.Last().Json);
+    }
+
+    [Fact]
+    public async Task WatchingAgain_SaysHowLongItWasntWatched()
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+
+        var since = _time.GetUtcNow().UtcDateTime.AddHours(-3).AddMinutes(-12);
+        chat.OnWatchingChanged(new WatchChange([new WatchedConnection(Sales.Id, "Sales-Prod", since)], [], []));
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(["▶ SqlVitals is watching Sales-Prod again"], sender.TitlesTo(SlackUrl));
+        Assert.Contains("is watching Sales-Prod again, after 3 h 12 min without monitoring.", sender.Sent.Single().Json);
+    }
+
+    [Theory]
+    [InlineData(WatchStop.AppExit,         "because the app was closed.")]
+    [InlineData(WatchStop.WindowsShutdown, "because Windows is shutting down.")]
+    [InlineData(WatchStop.WindowsSignOut,  "because the Windows user signed out.")]
+    public void AtExit_EachChannelGetsOneStoppedMessage_ForEveryConnection_SayingWhy(WatchStop why, string because)
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+        chat.OnWatchingChanged(Start(Sales, Hr));
         var (sales, hr) = (Alert(Sales.Id), Alert(Hr.Id, HealthIndicator.Blocking));
         chat.OnAlertsRaised(Sales.Id, Started(sales));
         chat.OnAlertsRaised(Hr.Id, Started(hr));
-        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-        chat.BeginExit();
-        chat.OnAlertsRaised(Sales.Id, [Ended(sales, AlertEndReason.MonitoringStopped)]);
-        chat.OnAlertsRaised(Hr.Id, [Ended(hr, AlertEndReason.MonitoringStopped)]);
+        chat.BeginExit(why);
+        chat.OnAlertsRaised(Sales.Id, [StoppedEnd(sales)]);
+        chat.OnAlertsRaised(Hr.Id, [StoppedEnd(hr)]);
         chat.OnAllStopped();
         chat.Shutdown(TimeSpan.FromSeconds(5));
 
-        Assert.Equal("⏹ Stopped monitoring 2 connections", sender.TitlesTo(SlackUrl).Last());
-        Assert.Contains("stopped monitoring Sales-Prod (CPU) and HR-DB (Blocking), with alerts still active.", sender.Sent.Last().Json);
-        Assert.Equal(3, sender.Sent.Count);
+        Assert.Equal("⏹ SqlVitals stopped watching 2 servers", sender.TitlesTo(SlackUrl).Last());
+        Assert.Contains($"stopped watching Sales-Prod and HR-DB {because}", sender.Sent.Last().Json);
+        Assert.Contains("*Sales-Prod* 1 alert still active: CPU", sender.Sent.Last().Json);
+        Assert.Contains("*HR-DB* 1 alert still active: Blocking", sender.Sent.Last().Json);
+        Assert.Equal(4, sender.Sent.Count);
+    }
+
+    // ── Sleep (#170) ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GoingToSleep_SaysSo_AndWaking_SaysHowLongItSlept()
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+        chat.OnWatchingChanged(Start(Sales));
+
+        chat.OnGoingToSleep();
+        _time.Advance(TimeSpan.FromHours(7).Add(TimeSpan.FromMinutes(5)));
+        chat.OnWokeUp();
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(["▶ SqlVitals is watching Sales-Prod", "⏹ SqlVitals stopped watching Sales-Prod", "▶ SqlVitals is watching Sales-Prod again"],
+                     sender.TitlesTo(SlackUrl));
+        Assert.Contains("because the PC is going to sleep.", sender.Sent.ElementAt(1).Json);
+        Assert.Contains("again, after 7 h 05 min without monitoring.", sender.Sent.Last().Json);
+    }
+
+    [Fact]
+    public async Task SleepingWithNothingWatched_SaysNothing_AndWakingWithoutSleeping_SaysNothing()
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+
+        chat.OnWokeUp();
+        chat.OnGoingToSleep();
+        chat.OnWokeUp();
+        await chat.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Empty(sender.Sent);
+    }
+
+    [Fact]
+    public void ExitingWhileAsleep_DoesntSayItStoppedTwice()
+    {
+        var sender = new FakeSender(() => Ok);
+        using var chat = Create(sender, Channel());
+        chat.OnWatchingChanged(Start(Sales));
+        chat.OnGoingToSleep();
+
+        chat.BeginExit(WatchStop.WindowsShutdown);
+        chat.OnAllStopped();
+        chat.Shutdown(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(["▶ SqlVitals is watching Sales-Prod", "⏹ SqlVitals stopped watching Sales-Prod"], sender.TitlesTo(SlackUrl));
+        Assert.Contains("because the PC is going to sleep.", sender.Sent.Last().Json);
     }
 
     [Fact]
@@ -603,13 +750,13 @@ public sealed class ChatNotificationServiceTests
     }
 
     [Fact]
-    public void AtExit_WithNothingToldOrWaiting_NothingIsSent()
+    public void AtExit_WithNothingWatchedOrWaiting_NothingIsSent()
     {
         var sender = new FakeSender(() => Ok);
         using var chat = Create(sender, Channel());
 
         chat.BeginExit();
-        chat.OnAlertsRaised(Sales.Id, [Ended(Alert(Sales.Id), AlertEndReason.MonitoringStopped)]);
+        chat.OnAlertsRaised(Sales.Id, [StoppedEnd(Alert(Sales.Id))]);
         chat.Shutdown(TimeSpan.FromSeconds(5));
 
         Assert.Empty(sender.Sent);
