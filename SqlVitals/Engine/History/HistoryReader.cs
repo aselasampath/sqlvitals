@@ -16,7 +16,7 @@ namespace SqlVitals.Engine.History;
 /// Long ranges come back averaged into buckets (see <see cref="HistoryRange.BucketFor"/>), each
 /// stamped with the average capture time of what it holds. Times are UTC on this PC's clock.
 /// </summary>
-public sealed class HistoryReader(string path)
+public sealed class HistoryReader(string path) : IHistoryReader
 {
     public string Path { get; } = path;
 

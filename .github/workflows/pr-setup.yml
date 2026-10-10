@@ -76,21 +76,24 @@ jobs:
         run: |
           $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
           $zip = "artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip"
-          foreach ($file in $exe, $zip) {
+          $collector = "artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip"
+          foreach ($file in $exe, $zip, $collector) {
             if (-not (Test-Path $file)) { throw "Expected $file was not produced." }
           }
           $info    = Get-Item $exe
           $hash    = (Get-Content "$exe.sha256").Split(' ')[0]
           $zipInfo = Get-Item $zip
           $zipHash = (Get-Content "$zip.sha256").Split(' ')[0]
+          $colInfo = Get-Item $collector
+          $colHash = (Get-Content "$collector.sha256").Split(' ')[0]
           @(
             "### SqlVitals ${{ steps.version.outputs.version }}"
             ""
-            "| | Setup | Portable zip |"
-            "|---|---|---|"
-            "| File | ``$($info.Name)`` | ``$($zipInfo.Name)`` |"
-            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB | $([math]::Round($zipInfo.Length / 1MB, 1)) MB |"
-            "| SHA-256 | ``$hash`` | ``$zipHash`` |"
+            "| | Setup | Portable zip | Collector service |"
+            "|---|---|---|---|"
+            "| File | ``$($info.Name)`` | ``$($zipInfo.Name)`` | ``$($colInfo.Name)`` |"
+            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB | $([math]::Round($zipInfo.Length / 1MB, 1)) MB | $([math]::Round($colInfo.Length / 1MB, 1)) MB |"
+            "| SHA-256 | ``$hash`` | ``$zipHash`` | ``$colHash`` |"
             ""
             "Commit ``${{ github.event.pull_request.head.sha }}``"
             ""
@@ -115,6 +118,17 @@ jobs:
           path: |
             artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip
             artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0   # the zip is already compressed
+
+      - name: Upload collector artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64-pr${{ github.event.pull_request.number }}
+          path: |
+            artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip
+            artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip.sha256
           if-no-files-found: error
           retention-days: 14
           compression-level: 0   # the zip is already compressed

@@ -8,6 +8,7 @@ using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.FileIo;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
@@ -345,11 +346,7 @@ public class ConnectionSettingsService : ISectionFolds
     /// Masks password values in a message before it is shown, in case a driver or parser
     /// error echoes part of a connection string back.
     /// </summary>
-    public static string RedactSecrets(string message) =>
-        System.Text.RegularExpressions.Regex.Replace(
-            message ?? string.Empty,
-            @"(?i)\b(password|pwd)(\s*=\s*)(""[^""]*""|'[^']*'|[^;""']*)",
-            "$1$2*****");
+    public static string RedactSecrets(string message) => Secrets.MaskPasswords(message);
 
     // ── File I/O ──────────────────────────────────────────────────────────────
     // Every setter loads, changes one thing and saves the whole store. So a read that fails must

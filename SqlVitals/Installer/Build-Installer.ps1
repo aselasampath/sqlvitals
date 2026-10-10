@@ -2,6 +2,7 @@
 .SYNOPSIS
     Builds SqlVitals Setup: artifacts\SqlVitals-Setup-<version>.exe
     and the portable zip:   artifacts\SqlVitals-<version>-win-x64-portable.zip
+    and the collector zip:  artifacts\SqlVitals-Collector-<version>-win-x64.zip
 
 .DESCRIPTION
     1. Publishes SqlVitals.Desktop self-contained for win-x64 (the .NET 10 runtime is bundled,
@@ -11,7 +12,10 @@
     3. Writes manifest.txt with the size and SHA-256 hash of every published file. Setup checks
        each file against it after unpacking and before installing.
     4. Zips manifest + app into SqlVitals.payload.zip and embeds it in SqlVitals.Setup.exe.
-    5. Optionally Authenticode-signs the app and Setup (recommended for any release build, so
+    5. Publishes SqlVitals.Collector, the optional Windows service (#172), self-contained, and
+       zips it into a SqlVitals-Collector-<version> folder. Setup doesn't install it: an admin
+       copies it to the always-on PC and runs SqlVitals.Collector.exe install.
+    6. Optionally Authenticode-signs the app, the collector and Setup (recommended for any release build, so
        Windows shows a verified publisher and the package can't be altered undetected).
 
 .PARAMETER CertificateThumbprint
@@ -41,6 +45,8 @@ $payloadZip  = Join-Path $payloadDir 'SqlVitals.payload.zip'
 $setupBuild  = Join-Path $artifacts 'setup-build'
 $portableDir = Join-Path $artifacts 'portable'
 $desktopProj = Join-Path $repoRoot 'SqlVitals\Desktop\SqlVitals.Desktop.csproj'
+$collectorProj = Join-Path $repoRoot 'SqlVitals\Collector\SqlVitals.Collector.csproj'
+$collectorDir  = Join-Path $artifacts 'publish\collector'
 $setupProj   = Join-Path $PSScriptRoot 'SqlVitals.Installer.csproj'
 
 # Config files the user may edit; upgrades keep a modified copy (see CommitFilesStep).
@@ -67,7 +73,7 @@ $version = @($desktopXml.Project.PropertyGroup | ForEach-Object { $_.Version } |
 if (-not $version) { throw "No <Version> found in $desktopProj." }
 Write-Host "SqlVitals version $version" -ForegroundColor Green
 
-foreach ($dir in @($publishDir, $payloadDir, $setupBuild, $portableDir)) {
+foreach ($dir in @($publishDir, $collectorDir, $payloadDir, $setupBuild, $portableDir)) {
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
 }
 
@@ -127,7 +133,29 @@ $totalMb = ($files | Measure-Object Length -Sum).Sum / 1MB
 $zipMb   = (Get-Item $payloadZip).Length / 1MB
 Write-Host ("    {0} files, {1:N0} MB -> {2:N0} MB compressed" -f $files.Count, $totalMb, $zipMb)
 
-# ── 5. Setup ──────────────────────────────────────────────────────────────────
+# ── 5. Collector zip (#172) ───────────────────────────────────────────────────
+Invoke-Checked 'Publishing SqlVitals.Collector (self-contained, win-x64)' {
+    dotnet publish $collectorProj -c $Configuration -r win-x64 --self-contained true `
+        -p:SatelliteResourceLanguages=en -p:DebugType=none -p:DebugSymbols=false `
+        -o $collectorDir --nologo
+}
+Invoke-Sign (Get-ChildItem $collectorDir -File | Where-Object { $_.Name -like 'SqlVitals.*' -and $_.Extension -in '.exe', '.dll' } |
+             ForEach-Object FullName)
+
+Write-Host '==> Zipping the collector' -ForegroundColor Cyan
+$collectorName = "SqlVitals-Collector-$version"
+$collectorRoot = Join-Path $portableDir $collectorName
+New-Item -ItemType Directory -Force $portableDir | Out-Null
+Copy-Item $collectorDir $collectorRoot -Recurse
+$collectorZip = Join-Path $artifacts "$collectorName-win-x64.zip"
+if (Test-Path $collectorZip) { Remove-Item $collectorZip -Force }
+[System.IO.Compression.ZipFile]::CreateFromDirectory($collectorRoot, $collectorZip,
+    [System.IO.Compression.CompressionLevel]::Optimal, $true)
+Remove-Item $portableDir -Recurse -Force
+$collectorHash = (Get-FileHash $collectorZip -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -Path "$collectorZip.sha256" -Value "$collectorHash  $(Split-Path $collectorZip -Leaf)" -Encoding ascii
+
+# ── 6. Setup ──────────────────────────────────────────────────────────────────
 Invoke-Checked 'Building SqlVitals Setup' {
     dotnet build $setupProj -c $Configuration --no-incremental "-p:PayloadPath=$payloadZip" "-p:Version=$version" `
         -o $setupBuild --nologo
@@ -145,6 +173,8 @@ Write-Host "Done: $setupExe" -ForegroundColor Green
 Write-Host "SHA-256: $setupHash"
 Write-Host "Done: $portableZip" -ForegroundColor Green
 Write-Host "SHA-256: $portableHash"
+Write-Host "Done: $collectorZip" -ForegroundColor Green
+Write-Host "SHA-256: $collectorHash"
 if (-not $CertificateThumbprint) {
     Write-Warning 'Setup is unsigned. Sign release builds (-CertificateThumbprint) so users see a verified publisher.'
 }

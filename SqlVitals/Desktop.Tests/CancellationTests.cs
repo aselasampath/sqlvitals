@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;

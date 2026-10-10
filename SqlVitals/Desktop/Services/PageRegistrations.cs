@@ -2,6 +2,7 @@ using System.Windows.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Services;

@@ -27,6 +27,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Keep an eye on several servers](#keep-an-eye-on-several-servers)
 - [Run SP Trace without monitoring the server](#run-sp-trace-without-monitoring-the-server)
 - [Monitor my servers all the time](#monitor-my-servers-all-the-time)
+- [Keep watching when my PC is off](#keep-watching-when-my-pc-is-off)
 - [Get alerts in a Teams channel](#get-alerts-in-a-teams-channel)
 - [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
 - [Give a wide grid the whole screen](#give-a-wide-grid-the-whole-screen)
@@ -266,6 +267,17 @@ Nothing else runs beside the trace: no Live Metrics query, history snapshot or P
 4. Keep **Settings → Monitoring & history** at 14 days or more, for week-over-week baselines.
 
 From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.md) and Windows notifications. A **■** press in the sidebar, on a tile's **⋯** menu, on a server's Overview or on Live charts still stops one until SqlVitals exits.
+
+## Keep watching when my PC is off
+
+The app watches only while it runs. To catch a 3 a.m. problem with your laptop closed, run the optional [collector service](Collector-Service.md) on an always-on Windows PC or server:
+
+1. Unzip **SqlVitals-Collector-&lt;version&gt;-win-x64.zip** from the release to `C:\Program Files\SqlVitals Collector`.
+2. In an administrator command prompt there: `SqlVitals.Collector.exe install --start`. It prints the `CREATE LOGIN` / `GRANT VIEW SERVER STATE` to run on each server.
+3. `SqlVitals.Collector.exe add-server --server sql01 --name Sales-Prod` for each server, and `add-channel --name "DBA team" --heartbeat 6h` for your Slack or Teams channel (the URL is asked for, hidden).
+4. `SqlVitals.Collector.exe test`, then `list`. The service picks up changes within 10 seconds.
+
+Turn on a [heartbeat with a ping URL](Chat-Notifications.md#heartbeat), so you also hear when the collector PC itself goes down.
 
 ## Get alerts in a Teams channel
 

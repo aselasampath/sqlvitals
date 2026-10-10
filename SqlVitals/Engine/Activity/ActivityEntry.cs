@@ -93,6 +93,10 @@ public static class ActivitySources
     public const string SettingChanged      = "setting changed";
     public const string ConnectionEdited    = "connection edited";
     public const string AppExit             = "app exit";
+    /// <summary>The SqlVitals Collector service (#172): its start and stop, and the servers it watches.</summary>
+    public const string CollectorService    = "collector service";
+    /// <summary>The collector's settings file changed while it ran (#172): a server added, removed or edited.</summary>
+    public const string CollectorSettings   = "collector settings changed";
 
     /// <summary>A setting saved on a page other than Settings, e.g. "user: Backups".</summary>
     public static string Page(string name) => $"user: {name}";

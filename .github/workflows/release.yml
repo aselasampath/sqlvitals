@@ -69,13 +69,16 @@ jobs:
         run: |
           $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
           $zip = "artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip"
-          foreach ($file in $exe, $zip) {
+          $collector = "artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip"
+          foreach ($file in $exe, $zip, $collector) {
             if (-not (Test-Path $file)) { throw "Expected $file was not produced." }
           }
           "exe=$exe" >> $env:GITHUB_OUTPUT
           "sha256=$((Get-Content "$exe.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
           "zip=$zip" >> $env:GITHUB_OUTPUT
           "zip_sha256=$((Get-Content "$zip.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
+          "collector=$collector" >> $env:GITHUB_OUTPUT
+          "collector_sha256=$((Get-Content "$collector.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
 
       - name: Upload Setup artifact
         uses: actions/upload-artifact@v4
@@ -99,6 +102,17 @@ jobs:
           retention-days: 90
           compression-level: 0   # the zip is already compressed
 
+      - name: Upload collector artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64
+          path: |
+            ${{ steps.output.outputs.collector }}
+            ${{ steps.output.outputs.collector }}.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0   # the zip is already compressed
+
       # Releases in this repository are immutable once published, so the release is created as a
       # draft, its files are uploaded and checked, and only then is it published.
       - name: Publish GitHub Release
@@ -108,7 +122,8 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $exe     = '${{ steps.output.outputs.exe }}'
           $zip     = '${{ steps.output.outputs.zip }}'
-          $files   = @($exe, "$exe.sha256", $zip, "$zip.sha256")
+          $collector = '${{ steps.output.outputs.collector }}'
+          $files   = @($exe, "$exe.sha256", $zip, "$zip.sha256", $collector, "$collector.sha256")
 
           $existing = gh release view $env:TAG --json isDraft,url 2>$null | ConvertFrom-Json
           if ($existing -and -not $existing.isDraft) {
@@ -135,6 +150,12 @@ jobs:
               "Prefer not to run Setup? Download **SqlVitals-$version-win-x64-portable.zip**, unzip it anywhere and run **SqlVitals.Desktop.exe** from the ``SqlVitals-$version`` folder. It needs no admin rights and no .NET install. It adds no Start menu entry or uninstaller and doesn't upgrade itself: to update, unzip the new version and delete the old folder. Connections and history are kept in your Windows profile, so they carry over."
               ""
               "SHA-256: ``${{ steps.output.outputs.zip_sha256 }}``"
+              ""
+              "### Collector service (optional)"
+              ""
+              "To keep watching your servers when no one is signed in, download **SqlVitals-Collector-$version-win-x64.zip** on an always-on Windows PC or server, unzip it to a folder such as ``C:\Program Files\SqlVitals Collector`` and, as an administrator, run ``SqlVitals.Collector.exe install``. The app works the same without it. See Collector-Service in the docs."
+              ""
+              "SHA-256: ``${{ steps.output.outputs.collector_sha256 }}``"
               ""
             ) | Out-File release-notes.md -Encoding utf8
             $flags = @('--draft', '--verify-tag', '--generate-notes')   # generated notes go below the install section

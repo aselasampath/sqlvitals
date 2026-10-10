@@ -25,7 +25,7 @@ public partial class ActivityLogView : UserControl
         new("Last 365 days", ActivityLog.Retention),
     ];
 
-    private HistoryReader? _reader;
+    private IHistoryReader? _reader;
     private bool           _ready;
     private int            _loadVersion;   // a slower, earlier load's result is dropped
 
@@ -35,7 +35,7 @@ public partial class ActivityLogView : UserControl
     }
 
     /// <summary>Fills the filters and reads the log. The connections are the saved ones, by name.</summary>
-    public void Initialize(HistoryReader reader, IEnumerable<(Guid Id, string Name)> connections)
+    public void Initialize(IHistoryReader reader, IEnumerable<(Guid Id, string Name)> connections)
     {
         _reader = reader;
         _ready  = false;

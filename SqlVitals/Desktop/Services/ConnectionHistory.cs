@@ -7,7 +7,7 @@ namespace SqlVitals.Desktop.Services;
 /// The monitoring history of the connection a trend page shows. Pages get null when there is
 /// none to read: an ad-hoc connection that isn't saved is never recorded.
 /// </summary>
-public sealed record ConnectionHistory(HistoryReader Reader, Guid ConnectionId)
+public sealed record ConnectionHistory(IHistoryReader Reader, Guid ConnectionId)
 {
     public const string UnavailableReason =
         "History is recorded for saved connections only. Save this connection in Settings to start recording it.";
@@ -17,7 +17,7 @@ public sealed record ConnectionHistory(HistoryReader Reader, Guid ConnectionId)
     /// range never holds up the UI.
     /// </summary>
     public async Task<HistoryLoad<T>> LoadAsync<T>(
-        HistoryRange range, Func<HistoryReader, Guid, DateTime, DateTime, TimeSpan, IReadOnlyList<T>> read)
+        HistoryRange range, Func<IHistoryReader, Guid, DateTime, DateTime, TimeSpan, IReadOnlyList<T>> read)
     {
         var (fromUtc, toUtc) = range.Resolve(DateTime.UtcNow);
         var bucket = HistoryRange.BucketFor(toUtc - fromUtc);
@@ -32,7 +32,7 @@ public sealed record ConnectionHistory(HistoryReader Reader, Guid ConnectionId)
     /// </summary>
     public async Task<BaselineLoad<T>> LoadBaselineAsync<T>(
         DateTime fromUtc, DateTime toUtc, TimeSpan bucket,
-        Func<HistoryReader, Guid, DateTime, DateTime, TimeSpan, IReadOnlyList<T>> read)
+        Func<IHistoryReader, Guid, DateTime, DateTime, TimeSpan, IReadOnlyList<T>> read)
     {
         var (readFrom, readTo) = HistoryBaseline.ReadWindow(fromUtc, toUtc);
         var items = await Task.Run(() => read(Reader, ConnectionId, readFrom, readTo, bucket));
@@ -98,7 +98,7 @@ public sealed record BaselineLoad<T>(DateTime FromUtc, DateTime ToUtc, TimeSpan 
 /// and read again only once the live window runs past it.
 /// </summary>
 public sealed class BaselineTracker<T>(
-    ConnectionHistory history, Func<HistoryReader, Guid, DateTime, DateTime, TimeSpan, IReadOnlyList<T>> read)
+    ConnectionHistory history, Func<IHistoryReader, Guid, DateTime, DateTime, TimeSpan, IReadOnlyList<T>> read)
 {
     private static readonly TimeSpan LiveSlack = TimeSpan.FromMinutes(30);
 

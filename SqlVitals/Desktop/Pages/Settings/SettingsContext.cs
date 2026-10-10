@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.ChatNotifications;
 
 namespace SqlVitals.Desktop.Pages.Settings;
 
