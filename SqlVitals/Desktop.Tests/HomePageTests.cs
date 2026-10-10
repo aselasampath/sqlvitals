@@ -198,6 +198,13 @@ public sealed class HomePageTests : IDisposable
         Click(ButtonOn(page, "Retry", "Down"));
 
         Assert.Equal([_down.Id], opened);
+        // The retry reads on the thread pool (#171).
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (_calls.Count(c => c.Server == "down" && c.Method == nameof(IWaitStatsRepository.GetLiveMetricsAsync)) == before)
+        {
+            Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), "Retry didn't try the server.");
+            Thread.Sleep(5);
+        }
         Assert.Equal(before + 1, _calls.Count(c => c.Server == "down" && c.Method == nameof(IWaitStatsRepository.GetLiveMetricsAsync)));
     });
 

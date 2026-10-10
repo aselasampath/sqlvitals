@@ -126,6 +126,19 @@ public sealed class CancellationTests : IDisposable
 
     // ── Monitoring ───────────────────────────────────────────────────────
 
+    // The token the sample is being read with: the read starts on the thread pool (#171).
+    private static CancellationToken ReadToken(FakeRepository repo)
+    {
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        CancellationToken token;
+        while (!repo.Tokens.TryGetValue(nameof(FakeRepository.GetLiveMetricsAsync), out token))
+        {
+            Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), "The sample was never read.");
+            Thread.Sleep(5);
+        }
+        return token;
+    }
+
     [Fact]
     public void PausingMonitoring_CancelsTheSampleBeingRead_AndRecordsNoFailure() => UiThread.Run(() =>
     {
@@ -135,7 +148,7 @@ public sealed class CancellationTests : IDisposable
         session.Start();
 
         var sample = session.CollectNowAsync();
-        var token  = repo.Tokens[nameof(FakeRepository.GetLiveMetricsAsync)];
+        var token  = ReadToken(repo);
         session.Pause();
 
         Assert.True(token.IsCancellationRequested);
@@ -152,7 +165,7 @@ public sealed class CancellationTests : IDisposable
         var session = new MonitoringSession(Guid.NewGuid(), repo, "fp");
 
         _ = session.CollectNowAsync();
-        var token = repo.Tokens[nameof(FakeRepository.GetLiveMetricsAsync)];
+        var token = ReadToken(repo);
         session.Dispose();
 
         Assert.True(token.IsCancellationRequested);

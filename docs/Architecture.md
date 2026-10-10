@@ -122,14 +122,15 @@ The four pages with layouts of their own are All servers (tiles), a server's Ove
 MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor in background,
                       Start / Stop pressed this run, password saved, Entra signed in)
    └─► MonitoringManager ─ one MonitoringSession per monitored connection; logs each start and stop
-   └─ every interval: repo → LiveMetricSample.From(previous, current)  (counters + ring buffer + requests)
+         └─ MonitoringSession (Desktop, UI thread) ◄── CollectorUpdate, in order ── Collector (Engine, thread pool)
+   └─ Collector, every interval: ILiveMetricsRepository → LiveMetricSample.From(previous, current)  (counters + ring buffer + requests)
          ├─► HealthRules.Grade(sample, thresholds) → one reading per indicator
          │     ├─► HealthRules.Summarize → (level, reasons) → 🟢 🟠 🔴 dot + tooltip
          │     ├─► HealthScore.From(readings) → 0–100 score + checks → sidebar, Overview, Home, breakdown popup
          │     │     └─► HistoryRecorder.RecordScore → health_scores (failed collections too, as 0)
          │     └─► AlertTracker.Evaluate → alert started / escalated / worsened / ended
          │           └─► HistoryRecorder.RecordAlerts → alerts table;  MonitoringManager.AlertsChanged → Alerts page, sidebar count
-         ├─► last 60 samples in memory (for the Overview and Live charts)
+         ├─► last 60 samples in memory, in the MonitoringSession (for the Overview and Live charts)
          ├─► HistoryRecorder.RecordSample(sample)
          └─► HistoryRecorder.CollectDetailIfDueAsync()
                └─ every N minutes: HistoryRepository detail snapshot → HistoryDetailTracker (deltas)
@@ -137,6 +138,8 @@ MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor
 ```
 
 `HealthRules.Evaluate` returns the worst level any indicator reached and one reason per indicator past its threshold. Page life expectancy and TempDB are skipped when the counter reads 0 (not reported, e.g. Azure SQL Database). Blocking is checked only when a session is blocked. `HealthScore` weights each indicator (CPU, blocking and log space 20, page life expectancy 16, memory grants and TempDB 12); a warning costs half the weight, critical all of it, and a failed collection is `HealthScore.Unavailable` (0). See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). Unreachable servers back off exponentially: `HealthRules.NextDelay` doubles the delay per consecutive failure, capped at 5 minutes. MFA connections, and SQL logins without a saved password, start only after the user has switched to them once.
+
+**Off the UI thread (#171).** The loop is Engine's `Monitoring/Collector`, one per monitored connection, with no window: a `PeriodicTimer` on a `TimeProvider` wakes every second (`Collector.Tick`) and collects when a sample is due (up to half a tick early, so a 10-second interval stays 10 seconds), never two at once (a tick while one runs is skipped; `CollectNowAsync` joins it), later after failures (`NextDelay`). Grading, scoring, alerts and history queuing run on the thread pool too, under the collector's lock; the history writer and recorder were already thread-safe. Each change is raised as a `CollectorUpdate` (alerts, sample, or state, with an immutable `CollectorState`) under that lock, in order. Desktop's `MonitoringSession` is now a thin adapter with the same API: it queues the updates and applies them on the UI thread (`Dispatcher.BeginInvoke`), raising `SampleAdded`, `AlertsChanged` and `StateChanged` there, and keeping the 60-sample window. `Pause` and `Dispose`, called on the UI thread, apply what's queued and then their own alert ends before they return, which the chat channels' exit messages rely on (#123). So a page that keeps the UI thread busy no longer delays samples; the window catches up when it's free (`MonitoringSessionTests`, timestamps in the #171 PR). The collector depends only on `ILiveMetricsRepository`, so the headless collector (#172) can host it as it is. Tested in `CollectorTests` on a `FakeTimeProvider`.
 
 Which connections are monitored is decided by `MonitoringPlan` (Engine, pure, unit tested): nothing, until the user presses **Start** (on a server's Overview or Live charts, ▶ in the sidebar's server header or on a Home tile, or the tray menu), unless **Start monitoring automatically** is on, in which case the active connection and those with *Monitor in background*. Start and Stop last until the app exits (`MonitoringOverrides`). `MonitoringManager.Sync(store, source)` starts and stops sessions to match, and raises `SessionStateChanged` and `MonitoringChanged` so the sidebar, Home, the Overview, Live charts, the Alerts page's verdict and the tray tooltip all show the same state. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
 
@@ -150,7 +153,7 @@ Settings (#131) is a shell, `SettingsPage`: a side menu built from `Services/Set
 
 ### 4. Alerts
 
-`AlertTracker` (one per monitored connection, owned by its `MonitoringSession`) keeps, per indicator, how many samples in a row were past a threshold, critical, or back to normal. An alert starts, escalates to critical or ends when a run reaches the count set in Settings (3 by default). Needing a run to end is the hysteresis that stops a value hovering around a threshold from raising repeated alerts. Stopping the session (a Stop disposes it) ends active alerts as *Monitoring stopped*. Changes go to the history as `AlertRecord`s, stored by alert id, and `HistoryWriter.EndAlertsLeftOpen()` runs at startup for alerts a killed run never ended. See [Alerts](Alerts.md#under-the-hood).
+`AlertTracker` (one per monitored connection, owned by its `Collector`, #171) keeps, per indicator, how many samples in a row were past a threshold, critical, or back to normal. An alert starts, escalates to critical or ends when a run reaches the count set in Settings (3 by default). Needing a run to end is the hysteresis that stops a value hovering around a threshold from raising repeated alerts. Stopping the session (a Stop disposes it) ends active alerts as *Monitoring stopped*. Changes go to the history as `AlertRecord`s, stored by alert id, and `HistoryWriter.EndAlertsLeftOpen()` runs at startup for alerts a killed run never ended. See [Alerts](Alerts.md#under-the-hood).
 
 `MainWindow` also turns each alert that starts or escalates into a Windows notification (`AlertNotification` → `TrayIcon`), unless its connection is muted. See [Notifications and Tray](Notifications-and-Tray.md#under-the-hood).
 
@@ -228,7 +231,7 @@ protected Task<bool>                 HasColumnAsync(IDbConnection c, string view
 |---|---|---|
 | A page's reads, from its view model or its code-behind | The page is left, or its connection switched (`OnNavigatedFrom`) | `PageFactory` wraps the page's repository in a `LifetimeRepository` bound to a `PageLifetime`, which `PageViewModel` ends on `OnNavigatedFrom`. A call's own token still works; `StopTraceAsync` is cleanup and isn't bound |
 | The window's own reads (the edition check) | The connection switches | `MainWindow._connectionWork` |
-| A monitoring sample and its history detail | **■ Stop** (`Pause`) or `Dispose` | `MonitoringSession._collecting`; a cancelled sample records no failure, and a lock timeout skips the sample |
+| A monitoring sample and its history detail | **■ Stop** (`Pause`) or `Dispose` | `Collector._collecting` (#171); a cancelled sample records no failure, and a lock timeout skips the sample |
 
 ### DBNull-safe mapping
 
