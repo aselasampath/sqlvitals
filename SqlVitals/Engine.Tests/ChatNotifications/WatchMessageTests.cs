@@ -42,6 +42,7 @@ public sealed class WatchMessageTests
     [InlineData(WatchStop.WindowsShutdown,   "because Windows is shutting down.")]
     [InlineData(WatchStop.WindowsSignOut,    "because the Windows user signed out.")]
     [InlineData(WatchStop.Sleep,             "because the PC is going to sleep.")]
+    [InlineData(WatchStop.ServiceStopped,    "because the SqlVitals Collector service stopped.")]
     public void Stopped_SaysWhy_ForEachStopReason(WatchStop why, string because)
     {
         var message = Stopped(Server("Sales-Prod", why));

@@ -21,11 +21,12 @@ try {
 
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 
-# Installer first: its tests run before the ~80 MB payload exists. Then the engine, then the app.
+# Installer first: its tests run before the ~80 MB payload exists. Then the engine, the app and the collector service (#172).
 $projects = [ordered]@{
     'Installer' = 'SqlVitals/Installer.Tests/SqlVitals.Installer.Tests.csproj'
     'Engine'    = 'SqlVitals/Engine.Tests/SqlVitals.Engine.Tests.csproj'
     'Desktop'   = 'SqlVitals/Desktop.Tests/SqlVitals.Desktop.Tests.csproj'
+    'Collector' = 'SqlVitals/Collector.Tests/SqlVitals.Collector.Tests.csproj'
 }
 foreach ($name in $projects.Keys) {
     Write-Host "::group::Test $name"

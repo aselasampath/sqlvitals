@@ -32,6 +32,9 @@ public enum WatchStop
 
     /// <summary>The PC is going to sleep or hibernating. SqlVitals keeps running, but collects nothing.</summary>
     Sleep,
+
+    /// <summary>The SqlVitals Collector Windows service was stopped (#172): by an admin, an update, or Windows shutting down.</summary>
+    ServiceStopped,
 }
 
 /// <summary>A connection SqlVitals started watching (#170).</summary>

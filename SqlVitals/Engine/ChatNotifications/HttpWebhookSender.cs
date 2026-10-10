@@ -3,9 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
-using SqlVitals.Engine.ChatNotifications;
-
-namespace SqlVitals.Desktop.Services;
+namespace SqlVitals.Engine.ChatNotifications;
 
 /// <summary>
 /// Posts to Slack and Teams webhooks over HTTPS (#120), through the Windows proxy settings so

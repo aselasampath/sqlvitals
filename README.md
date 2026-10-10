@@ -99,7 +99,9 @@ table shows.*
 - **Not an administration tool.** Keep SSMS or Azure Data Studio for creating objects, security, taking backups and
   running the scripts SqlVitals generates.
 - **Not a team monitoring platform.** History and alerts live on the PC running SqlVitals and are collected while it
-  runs. For 24/7 monitoring shared by a team, use a server-based product.
+  runs. The optional [collector service](docs/Collector-Service.md) keeps one always-on PC watching around the clock,
+  with its own history and chat alerts, but it is one service with one history file: no web dashboard, no central
+  database, no roles. For monitoring shared by a team, use a server-based product.
 - **Windows only.** It's a WPF desktop app.
 
 ## Documentation

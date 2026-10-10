@@ -21,6 +21,8 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 | Diagnostic logs | `%AppData%\SqlVitals\logs\SqlVitals-yyyyMMdd.log` | Windows file permissions | Errors and warnings; **passwords and connection strings removed**; 14-day retention |
 | Exported reports / CSVs / scripts | Wherever you save them | Your responsibility | Whatever you exported |
 | Setup log | `%TEMP%\SqlVitals-Setup-*.log` | — | Install steps and paths only |
+| [Collector service](Collector-Service.md) settings (optional, from 0.73.0) | `%ProgramData%\SqlVitals\Collector\collector.json` | Folder locked to SYSTEM, Administrators, the service's account and the installing user; secrets **DPAPI** (*LocalMachine*) | Servers, logins, SQL passwords (protected), chat channels with their webhook and ping URLs (protected), sampling settings |
+| Collector service history and logs | `%ProgramData%\SqlVitals\Collector\history.db`, `logs\Collector-yyyyMMdd.log` | The same locked folder | As the app's history and logs; the activity log has the service's account and PC name |
 
 ## Credentials
 
@@ -30,6 +32,14 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 - The *Additional parameters* field rejects `Password` and `User ID`, so a secret can't be stored outside the encrypted fields.
 - **Entra MFA** uses the interactive Microsoft sign-in, through Windows' account manager (WAM) from 0.67.0. SqlVitals never sees your Microsoft password.
 - **Windows Authentication** stores no secret.
+
+## Collector service
+
+The optional [collector service](Collector-Service.md) (0.73.0, #172) runs as its own Windows account, so it can't read your `settings.dat`, and keeps its own `collector.json`. **The decision:** its secrets (SQL passwords, webhook and ping URLs) are encrypted with **DPAPI in LocalMachine scope**, with an entropy of SqlVitals' own, because the service, the admins and the app (which hands servers over to it) are different Windows users who all read the file. LocalMachine means any process on that PC could decrypt them, so the **folder's permissions** are what keep other users out: install, and the first command that writes the file, set full control for SYSTEM and Administrators, Modify for the service's account and the installing user, and nothing inherited from `%ProgramData%`. The encryption makes a copy of the file taken off the PC useless.
+
+- **Windows authentication is recommended**: the service's account (or the PC's domain account) gets a login, and no secret is stored at all. SQL logins are for servers outside the domain. Entra MFA can't be used, since nobody is there to sign in.
+- **Secrets are never command-line arguments.** The command line takes them at a hidden prompt or from standard input, and never prints them; a secret typed into `collector.json` in clear text is refused rather than used.
+- The service's logs are scrubbed as the app's are.
 
 ## Connections to your servers
 

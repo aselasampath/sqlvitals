@@ -1,13 +1,13 @@
 using SqlVitals.Engine.Alerts;
-using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Monitoring;
 
-namespace SqlVitals.Desktop.Services;
+namespace SqlVitals.Engine.ChatNotifications;
 
 /// <summary>
 /// Posts to the Slack and Microsoft Teams channels saved in Settings (#108). Lives with the app,
-/// not the window, and hears alerts from <see cref="MonitoringManager.AlertsRaised"/>, so it carries
-/// on while the window is hidden in the notification area.
+/// not the window, and hears alerts from the app's <c>MonitoringManager.AlertsRaised</c>, so it
+/// carries on while the window is hidden in the notification area. In Engine since #172, so the
+/// collector service posts the same messages, from its own settings.
 ///
 /// Each channel has a <see cref="ChannelRouter"/> (what to post), run where alerts are raised, and
 /// a <see cref="ChannelQueue"/> (sending, in order, on a worker of its own). Deciding takes no
@@ -21,7 +21,8 @@ namespace SqlVitals.Desktop.Services;
 /// and the heartbeat, a "still watching" message on each channel's schedule, which can also call
 /// a dead man's switch URL (<see cref="CheckHeartbeats"/>).
 ///
-/// Used on the UI thread; the queues report back to it through its synchronization context.
+/// Used on one thread at a time: the app's UI thread, or the collector service's own (#172). The
+/// queues report back to it through that thread's synchronization context.
 /// </summary>
 public sealed class ChatNotificationService : IDisposable
 {
@@ -68,7 +69,7 @@ public sealed class ChatNotificationService : IDisposable
     // Written by MarkPosted, on the UI thread (or a queue's worker when there's no UI, in tests).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, ChannelStatus> _status = new();
 
-    /// <param name="log">Where posts and failures are written: the app log, or a list in tests. Never given a URL.</param>
+    /// <param name="log">Where posts and failures are written: the app's log, the service's, or a list in tests; nowhere when null. Never given a URL.</param>
     /// <param name="ui">The UI thread's context, where status changes are raised; null raises them on the queue's worker (tests).</param>
     /// <param name="time">The clock for pacing, retries and the status times; the system clock when null.</param>
     public ChatNotificationService(IWebhookSender sender, string? pcName = null, Action<string>? log = null,
@@ -76,7 +77,7 @@ public sealed class ChatNotificationService : IDisposable
     {
         _sender = sender;
         _pcName = pcName ?? Environment.MachineName;
-        _log    = log ?? AppLog.Info;
+        _log    = log ?? (_ => { });
         _ui     = ui;
         _time   = time ?? TimeProvider.System;
         _grace  = new NetworkGrace(_time);
@@ -104,17 +105,13 @@ public sealed class ChatNotificationService : IDisposable
     /// <summary>
     /// Takes the saved channels and connection names, at startup and after every save. Applies
     /// from the next alert. A channel turned off or removed stops straight away: what it had
-    /// waiting is dropped, and it forgets the alerts it was told about. A store that couldn't be
-    /// read (another program had settings.dat open) is ignored: it would look like "no channels".
-    /// Only reads, so it's safe inside a save's Changed event.
+    /// waiting is dropped, and it forgets the alerts it was told about. Only reads, so it's safe
+    /// inside a save's Changed event.
     /// </summary>
-    public void Apply(ConnectionStore store)
+    public void Apply(IReadOnlyList<ChatChannel> savedChannels, IReadOnlyDictionary<Guid, string> connectionNames)
     {
-        if (store.ReadFailed)
-            return;
-
-        _connectionNames = store.Connections.ToDictionary(c => c.Id, c => c.DisplayName);
-        var channels = store.ChatChannels.Select(c => c.Clone()).ToList();
+        _connectionNames = new Dictionary<Guid, string>(connectionNames);
+        var channels = savedChannels.Select(c => c.Clone()).ToList();
         _channels = channels;
 
         var on = channels.Where(c => c.Enabled).Select(c => c.Id).ToHashSet();
@@ -234,7 +231,7 @@ public sealed class ChatNotificationService : IDisposable
         _status.TryGetValue(channelId, out var status) ? status : ChannelStatus.NeverUsed;
 
     /// <summary>
-    /// A connection's alerts changed (<see cref="MonitoringManager.AlertsRaised"/>): queues what
+    /// A connection's alerts changed (<c>MonitoringManager.AlertsRaised</c>): queues what
     /// each channel that's on should be told. Never throws and never waits.
     /// </summary>
     public void OnAlertsRaised(Guid connectionId, IReadOnlyList<AlertChange> changes)
@@ -381,7 +378,7 @@ public sealed class ChatNotificationService : IDisposable
     }
 
     /// <summary>
-    /// SqlVitals started or stopped watching connections (<see cref="MonitoringManager.WatchingChanged"/>,
+    /// SqlVitals started or stopped watching connections (<c>MonitoringManager.WatchingChanged</c>,
     /// #170): queues each channel's one stopped watching message for the connections it takes,
     /// with the alerts it was told about that were still active, and one watching again message
     /// with how long each wasn't watched. A connection restarted with new details posts nothing:
@@ -477,7 +474,7 @@ public sealed class ChatNotificationService : IDisposable
 
     /// <summary>
     /// SqlVitals is exiting for real (#123): Exit, or Windows shutting down or signing out (#170).
-    /// Call before <see cref="MonitoringManager.Dispose"/> ends the active alerts; from then on,
+    /// Call before <c>MonitoringManager.Dispose</c> ends the active alerts; from then on,
     /// nothing more reaches the status or the tray, which are closing.
     /// </summary>
     public void BeginExit(WatchStop why = WatchStop.AppExit)
@@ -488,7 +485,7 @@ public sealed class ChatNotificationService : IDisposable
     }
 
     /// <summary>
-    /// Every connection has stopped (<see cref="MonitoringManager.AllStopped"/>, at Exit): queues
+    /// Every connection has stopped (<c>MonitoringManager.AllStopped</c>, at Exit): queues
     /// each channel's one stopped watching message, saying why, with the alerts it was told about
     /// that were still active (F5, #170). Then hurries every queue: a message waiting to retry is
     /// tried once straight away, and nothing is retried any more. Runs once; after

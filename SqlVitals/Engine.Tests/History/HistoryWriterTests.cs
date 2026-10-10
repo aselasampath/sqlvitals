@@ -38,6 +38,78 @@ public sealed class HistoryWriterTests : IDisposable
         return conn.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table};");
     }
 
+    /// <summary>A store in memory (#172): damaged at its first write when told to.</summary>
+    private sealed class MemoryStore(string path, bool damagedAtFirst, ConcurrentQueue<string> events) : IHistoryStore
+    {
+        public readonly List<HistoryRecord> Written = new();
+        private bool _failed;
+
+        public string Path { get; } = path;
+        public void Open() => events.Enqueue("open");
+        public void Write(IReadOnlyCollection<HistoryRecord> records)
+        {
+            if (damagedAtFirst && !_failed)
+            {
+                _failed = true;
+                throw new InvalidDataException("damaged");
+            }
+            Written.AddRange(records);
+        }
+        public int EndAlertsLeftOpen()
+        {
+            events.Enqueue("ended alerts");
+            return 0;
+        }
+        public void Purge(DateTime cutoffUtc, DateTime? activityCutoffUtc = null) { }
+        public void Clear()
+        {
+            Written.Clear();
+            events.Enqueue("cleared");
+        }
+        public bool IsDamaged(Exception failure) => failure is InvalidDataException;
+        public void MoveAside() => events.Enqueue("moved aside");
+        public void Dispose() => events.Enqueue("closed");
+    }
+
+    /// <summary>Memory stores, the first one damaged; there once one has been made.</summary>
+    private sealed class MemoryStores(ConcurrentQueue<string> events) : IHistoryStoreFactory
+    {
+        public readonly List<MemoryStore> Made = new();
+
+        public IHistoryStore Create(string path)
+        {
+            var store = new MemoryStore(path, damagedAtFirst: Made.Count == 0, events);
+            Made.Add(store);
+            return store;
+        }
+
+        public bool Exists(string path) => Made.Count > 0;
+    }
+
+    [Fact]
+    public async Task AnotherStore_TakesTheRecords_AndADamagedOneIsMovedAsideAndStartedAgain()
+    {
+        var events = new ConcurrentQueue<string>();
+        var stores = new MemoryStores(events);
+        using (var writer = new HistoryWriter("memory", (message, _) => _errors.Enqueue(message), TimeSpan.FromDays(14),
+                                              new ManualTime(new DateTimeOffset(T0)), stores: stores) { DisposeWait = DisposeWait })
+        {
+            // Nothing there yet: no store is made just to end alerts in it.
+            writer.EndAlertsLeftOpen();
+            writer.Enqueue(new MetricSampleRecord(Conn, T0, Sample(1)));
+            Assert.True(SpinWait.SpinUntil(() => events.Contains("moved aside"), TimeSpan.FromSeconds(10)));
+            writer.Enqueue(new MetricSampleRecord(Conn, T0.AddSeconds(10), Sample(2)));
+            // There now, so ended and cleared in it, though it isn't a file.
+            writer.EndAlertsLeftOpen();
+            await writer.ClearAsync().WaitAsync(DisposeWait);
+        }
+
+        Assert.Equal(["open", "closed", "moved aside", "open", "ended alerts", "cleared", "closed"], events);
+        Assert.Equal(2, stores.Made.Count);
+        Assert.Contains(_errors, e => e.Contains("is damaged", StringComparison.Ordinal));
+        Assert.False(File.Exists("memory"));
+    }
+
     [Fact]
     public void Dispose_SavesEverythingQueued()
     {

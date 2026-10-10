@@ -12,10 +12,15 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
     <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="7.1.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <!-- DPAPI for the collector service's settings (#172): LocalMachine scope, Windows only. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="SqlVitals.Engine.Tests" />
+    <!-- The chat service and webhook sender moved here from Desktop (#172); their tests stayed. -->
+    <InternalsVisibleTo Include="SqlVitals.Desktop.Tests" />
+    <InternalsVisibleTo Include="SqlVitals.Collector.Tests" />
   </ItemGroup>
 
   <!-- The repositories' queries, one file each (#47): SqlScripts.Get("Area/Name"). -->

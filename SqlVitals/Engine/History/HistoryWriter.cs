@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using Microsoft.Data.Sqlite;
 using SqlVitals.Engine.Activity;
 
 namespace SqlVitals.Engine.History;
@@ -28,8 +27,9 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     private readonly TimeProvider        _time;
     private readonly Task                _loop;
     private readonly Action<ActivityEntry>? _onActivityNotSaved;
+    private readonly IHistoryStoreFactory _stores;
 
-    private HistoryStore?  _store;
+    private IHistoryStore? _store;
     private DateTimeOffset _nextOpenAttempt = DateTimeOffset.MinValue;
     private DateTimeOffset _nextPurge       = DateTimeOffset.MinValue;
     private long           _retentionTicks;
@@ -43,11 +43,14 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     /// queue overflowed, or the writer has stopped), so it can go to the app log instead. Called on
     /// any thread; it must not throw.
     /// </param>
+    /// <param name="stores">Makes and finds the store for <paramref name="path"/>: the SQLite file when null (#172).</param>
     public HistoryWriter(string path, Action<string, Exception> onError,
                          TimeSpan? retention = null, TimeProvider? time = null,
-                         Action<ActivityEntry>? onActivityNotSaved = null)
+                         Action<ActivityEntry>? onActivityNotSaved = null,
+                         IHistoryStoreFactory? stores = null)
     {
         Path            = path;
+        _stores         = stores ?? SqliteHistoryStores.Instance;
         _onActivityNotSaved = onActivityNotSaved;
         _time           = time ?? TimeProvider.System;
         _retentionTicks = CheckRetention(retention ?? TimeSpan.FromDays(HistorySettings.DefaultRetentionDays)).Ticks;
@@ -240,7 +243,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
         {
             _store!.Write(batch);
         }
-        catch (SqliteException ex) when (HistoryStore.IsCorruption(ex))
+        catch (Exception ex) when (_store!.IsDamaged(ex))
         {
             _reporter.Report($"The monitoring history file {Path} is damaged; starting a new one.", ex);
             Reset(quarantine: true);
@@ -261,7 +264,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
         {
             case PurgeCommand:
                 // Only wakes the loop, which then purges. Don't create a file just to purge it.
-                if (!_disabled && File.Exists(Path))
+                if (!_disabled && _stores.Exists(Path))
                     TryOpen();
                 break;
             case ClearCommand clear:
@@ -276,7 +279,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     private void EndAlerts()
     {
         // Don't create a file just to find nothing in it.
-        if (_disabled || !File.Exists(Path) || !TryOpen())
+        if (_disabled || !_stores.Exists(Path) || !TryOpen())
             return;
 
         try
@@ -300,7 +303,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
             if (_store is null)
             {
                 // Nothing recorded yet, and nothing to log: don't create a file just to empty it.
-                if (!File.Exists(Path) && command.Logged is null)
+                if (!_stores.Exists(Path) && command.Logged is null)
                 {
                     command.Done.TrySetResult();
                     return;
@@ -353,7 +356,7 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
     private void OpenStore()
     {
-        var store = new HistoryStore(Path);
+        var store = _stores.Create(Path);
         try
         {
             store.Open();
@@ -368,13 +371,14 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
 
     private void Reset(bool quarantine)
     {
-        _store?.Dispose();
+        var store = _store;
+        store?.Dispose();
         _store = null;
-        if (!quarantine) return;
+        if (!quarantine || store is null) return;
 
         try
         {
-            HistoryStore.Quarantine(Path);
+            store.MoveAside();
         }
         catch (Exception ex)
         {

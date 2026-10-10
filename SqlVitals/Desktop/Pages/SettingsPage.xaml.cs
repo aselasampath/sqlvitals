@@ -7,6 +7,7 @@ using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.ChatNotifications;
 
 namespace SqlVitals.Desktop.Pages;
 

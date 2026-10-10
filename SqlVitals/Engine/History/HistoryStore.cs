@@ -15,7 +15,7 @@ namespace SqlVitals.Engine.History;
 /// Times are stored as UTC epoch milliseconds taken on this PC. The server's own clock is kept
 /// alongside as text, since it is local to the server and shifts at daylight saving.
 /// </summary>
-public sealed class HistoryStore(string path) : IDisposable
+public sealed class HistoryStore(string path) : IHistoryStore
 {
     /// <summary>
     /// 1: the tables from #28. 2: adds counter_values (#30). 3: adds alerts (#34). 4: adds
@@ -648,6 +648,12 @@ public sealed class HistoryStore(string path) : IDisposable
 
     /// <summary>SQLITE_CORRUPT or SQLITE_NOTADB: the file can't be used as it is.</summary>
     public static bool IsCorruption(SqliteException ex) => (ex.SqliteErrorCode & 0xFF) is 11 or 26;
+
+    /// <summary>SQLITE_CORRUPT or SQLITE_NOTADB (see <see cref="IsCorruption"/>).</summary>
+    public bool IsDamaged(Exception failure) => failure is SqliteException ex && IsCorruption(ex);
+
+    /// <summary>Renames the file and its WAL files aside (see <see cref="Quarantine"/>).</summary>
+    public void MoveAside() => Quarantine(Path);
 
     internal static long ToEpochMs(DateTime utc) =>
         new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToUnixTimeMilliseconds();

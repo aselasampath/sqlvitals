@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using SqlVitals.Engine.Errors;
 
 namespace SqlVitals.Desktop.Services;
 
@@ -19,22 +19,6 @@ public static class FileLog
     private const string FilePrefix = "SqlVitals-";
 
     private static readonly object Gate = new();
-
-    // Two or more "key=value;" pairs with a connection-string keyword — a whole connection
-    // string (or most of one) echoed back by a driver or parser error.
-    private static readonly Regex ConnectionString = new(
-        @"(?i)(?:\b(?:server|data\s+source|addr|address|network\s+address|initial\s+catalog|database|" +
-        @"user\s+id|uid|user|password|pwd|integrated\s+security|trusted_connection|authentication|" +
-        @"encrypt|trustservercertificate|trust\s+server\s+certificate|connect(?:ion)?\s+timeout|" +
-        @"application\s+name|multipleactiveresultsets|persist\s+security\s+info)\s*=\s*" +
-        @"(?:""[^""]*""|'[^']*'|[^;\r\n]*)(?:;[ \t]*|(?=[\r\n])|$)){2,}",
-        RegexOptions.Compiled);
-
-    // A Slack or Teams webhook URL (#120): anyone who has one can post to the channel. SqlVitals
-    // never logs one on purpose; this catches one echoed back in an exception or a service's answer.
-    private static readonly Regex WebhookUrl = new(
-        @"(?i)\bhttps?://[^\s""'<>]*(?:hooks\.slack\.com|logic\.azure\.com|powerplatform\.com|webhook\.office\.com|outlook\.office\.com/webhook)[^\s""'<>]*",
-        RegexOptions.Compiled);
 
     public static string Directory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SqlVitals", "logs");
@@ -66,10 +50,7 @@ public static class FileLog
     /// Masks passwords, then replaces anything that looks like a connection string or a chat
     /// webhook URL, so none of them reaches the log even when an exception message echoes one back.
     /// </summary>
-    public static string Redact(string message) =>
-        WebhookUrl.Replace(
-            ConnectionString.Replace(ConnectionSettingsService.RedactSecrets(message), "[connection string removed] "),
-            "[webhook URL removed]");
+    public static string Redact(string message) => Secrets.ForLog(message);
 
     /// <summary>The level as a line of the file names it: "INFO", "ERROR".</summary>
     internal static string LevelName(LogLevel level) => level switch

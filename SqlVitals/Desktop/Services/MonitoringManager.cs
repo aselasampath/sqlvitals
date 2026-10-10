@@ -120,7 +120,7 @@ public sealed class MonitoringManager : IDisposable
     /// Reads the local history file: past ranges, alerts, the activity log. Any thread may use it;
     /// each read opens its own short-lived connection.
     /// </summary>
-    public HistoryReader HistoryReader => _reader ??= new HistoryReader(_history.Path);
+    public IHistoryReader HistoryReader => _reader ??= new HistoryReader(_history.Path);
 
     public MonitoringSession? Get(Guid? connectionId) =>
         connectionId is { } id && _sessions.TryGetValue(id, out var session) ? session : null;
@@ -171,7 +171,7 @@ public sealed class MonitoringManager : IDisposable
     public ConnectionHistory? HistoryFor(Guid? connectionId) =>
         connectionId is { } id ? new ConnectionHistory(HistoryReader, id) : null;
 
-    private HistoryReader? _reader;
+    private IHistoryReader? _reader;
 
     /// <summary>
     /// Deletes all monitoring history, and logs that it did; fails with the reason when it
