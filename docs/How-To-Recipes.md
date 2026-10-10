@@ -270,11 +270,11 @@ From then on every start of SqlVitals monitors them, and raises [alerts](Alerts.
 
 ## Keep watching when my PC is off
 
-The app watches only while it runs. To catch a 3 a.m. problem with your laptop closed, run the optional [collector service](Collector-Service.md) on an always-on Windows PC or server:
+The app watches only while it runs. To catch a 3 a.m. problem with your laptop closed, run the optional [collector service](Collector-Service.md):
 
-1. Unzip **SqlVitals-Collector-&lt;version&gt;-win-x64.zip** from the release to `C:\Program Files\SqlVitals Collector`.
+1. Unzip **SqlVitals-Collector-&lt;version&gt;-win-x64.zip** from the release to `C:\Program Files\SqlVitals Collector` on this PC (one that stays on), or on an always-on server.
 2. In an administrator command prompt there: `SqlVitals.Collector.exe install --start`. It prints the `CREATE LOGIN` / `GRANT VIEW SERVER STATE` to run on each server.
-3. `SqlVitals.Collector.exe add-server --server sql01 --name Sales-Prod` for each server, and `add-channel --name "DBA team" --heartbeat 6h` for your Slack or Teams channel (the URL is asked for, hidden).
+3. On this PC, press **▶ Start** on a server and choose **Watch with the collector service**, or use **⚙️ Settings → Collector service → Hand over**. Its chat channels go with it. On a server, use `SqlVitals.Collector.exe add-server --server sql01 --name Sales-Prod` and `add-channel --name "DBA team" --heartbeat 6h` instead. Then `set --share-copy-minutes 5`, and enter the shared folder in **Settings → Collector service → A collector on another PC**.
 4. `SqlVitals.Collector.exe test`, then `list`. The service picks up changes within 10 seconds.
 
 Turn on a [heartbeat with a ping URL](Chat-Notifications.md#heartbeat), so you also hear when the collector PC itself goes down.

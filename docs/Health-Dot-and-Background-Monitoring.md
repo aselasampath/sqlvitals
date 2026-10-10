@@ -127,6 +127,7 @@ Whatever the setting, you can start and stop monitoring whenever you like:
 - Start and Stop last **until SqlVitals exits**. The next start follows **Start monitoring automatically** again.
 - A connection you started keeps running when you switch to another one, like a background connection.
 - Hover the server's header in the sidebar, or its name in the breadcrumb, for its state in words: *Monitoring*, *Stopped by you at 10:42*, *Not monitored: the password isn't saved…*
+- **With the [collector service](Collector-Service.md#from-the-app) installed** (0.74.0), ▶ asks whether the service should watch the server instead: it keeps watching when SqlVitals is closed. A server handed to it isn't collected by the app, and shows *Watched by the SqlVitals Collector service*.
 - **▶ is greyed out** for a connection that can't be monitored yet: a SQL login without a saved password, or an Entra MFA connection you haven't signed in to this session. Its tooltip says why. This avoids surprise password or sign-in prompts.
 
 Every start and stop, with who or what caused it, is written to the [activity log](Settings.md#activity-log), so a gap in the history can be explained later.

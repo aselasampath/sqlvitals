@@ -36,6 +36,12 @@ public interface IDialogService
     /// <param name="title">The window's title; null for the window's own.</param>
     void ShowQueryPlan(string? planXml, string? queryText, string? title = null);
 
+    /// <summary>
+    /// Where to watch a server whose Start was pressed, with the collector service installed
+    /// (#172): with the service, or in SqlVitals. Null when cancelled: nothing starts.
+    /// </summary>
+    WatchAnswer? AskWhereToWatch(string serverName, bool serviceRunning);
+
     /// <summary>One Query Store query (#111): its text, a metric per interval per plan, and its plans.</summary>
     void ShowQueryStoreQuery(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status);
 }

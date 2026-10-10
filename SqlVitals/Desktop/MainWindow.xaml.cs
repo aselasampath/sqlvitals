@@ -95,10 +95,18 @@ public partial class MainWindow : Window
     // What restoring from the tray goes back to: normal or maximized.
     private WindowState _restoreState = WindowState.Normal;
 
+    // The collector service (#172): the servers it watches are left to it, and Start asks whether
+    // it should watch one.
+    private readonly CollectorLink _collectors;
+    private readonly IWatchStarter _starter;
+
     /// <summary>The app's window, made by the container (#166) with the services it starts and stops.</summary>
     public MainWindow(IPageFactory pages, IDialogService dialogs, ConnectionSettingsService settings, MonitoringManager monitoring,
-                      ChatNotificationService chat, IRepositoryFactory repositories)
+                      ChatNotificationService chat, IRepositoryFactory repositories, CollectorLink collectors,
+                      IWatchStarter starter)
     {
+        _collectors     = collectors;
+        _starter        = starter;
         _pages          = pages;
         _dialogs        = dialogs;
         SettingsService = settings;
@@ -211,6 +219,13 @@ public partial class MainWindow : Window
 
         Monitoring.SessionStateChanged += OnMonitoringStateChanged;
         Monitoring.MonitoringChanged   += OnMonitoringChanged;
+        // What the collector service watches, the app stops collecting and reads from its history (#172).
+        _collectors.Changed += () =>
+        {
+            var view = _collectors.View;
+            Monitoring.SetWatchedElsewhere(view.Watches, view.Texts, view.Sources);
+        };
+        _collectors.Start();
         Monitoring.AlertsChanged       += OnAlertsChanged;
         // Separate from the Windows notification: muting a connection doesn't stop its channels (#121).
         Monitoring.AlertsRaised        += Chat.OnAlertsRaised;
@@ -387,7 +402,7 @@ public partial class MainWindow : Window
         if (Monitoring.IsMonitoring(id))
             Monitoring.Stop(id, ActivitySources.Sidebar);
         else
-            Monitoring.Start(id, ActivitySources.Sidebar);
+            _ = _starter.StartAsync(id, ActivitySources.Sidebar);   // reports its own errors
     }
 
     // Another server from the breadcrumb's menu: the same page there, or its Overview if it
@@ -788,6 +803,7 @@ public partial class MainWindow : Window
             ReasonSessionEnding.Logoff   => WatchStop.WindowsSignOut,
             _                            => WatchStop.AppExit,
         });
+        _collectors.Dispose();
         Monitoring.Dispose();
         Chat.Shutdown(ChatNotificationService.ExitTime - exitStarted.Elapsed);
         Chat.Dispose();

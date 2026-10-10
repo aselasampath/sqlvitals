@@ -3,6 +3,7 @@ using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Home;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 
@@ -120,7 +121,63 @@ public sealed class MonitoringManager : IDisposable
     /// Reads the local history file: past ranges, alerts, the activity log. Any thread may use it;
     /// each read opens its own short-lived connection.
     /// </summary>
-    public IHistoryReader HistoryReader => _reader ??= new HistoryReader(_history.Path);
+    public IHistoryReader HistoryReader => _reader ??= _sources.Count == 0
+        ? new HistoryReader(_history.Path)
+        : new CombinedHistoryReader(new HistoryReader(_history.Path), _sources, OnSourceFailed);
+
+    // The collectors' history files (#172), read with the app's own.
+    private IReadOnlyList<HistorySource> _sources = [];
+
+    // What a collector watches instead of the app (#172): the reason for each, what its history
+    // says, and those it really is watching now (its service running, its samples recent).
+    private IReadOnlyDictionary<Guid, string>         _elsewhere = new Dictionary<Guid, string>();
+    private IReadOnlyDictionary<Guid, ElsewhereWatch> _watches   = new Dictionary<Guid, ElsewhereWatch>();
+    private IReadOnlySet<Guid>                        _watchedElsewhere = new HashSet<Guid>();
+
+    // Each collector's file that can't be read is said once, until it can be again.
+    private readonly HashSet<string> _sourcesFailing = new();
+
+    /// <summary>
+    /// What the collectors watch (#172, <see cref="CollectorLink"/>): the app stops collecting
+    /// those connections, with <paramref name="reasons"/> as why, and reads their history from
+    /// <paramref name="sources"/> as well as its own. Empty arguments put everything back as it was.
+    /// Every such connection is redrawn (<see cref="SessionStateChanged"/>): its last score or
+    /// alerts may be new.
+    /// </summary>
+    public void SetWatchedElsewhere(IReadOnlyDictionary<Guid, ElsewhereWatch> watches, IReadOnlyDictionary<Guid, string> reasons,
+                                    IReadOnlyList<HistorySource> sources)
+    {
+        var redraw = _watches.Keys.Concat(watches.Keys).ToHashSet();
+        _watches          = watches;
+        _elsewhere        = reasons;
+        _watchedElsewhere = watches.Where(w => w.Value.NotWatching is null).Select(w => w.Key).ToHashSet();
+        if (!ReferenceEquals(sources, _sources))
+        {
+            _sources = sources;
+            _reader  = null;
+            _sourcesFailing.Clear();
+        }
+        Resync(ActivitySources.CollectorSettings);
+        foreach (var id in redraw)
+            SessionStateChanged?.Invoke(id);
+    }
+
+    /// <summary>What a collector's history says of a connection it watches (#172); null when none does.</summary>
+    public ElsewhereWatch? WatchFor(Guid connectionId) => _watches.TryGetValue(connectionId, out var watch) ? watch : null;
+
+    /// <summary>Why a collector watches a connection instead of the app; null when none does.</summary>
+    public string? WatchedElsewhereReason(Guid connectionId) => _elsewhere.TryGetValue(connectionId, out var why) ? why : null;
+
+    /// <summary>Whether a collector is watching a connection right now, so the app needn't.</summary>
+    public bool IsWatchedElsewhere(Guid connectionId) => _watchedElsewhere.Contains(connectionId);
+
+    private void OnSourceFailed(HistorySource source, Exception ex)
+    {
+        lock (_sourcesFailing)
+            if (!_sourcesFailing.Add(source.Name))
+                return;
+        _log.Error($"History: couldn't read the history of {source.Name}; its servers show only what this PC recorded", ex);
+    }
 
     public MonitoringSession? Get(Guid? connectionId) =>
         connectionId is { } id && _sessions.TryGetValue(id, out var session) ? session : null;
@@ -128,8 +185,8 @@ public sealed class MonitoringManager : IDisposable
     /// <summary>Whether a saved connection is being monitored right now.</summary>
     public bool IsMonitoring(Guid? connectionId) => Get(connectionId) is { IsRunning: true };
 
-    /// <summary>How many connections are being monitored right now.</summary>
-    public int MonitoredCount => _sessions.Values.Count(s => s.IsRunning);
+    /// <summary>How many connections are being monitored right now, by the app or a collector (#172).</summary>
+    public int MonitoredCount => _sessions.Values.Count(s => s.IsRunning) + _watchedElsewhere.Count;
 
     /// <summary>The setting the last Sync applied: Start monitoring automatically.</summary>
     public bool StartsAutomatically { get; private set; }
@@ -156,7 +213,8 @@ public sealed class MonitoringManager : IDisposable
     /// </summary>
     public IReadOnlyList<string> NotMonitoredNames() =>
         (_store?.Connections ?? [])
-            .Where(c => _decisions.TryGetValue(c.Id, out var d) && !d.Monitor && d.Reason != MonitoringReason.BackgroundOff)
+            .Where(c => _decisions.TryGetValue(c.Id, out var d) && !d.Monitor && d.Reason != MonitoringReason.BackgroundOff &&
+                        !_watchedElsewhere.Contains(c.Id))
             .Select(c => c.DisplayName)
             .OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
@@ -322,7 +380,8 @@ public sealed class MonitoringManager : IDisposable
             store.StartMonitoringAutomatically,
             store.Connections.Select(c => new MonitoringCandidate(
                 c.Id, c.Id == store.ActiveConnectionId, c.MonitorInBackground, c.NeedsPassword,
-                c.Authentication == SqlAuthMode.EntraMfa && !_signedIn.Contains(c.Id))),
+                c.Authentication == SqlAuthMode.EntraMfa && !_signedIn.Contains(c.Id),
+                _elsewhere.TryGetValue(c.Id, out var elsewhere) ? elsewhere : null)),
             _overrides);
 
         var changed = false;

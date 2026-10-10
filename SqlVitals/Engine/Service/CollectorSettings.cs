@@ -215,6 +215,24 @@ public sealed class CollectorSettings
     /// <summary>Health thresholds for every server without its own.</summary>
     public HealthThresholds HealthThresholds { get; set; } = HealthThresholds.Default;
 
+    /// <summary>
+    /// Minutes between share copies of the history (<see cref="HistoryShareCopy"/>), for the app on
+    /// other PCs to read (#172): 5 to 1440; 0, the default, writes none.
+    /// </summary>
+    public int ShareCopyMinutes { get; set; }
+
+    /// <summary>The folder the share copy is written to; empty for the data folder's share\.</summary>
+    public string ShareCopyFolder { get; set; } = string.Empty;
+
+    /// <summary>Where the share copy goes, for a data folder; a relative folder is in it, not where the service runs.</summary>
+    public string ShareCopyPath(string dataDirectory) =>
+        Path.Combine(string.IsNullOrWhiteSpace(ShareCopyFolder) ? Path.Combine(dataDirectory, "share")
+                     : Path.IsPathFullyQualified(ShareCopyFolder.Trim()) ? ShareCopyFolder.Trim()
+                     : Path.GetFullPath(Path.Combine(dataDirectory, ShareCopyFolder.Trim())),
+                     HistoryShareCopy.FileName);
+
+    public static int NormalizeShareCopyMinutes(int minutes) => minutes is >= 5 and <= 1440 ? minutes : 0;
+
     public List<CollectorServer> Servers { get; set; } = new();
 
     /// <summary>The Slack and Teams channels, with the same choices as the app's (#120, #121, #170).</summary>
@@ -240,6 +258,8 @@ public sealed class CollectorSettings
         HistoryIntervalMinutes = HistorySettings.NormalizeInterval(HistoryIntervalMinutes);
         HistoryRetentionDays   = HistorySettings.NormalizeRetention(HistoryRetentionDays);
         AlertSamples           = AlertSettings.NormalizeSamples(AlertSamples);
+        ShareCopyMinutes       = NormalizeShareCopyMinutes(ShareCopyMinutes);
+        ShareCopyFolder      ??= string.Empty;
         HealthThresholds       = HealthThresholds.Normalize(HealthThresholds);
         Servers                = (Servers ?? []).Where(s => s is not null).ToList();
         ChatChannels           = (ChatChannels ?? []).Where(c => c is not null).ToList();

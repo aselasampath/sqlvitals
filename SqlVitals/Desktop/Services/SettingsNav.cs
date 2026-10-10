@@ -10,6 +10,7 @@ public enum SettingsCategory
     NotificationArea,
     Appearance,
     Activity,
+    Collector,
 }
 
 /// <summary>A tab of a connection's page in Settings → Connections (#131).</summary>
@@ -99,6 +100,8 @@ public static class SettingsNav
             new(SettingsCategory.Monitoring, "Monitoring & history", ForEveryConnection),
             new(SettingsCategory.Thresholds, "Health thresholds",
                 "For every connection without its own. They apply when you save."),
+            new(SettingsCategory.Collector, "Collector service",
+                "For every connection, on this PC: an optional Windows service that keeps watching when SqlVitals is closed."),
         ]),
         new("Notifications",
         [
@@ -140,6 +143,8 @@ public static class SettingsNav
         ["Alert samples"]                         = SettingPlace.In(SettingsCategory.Alerts),
         ["Keep running in the notification area"] = SettingPlace.In(SettingsCategory.NotificationArea),
         ["Grid density"]                          = SettingPlace.In(SettingsCategory.Appearance),
+        ["When monitoring starts"]                = SettingPlace.In(SettingsCategory.Collector),
+        ["Collector history from another PC"]     = SettingPlace.In(SettingsCategory.Collector),
         // Not in the settings file, so logged by Appearance itself.
         ["Theme"]                                 = SettingPlace.In(SettingsCategory.Appearance),
         // On the pages they apply to, not in Settings.

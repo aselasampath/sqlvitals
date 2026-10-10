@@ -7,7 +7,12 @@ namespace SqlVitals.Engine.Monitoring;
 /// <param name="MonitorInBackground">Its "Monitor in background" box.</param>
 /// <param name="NeedsPassword">A SQL login without a password saved or typed this run.</param>
 /// <param name="NeedsSignIn">An Entra MFA connection the user hasn't signed in to yet this run.</param>
-public sealed record MonitoringCandidate(Guid Id, bool IsActive, bool MonitorInBackground, bool NeedsPassword, bool NeedsSignIn);
+/// <param name="WatchedElsewhere">
+/// What watches it instead (#172), in words for its tooltip: the collector service on this PC, or
+/// a collector whose history the app reads; null when nothing does.
+/// </param>
+public sealed record MonitoringCandidate(Guid Id, bool IsActive, bool MonitorInBackground, bool NeedsPassword, bool NeedsSignIn,
+                                         string? WatchedElsewhere = null);
 
 /// <summary>Why a connection is, or isn't, monitored.</summary>
 public enum MonitoringReason
@@ -32,6 +37,9 @@ public enum MonitoringReason
 
     /// <summary>Can't be monitored yet: the Microsoft sign-in hasn't been done this run.</summary>
     NeedsSignIn,
+
+    /// <summary>Not monitored by the app: a collector service watches it (#172), and the app reads its history.</summary>
+    WatchedElsewhere,
 }
 
 /// <summary>Whether one connection is monitored, and why, in words for its tooltip.</summary>
@@ -120,6 +128,9 @@ public static class MonitoringPlan
 
     public static MonitoringDecision Decide(bool startAutomatically, MonitoringCandidate conn, MonitoringOverrides overrides)
     {
+        // First: the service has it whatever the app could or would do, and needs nothing from it.
+        if (conn.WatchedElsewhere is { } elsewhere)
+            return new(MonitoringReason.WatchedElsewhere, elsewhere);
         if (conn.NeedsPassword)
             return new(MonitoringReason.NeedsPassword, NeedsPasswordText);
         if (conn.NeedsSignIn)

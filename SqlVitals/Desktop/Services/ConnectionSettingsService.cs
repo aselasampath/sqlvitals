@@ -322,6 +322,14 @@ public class ConnectionSettingsService : ISectionFolds
     public void RemoveChatChannel(Guid id) =>
         Update(ActivitySources.Settings, store => store.ChatChannels.RemoveAll(c => c.Id == id));
 
+    /// <summary>Saves where a server is watched when Start is pressed and the collector service is installed (#172).</summary>
+    public void SetWatchChoice(WatchChoice choice) =>
+        Update(ActivitySources.Settings, store => store.WatchChoice = choice);
+
+    /// <summary>Saves the share copy of a collector on another PC to read (#172); empty for none.</summary>
+    public void SetCollectorHistoryPath(string path) =>
+        Update(ActivitySources.Settings, store => store.CollectorHistoryPath = path.Trim());
+
     /// <summary>Marks a saved connection as the one the dashboard uses; null leaves none active.</summary>
     /// <param name="source">Where the user switched, for the activity log: the selector, or Home (#130).</param>
     public void SetActive(Guid? id, string source = ActivitySources.ConnectionSelector) => Update(source, store =>
@@ -409,6 +417,9 @@ public class ConnectionSettingsService : ISectionFolds
                 DrawerPinned            = raw.DrawerPinned,
                 GridDensity             = GridDensityResources.Parse(raw.GridDensity),
                 DrawerWidth             = DrawerLayout.Clamp(raw.DrawerWidth ?? DrawerLayout.DefaultWidth),
+                WatchChoice             = Enum.TryParse<WatchChoice>(raw.WatchChoice, ignoreCase: true, out var choice) && Enum.IsDefined(choice)
+                                              ? choice : WatchChoice.Ask,
+                CollectorHistoryPath    = raw.CollectorHistoryPath?.Trim() ?? string.Empty,
             };
 
             var migrated = false;
@@ -610,6 +621,8 @@ public class ConnectionSettingsService : ISectionFolds
             DrawerPinned            = store.DrawerPinned,
             GridDensity             = store.GridDensity == GridDensity.Comfortable ? null : store.GridDensity.ToString(),
             DrawerWidth             = store.DrawerWidth,
+            WatchChoice             = store.WatchChoice == WatchChoice.Ask ? null : store.WatchChoice.ToString(),
+            CollectorHistoryPath    = string.IsNullOrWhiteSpace(store.CollectorHistoryPath) ? null : store.CollectorHistoryPath,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -678,6 +691,8 @@ public class ConnectionSettingsService : ISectionFolds
         public bool    DrawerPinned              { get; set; }
         public string? GridDensity               { get; set; }
         public double? DrawerWidth               { get; set; }
+        public string? WatchChoice               { get; set; }
+        public string? CollectorHistoryPath      { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -816,6 +831,18 @@ public class ConnectionStore
     /// <summary>The details drawer's width as last dragged (#147), within its limits.</summary>
     public double DrawerWidth { get; set; } = DrawerLayout.DefaultWidth;
 
+    /// <summary>
+    /// Where a server is watched when Start is pressed and the collector service is installed
+    /// (#172): asked each time, or as chosen with Don't ask again.
+    /// </summary>
+    public WatchChoice WatchChoice { get; set; } = WatchChoice.Ask;
+
+    /// <summary>
+    /// A collector's share copy on another PC (#172), a file or the folder it's in; empty for none.
+    /// The servers it watches are read from it, and this PC doesn't collect them.
+    /// </summary>
+    public string CollectorHistoryPath { get; set; } = string.Empty;
+
     /// <summary>The key a folded section is saved under: "Backups/verdict".</summary>
     public static string FoldKey(string page, string section) => $"{page}/{section}";
 
@@ -828,6 +855,19 @@ public class ConnectionStore
 
     public ConnectionSettings? Active =>
         ActiveConnectionId is { } id ? Connections.FirstOrDefault(c => c.Id == id) : null;
+}
+
+/// <summary>Where Start watches a server when the collector service is installed (#172).</summary>
+public enum WatchChoice
+{
+    /// <summary>Ask each time.</summary>
+    Ask,
+
+    /// <summary>In SqlVitals, as without the service.</summary>
+    App,
+
+    /// <summary>Hand it to the collector service.</summary>
+    Service,
 }
 
 /// <summary>How the Processes page shows its sessions (#116).</summary>

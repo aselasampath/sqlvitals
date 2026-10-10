@@ -37,6 +37,13 @@ internal static class SettingsActivity
             new("Processes group by login", OnOff(store.ProcessesGroupByLogin)),
             new("Query Store charts", string.Join(", ", store.QueryStoreChartMetrics)),
             new("Grid density", store.GridDensity.ToString()),
+            new("When monitoring starts", store.WatchChoice switch
+            {
+                WatchChoice.App     => "Watch in SqlVitals",
+                WatchChoice.Service => "Hand to the collector service",
+                _                   => "Ask",
+            }),
+            new("Collector history from another PC", store.CollectorHistoryPath.Length == 0 ? "None" : store.CollectorHistoryPath),
             // Not the page last open (#141), or the sidebar pinned, collapsed or hidden (#142): layout
             // preferences, which would flood the log.
         };

@@ -44,13 +44,15 @@ public partial class SettingsPage : Page, IPageContext
         ChatNotificationService chat,
         Func<bool, Task> applyConnections,
         SettingsLocation? location = null,
-        string? message = null)
+        string? message = null,
+        CollectorLink? collectors = null)
     {
         InitializeComponent();
         _context = new SettingsContext(service, monitoring, chat, applyConnections,
                                        (text, caption, buttons, icon) => Prompt(text, caption, buttons, icon),
                                        target => _ = OpenAsync(target),
-                                       id => ServerRequested?.Invoke(id));
+                                       id => ServerRequested?.Invoke(id),
+                                       collectors);
         BuildMenu();
         UpdateCount();
 
@@ -217,6 +219,7 @@ public partial class SettingsPage : Page, IPageContext
             case SettingsCategory.Alerts:           return new AlertsCategory(_context);
             case SettingsCategory.NotificationArea: return new NotificationAreaCategory(_context);
             case SettingsCategory.Activity:         return new ActivityCategory(_context);
+            case SettingsCategory.Collector:        return new CollectorCategory(_context);
             default:
                 var appearance = new AppearanceCategory(_context);
                 appearance.ThemeChanged += () => ThemeChanged?.Invoke();

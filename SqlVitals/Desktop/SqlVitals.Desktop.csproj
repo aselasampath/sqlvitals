@@ -10,7 +10,7 @@
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.73.0</Version>
+    <Version>0.74.0</Version>
     <!-- The name Windows shows on notifications and in Task Manager. -->
     <AssemblyTitle>SqlVitals</AssemblyTitle>
     <Product>SqlVitals</Product>
@@ -51,6 +51,8 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.12" />
+    <!-- The collector service's state, start and stop (#172). -->
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.12" />
   </ItemGroup>
 
   <!-- Defaults the repositories read (RepositoryFactory); copied beside the exe. -->

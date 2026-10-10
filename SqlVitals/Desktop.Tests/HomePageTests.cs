@@ -101,6 +101,38 @@ public sealed class HomePageTests : IDisposable
 
     // ── Home ─────────────────────────────────────────────────────────────────
 
+    // Quiet handed to the collector service (#172): its last score 72, and a critical CPU alert open.
+    private void QuietWatchedByTheService(MonitoringManager monitoring)
+    {
+        var alert = new Engine.Alerts.Alert(Guid.NewGuid(), _quiet.Id, Engine.Monitoring.HealthIndicator.Cpu, Engine.Monitoring.HealthLevel.Critical,
+                                            DateTime.UtcNow.AddMinutes(-4), null, 97, 90, "CPU 97%");
+        monitoring.SetWatchedElsewhere(
+            new Dictionary<Guid, ElsewhereWatch>
+            {
+                [_quiet.Id] = new(CollectorLink.ShortName, new ScoreHistoryPoint(DateTime.UtcNow.AddSeconds(-20), 72, true), [alert]),
+            },
+            new Dictionary<Guid, string> { [_quiet.Id] = "Watched by the SqlVitals Collector service on this PC." },
+            []);
+    }
+
+    [Fact]
+    public void AServerTheServiceWatches_ShowsWhatItsHistorySays_AndCountsAsMonitored() => UiThread.Run(() =>
+    {
+        var (monitoring, settings) = Setup();
+        QuietWatchedByTheService(monitoring);
+        var page = new HomePage(monitoring, settings);
+        UiThread.Layout(page, 1100, 900);
+
+        var quiet = page.TilesShown.Single(t => t.Tile.Name == "Quiet").Tile;
+        Assert.Equal((TileStatus.Critical, "72", "Alerting on CPU."), (quiet.Status, quiet.ScoreText, quiet.Reason));
+        Assert.EndsWith(" · by the collector service", quiet.Footer);
+        Assert.Equal(TileAction.Open, quiet.Action);
+        var texts = UiThread.Find<TextBlock>(page).Where(t => VisibleUpTo(t, page)).Select(t => t.Text).ToList();
+        Assert.Contains("3 connections · 3 monitored · sorted by most attention needed", texts);
+        // The app doesn't collect it.
+        Assert.Null(monitoring.Get(_quiet.Id));
+    });
+
     [Fact]
     public void Home_ListsEverySavedConnection_MostAttentionFirst_WithItsStatusInWords() => UiThread.Run(() =>
     {

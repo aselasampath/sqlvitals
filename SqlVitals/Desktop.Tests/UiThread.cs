@@ -64,6 +64,17 @@ internal static class UiThread
         task.GetAwaiter().GetResult();
     }
 
+    /// <summary>Lets the dispatcher run until something happened (work on the thread pool coming back), or fails after 10 s.</summary>
+    public static void WaitUntil(Func<bool> happened)
+    {
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (!happened())
+        {
+            Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), "Timed out waiting.");
+            Wait(Task.Delay(20));
+        }
+    }
+
     /// <summary>Lays an element out at a size, off screen, so its templates and bindings apply.</summary>
     public static void Layout(FrameworkElement element, double width, double height)
     {

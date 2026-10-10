@@ -40,6 +40,8 @@ The optional [collector service](Collector-Service.md) (0.73.0, #172) runs as it
 - **Windows authentication is recommended**: the service's account (or the PC's domain account) gets a login, and no secret is stored at all. SQL logins are for servers outside the domain. Entra MFA can't be used, since nobody is there to sign in.
 - **Secrets are never command-line arguments.** The command line takes them at a hidden prompt or from standard input, and never prints them; a secret typed into `collector.json` in clear text is refused rather than used.
 - The service's logs are scrubbed as the app's are.
+- **The share copy** (from 0.74.0, off by default) is the whole history, query text included, written to the folder you choose for other PCs to read. It holds no secret: the settings stay in the locked folder. But anyone who can read the share can read the history, so share it only with the people who could see these servers in SqlVitals.
+- **Handing a server over** gives the service the connection's SQL login and password (only when it's saved), encrypted for the PC as above, and the webhook URLs of its chat channels.
 
 ## Connections to your servers
 

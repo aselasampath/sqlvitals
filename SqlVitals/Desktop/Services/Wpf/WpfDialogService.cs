@@ -49,6 +49,35 @@ internal sealed class WpfDialogService : IDialogService
     public void ShowQueryStoreQuery(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status) =>
         new QueryStoreQueryWindow(repo, queryId, period, status) { Owner = OwnerWindow() }.Show();
 
+    // A task dialog (WinForms, which the app has for its tray icon): two worded choices and
+    // Don't ask again, which a message box can't do.
+    public WatchAnswer? AskWhereToWatch(string serverName, bool serviceRunning)
+    {
+        var service = new System.Windows.Forms.TaskDialogCommandLinkButton("Watch with the collector service",
+            "Keeps watching, alerting and posting to chat when SqlVitals is closed or you sign out" +
+            (serviceRunning ? "." : ". The service is stopped: it will be started."));
+        var app = new System.Windows.Forms.TaskDialogCommandLinkButton("Watch in SqlVitals",
+            "While SqlVitals runs, in the window or the notification area, as before.");
+        var page = new System.Windows.Forms.TaskDialogPage
+        {
+            Caption      = "Start monitoring",
+            Heading      = $"Where should {serverName} be watched?",
+            Text         = "The SqlVitals Collector service is installed on this PC. You can change this later in Settings → Collector service.",
+            Buttons      = { service, app, System.Windows.Forms.TaskDialogButton.Cancel },
+            Verification = new System.Windows.Forms.TaskDialogVerificationCheckBox("Don't ask again"),
+            Icon         = System.Windows.Forms.TaskDialogIcon.Information,
+            AllowCancel  = true,
+        };
+        var owner  = OwnerWindow() is { } window ? new System.Windows.Interop.WindowInteropHelper(window).Handle : IntPtr.Zero;
+        var picked = owner == IntPtr.Zero ? System.Windows.Forms.TaskDialog.ShowDialog(page)
+                                          : System.Windows.Forms.TaskDialog.ShowDialog(owner, page);
+        if (picked == service)
+            return new WatchAnswer(WatchChoice.Service, page.Verification.Checked);
+        if (picked == app)
+            return new WatchAnswer(WatchChoice.App, page.Verification.Checked);
+        return null;
+    }
+
     private static MessageBoxResult Show(string message, string caption, MessageBoxButton buttons, MessageBoxImage icon,
                                          MessageBoxResult defaultResult = MessageBoxResult.None) =>
         OwnerWindow() is { } owner

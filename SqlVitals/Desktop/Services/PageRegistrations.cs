@@ -18,11 +18,12 @@ public static class PageRegistrations
     public static IServiceCollection AddPages(this IServiceCollection services) =>
         services
             .AddSingleton<IPageFactory, PageFactory>()
-            .AddPage("Home",             (s, a) => new HomePage(Monitoring(s), Settings(s), Shell(s)), p => p.ViewModel)
+            .AddPage("Home",             (s, a) => new HomePage(Monitoring(s), Settings(s), Shell(s), s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
             .AddPage("Overview",         (s, a) => new OverviewPage(a.Route.ServerId!.Value, Monitoring(s), Settings(s),
-                                                                    s.GetRequiredService<OverviewVisits>().Open(a.Route.ServerId!.Value), Shell(s)), p => p.ViewModel)
+                                                                    s.GetRequiredService<OverviewVisits>().Open(a.Route.ServerId!.Value), Shell(s),
+                                                                    s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
             .AddPage("LiveMetrics",      (s, a) => new LiveMetricsDashboardPage(a.Repo, Monitoring(s), a.ConnectionId, History(s, a), a.ConnectionName,
-                                                                                Navigator(s), Shell(s)), p => p.ViewModel)
+                                                                                Navigator(s), Shell(s), s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
             .AddPage("Alerts",           (s, a) => new AlertsPage(Monitoring(s), Settings(s), a.Route.AlertsConnectionId, Navigator(s)), p => p.ViewModel)
             .AddPage("TopWaits",         (s, a) => new TopWaitsPage(a.Repo, Settings(s), Navigator(s)), p => p.ViewModel)
             .AddPage("ActiveWaits",      (s, a) => new ActiveWaitsPage(a.Repo, Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
@@ -49,7 +50,8 @@ public static class PageRegistrations
             .AddPage("SpTrace",          (s, a) => new SpTracePage(a.Repo, Settings(s), Shell(s)), p => p.ViewModel)
             .AddPage("Export",           (s, a) => new ExportPage(s.GetRequiredService<Func<IWaitStatsRepository, ExportService>>()(a.Repo), Settings(s)), p => p.ViewModel)
             .AddPage("Settings",         (s, a) => new SettingsPage(Settings(s), Monitoring(s), s.GetRequiredService<ChatNotificationService>(),
-                                                                    a.ApplyConnections!, a.Route.Settings, a.SettingsMessage), p => p.ViewModel);
+                                                                    a.ApplyConnections!, a.Route.Settings, a.SettingsMessage,
+                                                                    s.GetRequiredService<CollectorLink>()), p => p.ViewModel);
 
     // What the pages share, from the container (#166).
     private static ConnectionSettingsService Settings(IServiceProvider s) => s.GetRequiredService<ConnectionSettingsService>();

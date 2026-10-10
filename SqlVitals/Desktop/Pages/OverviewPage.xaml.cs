@@ -92,10 +92,15 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     // The top bar: what this page read, what went wrong, and its kind or window (#166).
     private readonly IShellStatus _shell;
 
+    // What Start does (#172): asks whether the collector service should watch it.
+    private readonly IWatchStarter _starter;
+
+    /// <param name="starter">What Start does (#172); straight to monitoring when null (tests).</param>
     public OverviewPage(Guid connectionId, MonitoringManager monitoring, ConnectionSettingsService settings, LookWindow look,
-                        IShellStatus? shell = null)
+                        IShellStatus? shell = null, IWatchStarter? starter = null)
     {
         _shell      = shell ?? CompositionRoot.Get<IShellStatus>();
+        _starter    = starter ?? new DirectWatchStarter(monitoring);
         _id         = connectionId;
         _monitoring = monitoring;
         _settings   = settings;
@@ -183,6 +188,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         var failing  = _monitoring.Get(_id)?.FailingSince?.ToUniversalTime();
         var look     = Look;
         var criteria = new RegressionCriteria(_store.RegressionThresholdPct, _store.RegressionMinExecutions);
+        var elsewhere = Elsewhere is not null;
 
         // A minute ahead, so a score or alert from a sample just taken is in range.
         var ahead = nowUtc.AddMinutes(1);
@@ -192,7 +198,8 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
                 Window:    reader.ReadScores(_id, fromUtc, (range.IsLive ? ahead : toUtc), bucket).Select(ScorePoint.From).ToList(),
                 Today:     reader.ReadScores(_id, todayUtc, ahead, TimeSpan.FromMinutes(1)).Select(ScorePoint.From).ToList(),
                 Alerts:    reader.ReadAlerts(_id, fromUtc < todayUtc ? fromUtc : todayUtc, ahead).Select(a => a.Alert).ToList(),
-                Metrics:   range.IsLive ? null : new HistoryLoad<MetricHistoryPoint>(range, fromUtc, toUtc, bucket,
+                // A collector's server has no session: its live window is its history too (#172).
+                Metrics:   range.IsLive && !elsewhere ? null : new HistoryLoad<MetricHistoryPoint>(range, fromUtc, toUtc, bucket,
                                                                                      reader.ReadMetrics(_id, fromUtc, toUtc, bucket)),
                 Activity:  failing is { } f ? reader.ReadActivity(f.AddHours(-2), ahead, _id).Select(r => r.Entry).ToList() : [],
                 Reachable: failing is { } since ? reader.ReadLastReachableScore(_id, since) : null,
@@ -365,10 +372,29 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
 
     // ── Live updates ──────────────────────────────────────────────────────────
 
+    // A collector watching this server instead of the app (#172), and what its history said last.
+    private ElsewhereWatch? Elsewhere => _monitoring.Get(_id) is { IsRunning: true } ? null : _monitoring.WatchFor(_id);
+    private DateTime?       _elsewhereSample;
+
     private void OnSessionStateChanged(Guid connectionId)
     {
         if (connectionId != _id)
             return;
+
+        // A collector watches it (#172): its news is in its history, read again when it has some.
+        if (Elsewhere is { } watch)
+        {
+            if (watch.Last?.TimeUtc != _elsewhereSample)
+            {
+                _elsewhereSample = watch.Last?.TimeUtc;
+                _ = ReadTimedAsync();
+            }
+            else
+            {
+                Render();
+            }
+            return;
+        }
 
         var newSample = TakeLiveScore();
         Render();
@@ -442,10 +468,12 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
             return;
         }
 
-        var session = _monitoring.Get(_id);
-        var tile    = ServerTile.From(HomePage.InputFor(conn, _store, _monitoring), DateTime.Now);
-        var running = session is { IsRunning: true };
-        var score   = running ? session!.Score : null;
+        var session   = _monitoring.Get(_id);
+        var tile      = ServerTile.From(HomePage.InputFor(conn, _store, _monitoring), DateTime.Now);
+        var running   = session is { IsRunning: true };
+        var score     = running ? session!.Score : null;
+        var elsewhere = Elsewhere;
+        var watched   = elsewhere is { NotWatching: null };
 
         Title = TxtName.Text      = conn.DisplayName;
         Dot.Fill                  = HealthBrushes.For(tile.Status);
@@ -454,30 +482,33 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         ActiveChip.Visibility     = tile.IsActive ? Visibility.Visible : Visibility.Collapsed;
         BtnMakeActive.Visibility  = tile.IsActive ? Visibility.Collapsed : Visibility.Visible;
         TxtConnectionLine.Text    = $"{conn.Server.Trim()} / {conn.DatabaseLabel} · {conn.AuthenticationLabel} · " +
-                                    (!running ? "not monitored"
+                                    (watched ? $"watched by {elsewhere!.By}"
+                                     : !running ? "not monitored"
                                      : tile.IsActive ? "monitoring"
                                      : "monitoring in the background") +
                                     (score is { Level: not HealthLevel.Unavailable } ? $" · latest sample {score.Time:HH:mm:ss}" : string.Empty);
 
-        BtnMonitor.Content   = running ? "Pause monitoring" : "Start monitoring";
-        BtnMonitor.IsEnabled = running || _monitoring.CanStart(_id);
-        BtnMonitor.ToolTip   = running
+        BtnMonitor.Content   = running ? "Pause monitoring" : watched ? "Watched by the collector" : "Start monitoring";
+        BtnMonitor.IsEnabled = !watched && (running || _monitoring.CanStart(_id));
+        BtnMonitor.ToolTip   = watched ? _monitoring.WatchedElsewhereReason(_id)
+            : running
             ? "Stop monitoring this connection until SqlVitals exits. Its active alerts end."
             : _monitoring.CanStart(_id)
                 ? "Start monitoring this connection until SqlVitals exits, without switching to it."
                 : $"Can't start: {_monitoring.NotMonitoredReason(_id)}";
 
-        var unreachable = tile.Status == TileStatus.Unreachable;
+        // A collector's server has no session: its outage is the tile's reason, on the health row.
+        var unreachable = tile.Status == TileStatus.Unreachable && session is not null;
         HealthRow.Visibility = unreachable ? Visibility.Collapsed : Visibility.Visible;
         OutageRow.Visibility = unreachable ? Visibility.Visible : Visibility.Collapsed;
 
-        RenderAlerts(running, unreachable);
+        RenderAlerts(running || watched, unreachable);
         if (unreachable)
             RenderOutage(conn, session!, tile);
         else
         {
-            RenderScore(conn, tile, score);
-            RenderHeadlines(conn, session);
+            RenderScore(conn, tile, score, elsewhere);
+            RenderHeadlines(conn, session, watched);
             RenderSince();
         }
         RenderCharts();
@@ -494,7 +525,9 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         foreach (var live in _monitoring.Get(_id)?.ActiveAlerts ?? [])
             byId[live.Id] = live;
 
-        var active = (running ? _monitoring.Get(_id)!.ActiveAlerts : [])
+        // A collector's are in its history: the ones it has open (#172).
+        var active = (!running ? [] : _monitoring.Get(_id) is { IsRunning: true } session ? session.ActiveAlerts
+                      : Elsewhere?.ActiveAlerts ?? [])
             .OrderByDescending(a => a.Severity)
             .ThenBy(a => a.StartedUtc)
             .Select(a =>
@@ -528,7 +561,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         TxtNoAlerts.Visibility = active.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void RenderScore(ConnectionSettings conn, ServerTile tile, HealthScore? score)
+    private void RenderScore(ConnectionSettings conn, ServerTile tile, HealthScore? score, ElsewhereWatch? elsewhere)
     {
         var brush = HealthBrushes.For(tile.Status);
         RunScore.Text       = tile.ScoreText;
@@ -561,7 +594,9 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
                                $"Open {evidence.Text} for this server", c.Indicator, detail);
         }).ToList());
         TxtNoCosts.Text = graded is null
-            ? (tile.Status == TileStatus.Off ? "Nothing to show: it isn't monitored." : "The checks show after the first sample.")
+            ? (elsewhere is not null
+                  ? $"Not here: {elsewhere.By} keeps each sample's score, not the checks behind it. Its alerts are above."
+                  : tile.Status == TileStatus.Off ? "Nothing to show: it isn't monitored." : "The checks show after the first sample.")
             : "Nothing: every check is within its thresholds.";
         TxtNoCosts.Visibility = costs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -579,9 +614,12 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
     }
 
     // CPU, batch requests/s, waiting tasks and page life expectancy from the session's samples.
-    private void RenderHeadlines(ConnectionSettings conn, MonitoringSession? session)
+    private void RenderHeadlines(ConnectionSettings conn, MonitoringSession? session, bool watchedElsewhere)
     {
-        var samples    = session is { IsRunning: true } ? Plotted(session) : [];
+        // A collector's server: its history's last minutes (#172).
+        var samples    = session is { IsRunning: true } ? Plotted(session)
+                         : watchedElsewhere ? _metrics?.Items.Select(p => p.Averages).ToList() ?? []
+                         : [];
         var thresholds = session?.Thresholds ?? _store.ThresholdsFor(conn);
         var primary    = (Brush)FindResource("TextPrimary");
 
@@ -682,7 +720,7 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
                                      : PastWindow(_range, nowUtc);
 
         // Live: the session's samples, put on this PC's clock; a past range: the history's averages.
-        var rows = _range.IsLive ? LiveSamples() : _metrics?.Items.Select(p => (p.TimeUtc, p.Averages)).ToList() ?? [];
+        var rows = _range.IsLive && Elsewhere is null ? LiveSamples() : _metrics?.Items.Select(p => (p.TimeUtc, p.Averages)).ToList() ?? [];
         MetricSeries Series(string name, Brush brush, Func<LiveMetricSample, double> value) =>
             new(name, brush, rows.Select(r => new MetricPoint(r.TimeUtc, value(r.Sample))).ToList());
 
@@ -856,12 +894,12 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
 
     // ── Buttons and links ─────────────────────────────────────────────────────
 
-    private void Monitor_Click(object sender, RoutedEventArgs e)
+    private async void Monitor_Click(object sender, RoutedEventArgs e)
     {
         if (_monitoring.IsMonitoring(_id))
             _monitoring.Stop(_id, ActivitySources.Overview);
         else
-            _monitoring.Start(_id, ActivitySources.Overview);
+            await _starter.StartAsync(_id, ActivitySources.Overview);
     }
 
     private async void Retry_Click(object sender, RoutedEventArgs e)

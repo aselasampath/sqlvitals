@@ -38,6 +38,13 @@ The last tile, **+ Add a connection**, opens Settings on a new connection.
 | **Waiting** | Monitored, before its first sample | — | **Open** |
 | **Off** | Not monitored: *Not monitored, so there's no score yet*, and why (for example, the password isn't saved) | — | **▶ Start monitoring**, as **⋯ → Start monitoring** does. It's greyed out while it can't start, and its tooltip says why. |
 
+A server the [collector service](Collector-Service.md#from-the-app) watches (0.74.0) has the same statuses, from the service's history:
+- **Critical** or **Warning** from the alerts it has open, else **Healthy**;
+- **Unreachable** when its last sample failed;
+- **Off** when the service is stopped.
+
+The score is its last one. Its bars are grey except those alerting, because the history keeps the score, not the checks behind it. The footer says *Sample 13:46:01 · by the collector service*.
+
 ### Order
 
 The tiles are sorted by what needs attention most: **unreachable and critical** first, then **warning**, **healthy**, **waiting** and **off**, by name within each. The active connection is sorted like the others: it's marked, not moved.

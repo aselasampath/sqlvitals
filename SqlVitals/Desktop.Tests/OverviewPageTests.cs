@@ -117,6 +117,62 @@ public sealed class OverviewPageTests : IDisposable
 
     private static string LinkText(Hyperlink link) => new TextRange(link.ContentStart, link.ContentEnd).Text;
 
+    // ── Watched by the collector service (#172) ─────────────────────────────
+
+    [Fact]
+    public void AServerTheServiceWatches_ShowsItsHistory_ItsOpenAlerts_AndNoStartButton() => UiThread.Run(() =>
+    {
+        Setup();
+        // The service's own history: ten minutes of samples and scores, and a CPU alert still open.
+        var servicePath = Path.Combine(_dir, "collector", "history.db");
+        var who = new HistoryConnection(_quiet.Id, "Quiet", "quiet", "Sales");
+        var now = DateTime.UtcNow;
+        var alert = new Engine.Alerts.Alert(Guid.NewGuid(), _quiet.Id, HealthIndicator.Cpu, HealthLevel.Critical, now.AddMinutes(-4), null, 97, 90, "CPU 97%");
+        using (var store = new HistoryStore(servicePath))
+        {
+            store.Open();
+            var records = new List<HistoryRecord> { new AlertRecord(who, now.AddMinutes(-4), alert) };
+            for (var i = 10; i > 0; i--)
+            {
+                records.Add(new MetricSampleRecord(who, now.AddMinutes(-i), new LiveMetricSample(DateTime.Now, 1, 2, 3, 4, 5, 6, 97, 100, 7, 1, 2, 30, 40, 5000, 0, 99.5)));
+                records.Add(new HealthScoreRecord(who, now.AddMinutes(-i), 72, true));
+            }
+            store.Write(records);
+        }
+        _monitoring!.SetWatchedElsewhere(
+            new Dictionary<Guid, ElsewhereWatch> { [_quiet.Id] = new(CollectorLink.ShortName, new ScoreHistoryPoint(now.AddMinutes(-1), 72, true), [alert]) },
+            new Dictionary<Guid, string> { [_quiet.Id] = "Watched by the SqlVitals Collector service on this PC." },
+            [new HistorySource(new HistoryReader(servicePath), CollectorLink.ServiceName)]);
+
+        var page = Open(_quiet);
+
+        Assert.Equal("Watched by the collector", page.BtnMonitor.Content);
+        Assert.False(page.BtnMonitor.IsEnabled);
+        Assert.Contains("watched by the collector service", page.TxtConnectionLine.Text);
+        Assert.Equal("CPU · Critical", Assert.Single(Rows<OverviewAlert>(page.AlertsList)).Title);
+        Assert.Equal("72", page.RunScore.Text);
+        Assert.StartsWith("Not here: the collector service keeps each sample's score", page.TxtNoCosts.Text);
+        // The live charts, from the service's history: the app collects nothing for it.
+        Assert.True(page.ChartCpu.Data!.Series[0].Points.Count >= 9);
+        Assert.Null(_monitoring.Get(_quiet.Id));
+    });
+
+    [Fact]
+    public void AServerTheServiceFoundUnreachable_SaysSo_WithoutAnOutageItHasNoSessionFor() => UiThread.Run(() =>
+    {
+        Setup();
+        _monitoring!.SetWatchedElsewhere(
+            new Dictionary<Guid, ElsewhereWatch> { [_quiet.Id] = new(CollectorLink.ShortName, new ScoreHistoryPoint(DateTime.UtcNow.AddMinutes(-1), 0, false), []) },
+            new Dictionary<Guid, string> { [_quiet.Id] = "Watched by the SqlVitals Collector service on this PC." },
+            []);
+
+        var page = Open(_quiet);
+
+        Assert.Equal("UNREACHABLE", page.TxtStatus.Text);
+        Assert.Equal(Visibility.Collapsed, page.OutageRow.Visibility);
+        Assert.Equal(Visibility.Visible, page.HealthRow.Visibility);
+    });
+
     // ── Healthy ──────────────────────────────────────────────────────────────
 
     [Fact]

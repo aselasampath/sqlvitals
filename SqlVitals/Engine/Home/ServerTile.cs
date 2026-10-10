@@ -1,4 +1,6 @@
 using System.Globalization;
+using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Home;
@@ -40,7 +42,18 @@ public sealed record TileInput(
     DateTime?    FailingSince       = null,
     string?      LastError          = null,
     string?      NotMonitoredReason = null,
-    bool         CanStart           = true);
+    bool         CanStart           = true,
+    ElsewhereWatch? Elsewhere       = null);
+
+/// <summary>
+/// What a collector service knows of a connection the app hands to it (#172), read from the
+/// service's history: its last score, and the alerts still open. The history keeps a score's
+/// number, not its checks, so a tile's status comes from those alerts.
+/// </summary>
+/// <param name="By">Who watches it, as the footer says it: "the collector service".</param>
+/// <param name="Last">Its last score and whether the server answered; null before the first.</param>
+/// <param name="NotWatching">Why it isn't being watched after all (the service is stopped, no sample for a while); null while it is.</param>
+public sealed record ElsewhereWatch(string By, ScoreHistoryPoint? Last, IReadOnlyList<Alert> ActiveAlerts, string? NotWatching = null);
 
 /// <summary>One of a tile's six bars: a check, coloured by its level, named in its tooltip.</summary>
 /// <param name="Level">Unknown (grey) when there is no score to colour it by.</param>
@@ -129,6 +142,9 @@ public sealed record ServerTile(
     /// <param name="now">This PC's clock, so a time from another day shows its date.</param>
     public static ServerTile From(TileInput input, DateTime now)
     {
+        if (input.Elsewhere is { } elsewhere)
+            return FromElsewhere(input, elsewhere, now);
+
         var status = StatusOf(input);
         var score  = status is TileStatus.Off or TileStatus.Waiting ? null : input.Score;
         var role   = input.IsActive ? "active" : "background";
@@ -175,6 +191,70 @@ public sealed record ServerTile(
             footer,
             action,
             CanAct: action != TileAction.Start || input.CanStart);
+    }
+
+    // A connection a collector service watches (#172): its status from the alerts the service has
+    // open, or from its last score when the server didn't answer; the bars grey but for those
+    // alerts, since the history keeps no check's figure.
+    private static ServerTile FromElsewhere(TileInput input, ElsewhereWatch watch, DateTime now)
+    {
+        var worst  = watch.ActiveAlerts.Count == 0 ? (HealthLevel?)null : watch.ActiveAlerts.Max(a => a.Severity);
+        var status = watch switch
+        {
+            { NotWatching: not null } => TileStatus.Off,
+            { Last: null }            => TileStatus.Waiting,
+            { Last.Reachable: false } => TileStatus.Unreachable,
+            _ when worst == HealthLevel.Critical => TileStatus.Critical,
+            _ when worst == HealthLevel.Warning  => TileStatus.Warning,
+            _                         => TileStatus.Healthy,
+        };
+        var level = status switch
+        {
+            TileStatus.Critical    => HealthLevel.Critical,
+            TileStatus.Warning     => HealthLevel.Warning,
+            TileStatus.Healthy     => HealthLevel.Healthy,
+            TileStatus.Unreachable => HealthLevel.Unavailable,
+            _                      => HealthLevel.Unknown,
+        };
+        var sampled = watch.Last is { } last ? When(last.TimeUtc.ToLocalTime(), now) : null;
+
+        var reason = status switch
+        {
+            TileStatus.Off         => watch.NotWatching!,
+            TileStatus.Waiting     => $"Waiting for {watch.By}'s first sample…",
+            TileStatus.Unreachable => $"Can't be reached or read, at {watch.By}'s last sample ({sampled}).",
+            _ when worst is null   => "No check has alerted.",
+            _                      => "Alerting on " + string.Join(", ", watch.ActiveAlerts.OrderByDescending(a => a.Severity)
+                                                                           .Select(a => HealthThresholds.Info(a.Indicator).Name).Distinct()) + ".",
+        };
+        var alerting = watch.ActiveAlerts.GroupBy(a => a.Indicator).ToDictionary(g => g.Key, g => g.Max(a => a.Severity));
+        var bars = Enum.GetValues<HealthIndicator>()
+            .Select(i => alerting.TryGetValue(i, out var severity)
+                ? new CheckBar(i, ShortName(i), severity, $"{HealthThresholds.Info(i).Name}: alerting ({severity.ToString().ToLowerInvariant()}), from {watch.By}")
+                : new CheckBar(i, ShortName(i), HealthLevel.Unknown, $"{HealthThresholds.Info(i).Name}: no figure here, {watch.By} keeps the score; no alert"))
+            .ToList();
+
+        return new ServerTile(
+            input.Id,
+            input.Name,
+            $"{input.Server.Trim()} / {input.Database}",
+            input.IsActive,
+            status,
+            level,
+            status is TileStatus.Off or TileStatus.Waiting || watch.Last is null
+                ? "—" : watch.Last.Score.ToString(CultureInfo.CurrentCulture),
+            reason,
+            null,
+            bars,
+            status switch
+            {
+                TileStatus.Off     => $"Handed to {watch.By}",
+                TileStatus.Waiting => $"Watched by {watch.By}",
+                _                  => $"Sample {sampled} · by {watch.By}",
+            },
+            // Start asks to start the service; anything else opens its Overview, from the service's history.
+            status == TileStatus.Off ? TileAction.Start : TileAction.Open,
+            CanAct: true);
     }
 
     // A bar per check, in the order of the Health score popup; grey with no score to colour them.

@@ -52,6 +52,11 @@ public sealed class CollectorHost : IDisposable
     private string                   _problemsSaid = string.Empty;
     private bool                     _started;
     private bool                     _stopped;
+    private ITimer?                  _shareTimer;
+    private int                      _shareMinutes;
+    private string?                  _sharePath;
+    private int                      _copying;
+    private bool                     _shareFailing;
 
     // One watched server: its settings as started, and its collector.
     private sealed class Watched(CollectorServer server, ServerCollector collector, HistoryRecorder recorder, string fingerprint)
@@ -136,6 +141,7 @@ public sealed class CollectorHost : IDisposable
                 return;
             _stopped = stopping = true;
             _settingsTimer?.Dispose();
+            _shareTimer?.Dispose();
             _chat!.BeginExit(WatchStop.ServiceStopped);
             foreach (var id in _watched.Keys.ToList())
                 StopWatching(id, ActivitySources.CollectorService, "The collector service stopped.");
@@ -214,6 +220,7 @@ public sealed class CollectorHost : IDisposable
         var settings = read.Settings;
         SayProblems(settings, read.Problems);
         _history!.Retention = TimeSpan.FromDays(settings.HistoryRetentionDays);
+        ScheduleShareCopy(settings);
 
         var wanted    = settings.Servers.Where(CanWatch).ToDictionary(s => s.Id);
         var started   = new List<WatchedConnection>();
@@ -278,6 +285,53 @@ public sealed class CollectorHost : IDisposable
                 ? $"Collector: watching no servers. Add one: SqlVitals.Collector add-server --server <name> (settings {SettingsPath})"
                 : $"Collector: watching {_watched.Count} server(s): {string.Join(", ", _watched.Values.Select(w => w.Server.DisplayName))}; " +
                   $"{settings.ChatChannels.Count(c => c.Enabled)} chat channel(s) on");
+    }
+
+    // A share copy every N minutes (#172), the first one N minutes from now; none at 0.
+    private void ScheduleShareCopy(CollectorSettings settings)
+    {
+        var path = settings.ShareCopyMinutes == 0 ? null : settings.ShareCopyPath(_dataDirectory);
+        if (settings.ShareCopyMinutes == _shareMinutes && path == _sharePath)
+            return;
+        _shareTimer?.Dispose();
+        _shareTimer   = null;
+        _shareMinutes = settings.ShareCopyMinutes;
+        _sharePath    = path;
+        if (path is null)
+            return;
+        var every = TimeSpan.FromMinutes(_shareMinutes);
+        // The first a minute from now, when the first samples are saved: a daily copy on a server
+        // restarted daily would otherwise never be written.
+        _shareTimer = _time.CreateTimer(_ => CopyForShare(path), null, TimeSpan.FromMinutes(1), every);
+        _log.Info($"Collector: a share copy of the history every {_shareMinutes} min, to {path}");
+    }
+
+    // On the thread pool, one at a time; a failure is said once, until a copy works again.
+    internal void CopyForShare(string path)
+    {
+        if (Interlocked.Exchange(ref _copying, 1) == 1)
+            return;
+        try
+        {
+            if (!File.Exists(HistoryPath))
+                return;
+            if (HistoryShareCopy.Write(HistoryPath, path))
+            {
+                if (_shareFailing)
+                    _log.Info($"Collector: the share copy of the history works again: {path}");
+                _shareFailing = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_shareFailing)
+                _log.Error($"Collector: couldn't write the share copy of the history to {path}; trying again in {_shareMinutes} min", ex);
+            _shareFailing = true;
+        }
+        finally
+        {
+            Volatile.Write(ref _copying, 0);
+        }
     }
 
     private static bool CanWatch(CollectorServer server) =>

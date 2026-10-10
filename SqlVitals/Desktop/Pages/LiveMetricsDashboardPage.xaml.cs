@@ -203,6 +203,9 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     // The top bar: what this page read, what went wrong, and its kind or window (#166).
     private readonly IShellStatus _shell;
 
+    // What Start does for a saved connection (#172); null for an ad-hoc one.
+    private readonly IWatchStarter? _starter;
+
     // The link to Settings, where monitoring is turned on.
     private readonly INavigator _navigator;
 
@@ -210,9 +213,10 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     /// <param name="connectionId">The active saved connection; null for one from appsettings.json only.</param>
     public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringManager? monitoring = null, Guid? connectionId = null,
                                     ConnectionHistory? history = null, string? connectionName = null,
-                                    INavigator? navigator = null, IShellStatus? shell = null)
+                                    INavigator? navigator = null, IShellStatus? shell = null, IWatchStarter? starter = null)
     {
         _shell       = shell ?? CompositionRoot.Get<IShellStatus>();
+        _starter     = starter ?? (monitoring is null ? null : new DirectWatchStarter(monitoring));
         _navigator   = navigator ?? CompositionRoot.Get<INavigator>();
         _repo        = repo;
         _connectionName = connectionName ?? "This connection";
@@ -758,8 +762,8 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     // The saved connection's session is the manager's, so the dot, alerts and history follow it.
     private void StartMonitoring()
     {
-        if (_connectionId is { } id && _monitoring is not null)
-            _monitoring.Start(id, ActivitySources.LiveMetrics);
+        if (_connectionId is { } id && _starter is not null)
+            _ = _starter.StartAsync(id, ActivitySources.LiveMetrics);
         else
             _adHoc?.Start();
         Session_StateChanged(_session);
