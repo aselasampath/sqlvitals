@@ -202,6 +202,28 @@ public sealed class CollectorHostTests : IDisposable
     }
 
     [Fact]
+    public async Task TheShareCopy_IsTheHistory_ReadableReadOnlyByTheApp()
+    {
+        var a = Server("Sales-Prod");
+        Save(Settings([a]));
+        using var host = Host();
+        await host.StartAsync();
+        await WaitUntil(() => _servers[a.Id].Reads >= 2, "two samples");
+        var copy = Path.Combine(_folder.Path, "share", Engine.History.HistoryShareCopy.FileName);
+
+        // The writer may not have saved the samples yet: give it a moment.
+        await WaitUntil(() =>
+        {
+            host.CopyForShare(copy);
+            return File.Exists(copy) &&
+                   new HistoryReader(copy, readOnly: true).ReadScores(a.Id, DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddMinutes(1), TimeSpan.FromSeconds(1)).Count > 0;
+        }, "a share copy with scores");
+        await host.StopAsync();
+
+        Assert.Equal("Sales-Prod", new HistoryReader(copy, readOnly: true).ReadConnections().Single().Name);
+    }
+
+    [Fact]
     public async Task ABrokenFile_IsSaidOnce_NotAtEveryCheck()
     {
         Save(Settings([Server("Sales-Prod")]));

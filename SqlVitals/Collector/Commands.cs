@@ -37,6 +37,8 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
           remove-channel <name>
           set                     [--sample-seconds <5-300>] [--detail-minutes 1|5|15|30] [--retention-days 7|14|30|90]
                                   [--alert-samples 1|2|3|5|10] [--command-timeout <s>]
+                                  [--share-copy-minutes <5-1440>|0] [--share-copy-folder <folder>]
+                                  A share copy of the history, for SqlVitals on other PCs to read over a share.
           test                    Reads each server once and posts a test message to each channel.
           install                 As an administrator: install the Windows service. [--account <name>] [--password-stdin] [--start]
           uninstall               As an administrator: remove it. Its settings and history stay unless --delete-data.
@@ -122,6 +124,9 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
         o.WriteLine($"Samples every {settings.SampleSeconds} s · detail every {settings.HistoryIntervalMinutes} min · " +
                     $"history kept {settings.HistoryRetentionDays} days · alerts after {settings.AlertSamples} samples · " +
                     $"query timeout {settings.CommandTimeoutSeconds} s");
+        o.WriteLine(settings.ShareCopyMinutes == 0
+            ? "No share copy of the history."
+            : $"Share copy every {settings.ShareCopyMinutes} min: {settings.ShareCopyPath(dataDirectory)}");
         o.WriteLine();
         o.WriteLine(settings.Servers.Count == 0 ? "No servers yet. Add one: SqlVitals.Collector add-server --server <name>" : $"Servers ({settings.Servers.Count}):");
         foreach (var s in settings.Servers)
@@ -310,6 +315,17 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
         {
             settings.CommandTimeoutSeconds = timeout is >= 5 and <= 600 ? timeout : throw new UsageException("--command-timeout must be 5 to 600.");
             changed.Add($"query timeout {timeout} s");
+        }
+        if (line.Number("share-copy-minutes") is { } copyEvery)
+        {
+            settings.ShareCopyMinutes = copyEvery == 0 || CollectorSettings.NormalizeShareCopyMinutes(copyEvery) == copyEvery
+                ? copyEvery : throw new UsageException("--share-copy-minutes must be 5 to 1440, or 0 for none.");
+            changed.Add(copyEvery == 0 ? "no share copy" : $"a share copy every {copyEvery} min");
+        }
+        if (line.Option("share-copy-folder") is { } folder)
+        {
+            settings.ShareCopyFolder = folder.Trim();
+            changed.Add($"the share copy in {settings.ShareCopyPath(dataDirectory)}");
         }
         if (changed.Count == 0)
             throw new UsageException("Nothing to set. See: SqlVitals.Collector help");

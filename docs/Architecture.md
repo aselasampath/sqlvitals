@@ -165,7 +165,20 @@ SqlVitals.Collector.exe ── run / as a service ──► CollectorHost (one t
    └── add-server, add-channel, set, test, list, install, uninstall ──► Commands (CollectorSettingsFile.Save, ServiceSetup → sc.exe)
 ```
 
-The service is optional: the app works as before without it. `CollectorHost` is the service's `MonitoringManager`: it applies `collector.json` (`Apply`: start, stop, or restart a server whose `CollectorServer.Fingerprint` changed), logs each start and stop to the activity log under source *collector service* or *collector settings changed*, and tells the chat channels, in the app's order. The collectors' updates are queued and drained on the host's own thread, so a server's alert ends reach the channels before its *stopped watching* message. `StopAsync` (the service stopping) tells every channel `WatchStop.ServiceStopped`, gives them `ChatNotificationService.ExitTime` to send, then flushes the history. `ChatNotificationService` and `HttpWebhookSender` moved from Desktop to Engine for this; Desktop applies its settings to it through `ChatChannelsApply`. `HistoryWriter` takes any `IHistoryStore` (the SQLite `HistoryStore` by default), and pages read through `IHistoryReader`, so another store can be added later. A server handed over by the app (#172 part 2) keeps its connection id, so both read its history under one id. See [Collector Service](Collector-Service.md).
+The service is optional: the app works as before without it. `CollectorHost` is the service's `MonitoringManager`: it applies `collector.json` (`Apply`: start, stop, or restart a server whose `CollectorServer.Fingerprint` changed), logs each start and stop to the activity log under source *collector service* or *collector settings changed*, and tells the chat channels, in the app's order. The collectors' updates are queued and drained on the host's own thread, so a server's alert ends reach the channels before its *stopped watching* message. `StopAsync` (the service stopping) tells every channel `WatchStop.ServiceStopped`, gives them `ChatNotificationService.ExitTime` to send, then flushes the history. `ChatNotificationService` and `HttpWebhookSender` moved from Desktop to Engine for this; Desktop applies its settings to it through `ChatChannelsApply`. `HistoryWriter` takes any `IHistoryStore` (the SQLite `HistoryStore` by default), and pages read through `IHistoryReader`, so another store can be added later. A server handed over by the app keeps its connection id, so both read its history under one id. See [Collector Service](Collector-Service.md).
+
+**The app's side (0.74.0).** `Services/CollectorLink` reads the service every 10 seconds through `ICollectorControl`:
+- its state, from `ServiceController`;
+- `collector.json`, with DPAPI LocalMachine;
+- the last scores and open alerts from its history;
+- optionally, another PC's [share copy](Collector-Service.md#a-collector-on-another-pc), matched by server and database (`Engine/Service/CollectorMatch`).
+
+It hands servers over and takes them back with `CollectorHandover` (pure). It gives `MonitoringManager.SetWatchedElsewhere` three things:
+- the `ElsewhereWatch` per connection, which `ServerTile.FromElsewhere` turns into a tile;
+- a reason, which `MonitoringPlan` makes `MonitoringReason.WatchedElsewhere`, ahead of everything else, so the app stops collecting it;
+- the history sources, which `MonitoringManager.HistoryReader` wraps in a `CombinedHistoryReader`: both files in time order, under the app's ids, a collector's unreadable file left out and logged once.
+
+Every Start button goes through `IWatchStarter` (`WatchStarter`). It asks `IDialogService.AskWhereToWatch`, a task dialog with *Don't ask again*, while the service is installed and the connection can be handed over. Otherwise it is `MonitoringManager.Start`. The collector writes the share copy with `HistoryShareCopy` (VACUUM INTO, rollback journal), and the app reads it with `HistoryReader(path, readOnly: true)`. Tests: `CollectorLinkTests`, `CombinedHistoryReaderTests`, `CollectorMatchTests`, and the Home, Overview and Settings page tests.
 
 ### 4. Alerts
 

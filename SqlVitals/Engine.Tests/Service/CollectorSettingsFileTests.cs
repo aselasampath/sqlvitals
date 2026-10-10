@@ -185,6 +185,13 @@ public sealed class CollectorSettingsFileTests : IDisposable
         Assert.NotEqual(login.Fingerprint(30), login.Fingerprint(60));
     }
 
+    [Theory]
+    [InlineData("", @"C:\Data\share\history-share.db")]
+    [InlineData("share2", @"C:\Data\share2\history-share.db")]
+    [InlineData(@"D:\Vitals", @"D:\Vitals\history-share.db")]
+    public void TheShareCopy_IsInTheDataFolder_UnlessAFullPathIsGiven(string folder, string path) =>
+        Assert.Equal(path, new CollectorSettings { ShareCopyFolder = folder }.ShareCopyPath(@"C:\Data"));
+
     [Fact]
     public void ServersAndChannels_AreFoundByNameServerOrId_IgnoringCase()
     {

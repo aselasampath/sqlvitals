@@ -35,6 +35,9 @@ public enum WatchStop
 
     /// <summary>The SqlVitals Collector Windows service was stopped (#172): by an admin, an update, or Windows shutting down.</summary>
     ServiceStopped,
+
+    /// <summary>The app handed it to a collector service, which watches it now (#172).</summary>
+    WatchedElsewhere,
 }
 
 /// <summary>A connection SqlVitals started watching (#170).</summary>
@@ -61,9 +64,10 @@ public sealed record WatchChange(
 
     public static WatchStop StopFor(MonitoringReason reason) => reason switch
     {
-        MonitoringReason.StoppedByUser => WatchStop.StoppedByUser,
-        MonitoringReason.AutomaticOff  => WatchStop.AutomaticOff,
-        MonitoringReason.BackgroundOff => WatchStop.BackgroundOff,
-        _                              => WatchStop.NeedsSetup,
+        MonitoringReason.StoppedByUser    => WatchStop.StoppedByUser,
+        MonitoringReason.AutomaticOff     => WatchStop.AutomaticOff,
+        MonitoringReason.BackgroundOff    => WatchStop.BackgroundOff,
+        MonitoringReason.WatchedElsewhere => WatchStop.WatchedElsewhere,
+        _                                 => WatchStop.NeedsSetup,
     };
 }

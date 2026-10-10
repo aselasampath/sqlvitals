@@ -4,7 +4,7 @@
 
 You don't need it. Without it, SqlVitals works as before: the app monitors while it runs, in the window or in the [notification area](Notifications-and-Tray.md). Use the service when a 3 a.m. problem has to be caught even with your laptop closed.
 
-> **In 0.73.0** the service is set up with its command line, `SqlVitals.Collector.exe`. In the next release (the rest of #172) the app gets these: start and stop the service, a question when monitoring starts (*watch this server with the service?*), handing a server over to the service and taking it back, and Home, Overview, history pages and Alerts reading the service's history.
+> **From 0.74.0** the app works with it. When the service is installed on the same PC, **▶ Start** asks where to watch a server. **⚙️ Settings → Collector service** starts and stops the service, and hands each server over or takes it back. Home, Overview, the history pages and Alerts show a handed-over server from the service's history. The app can also read a collector on another PC, from its [share copy](#a-collector-on-another-pc). In 0.73.0 the service was set up with its command line only.
 
 ## In short
 
@@ -12,7 +12,42 @@ You don't need it. Without it, SqlVitals works as before: the app monitors while
 - It **runs as its own account**, `NT SERVICE\SqlVitalsCollector` by default. It reads each server with **Windows authentication** (recommended) or a **SQL login**. Entra MFA isn't possible here, because nobody is there to sign in.
 - It **picks up changes on its own.** The settings file is checked every 10 seconds, so a server added with the command line starts without a restart.
 - **Chat channels work as in the app.** Alerts, back to normal, *stopped watching* (with *because the SqlVitals Collector service stopped* when the service stops) and [heartbeats](Chat-Notifications.md#heartbeat) are posted, with *SqlVitals on SRV01 (collector service)* as the sender.
+- **One watcher per server.** A server handed to the service isn't collected by the app as well, and its history reads as one, the app's part and the service's.
 - **Not a team platform.** There is no web UI, no central database, no roles. See [What SqlVitals is not](../README.md).
+
+## From the app
+
+With the service installed on this PC, by your Windows user:
+
+- **▶ Start asks.** Pressing Start on a server (on its Overview, its tile on Home, the sidebar or Live charts) asks *Where should Sales-Prod be watched?*
+  - **Watch with the collector service** hands the server over, and starts the service if it's stopped.
+  - **Watch in SqlVitals** works as before.
+
+  Tick **Don't ask again** to keep your answer. Change it later in **Settings → Collector service → When monitoring starts**. Start doesn't ask when the service is not installed, for an Entra MFA connection (the service can't sign in), or for a SQL login whose password isn't saved.
+- **Handing over** writes the server to the service's `collector.json`. The server keeps its id, so the app and the service record its history as one server's. It takes the server's SQL login with its password, its own health thresholds, and **the chat channels that post for it**, with their choices and heartbeat, so its alerts keep reaching the same channels. The app stops collecting the server within 10 seconds, and its chat channels hear *SqlVitals stopped watching Sales-Prod because the SqlVitals Collector service watches it now*.
+- **Settings → Collector service** has the controls:
+  - the service's state, with **Start** and **Stop**. Install lets you do both without an admin prompt. If another user installed it, Windows asks for an admin.
+  - what Start does;
+  - your servers, each with **Hand over** or **Take back**;
+  - a [collector on another PC](#a-collector-on-another-pc).
+- **Home and Overview** show a handed-over server from the service's history:
+  - its last score, and the alerts the service has open, which also give its status;
+  - its charts, live and past;
+  - *Sample 13:46:01 · by the collector service* on its tile.
+
+  The history keeps each sample's score but not the checks behind it, so the score's breakdown isn't shown for it.
+- **If the service stops**, its servers show **Off**, with *Handed to the SqlVitals Collector service, which is stopped*. ▶ Start then offers to start it. Taking a server back gives it to the app again, as its settings say.
+- **Alerts and the history pages** read both files: the app's own and the service's.
+
+## A collector on another PC
+
+A collector on an always-on server can share its history with the app on your laptop. A live history file can't be read safely over a network share (SQLite's WAL mode needs both on one PC), so the collector writes a **share copy** every few minutes and the app reads that copy, read-only.
+
+1. On the collector's PC: `SqlVitals.Collector.exe set --share-copy-minutes 5 --share-copy-folder D:\SqlVitalsShare`. The service's account needs Modify on that folder. Without `--share-copy-folder`, the copy goes to the data folder's `share\`.
+2. Share the folder read-only, to the people who should see it. The copy is the whole history, query text included (see [Security and Privacy](Security-and-Privacy.md#collector-service)).
+3. In the app: **Settings → Collector service → A collector on another PC**. Enter `\\DBA01\SqlVitalsShare`, then **Save**.
+
+Your connections that match one of its servers (same server and database, ignoring case) are shown from its copy. This PC doesn't collect them while it does. The copy is up to N minutes old, so their tiles are as fresh as the copy.
 
 ## Install
 
@@ -28,7 +63,7 @@ You need an always-on Windows 10/11 or Windows Server PC that can reach your SQL
 
    Install does the following:
    - registers the service **SqlVitals Collector** (`SqlVitalsCollector`). It starts automatically (delayed) and restarts after a crash: twice after a minute, then after five minutes.
-   - lets **you** (the Windows user who ran install) start and stop it without an admin prompt. The app uses this in the next release.
+   - lets **you** (the Windows user who ran install) start and stop it without an admin prompt, as the app does from 0.74.0, and gives you Modify on its data folder, so the app can hand servers over.
    - creates `%ProgramData%\SqlVitals\Collector` and locks it to SYSTEM, Administrators, the service's account and you (see [Security](#security)).
    - adds the *SqlVitals Collector* source to the Windows Application event log.
    - prints the T-SQL that gives the service's account a login on each server (below).
@@ -72,7 +107,7 @@ SqlVitals.Collector.exe list
 | `remove-server <server>` | Stops watching it. Its history is kept for the retention days |
 | `add-channel --name <name>` | Adds a Slack or Teams channel. Options: `--service slack\|teams` (otherwise worked out from the URL), `--servers a,b` (otherwise all), `--critical-only`, `--no-ends`, `--heartbeat off\|<1–12>h\|daily@HH:mm`, `--ping` (a dead man's switch URL as well) |
 | `remove-channel <name>` | Removes a channel |
-| `set` | `--sample-seconds 5–300` (default 15), `--detail-minutes 1\|5\|15\|30`, `--retention-days 7\|14\|30\|90`, `--alert-samples 1\|2\|3\|5\|10`, `--command-timeout <s>` |
+| `set` | `--sample-seconds 5–300` (default 15), `--detail-minutes 1\|5\|15\|30`, `--retention-days 7\|14\|30\|90`, `--alert-samples 1\|2\|3\|5\|10`, `--command-timeout <s>`, `--share-copy-minutes 5–1440\|0` and `--share-copy-folder <folder>` ([share copy](#a-collector-on-another-pc)) |
 | `test` | Reads each server once and posts a test message to each channel. It reads **as you**, not as the service's account |
 | `list` | The servers, channels and settings, the service's state, and anything that needs fixing |
 | `run` | Watches in this console until Ctrl+C: for a first try, before installing |
@@ -87,7 +122,7 @@ SqlVitals.Collector.exe list
 **The decision (#172): DPAPI with the LocalMachine scope, a locked folder, and Windows authentication recommended.**
 
 - The app's `settings.dat` is encrypted for *your* Windows user (DPAPI CurrentUser), so the service's account can't read it. The service therefore has its own file.
-- The service, the admins and the app (which will hand servers over in the next release) are different Windows users who must all read that file. So its secrets (SQL passwords, webhook and ping URLs) are encrypted with **DPAPI LocalMachine**, with an entropy of SqlVitals' own. Any process on the PC could decrypt them, so **the folder's permissions are what keep other users out**. Install, and the first command that writes the file, set those permissions: full control for SYSTEM and Administrators, Modify for the service's account and the installing user, and nothing inherited from `%ProgramData%`, which every user can read. The encryption makes a copy of the file useless off the PC: a backup, a file share, a support zip.
+- The service, the admins and the app (which hands servers over) are different Windows users who must all read that file. So its secrets (SQL passwords, webhook and ping URLs) are encrypted with **DPAPI LocalMachine**, with an entropy of SqlVitals' own. Any process on the PC could decrypt them, so **the folder's permissions are what keep other users out**. Install, and the first command that writes the file, set those permissions: full control for SYSTEM and Administrators, Modify for the service's account and the installing user, and nothing inherited from `%ProgramData%`, which every user can read. The encryption makes a copy of the file useless off the PC: a backup, a file share, a support zip.
 - **Windows authentication** keeps no secret at all, and is the recommended choice: give the service's account (or the PC's domain account) a login. A SQL login is there for servers outside the domain.
 - Logs never contain a password, connection string or webhook URL (the same scrubbing as the app's).
 

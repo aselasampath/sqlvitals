@@ -33,8 +33,12 @@ internal sealed class SettingsContext(
     Func<bool, Task>          applyConnections,
     Ask                       ask,
     Action<SettingsLocation>  open,
-    Action<Guid>              openServer)
+    Action<Guid>              openServer,
+    CollectorLink?            collectors = null)
 {
+    /// <summary>The collector service (#172); null in tests that don't need it.</summary>
+    public CollectorLink? Collectors { get; } = collectors;
+
     public ConnectionSettingsService Service    { get; } = service;
     public MonitoringManager         Monitoring { get; } = monitoring;
     public ChatNotificationService   Chat       { get; } = chat;

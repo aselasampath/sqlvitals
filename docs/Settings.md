@@ -116,6 +116,17 @@ From 0.52.0, the Slack and Microsoft Teams channels alerts are posted to, as car
 
 The webhook URLs are stored encrypted and never logged. Setup steps for each service, what each test result means and the URL checks are on [Chat Notifications](Chat-Notifications.md).
 
+## Collector service
+
+Optional, from 0.74.0 (#172). This is for the [collector service](Collector-Service.md), a Windows service that keeps watching servers when SqlVitals is closed. Without it, this page says how to get it and nothing else changes.
+
+| Setting | Default | Effect |
+|---|---|---|
+| **The service on this PC** | — | Its state (*Not installed*, *Running*, *Stopped*), and how many of your servers it watches; **Start** and **Stop**. |
+| **When monitoring starts** | Ask each time | What ▶ Start does while the service is installed: ask, watch the server in SqlVitals, or hand it to the service. *Don't ask again* in the question sets it too. |
+| **Your servers** | — | Each server, who watches it, and **Hand over** or **Take back**. A server the service can't sign in to (Entra MFA, a SQL login without a saved password) can't be handed over; the button's tooltip says why. |
+| **A collector on another PC** | None | The folder (or file) of another PC's collector [share copy](Collector-Service.md#a-collector-on-another-pc); its servers that match yours are shown from it and aren't collected here. |
+
 ## Notification area
 
 | Setting | Default | Effect |

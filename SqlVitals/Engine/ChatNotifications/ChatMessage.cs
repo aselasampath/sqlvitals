@@ -307,6 +307,7 @@ public static class ChatMessageBuilder
         WatchStop.WindowsSignOut    => "the Windows user signed out",
         WatchStop.Sleep             => "the PC is going to sleep",
         WatchStop.ServiceStopped    => "the SqlVitals Collector service stopped",
+        WatchStop.WatchedElsewhere  => "the SqlVitals Collector service watches it now",
         _                           => "of a change in SqlVitals",
     };
 

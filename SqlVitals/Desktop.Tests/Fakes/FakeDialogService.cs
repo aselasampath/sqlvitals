@@ -31,6 +31,15 @@ internal sealed class FakeDialogService : IDialogService
 
     public void Inform(string message, string caption) => Shown.Add($"Inform: {caption}: {message}");
 
+    /// <summary>What <see cref="AskWhereToWatch"/> answers; null is Cancel.</summary>
+    public WatchAnswer? WatchAnswer { get; set; }
+
+    public WatchAnswer? AskWhereToWatch(string serverName, bool serviceRunning)
+    {
+        Shown.Add($"AskWhereToWatch: {serverName} (service {(serviceRunning ? "running" : "stopped")})");
+        return WatchAnswer;
+    }
+
     public void Warn(string message, string caption) => Shown.Add($"Warn: {caption}: {message}");
 
     public void Error(string message, string caption) => Shown.Add($"Error: {caption}: {message}");

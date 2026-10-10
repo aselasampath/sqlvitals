@@ -15,6 +15,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Cardinality estimate** | The optimizer's guess of how many rows an operation returns. Bad guesses lead to bad plans. |
 | **Clustered index / heap** | A clustered index stores the table in key order. A heap is a table without one. |
 | **Collector** | SqlVitals' background task that reads Live Metrics for one monitored connection at an interval. |
+| **Share copy** | A copy of a collector service's history that it writes every few minutes for SqlVitals on other PCs to read over a file share, since a live history can't be read safely across the network. See [Collector Service](Collector-Service.md#a-collector-on-another-pc). |
 | **Collector service** | The optional Windows service, *SqlVitals Collector*, that runs those collectors on an always-on PC with nobody signed in, with its own settings and history. See [Collector Service](Collector-Service.md). |
 | **Compatibility level** | A database setting that decides which SQL Server version's query optimizer and T-SQL behaviour it gets: 160 for SQL Server 2022, 150 for 2019. An upgraded database keeps its old level until it's changed. |
 | **Connection** | A saved server and database in SqlVitals. |

@@ -65,6 +65,9 @@ public interface IHistoryReader
     /// <summary>Where it reads, for messages: a file path.</summary>
     string Path { get; }
 
+    /// <inheritdoc cref="HistoryReader.ReadConnections"/>
+    IReadOnlyList<StoredConnection> ReadConnections();
+
     /// <inheritdoc cref="HistoryReader.ReadMetrics"/>
     IReadOnlyList<MetricHistoryPoint> ReadMetrics(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket);
 

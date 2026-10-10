@@ -42,6 +42,10 @@ public sealed class SettingsPageTests : IDisposable
     // What the next question is answered with.
     private MessageBoxResult _answer = MessageBoxResult.Cancel;
 
+    // The collector service (#172): installed when a test sets it.
+    private Fakes.FakeCollectorControl? _control;
+    private CollectorLink?               _collectors;
+
     private static ConnectionSettings Conn(string server, string name, bool background = false) => new()
     {
         Server              = server,
@@ -75,7 +79,12 @@ public sealed class SettingsPageTests : IDisposable
         _chat = new ChatNotificationService(new NoSender(), "DBA-PC01", _ => { });
         _chat.Apply(_settings.Load());
 
-        var page = new SettingsPage(_settings, _monitoring, _chat, Apply, location)
+        if (_control is not null)
+        {
+            _collectors = new CollectorLink(_control, _settings, new Fakes.FakeUiDispatcher(), TimeProvider.System);
+            UiThread.Wait(_collectors.RefreshAsync());
+        }
+        var page = new SettingsPage(_settings, _monitoring, _chat, Apply, location, collectors: _collectors)
         {
             Prompt = (text, _, buttons, _) =>
             {
@@ -152,6 +161,49 @@ public sealed class SettingsPageTests : IDisposable
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Appearance)));
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
         Assert.Same(first, page.Shown);
+    });
+
+    [Fact]
+    public void TheCollectorService_NotInstalled_SaysHowToGetIt_AndNothingCanBeHandedOver() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Collector));
+        var collector = Assert.IsType<CollectorCategory>(page.Shown);
+
+        Assert.StartsWith("Not installed. SqlVitals watches your servers itself while it runs.", collector.TxtState.Text);
+        Assert.False(collector.BtnStart.IsEnabled);
+        Assert.Equal(["Down", "Hot", "Quiet"], collector.Rows.Select(r => r.Name));
+        Assert.All(collector.Rows, r => Assert.False(r.CanAct));
+        Assert.All(collector.Rows, r => Assert.Equal("The collector service isn't installed on this PC.", r.ActionToolTip));
+        Assert.Equal(0, collector.CmbChoice.SelectedIndex);
+    });
+
+    [Fact]
+    public void TheCollectorService_HandsAServerOver_AndTakesItBack() => UiThread.Run(() =>
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "collector"));
+        _control = new Fakes.FakeCollectorControl(Path.Combine(_dir, "collector")) { State = CollectorServiceState.Running };
+        var page = Open(new SettingsLocation(SettingsCategory.Collector));
+        var collector = Assert.IsType<CollectorCategory>(page.Shown);
+        Assert.StartsWith("Running. It watches 0 of your servers", collector.TxtState.Text);
+        Assert.False(collector.BtnStart.IsEnabled);
+        Assert.True(collector.BtnStop.IsEnabled);
+
+        var hot = collector.Rows.Single(r => r.Name == "Hot");
+        Assert.Equal(("Hand over", true, "Watched in SqlVitals."), (hot.ActionText, hot.CanAct, hot.Where));
+        hot.Act.Execute(null);
+        UiThread.WaitUntil(() => collector.Rows.Single(r => r.Name == "Hot").ActionText == "Take back");
+
+        Assert.Equal(_hot.Id, Assert.Single(_control.Saved().Servers).Id);
+        Assert.StartsWith("✓  Handed Hot to the service.", collector.TxtServersStatus.Text);
+        Assert.StartsWith("Running. It watches 1 of your servers", collector.TxtState.Text);
+
+        collector.Rows.Single(r => r.Name == "Hot").Act.Execute(null);
+        UiThread.WaitUntil(() => collector.Rows.Single(r => r.Name == "Hot").ActionText == "Hand over");
+        Assert.Empty(_control.Saved().Servers);
+
+        // What Start does is saved as it's picked, and logged as a setting.
+        collector.CmbChoice.SelectedIndex = (int)WatchChoice.Service;
+        Assert.Equal(WatchChoice.Service, _settings!.Load().WatchChoice);
     });
 
     [Fact]

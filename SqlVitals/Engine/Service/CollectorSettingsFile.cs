@@ -176,6 +176,8 @@ public static class CollectorSettingsFile
             HistoryRetentionDays   = settings.HistoryRetentionDays,
             AlertSamples           = settings.AlertSamples,
             HealthThresholds       = settings.HealthThresholds,
+            ShareCopyMinutes       = settings.ShareCopyMinutes,
+            ShareCopyFolder        = settings.ShareCopyFolder,
             Servers                = settings.Servers.Select(s =>
             {
                 var server = s.Clone();

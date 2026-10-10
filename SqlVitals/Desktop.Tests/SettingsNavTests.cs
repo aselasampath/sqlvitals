@@ -61,7 +61,7 @@ public sealed class SettingsNavTests
     {
         Assert.Equal(["Servers", "Monitoring", "Notifications", "App"], SettingsNav.Groups.Select(g => g.Name));
         Assert.Equal(
-            ["Connections", "Monitoring & history", "Health thresholds", "Alerts & chat", "Notification area",
+            ["Connections", "Monitoring & history", "Health thresholds", "Collector service", "Alerts & chat", "Notification area",
              "Appearance", "Activity log & diagnostics"],
             SettingsNav.Categories.Select(c => c.Title));
         Assert.Equal(Enum.GetValues<SettingsCategory>(), SettingsNav.Categories.Select(c => c.Id).Order());
@@ -111,7 +111,7 @@ public sealed class SettingsNavTests
     [InlineData("Settings")]
     [InlineData("Home/Connections")]
     [InlineData("Settings/Nope")]
-    [InlineData("Settings/7")]
+    [InlineData("Settings/42")]
     [InlineData("Settings/Alerts/6f9619ff-8b86-d011-b42d-00cf4fc964ff")]
     [InlineData("Settings/Connections/not-a-guid")]
     [InlineData("Settings/Connections/6f9619ff-8b86-d011-b42d-00cf4fc964ff/Nope")]

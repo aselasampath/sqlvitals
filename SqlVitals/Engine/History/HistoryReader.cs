@@ -16,9 +16,30 @@ namespace SqlVitals.Engine.History;
 /// Long ranges come back averaged into buckets (see <see cref="HistoryRange.BucketFor"/>), each
 /// stamped with the average capture time of what it holds. Times are UTC on this PC's clock.
 /// </summary>
-public sealed class HistoryReader(string path) : IHistoryReader
+/// <param name="readOnly">
+/// Opens the file read-only (#172): a collector's share copy, on a folder this user may not write
+/// to. That copy is in rollback-journal mode, so it needs no shared-memory index; a live WAL file
+/// is opened read-write, with query_only, as before.
+/// </param>
+public sealed class HistoryReader(string path, bool readOnly = false) : IHistoryReader
 {
     public string Path { get; } = path;
+
+    /// <summary>
+    /// Every connection the file has history of (#172), most recently seen first: how the app
+    /// matches a collector's servers to its own connections. Empty when there is no file yet.
+    /// </summary>
+    public IReadOnlyList<StoredConnection> ReadConnections()
+    {
+        using var conn = OpenOrNull(out _);
+        if (conn is null)
+            return [];
+
+        return conn.Query("SELECT connection_id, name, server, database_name, last_seen_utc FROM connections ORDER BY last_seen_utc DESC")
+                   .Select(r => new StoredConnection(Guid.Parse((string)r.connection_id), (string)r.name, (string)r.server,
+                                                     (string)r.database_name, HistoryStore.FromEpochMs((long)r.last_seen_utc)))
+                   .ToList();
+    }
 
     /// <summary>Live Metrics samples of one connection, averaged per bucket, oldest first.</summary>
     public IReadOnlyList<MetricHistoryPoint> ReadMetrics(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket)
@@ -357,9 +378,9 @@ public sealed class HistoryReader(string path) : IHistoryReader
         var conn = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource     = Path,
-            // Not ReadOnly: a reader of a WAL file may need to set up its shared-memory index.
-            // query_only below still refuses any change.
-            Mode           = SqliteOpenMode.ReadWrite,
+            // Not ReadOnly for a live file: a reader of a WAL file may need to set up its
+            // shared-memory index. query_only below still refuses any change.
+            Mode           = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite,
             // A pooled connection would keep the file open, stopping the writer from moving a
             // damaged file aside.
             Pooling        = false,
@@ -425,6 +446,10 @@ public sealed record CounterHistoryBucket(DateTime TimeUtc, IReadOnlyDictionary<
 /// every score in it. A single score when read with <see cref="HistoryReader.ReadLastReachableScore"/>.
 /// </summary>
 public sealed record ScoreHistoryPoint(DateTime TimeUtc, int Score, bool Reachable);
+
+/// <summary>A connection a history file has samples of (#172), as it was last saved there.</summary>
+/// <param name="Database">Its database label, as the app shows it: "(default database)" for none.</param>
+public sealed record StoredConnection(Guid Id, string Name, string Server, string Database, DateTime LastSeenUtc);
 
 /// <summary>An alert read from the history, with the name its connection was last saved under.</summary>
 public sealed record StoredAlert(Alert Alert, string ConnectionName);

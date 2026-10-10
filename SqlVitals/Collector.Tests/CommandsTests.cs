@@ -188,6 +188,21 @@ public sealed class CommandsTests : IDisposable
     }
 
     [Fact]
+    public async Task Set_TurnsTheShareCopyOnAndOff_InAFolderOfItsOwn()
+    {
+        var (code, console) = await Run("set --share-copy-minutes 5 --share-copy-folder D:\\VitalsShare");
+
+        Assert.Equal(0, code);
+        Assert.Equal((5, "D:\\VitalsShare"), (Saved().ShareCopyMinutes, Saved().ShareCopyFolder));
+        Assert.Contains("a share copy every 5 min", console.Text);
+        Assert.Contains("Share copy every 5 min: D:\\VitalsShare\\history-share.db", (await Run("list")).Console.Text);
+
+        Assert.Equal(2, (await Run("set --share-copy-minutes 3")).Code);
+        Assert.Equal(0, (await Run("set --share-copy-minutes 0")).Code);
+        Assert.Equal(0, Saved().ShareCopyMinutes);
+    }
+
+    [Fact]
     public async Task List_SaysWhatNeedsFixing_WithoutASecret()
     {
         await Run("add-server --server sql01 --sql-login vitals --password-stdin", new FakeConsole("Pa55word"));

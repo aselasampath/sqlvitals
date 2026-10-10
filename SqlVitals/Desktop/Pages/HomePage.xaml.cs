@@ -64,9 +64,15 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
     // The top bar: what this page read, what went wrong, and its kind or window (#166).
     private readonly IShellStatus _shell;
 
-    public HomePage(MonitoringManager monitoring, ConnectionSettingsService settings, IShellStatus? shell = null)
+    // What Start does (#172): asks whether the collector service should watch it.
+    private readonly IWatchStarter _starter;
+
+    /// <param name="starter">What Start does (#172); straight to monitoring when null (tests).</param>
+    public HomePage(MonitoringManager monitoring, ConnectionSettingsService settings, IShellStatus? shell = null,
+                    IWatchStarter? starter = null)
     {
         _shell = shell ?? CompositionRoot.Get<IShellStatus>();
+        _starter = starter ?? new DirectWatchStarter(monitoring);
         _monitoring = monitoring;
         _settings   = settings;
         InitializeComponent();
@@ -200,7 +206,9 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
             FailingSince:       session?.FailingSince,
             LastError:          session?.LastError,
             NotMonitoredReason: session is { IsRunning: true } ? null : monitoring.NotMonitoredReason(conn.Id),
-            CanStart:           monitoring.CanStart(conn.Id));
+            CanStart:           monitoring.CanStart(conn.Id),
+            // A collector watches it (#172): the tile says what the collector's history says.
+            Elsewhere:          session is { IsRunning: true } ? null : monitoring.WatchFor(conn.Id));
     }
 
     // A sample, a failure, or a start or stop of one connection: only its tile changes.
@@ -293,7 +301,7 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
             InvestigateRequested?.Invoke(alert);
     }
 
-    private void TileAction_Click(object sender, RoutedEventArgs e)
+    private async void TileAction_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: HomeTile { Tile: var tile } })
             return;
@@ -301,7 +309,7 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
         switch (tile.Action)
         {
             case TileAction.Start:
-                _monitoring.Start(tile.Id, ActivitySources.Home);
+                await _starter.StartAsync(tile.Id, ActivitySources.Home);
                 break;
 
             case TileAction.Retry:
@@ -339,7 +347,7 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
         var toggle = Item(monitoring ? "Stop monitoring" : "Start monitoring", () =>
         {
             if (monitoring) _monitoring.Stop(id, ActivitySources.Home);
-            else            _monitoring.Start(id, ActivitySources.Home);
+            else            _ = _starter.StartAsync(id, ActivitySources.Home);
         });
         toggle.IsEnabled = monitoring || _monitoring.CanStart(id);
         toggle.ToolTip   = monitoring ? "Stop monitoring this connection until SqlVitals exits. Its active alerts end."

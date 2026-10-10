@@ -107,6 +107,14 @@ public static class CompositionRoot
                                              s.GetRequiredService<ILogger<MonitoringManager>>());
             })
             .AddSingleton<IWebhookSender, HttpWebhookSender>()
+            // The optional collector service (#172): what it watches, handing servers to it, starting it.
+            .AddSingleton<ICollectorControl, WindowsCollectorControl>()
+            .AddSingleton(s => new CollectorLink(s.GetRequiredService<ICollectorControl>(), s.GetRequiredService<ConnectionSettingsService>(),
+                                                 s.GetRequiredService<IUiDispatcher>(), s.GetRequiredService<TimeProvider>(),
+                                                 s.GetRequiredService<ILogger<CollectorLink>>()))
+            .AddSingleton<IWatchStarter>(s => new WatchStarter(s.GetRequiredService<MonitoringManager>(), s.GetRequiredService<CollectorLink>(),
+                                                               s.GetRequiredService<ConnectionSettingsService>(), s.GetRequiredService<IDialogService>(),
+                                                               s.GetRequiredService<ILogger<WatchStarter>>()))
             // Status changes are raised where the app is built: the UI thread.
             .AddSingleton(s => new ChatNotificationService(s.GetRequiredService<IWebhookSender>(),
                                                            log: s.GetRequiredService<ILogger<ChatNotificationService>>().Info,
