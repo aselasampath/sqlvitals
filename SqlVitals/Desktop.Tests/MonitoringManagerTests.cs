@@ -57,6 +57,18 @@ public sealed class MonitoringManagerTests : IDisposable
         timer.Stop();
     }
 
+    // Runs the dispatcher until something happened, or fails after a while. The samples come from
+    // the thread pool since #171, so a fixed wait would be too short when the machine is busy.
+    private static void PumpUntil(Func<bool> happened)
+    {
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (!happened())
+        {
+            Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), "Timed out waiting for monitoring.");
+            Pump(TimeSpan.FromMilliseconds(50));
+        }
+    }
+
     [Fact]
     public void Off_StartingAndSwitching_SendNothingToAnyServer()
     {
@@ -92,7 +104,7 @@ public sealed class MonitoringManagerTests : IDisposable
         {
             monitoring.Sync(Store(false, active, background), ActivitySources.AutomaticAtStartup);
             monitoring.Start(background.Id, ActivitySources.ConnectionSelector);
-            Pump(TimeSpan.FromSeconds(2.5));
+            PumpUntil(() => CallsTo(nameof(IWaitStatsRepository.GetLiveMetricsAsync)).Contains("sqlBackground"));
 
             Assert.True(monitoring.IsMonitoring(background.Id));
             Assert.False(monitoring.IsMonitoring(active.Id));
@@ -233,7 +245,7 @@ public sealed class MonitoringManagerTests : IDisposable
         monitoring.AlertsChanged += (id, changes) => toWindow.Add((id, changes));
         monitoring.AlertsRaised  += (id, changes) => toServices.Add((id, changes));
         monitoring.Sync(HotStore(conn), ActivitySources.AutomaticAtStartup);
-        Pump(TimeSpan.FromSeconds(1.5));
+        PumpUntil(() => toWindow.Count > 0);
 
         var (id, changes) = Assert.Single(toServices);
         Assert.Equal(conn.Id, id);
@@ -254,7 +266,7 @@ public sealed class MonitoringManagerTests : IDisposable
         monitoring.AlertsRaised  += (_, _) => heard.Add("service");
         monitoring.AlertsChanged += (_, _) => heard.Add("window");
         monitoring.Sync(HotStore(conn), ActivitySources.AutomaticAtStartup);
-        Pump(TimeSpan.FromSeconds(1.5));
+        PumpUntil(() => heard.Count >= 2);
 
         Assert.Equal(["service", "window"], heard);
         Assert.NotEqual(HealthLevel.Unavailable, monitoring.Get(conn.Id)!.Health);
@@ -272,7 +284,7 @@ public sealed class MonitoringManagerTests : IDisposable
         monitoring.AlertsRaised  += (_, changes) => heard.Add($"service {changes[0].Kind} {changes[0].Alert.EndReason}");
         monitoring.AllStopped    += () => heard.Add("all stopped");
         monitoring.Sync(HotStore(conn), ActivitySources.AutomaticAtStartup);
-        Pump(TimeSpan.FromSeconds(1.5));
+        PumpUntil(() => heard.Count >= 2);
 
         monitoring.Dispose();
 
@@ -294,7 +306,7 @@ public sealed class MonitoringManagerTests : IDisposable
         monitoring.AllStopped      += chat.OnAllStopped;
         monitoring.WatchingChanged += chat.OnWatchingChanged;
         monitoring.Sync(store, ActivitySources.AutomaticAtStartup);
-        Pump(TimeSpan.FromSeconds(1.5));
+        PumpUntil(() => monitoring.ActiveAlerts.Count > 0);
         // Pump drives this thread's dispatcher and the chat queue finishes on the thread pool, so the
         // wait can't deadlock; an await would leave the dispatcher thread.
 #pragma warning disable xUnit1031
@@ -387,7 +399,7 @@ public sealed class MonitoringManagerTests : IDisposable
         using (var first = Create())
         {
             first.Sync(Store(true, a), ActivitySources.AutomaticAtStartup);
-            Pump(TimeSpan.FromSeconds(1.5)); // one sample, so one score in the history
+            PumpUntil(() => first.Get(a.Id)?.Score is not null); // one sample, so one score in the history
         }
 
         var (monitoring, heard) = Watched();
