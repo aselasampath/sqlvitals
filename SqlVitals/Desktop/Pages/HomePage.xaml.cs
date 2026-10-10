@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -34,6 +35,10 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
     public static readonly TimeSpan TrendSpan = TimeSpan.FromHours(1);
 
     private static readonly TimeSpan TrendBucket = TimeSpan.FromMinutes(1);
+
+    /// <summary>How far back a tile says how much was monitored (#170), and the buckets it's read in.</summary>
+    public static readonly TimeSpan CoverageSpan   = TimeSpan.FromHours(24);
+    public static readonly TimeSpan CoverageBucket = TimeSpan.FromMinutes(5);
 
     // The narrowest a tile gets before the grid drops a column.
     private const double MinTileWidth = 300;
@@ -120,7 +125,10 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
     /// <summary>The tiles in the order shown, without "+ Add a connection".</summary>
     internal IReadOnlyList<HomeTile> TilesShown => _tiles;
 
-    /// <summary>Reads the last hour of every tile's score from the history, for the sparklines.</summary>
+    /// <summary>
+    /// Reads the last hour of every tile's score from the history, for the sparklines, and the
+    /// last day's, for how much of it was monitored (#170).
+    /// </summary>
     public async Task RefreshAsync()
     {
         Build();
@@ -131,12 +139,14 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
         var toUtc   = DateTime.UtcNow;
         var fromUtc = toUtc - TrendSpan;
 
-        IReadOnlyDictionary<Guid, IReadOnlyList<ScorePoint>> history;
+        IReadOnlyDictionary<Guid, (IReadOnlyList<ScorePoint> Hour, Coverage Day)> history;
         try
         {
             history = await Task.Run(() => ids.ToDictionary(
                 id => id,
-                id => (IReadOnlyList<ScorePoint>)reader.ReadScores(id, fromUtc, toUtc, TrendBucket).Select(ScorePoint.From).ToList()));
+                id => ((IReadOnlyList<ScorePoint>)reader.ReadScores(id, fromUtc, toUtc, TrendBucket).Select(ScorePoint.From).ToList(),
+                       Coverage.Of(reader.ReadScores(id, toUtc - CoverageSpan, toUtc, CoverageBucket).Select(p => p.TimeUtc),
+                                   toUtc - CoverageSpan, toUtc, CoverageBucket))));
         }
         catch (HistorySchemaTooNewException)
         {
@@ -147,8 +157,8 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
             return;
 
         foreach (var tile in _tiles)
-            if (history.TryGetValue(tile.Tile.Id, out var points))
-                tile.SetHistory(points);
+            if (history.TryGetValue(tile.Tile.Id, out var read))
+                tile.SetHistory(read.Hour, read.Day);
     }
 
     // ── Building and updating the tiles ───────────────────────────────────────
@@ -459,7 +469,16 @@ public sealed class HomeTile : INotifyPropertyChanged
     }
 
     [SuppressMessage("Performance", "CA1822", Justification = "Bound in XAML; a binding needs an instance member")]
-    public string TrendToolTip => "Health score over the last hour";
+    public string TrendToolTip => "Health score over the last hour. Grey: not monitored. Red: the server couldn't be reached.";
+
+    /// <summary>"Monitored 14 h of the last 24 h" (#170); empty until the history is read.</summary>
+    public string CoverageText => Coverage?.Text() ?? string.Empty;
+
+    /// <summary>The longest gap, when there was one.</summary>
+    public string? CoverageToolTip => Coverage?.LongestGapText(t => t.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture));
+
+    /// <summary>How much of the last day was monitored (#170); null until the history is read.</summary>
+    public Coverage? Coverage { get; private set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -471,10 +490,13 @@ public sealed class HomeTile : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
-    public void SetHistory(IReadOnlyList<ScorePoint> history)
+    public void SetHistory(IReadOnlyList<ScorePoint> history, Coverage? coverage = null)
     {
         _history = history;
+        Coverage = coverage ?? Coverage;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Trend)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CoverageText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CoverageToolTip)));
     }
 
     // Each new score once; none older than the sparkline shows.

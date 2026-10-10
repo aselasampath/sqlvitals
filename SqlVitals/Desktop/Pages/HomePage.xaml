@@ -161,9 +161,15 @@
                                 <!-- Monitored: the score, its last hour, why it's lower, and a bar per check -->
                                 <StackPanel DockPanel.Dock="Top" Visibility="{Binding ScoreVisibility}">
                                     <DockPanel>
-                                        <controls:ScoreChart DockPanel.Dock="Right" Width="120" Height="36" VerticalAlignment="Bottom"
-                                                             Data="{Binding Trend}" LineBrush="{Binding StatusBrush}"
-                                                             ToolTip="{Binding TrendToolTip}"/>
+                                        <StackPanel DockPanel.Dock="Right" VerticalAlignment="Bottom">
+                                            <controls:ScoreChart Width="120" Height="36" HorizontalAlignment="Right"
+                                                                 Data="{Binding Trend}" LineBrush="{Binding StatusBrush}"
+                                                                 ToolTip="{Binding TrendToolTip}"/>
+                                            <!-- How much of the last day was watched (#170) -->
+                                            <TextBlock Text="{Binding CoverageText}" FontSize="10" HorizontalAlignment="Right"
+                                                       Foreground="{StaticResource TextMuted}" Margin="0,2,0,0"
+                                                       ToolTip="{Binding CoverageToolTip}"/>
+                                        </StackPanel>
                                         <TextBlock VerticalAlignment="Bottom">
                                             <Run Text="{Binding Tile.ScoreText, Mode=OneWay}" FontSize="38" FontWeight="Bold"
                                                  Foreground="{Binding StatusBrush, Mode=OneWay}"/><Run
