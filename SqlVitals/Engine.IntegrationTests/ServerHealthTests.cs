@@ -95,7 +95,8 @@ public class ServerHealthTests(SqlServerFixture server)
         var first = await _repo.GetServerChecksAsync(new ServerChecksRequest(Rpo, null, TimeSpan.FromDays(3650)));
 
         Assert.Equal((null, null, null), (first.VolumesNoData, first.BackupsNoData, first.JobsNoData));
-        Assert.NotEmpty(first.Volumes!);
+        Assert.True(first.Volumes!.Count > 0, "No volume: " + await server.DescribeAsync(ServerChecksRepository.VolumesSql) +
+                    " · " + await server.DescribeAsync("SELECT TOP (3) vs.* FROM sys.master_files mf CROSS APPLY sys.dm_os_volume_stats(mf.database_id, mf.file_id) vs"));
         Assert.All(first.Volumes!, v => Assert.True(v.TotalGb > 0 && v.FreeGb >= 0 && v.FreeGb <= v.TotalGb, $"{v}"));
         // Backed up just now: full, differential and log.
         Assert.DoesNotContain(SqlServerFixture.Database, first.PastRpo!);
