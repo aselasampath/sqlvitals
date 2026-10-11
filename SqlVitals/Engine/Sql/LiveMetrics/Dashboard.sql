@@ -49,9 +49,10 @@
     FROM (VALUES (1)) AS one (x)
     -- The fullest log, its size and why it can't be reused yet (#173). A small log SQL Server can
     -- reuse (nothing to wait for, or only a checkpoint) sorts last, so a log that is filling up
-    -- for a reason isn't hidden behind one that is simply sized tight. A database sys.databases
-    -- doesn't list (a hidden system one, as SQL Server 2025 has) sorts after the ones it does; on
-    -- Azure SQL Database, whose counters name the physical database, none match and none move.
+    -- for a reason isn't hidden behind one that is simply sized tight. The hidden system databases
+    -- of SQL Server 2022+ (model_msdb, model_replicatedmaster) are left out, and any other database
+    -- sys.databases doesn't list sorts after the ones it does; on Azure SQL Database, whose
+    -- counters name the physical database, none match and none move.
     OUTER APPLY (
         SELECT TOP (1)
             u.cntr_value                  AS LogUsedPct,
@@ -64,7 +65,7 @@
          AND s.counter_name = 'Log File(s) Size (KB)'
         LEFT JOIN sys.databases d ON d.name = RTRIM(u.instance_name)
         WHERE u.counter_name = 'Percent Log Used' AND u.object_name LIKE '%:Databases%'
-          AND u.instance_name NOT IN ('_Total','mssqlsystemresource')
+          AND u.instance_name NOT IN ('_Total','mssqlsystemresource','model_msdb','model_replicatedmaster')
         ORDER BY CASE WHEN d.log_reuse_wait_desc IN ('NOTHING','CHECKPOINT') AND s.cntr_value < @SmallLogKb THEN 2
                       WHEN d.name IS NULL THEN 1 ELSE 0 END,
                  u.cntr_value DESC, u.instance_name
