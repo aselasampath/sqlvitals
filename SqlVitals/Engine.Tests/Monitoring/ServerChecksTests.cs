@@ -193,6 +193,30 @@ public sealed class ServerChecksTests
         Assert.Contains("@@SERVERNAME", Engine.Repositories.ServerChecksRepository.JobHistoryEndSql);
     }
 
+    [Fact]
+    public void Volumes_ByMountPoint_OrByPathWhereLinuxGivesNone()
+    {
+        static dynamic Row(string? mount, string path, long total, long free)
+        {
+            dynamic row = new System.Dynamic.ExpandoObject();
+            row.Volume = mount; row.PhysicalName = path; row.TotalBytes = total; row.FreeBytes = free;
+            return row;
+        }
+        const long Gb = 1L << 30;
+
+        var volumes = Engine.Repositories.ServerChecksRepository.ToVolumes(
+        [
+            Row(@"D:\", @"D:\Data\Sales.mdf", 100 * Gb, 40 * Gb),
+            Row(@"D:\", @"D:\Data\Hr.mdf", 100 * Gb, 39 * Gb),          // read a moment later: the least counts
+            Row(null, "/var/opt/mssql/data/master.mdf", 72 * Gb, 11 * Gb),
+            Row(null, "/var/opt/mssql/data/model.mdf", 72 * Gb, 11 * Gb),
+            Row(null, "/var/opt/mssql/data/x.mdf", 0, 0),                  // no size: left out
+        ]);
+
+        Assert.Equal([("/var/opt/mssql/data/", 72.0, 11.0), (@"D:\", 100.0, 39.0)],
+                     volumes.Select(v => (v.Volume, v.TotalGb, v.FreeGb)));
+    }
+
     // ── Schedule and age ──────────────────────────────────────────────────────
 
     [Fact]

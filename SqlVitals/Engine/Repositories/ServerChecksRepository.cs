@@ -1,5 +1,6 @@
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Errors;
+using SqlVitals.Engine.FileIo;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Repositories;
@@ -12,8 +13,8 @@ namespace SqlVitals.Engine.Repositories;
 /// </summary>
 public class ServerChecksRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IServerChecksRepository
 {
-    // One row per volume holding a file of an online database; a volume's size is the same on
-    // every row, and its free space the least seen.
+    // One row per file of an online database, with its volume's size and free space. Grouped
+    // into volumes here (ToVolumes): on Linux the mount point is NULL, so the file's path decides.
     internal static readonly string VolumesSql = SqlScripts.Get("ServerChecks/Volumes");
 
     // The newest job history row, read first: failures after it wait for the next read. With the
@@ -101,10 +102,17 @@ public class ServerChecksRepository(SqlTarget target, ServerCapabilitiesCache? c
             ? after
             : null;
 
-    /// <summary>The volumes query's rows, by mount point; a row without one is left out.</summary>
+    /// <summary>
+    /// The volumes query's rows (one per file) as volumes: by mount point, or where SQL Server on
+    /// Linux reports none, by the file's path as the File I/O page names it. A volume's size is the
+    /// largest seen, its free space the least; a row with no size is left out.
+    /// </summary>
     internal static IReadOnlyList<VolumeSpace> ToVolumes(IEnumerable<dynamic> rows) => rows
-        .Where(r => r.Volume is string { Length: > 0 })
-        .Select(r => new VolumeSpace((string)r.Volume, (long)r.TotalBytes / BytesPerGb, (long)r.FreeBytes / BytesPerGb))
+        .Select(r => (Volume: (string?)r.Volume is { Length: > 0 } mount ? mount : FileIoCounters.VolumeFromPath((string?)r.PhysicalName),
+                      Total: (long?)r.TotalBytes ?? 0, Free: (long?)r.FreeBytes ?? 0))
+        .Where(r => r.Volume.Length > 0 && r.Total > 0)
+        .GroupBy(r => r.Volume, StringComparer.OrdinalIgnoreCase)
+        .Select(g => new VolumeSpace(g.First().Volume, g.Max(r => r.Total) / BytesPerGb, g.Min(r => r.Free) / BytesPerGb))
         .OrderBy(v => v.Volume, StringComparer.OrdinalIgnoreCase)
         .ToList();
 
