@@ -86,6 +86,7 @@ public class ServerTests(SqlServerFixture server)
         Assert.False(string.IsNullOrEmpty(metrics.LogUsedDatabase));
         Assert.True(metrics.LogSizeMb > 0, $"LogSizeMb {metrics.LogSizeMb} for {metrics.LogUsedDatabase}");
         Assert.False(string.IsNullOrEmpty(metrics.LogReuseWait),
+                     $"No reuse wait for {metrics.LogUsedDatabase}. " +
                      await server.DescribeAsync("SELECT name, log_reuse_wait_desc FROM sys.databases"));
     }
 
