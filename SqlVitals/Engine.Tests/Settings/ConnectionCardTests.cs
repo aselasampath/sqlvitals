@@ -31,7 +31,7 @@ public sealed class ConnectionCardTests
         Assert.Equal((ConnectionRole.Active, "ACTIVE"), (card.Role, card.RoleLabel));
         Assert.True(card.IsActive);
         Assert.Equal(["Entra MFA", "Monitored", "Default thresholds"], card.Tags);
-        Assert.Equal((TileStatus.Warning, "Score 92 · Warning"), (card.Status, card.StateText));
+        Assert.Equal((TileStatus.Warning, "Warning: page life expectancy 95 s · score 92"), (card.Status, card.StateText));
         Assert.Equal("uat-sql01 / Sales", card.ServerLine);
     }
 
@@ -43,8 +43,8 @@ public sealed class ConnectionCardTests
 
         Assert.Equal((ConnectionRole.Background, "BACKGROUND"), (card.Role, card.RoleLabel));
         Assert.Equal(["SQL login", "Monitor in background", "Own thresholds"], card.Tags);
-        Assert.Equal((TileStatus.Critical, "Score 70 · Critical"), (card.Status, card.StateText));
-        Assert.Equal("UAT, background, score 70 · critical", card.AutomationName);
+        Assert.Equal((TileStatus.Critical, "Critical: blocking for 3 min (+1 more) · score 70"), (card.Status, card.StateText));
+        Assert.Equal("UAT, background, critical: blocking for 3 min (+1 more) · score 70", card.AutomationName);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class ConnectionCardTests
 
         Assert.Equal(ConnectionRole.Background, card.Role);
         Assert.Equal("Started by you", card.Tags[1]);
-        Assert.Equal("Score 100 · Healthy", card.StateText);
+        Assert.Equal("Healthy: every check passes · score 100", card.StateText);
     }
 
     [Fact]

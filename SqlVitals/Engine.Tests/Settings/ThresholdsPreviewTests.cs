@@ -30,6 +30,38 @@ public sealed class ThresholdsPreviewTests
     }
 
     [Fact]
+    public void AWeightChanged_PreviewsTheScoreOnTheNewWeights()
+    {
+        // Blocking weighed 0: CPU's warning is half of its 25 (20 × 100 ÷ 80).
+        var edited  = Defaults with { Weights = HealthWeights.Default.With(HealthIndicator.Blocking, 0) };
+        var preview = ThresholdsPreview.For(Uat, edited)!;
+
+        Assert.Equal((70, 88), (preview.Before, preview.After));
+        Assert.Equal(HealthLevel.Critical, preview.Regraded.Level);
+        Assert.Equal((0, 0), (preview.Regraded.Checks[1].Worth, preview.Regraded.Checks[1].PointsLost));
+    }
+
+    [Fact]
+    public void PleTurnedToFixed_PreviewsTheSampleOnTheFixedThreshold()
+    {
+        // 3,000 s on a 64 GB buffer pool: past 4,800 s scaled, fine against a fixed 300 s.
+        var latest  = ServerTileTests.Score(ServerTileTests.Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 });
+        var preview = ThresholdsPreview.For(latest, Defaults with { PageLifeExpectancyFixed = true })!;
+
+        Assert.Equal((92, 100), (preview.Before, preview.After));
+    }
+
+    [Fact]
+    public void ACheckWithNoData_StaysUnknownInThePreview()
+    {
+        var latest  = ServerTileTests.Score(ServerTileTests.Sample(tempDbPct: 0));
+        var preview = ThresholdsPreview.For(latest, Defaults.With(HealthIndicator.TempDbSpace, new HealthThreshold(1, 2)))!;
+
+        Assert.Equal(HealthLevel.Unknown, preview.Regraded.Checks.Single(c => c.Indicator == HealthIndicator.TempDbSpace).Level);
+        Assert.Equal(100, preview.After);
+    }
+
+    [Fact]
     public void Text_SaysTheScoreBeforeAndAfter_OrThatItStaysTheSame()
     {
         var previous = CultureInfo.CurrentCulture;

@@ -1,5 +1,4 @@
 using System.Globalization;
-using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Settings;
@@ -27,22 +26,15 @@ public sealed record ThresholdsPreview(int Before, int After, HealthScore Regrad
     }
 
     /// <summary>
-    /// The same figures on other thresholds, by the dot's own rule (<see cref="HealthRules.LevelOf"/>)
-    /// and the score's own weights, so the preview never disagrees with what saving would show.
+    /// The same figures on other thresholds and weights, by the dot's own rule
+    /// (<see cref="HealthRules.Regrade"/>, which scales page life expectancy and spares a small
+    /// reusable log as a sample's grading does), so the preview never disagrees with what saving
+    /// would show.
     /// </summary>
     public static HealthScore Regrade(HealthScore score, HealthThresholds thresholds)
     {
-        var readings = score.Checks.Select(check =>
-        {
-            var reading   = check.Reading;
-            var threshold = thresholds.Get(reading.Indicator);
-            var level     = HealthRules.LevelOf(reading.Indicator, reading.Value, reading.Measured, threshold);
-            var reason    = level == HealthLevel.Healthy
-                ? null
-                : reading.Reason ?? $"{HealthThresholds.Info(reading.Indicator).Name} {AlertText.Value(reading.Indicator, reading.Value)}";
-            return reading with { Level = level, Limits = threshold, Reason = reason };
-        }).ToList();
-        return HealthScore.From(readings, score.Time);
+        var readings = score.Checks.Select(check => HealthRules.Regrade(check.Reading, thresholds)).ToList();
+        return HealthScore.From(readings, score.Time, thresholds.Weights);
     }
 
     /// <summary>"On the latest sample, UAT would score 70 → 80", or "…would still score 70".</summary>

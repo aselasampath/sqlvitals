@@ -59,13 +59,13 @@ A bar along the bottom saves **every tab at once**: **Discard**, **Save**, and *
 
 ### A connection's own thresholds
 
-![A connection's Health thresholds tab, with the preview](images/settings/connection-thresholds.png)
+![A connection's Health thresholds tab: its own thresholds and weights, with the preview](images/settings/connection-thresholds.png)
 
 **Use its own health thresholds** is a switch. Off, the table shows the [default thresholds](#health-thresholds) read-only, with a link to them; on, it starts from them and you can edit them for this connection alone, e.g. for a server that always runs hot.
 
-The table is the same Checks table as the score's breakdown (click a server's score): **Check, Now, Warning, Critical, Weight, Points**. Under each check's name is the default, e.g. *Default: ≥ 75 % / ≥ 90 %*; a box that differs from it has an accent border. Leave a box blank to turn that level off. **Reset to defaults** puts the defaults back in the boxes.
+The table is the same Checks table as the score's breakdown (click a server's score): **Check, Now, Warning, Critical, Weight, Points**. Under each check's name is the default, e.g. *Default: ≥ 75 % / ≥ 90 % · weight 20*; a box that differs from it has an accent border. Leave a threshold blank to turn that level off. From 0.75.0 the **Weight** is a box too, and page life expectancy has **Per 4 GB of buffer pool** under its name (see [Health thresholds](#health-thresholds)). **Reset to defaults** puts the defaults back in the boxes.
 
-While you type, **Now** and **Points** grade the connection's latest sample on what's in the boxes, and the header says what it would score: *On the latest sample, UAT would score 70 → 80*. It's graded by the same rules as the health dot, so saving shows the same. With no sample (the connection isn't monitored, or can't be reached) there's no preview.
+While you type, **Now** and **Points** grade the connection's latest sample on what's in the boxes, and the header says what it would score: *On the latest sample, UAT would score 70 → 80*. It's graded by the same rules as the health dot, so saving shows the same. A check the server didn't report shows *No data* and a dash for its points: it isn't scored. With no sample (the connection isn't monitored, or can't be reached) there's no preview.
 
 ## Monitoring & history
 
@@ -86,9 +86,16 @@ See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md) a
 
 ## Health thresholds
 
-![Settings, Health thresholds](images/settings/health-thresholds.png)
+![Settings, Health thresholds: a threshold and a weight per check, page life expectancy per 4 GB of buffer pool, and the preview](images/settings/health-thresholds.png)
 
-The thresholds every connection without [its own](#a-connections-own-thresholds) is graded on, in the same table: a **Warning** and **Critical** box per check, with its **Weight**. Leave a box blank to turn that level off; a box that differs from SqlVitals' own defaults has an accent border, and **Reset to defaults** puts those back.
+The thresholds every connection without [its own](#a-connections-own-thresholds) is graded on, in the same table: a **Warning** and **Critical** box per check, and its **Weight**. Leave a threshold blank to turn that level off; a box that differs from SqlVitals' own defaults has an accent border, and **Reset to defaults** puts those back.
+
+From 0.75.0 (#173):
+
+- **Weight** (0 to 100) is how much the check counts in the [health score](Health-Dot-and-Background-Monitoring.md#change-the-weights). Weights are relative: the score is always out of 100, shared out over the checks that reported. **0** leaves a check out of the score while its thresholds still colour the dot and raise alerts. At least one weight must be above 0. The defaults are 20, 20, 16, 12, 20 and 12, as before.
+- **Per 4 GB of buffer pool**, under page life expectancy, is on by default: its boxes are seconds per 4 GB, so 300 means 4,800 s on a server with 64 GB of buffer pool and 150 s on one with 2 GB. Turn it off for a fixed number of seconds.
+- Under the table, every monitored connection on these thresholds says what it would score on what's typed: *On the latest sample, UAT would score 70 → 80*.
+- Each change is logged in the [activity log](#activity-log): *Health weight: CPU* 20 → 0, *Health threshold: Page life expectancy scaling* Per 4 GB of buffer pool → Fixed. A connection's own are *Own health weight: …*.
 
 This category keeps an explicit **Save** bar, so a half-typed threshold never grades a sample: **Save** checks every box and applies them to every connection without its own, straight away; **Discard** puts back what's saved. Leaving with unsaved thresholds asks first. See [Health Dot and Background Monitoring](Health-Dot-and-Background-Monitoring.md).
 

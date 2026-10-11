@@ -297,7 +297,7 @@ public sealed class SettingsPageTests : IDisposable
 
         Assert.Equal(["Down", "Hot", "Quiet"], cards.Select(c => c.Name));
         Assert.Equal([ConnectionRole.Background, ConnectionRole.Active, ConnectionRole.Off], cards.Select(c => c.Role));
-        Assert.Equal(["Unreachable · can't connect", "Score 80 · Critical", "No score: not monitored"], cards.Select(c => c.StateText));
+        Assert.Equal(["Unreachable · can't connect", "Critical: CPU at 99 % · score 80", "No score: not monitored"], cards.Select(c => c.StateText));
         Assert.Equal(["Windows auth", "Monitor in background", "Default thresholds"], cards[0].Tags);
         Assert.Equal(["Windows auth", "Monitored", "Default thresholds"], cards[1].Tags);
         Assert.Equal(["Windows auth", "Not monitored", "Default thresholds"], cards[2].Tags);
@@ -563,6 +563,65 @@ public sealed class SettingsPageTests : IDisposable
         Assert.Equal(70, _settings.Load().HealthThresholds.CpuPct!.Warning);
         Assert.False(category.IsDirty);
         Assert.Equal(70, _monitoring!.Get(_hot.Id)!.Thresholds.CpuPct!.Warning);
+    });
+
+    [Fact]
+    public void TheDefaultThresholds_PreviewTheWeights_SaveThem_AndLogThem() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
+        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var logged = new List<ActivityEntry>();
+        _settings!.Changed += logged.AddRange;
+
+        // CPU at 99 % costs Hot 20 points; weighted 0, it costs none (#173).
+        Assert.Equal(Visibility.Visible, category.TxtPreview.Visibility);
+        Assert.Equal("On the latest sample, Hot would still score 80", category.TxtPreview.Text);
+        category.GlobalThresholds.WeightBox(HealthIndicator.Cpu).Text = "0";
+        Assert.True(category.IsDirty);
+        Assert.Equal("On the latest sample, Hot would score 80 → 100", category.TxtPreview.Text);
+
+        Assert.True(category.Save());
+        Assert.Equal(0, _settings.Load().HealthThresholds.Weight(HealthIndicator.Cpu));
+        Assert.Equal(0, _monitoring!.Get(_hot.Id)!.Thresholds.Weight(HealthIndicator.Cpu));
+        Assert.Equal(100, _monitoring.Get(_hot.Id)!.Score!.Value);
+        var row = Assert.Single(logged, r => r.Setting == "Health weight: CPU");
+        Assert.Equal(("20", "0"), (row.OldValue, row.NewValue));
+        Assert.Equal(SettingPlace.In(SettingsCategory.Thresholds), SettingsNav.PlaceOf(row.Setting!));
+    });
+
+    [Fact]
+    public void TheDefaultThresholds_PleScaling_IsSaved_AndLogged() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
+        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var logged = new List<ActivityEntry>();
+        _settings!.Changed += logged.AddRange;
+        Assert.True(category.GlobalThresholds.PleScaled.IsChecked);
+
+        category.GlobalThresholds.PleScaled.IsChecked = false;
+        Assert.True(category.IsDirty);
+        Assert.True(category.Save());
+
+        Assert.False(_settings.Load().HealthThresholds.ScalesPageLifeExpectancy);
+        var row = Assert.Single(logged, r => r.Setting == "Health threshold: Page life expectancy scaling");
+        Assert.Equal(("Per 4 GB of buffer pool", "Fixed"), (row.OldValue, row.NewValue));
+    });
+
+    [Fact]
+    public void Weights_AllZero_OrOutOfRange_AreNotSaved() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
+        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var editor = category.GlobalThresholds;
+
+        editor.WeightBox(HealthIndicator.Cpu).Text = "101";
+        Assert.False(category.Save());
+        Assert.Equal("CPU: enter a weight from 0 to 100; 0 leaves it out of the score.", category.TxtStatus.Text.TrimStart('✗', ' ', '⚠'));
+
+        foreach (var indicator in Enum.GetValues<HealthIndicator>())
+            editor.WeightBox(indicator).Text = "0";
+        Assert.False(category.Save());
+        Assert.Equal(HealthWeights.Default, _settings!.Load().HealthThresholds.Weights);
     });
 
     [Fact]

@@ -76,7 +76,7 @@ public sealed class WorkspaceShellTests
         Assert.Equal("Alerts (3 active)", AutomationProperties.GetName(shell.Rail.Page("Alerts")));
         Assert.Equal(Visibility.Visible, shell.Rail.ServerMark.Visibility);
         Assert.Equal("84", shell.Rail.ServerScore.Text);
-        Assert.Equal("Server PROD-SQL01, health score 84: show what lowered it", AutomationProperties.GetName(shell.Rail.ServerMark));
+        Assert.Equal("Server PROD-SQL01, Warning, health score 84: show what lowered it", AutomationProperties.GetName(shell.Rail.ServerMark));
         FrameworkElement? scoreAnchor = null;
         shell.ScoreRequested += anchor => scoreAnchor = anchor;
         Click(shell.Rail.ServerMark);

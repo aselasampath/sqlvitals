@@ -489,6 +489,8 @@ public sealed class MonitoringManagerTests : IDisposable
         Called      = method => calls.Enqueue((server, method)),
         GetLiveMetricsAsync = () => Task.FromResult(new LiveMetricSnapshot(DateTime.UtcNow, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 99,
                                                                            PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
-                                                                           0, 0, 0, 0, 0, 0, 0)),
+                                                                           0, 0, 0, 0, 0, 0, 0,
+                                                                           // It reports its log and TempDB, so all six checks are scored (#173).
+                                                                           LogUsedPct: 5, LogUsedDatabase: "Sales", TempDbUsedPct: 10)),
     };
 }

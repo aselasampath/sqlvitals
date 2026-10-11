@@ -18,7 +18,7 @@
 
 | Workload | Trigger | Frequency | Scope |
 |---|---|---|---|
-| **Live Metrics query** | Every **monitored** connection: those started with ▶ / Start, plus, with *Start monitoring automatically* on, the active one and those with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests`; from 0.59.0 a count of `sys.dm_os_waiting_tasks` joined to `sys.dm_exec_sessions` (user tasks waiting now) |
+| **Live Metrics query** | Every **monitored** connection: those started with ▶ / Start, plus, with *Start monitoring automatically* on, the active one and those with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests`; from 0.59.0 a count of `sys.dm_os_waiting_tasks` joined to `sys.dm_exec_sessions` (user tasks waiting now); from 0.75.0 `log_reuse_wait_desc` of the fullest log from `sys.databases` |
 | **History detail snapshot** | Same connections | Every **5 min** by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU), memory and performance counters |
 | **Screens** (Index Health, Query Store, Plan Cache, …) | A user opens the screen or presses Refresh | On demand | **Active connection only** |
 | **Query Regressions** | On demand | On demand | Query Store runtime stats, up to ~8 days; timeout raised to 2 min. From 0.62.0 the Query Store page's verdict runs the same check for its period (preset periods only) each time the page is opened, refreshed or given a new period |

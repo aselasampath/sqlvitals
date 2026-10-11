@@ -415,7 +415,9 @@ public sealed class OverviewPageTests : IDisposable
         Called      = method => calls.Enqueue((server, method)),
         GetLiveMetricsAsync = () => Task.FromResult(new LiveMetricSnapshot(DateTime.Now, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 12,
                                                                            PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
-                                                                           0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4)),
+                                                                           0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4,
+                                                                           // It reports its log and TempDB, so all six checks pass (#173).
+                                                                           LogUsedPct: 5, LogUsedDatabase: "Sales", TempDbUsedPct: 10)),
         GetDeadlockHistoryAsync = () => Task.FromResult(new DeadlockHistory(
             [Deadlock(DateTime.UtcNow.AddHours(-1)), Deadlock(DateTime.UtcNow.AddHours(-5))],
             DeadlockSource.RingBuffer, 2, 0, null, null)),

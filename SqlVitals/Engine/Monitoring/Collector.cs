@@ -410,7 +410,7 @@ public sealed class Collector : IDisposable
     {
         var (level, reasons) = HealthRules.Summarize(readings);
         _health        = level;
-        _score         = HealthScore.From(readings, _lastSuccess ?? default);
+        _score         = HealthScore.From(readings, _lastSuccess ?? default, _thresholds.Weights);
         _lastGoodScore = _score;
         _healthText    = (reasons.Count == 0
                              ? $"Healthy · CPU {sample.SqlCpuPct:0}%"

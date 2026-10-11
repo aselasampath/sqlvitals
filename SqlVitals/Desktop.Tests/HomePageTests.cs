@@ -5,11 +5,15 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Home;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Tests;
@@ -31,6 +35,9 @@ public sealed class HomePageTests : IDisposable
     private MonitoringManager?         _monitoring;
     private ConnectionSettingsService? _settings;
 
+    // Hot doesn't report TempDB, like Azure SQL Database: that check is Unknown (#173).
+    private bool _hotReportsNoTempDb;
+
     private static ConnectionSettings Conn(string server, string name, bool background = false) => new()
     {
         Server              = server,
@@ -40,9 +47,19 @@ public sealed class HomePageTests : IDisposable
         MonitorInBackground = background,
     };
 
-    private IWaitStatsRepository Repository(ConnectionSettings conn) => conn.Server == "hot"
-        ? MonitoringManagerTests.Hot(conn.Server, _calls)
-        : MonitoringManagerTests.Counting(conn.Server, _calls);
+    private IWaitStatsRepository Repository(ConnectionSettings conn)
+    {
+        if (conn.Server != "hot")
+            return MonitoringManagerTests.Counting(conn.Server, _calls);
+
+        var hot = MonitoringManagerTests.Hot(conn.Server, _calls);
+        if (_hotReportsNoTempDb)
+        {
+            var read = hot.GetLiveMetricsAsync!;
+            hot.GetLiveMetricsAsync = async () => await read() with { TempDbUsedPct = 0 };
+        }
+        return hot;
+    }
 
     // On the UI thread: the three connections saved, Hot active, monitoring started automatically,
     // and one sample collected from each monitored connection.
@@ -283,6 +300,91 @@ public sealed class HomePageTests : IDisposable
         Assert.Contains("(10 h", quiet.CoverageToolTip);
         Assert.Contains("Grey: not monitored", quiet.TrendToolTip);
     });
+
+    // ── The worst state first, and a check with no data (#173) ────────────────
+
+    [Theory]
+    [InlineData("LightTheme")]
+    [InlineData("DarkTheme")]
+    public void ATile_LeadsWithItsWorstStateAndReason_AndGreysACheckWithNoData(string theme) => UiThread.Run(() =>
+    {
+        _hotReportsNoTempDb = true;
+        var (monitoring, settings) = Setup();
+        using var themed = Themed(theme);
+
+        var page = new HomePage(monitoring, settings);
+        UiThread.Layout(page, 1100, 900);
+        UiThread.Wait(page.RefreshAsync());
+        UiThread.Layout(page, 1100, 900);
+
+        // CPU at 99 % is critical; TempDB isn't reported, so CPU is 23 of the 100 among the five
+        // checks that reported (20 × 100 ÷ 88), and all of it is lost.
+        var hot = page.TilesShown.Single(t => t.Tile.Id == _hot.Id);
+        Assert.Equal("Critical: CPU at 99 %", hot.Tile.Headline);
+        Assert.Equal("77", hot.Tile.ScoreText);
+        Assert.Equal("Lowered by CPU −23. 1 check has no data.", hot.Tile.Reason);
+        Assert.Equal(HealthLevel.Unknown, hot.Tile.Bars.Single(b => b.Indicator == HealthIndicator.TempDbSpace).Level);
+        Assert.Equal(((SolidColorBrush)HealthBrushes.Grey).Color, ((SolidColorBrush)hot.Bars.Single(b => b.Label == "TempDB").Brush).Color);
+
+        // On the tile, the headline comes before the number, in the status's colour.
+        var headline = UiThread.Find<TextBlock>(page).Single(t => t.Text == hot.Tile.Headline);
+        var number   = UiThread.Find<TextBlock>(page).Single(t => t.DataContext == hot && t.Inlines.OfType<System.Windows.Documents.Run>()
+                                                                     .Any(r => r.Text == hot.Tile.ScoreText));
+        Assert.True(headline.TranslatePoint(new Point(), page).Y < number.TranslatePoint(new Point(), page).Y);
+        Assert.Equal(((SolidColorBrush)HealthBrushes.Red).Color, ((SolidColorBrush)headline.Foreground).Color);
+        Render(page, 1100, 900, theme, "home-tile");
+
+        // Its score popup: the verdict first, the TempDB row greyed with no points, and how many were left out.
+        var breakdown = page.Breakdown;
+        breakdown.Show(hot.Tile.Name, monitoring.Get(_hot.Id)!.Score, "", paused: false);
+        UiThread.Layout(breakdown, 560, 700);
+        Assert.Equal("Critical: CPU at 99 %", breakdown.TxtVerdict.Text);
+        Assert.Equal(Visibility.Visible, breakdown.TxtLeftOut.Visibility);
+        Assert.Equal("1 check left out of the score, no data: TempDB space used. The score is out of the 5 checks that reported.",
+                     breakdown.TxtLeftOut.Text);
+        var cells = breakdown.GridChecks.Children.OfType<TextBlock>().Where(c => Grid.GetRow(c) == 6).OrderBy(Grid.GetColumn)
+                             .Select(c => c.Text).ToList();
+        Assert.Contains("TempDB space used", cells[0]);
+        Assert.Equal(["No data", "≥ 80 %", "≥ 90 %", "—", "—"], cells.Skip(1));
+        Render(breakdown, 560, 520, theme, "score-popup");
+    });
+
+    // The app's theme swapped for one test, and put back after it: pages read it as they load.
+    private static IDisposable Themed(string theme)
+    {
+        var dictionaries = Application.Current.Resources.MergedDictionaries;
+        var before = dictionaries.ToList();
+        dictionaries.Clear();
+        dictionaries.Add((ResourceDictionary)Application.LoadComponent(new Uri($"/SqlVitals.Desktop;component/Styles/{theme}.xaml", UriKind.Relative)));
+        return new Restore(() =>
+        {
+            dictionaries.Clear();
+            foreach (var dictionary in before)
+                dictionaries.Add(dictionary);
+        });
+    }
+
+    private sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
+    // To look at: %TEMP%\SqlVitalsTests\health-score\<name>-<theme>.png.
+    private static void Render(FrameworkElement element, int width, int height, string theme, string name)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", "health-score");
+        Directory.CreateDirectory(dir);
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        var back = new DrawingVisual();
+        using (var context = back.RenderOpen())
+            context.DrawRectangle((Brush)Application.Current.Resources["BgDeep"], null, new Rect(0, 0, width, height));
+        bitmap.Render(back);
+        bitmap.Render(element);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(Path.Combine(dir, $"{name}-{theme}.png"));
+        encoder.Save(file);
+    }
 
     public void Dispose()
     {

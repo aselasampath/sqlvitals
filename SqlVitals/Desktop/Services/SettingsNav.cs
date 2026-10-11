@@ -131,7 +131,7 @@ public static class SettingsNav
     /// <summary>
     /// The settings for the whole app, by the name the activity log gives them (see
     /// <see cref="SettingsActivity"/>), and where each is changed. "Health threshold: …" covers
-    /// every indicator's row.
+    /// every indicator's row and page life expectancy's scaling, "Health weight: …" every weight (#173).
     /// </summary>
     public static readonly IReadOnlyDictionary<string, SettingPlace> AppSettings = new Dictionary<string, SettingPlace>
     {
@@ -140,6 +140,7 @@ public static class SettingsNav
         ["History snapshot interval"]             = SettingPlace.In(SettingsCategory.Monitoring),
         ["History retention"]                     = SettingPlace.In(SettingsCategory.Monitoring),
         ["Health threshold"]                      = SettingPlace.In(SettingsCategory.Thresholds),
+        ["Health weight"]                         = SettingPlace.In(SettingsCategory.Thresholds),
         ["Alert samples"]                         = SettingPlace.In(SettingsCategory.Alerts),
         ["Keep running in the notification area"] = SettingPlace.In(SettingsCategory.NotificationArea),
         ["Grid density"]                          = SettingPlace.In(SettingsCategory.Appearance),
@@ -180,6 +181,7 @@ public static class SettingsNav
         ["Windows notifications"]    = ConnectionTab.Monitoring,
         ["Own health thresholds"]    = ConnectionTab.Thresholds,
         ["Own health threshold"]     = ConnectionTab.Thresholds,
+        ["Own health weight"]        = ConnectionTab.Thresholds,
     };
 
     /// <summary>Where a setting is changed, by its activity-log name; null for one that isn't placed.</summary>

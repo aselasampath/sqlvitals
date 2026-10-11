@@ -305,7 +305,8 @@ internal partial class ConnectionEditor : UserControl
         TxtResetThresholds.Visibility      = own ? Visibility.Visible : Visibility.Collapsed;
         RunOwnHelp.Text = $"For a server that always runs hot. Off: {name} uses the ";
         TxtThresholdsNote.Text = own
-            ? "Edited fields have an accent border. Leave a box blank to turn that level off. Past warning a check loses half its weight; past critical, all of it."
+            ? "Edited fields have an accent border. Leave a threshold blank to turn that level off. Weights are relative, and 0 leaves " +
+              "a check out of the score. Past warning a check loses half its points; past critical, all of them."
             : $"{name} uses the default thresholds, shown here read-only. Turn on Use its own health thresholds to change them for it alone.";
     }
 

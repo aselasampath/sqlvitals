@@ -302,7 +302,7 @@ Every query is a `.sql` file under `Engine/Sql/<Area>/`, one folder per reposito
 | Plans | `sys.dm_exec_query_stats`, `sys.dm_exec_cached_plans`, `sys.dm_exec_query_plan`, `sys.dm_exec_query_profiles`, `sys.plan_guides` |
 | Statistics | `sys.stats`, `sys.dm_db_stats_properties` |
 | Storage / config | `sys.master_files`, each database's `sys.database_files` (through `<db>.sys.sp_executesql`, for `FILEPROPERTY`), `sys.configurations`, `sys.database_scoped_configurations` |
-| Live metrics / Perfmon / health | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests` |
+| Live metrics / Perfmon / health | `sys.dm_os_performance_counters`, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests`; `sys.databases` for the fullest log's `log_reuse_wait_desc` (from 0.75.0) |
 | SP Trace | `sys.dm_xe_*` (Extended Events) or `sys.dm_exec_procedure_stats` |
 
 ### Azure SQL Database branching

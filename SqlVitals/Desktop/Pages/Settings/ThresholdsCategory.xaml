@@ -39,13 +39,16 @@
                         <TextBlock Text="Checks" Style="{StaticResource CardTitle}" />
                         <TextBlock x:Name="TxtIntro" Style="{StaticResource CardText}" Margin="0,3,0,14" />
                         <controls:HealthThresholdsEditor x:Name="GlobalThresholds" />
+                        <!-- What the monitored connections on these thresholds would score (#173) -->
+                        <TextBlock x:Name="TxtPreview" Margin="0,10,0,0" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextPrimary}" Visibility="Collapsed" />
                         <DockPanel Margin="0,10,0,0">
                             <TextBlock DockPanel.Dock="Right" FontSize="12">
                                 <Hyperlink Click="Reset_Click" Foreground="{DynamicResource Accent}"
                                            ToolTip="Put SqlVitals' own defaults back in the boxes. Save to use them.">Reset to defaults</Hyperlink>
                             </TextBlock>
                             <TextBlock Style="{StaticResource CardText}" Margin="0,0,16,0"
-                                       Text="Fields that differ from SqlVitals' own defaults have an accent border. Leave a box blank to turn that level off. Past warning a check loses half its weight; past critical, all of it." />
+                                       Text="Fields that differ from SqlVitals' own defaults have an accent border. Leave a threshold blank to turn that level off. Weights are relative: the score is always out of 100, shared over the checks that reported, and 0 leaves a check out of it. Past warning a check loses half its points; past critical, all of them." />
                         </DockPanel>
                     </StackPanel>
                 </Border>

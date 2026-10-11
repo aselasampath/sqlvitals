@@ -13,7 +13,8 @@ namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
 /// The sidebar (#124, #141): the global pages (All servers, Alerts, Export / AI), then the open
-/// server's part: its name, health dot, score and Start/Stop, and its pages in the groups of
+/// server's part: its name, health dot, score and Start/Stop, the worst state and its reason (#173),
+/// and its pages in the groups of
 /// <see cref="NavMenu"/>, one group open at a time. Settings is at the foot. With no server open,
 /// the server part says how to open one. Which page is open is up to MainWindow.
 /// </summary>
@@ -94,6 +95,7 @@ internal sealed class NavSidebar
     internal Ellipse   ServerDot    { get; private set; } = null!;
     internal TextBlock ServerName   { get; private set; } = null!;
     internal TextBlock ServerLine   { get; private set; } = null!;
+    internal TextBlock ServerVerdict { get; private set; } = null!;
     internal Button    ScoreButton  { get; private set; } = null!;
     internal TextBlock ScoreText    { get; private set; } = null!;
     internal Button    MonitorButton { get; private set; } = null!;
@@ -119,11 +121,20 @@ internal sealed class NavSidebar
         ServerHeader.ToolTip = server.ToolTipText;
         AutomationProperties.SetName(ServerHeader, $"Server {server.DisplayName}");
 
+        // "Critical: blocking for 4 min" under the server, so the score beside the dot is never unexplained.
+        ServerVerdict.Text       = server.Verdict;
+        ServerVerdict.Foreground = server.ScoreBrush;
+        ServerVerdict.Opacity    = server.ScoreOpacity;
+        ServerVerdict.ToolTip    = server.Verdict;
+        ServerVerdict.Visibility = server.Verdict.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+
         ScoreText.Text       = server.ScoreText;
         ScoreText.Foreground = server.ScoreBrush;
         ScoreButton.Opacity  = server.ScoreOpacity;
         ScoreButton.Visibility = server.ScoreVisibility;
-        AutomationProperties.SetName(ScoreButton, $"Health score {server.ScoreText}: show what lowered it");
+        AutomationProperties.SetName(ScoreButton, server.Verdict.Length == 0
+            ? $"Health score {server.ScoreText}: show what lowered it"
+            : $"{server.Verdict}, health score {server.ScoreText}: show what lowered it");
 
         MonitorButton.Content   = server.IsMonitoring ? "\uE71A" : "\uE768";
         MonitorButton.IsEnabled = server.CanToggle;
@@ -153,6 +164,8 @@ internal sealed class NavSidebar
         ServerName.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimary");
         ServerLine = new TextBlock { FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(17, 2, 0, 0) };
         ServerLine.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
+        ServerVerdict = new TextBlock { FontSize = 11, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
+                                        MaxHeight = 30, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(17, 3, 0, 0) };
 
         var top = new DockPanel();
         DockPanel.SetDock(MonitorButton, Dock.Right);
@@ -166,6 +179,7 @@ internal sealed class NavSidebar
         var body = new StackPanel();
         body.Children.Add(top);
         body.Children.Add(ServerLine);
+        body.Children.Add(ServerVerdict);
 
         var header = new Border { Child = body, Margin = new Thickness(6, 12, 6, 4), Padding = new Thickness(10, 8, 8, 8), CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1) };
         header.SetResourceReference(Border.BackgroundProperty, "BgCard");

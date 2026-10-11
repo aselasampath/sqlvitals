@@ -19,7 +19,10 @@
                 </StackPanel>
             </DockPanel>
 
-            <TextBlock x:Name="TxtLoweredBy" Margin="0,10,0,0" FontSize="12" TextWrapping="Wrap"
+            <!-- The worst state and its reason before anything else (#173): "Critical: blocking for 4 min" -->
+            <TextBlock x:Name="TxtVerdict" Margin="0,10,0,0" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
+
+            <TextBlock x:Name="TxtLoweredBy" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextPrimary}" />
 
             <!-- One row per check, built in code. -->
@@ -34,9 +37,13 @@
                 </Grid.ColumnDefinitions>
             </Grid>
 
+            <!-- Checks with no data, which the score leaves out (#173) -->
+            <TextBlock x:Name="TxtLeftOut" Margin="0,8,0,0" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
+                       Foreground="{DynamicResource TextPrimary}" />
+
             <TextBlock x:Name="TxtFootnote" Margin="0,10,0,0" FontSize="10" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextMuted}"
-                       Text="Each check is worth its weight in points. Past its warning threshold it loses half; past critical, all of it. A server that can't be reached scores 0. Thresholds: Settings → Health thresholds." />
+                       Text="Each check's weight is shared out over the checks that reported, so the score is always out of 100: that is its worth. Past its warning threshold it loses half; past critical, all of it. A check with no data is left out, never counted as passing. A server that can't be reached scores 0. Thresholds and weights: Settings → Health thresholds." />
         </StackPanel>
     </Border>
 </UserControl>

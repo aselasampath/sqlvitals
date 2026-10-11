@@ -101,13 +101,21 @@ internal static class SettingsActivity
     public static Func<ConnectionSnapshot, string?> Describe(ConnectionStore store) =>
         snapshot => store.Connections.FirstOrDefault(c => c.Id == snapshot.Id)?.Summary;
 
+    // Each check's thresholds, then how page life expectancy is judged and each check's weight
+    // (#173): "Health threshold: Page life expectancy scaling" → "Per 4 GB of buffer pool",
+    // "Health weight: CPU" → "20".
     private static IEnumerable<SettingValue> Thresholds(string prefix, HealthThresholds thresholds) =>
         HealthThresholds.Indicators.Select(info =>
         {
             var t = thresholds.Get(info.Indicator);
             return new SettingValue($"{prefix}: {info.Name}",
                                     $"warning {Level(t.Warning, info.Unit)}, critical {Level(t.Critical, info.Unit)}");
-        });
+        })
+        .Append(new SettingValue($"{prefix}: Page life expectancy scaling",
+                                 thresholds.ScalesPageLifeExpectancy ? "Per 4 GB of buffer pool" : "Fixed"))
+        .Concat(HealthThresholds.Indicators.Select(info => new SettingValue(
+            $"{prefix.Replace("threshold", "weight", StringComparison.Ordinal)}: {info.Name}",
+            thresholds.Weight(info.Indicator).ToString(CultureInfo.InvariantCulture))));
 
     private static string Level(double? value, string unit) =>
         value is { } v ? string.Format(CultureInfo.InvariantCulture, "{0:0.##}{1}", v, unit) : "off";

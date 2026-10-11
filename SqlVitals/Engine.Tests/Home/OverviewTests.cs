@@ -137,6 +137,17 @@ public sealed class OverviewTests
     }
 
     [Fact]
+    public void Headlines_ColourPageLifeByTheThresholdScaledToTheBufferPool()
+    {
+        // 3,000 s looks long, but a 64 GB buffer pool wants 4,800 s (#173).
+        var sample = ServerTileTests.Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 };
+
+        var ple = InCulture("en-GB", () => Headlines.From([sample], HealthThresholds.Default)[3]);
+
+        Assert.Equal((HealthLevel.Warning, "Warning < 4,800 s (for its 64 GB buffer pool)"), (ple.Level, ple.Note));
+    }
+
+    [Fact]
     public void Headlines_FollowTheConnectionsOwnThresholds()
     {
         var own = HealthThresholds.Default.With(HealthIndicator.Cpu, new HealthThreshold(30, null));
