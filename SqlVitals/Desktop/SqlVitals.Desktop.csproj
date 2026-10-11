@@ -10,7 +10,7 @@
     <RootNamespace>SqlVitals.Desktop</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Release number: the single source for the app, SqlVitals Setup and CI artifacts. -->
-    <Version>0.75.0</Version>
+    <Version>0.76.0</Version>
     <!-- The name Windows shows on notifications and in Task Manager. -->
     <AssemblyTitle>SqlVitals</AssemblyTitle>
     <Product>SqlVitals</Product>

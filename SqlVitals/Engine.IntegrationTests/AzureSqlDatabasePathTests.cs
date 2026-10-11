@@ -57,6 +57,17 @@ public class AzureSqlDatabasePathTests(SqlServerFixture server)
     }
 
     [SqlServerFact]
+    public async Task ServerChecks_AreUnknown_NotPassing()
+    {
+        var repo = await AsAzureSqlDatabaseAsync();
+
+        var figures = await repo.GetServerChecksAsync(new Monitoring.ServerChecksRequest(BackupRpo.Default, null, TimeSpan.FromMinutes(5)));
+
+        Assert.Equal((null, null, null), (figures.Volumes, figures.PastRpo, figures.FailedJobs));
+        Assert.All([figures.VolumesNoData, figures.BackupsNoData, figures.JobsNoData], why => Assert.Contains("Azure SQL Database", why));
+    }
+
+    [SqlServerFact]
     public async Task MemorySnapshot_IsReadFromTheCounters()
     {
         var repo = await AsAzureSqlDatabaseAsync();

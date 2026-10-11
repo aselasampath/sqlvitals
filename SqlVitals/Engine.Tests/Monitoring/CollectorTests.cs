@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Time.Testing;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
@@ -298,5 +299,121 @@ public sealed class CollectorTests
         collector.Thresholds = HealthThresholds.Default with { CpuPct = new HealthThreshold(40, 50) };
 
         Assert.Equal(HealthLevel.Critical, collector.State.Health);
+    }
+
+    // ── The slow checks (#174) ────────────────────────────────────────────────
+
+    /// <summary>The slow checks from a function; every request recorded.</summary>
+    private sealed class FakeChecks(Func<ServerChecksRequest, Task<ServerCheckFigures>> answer) : IServerChecksRepository
+    {
+        public readonly ConcurrentQueue<ServerChecksRequest> Requests = new();
+
+        public Task<ServerCheckFigures> GetServerChecksAsync(ServerChecksRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Enqueue(request);
+            return answer(request);
+        }
+    }
+
+    private static ServerCheckFigures Figures(IReadOnlyList<string>? failedJobs = null, long lastJob = 7) =>
+        new([new VolumeSpace(@"D:\", 1000, 500)], null, [], null, failedJobs ?? [], null, lastJob);
+
+    [Fact]
+    public async Task TheSlowChecks_AreReadAfterASample_AndGradedWithEverySampleAfter()
+    {
+        var time   = new FakeTimeProvider(T0);
+        var checks = new FakeChecks(_ => Task.FromResult(Figures(failedJobs: ["Nightly ETL"])));
+        using var collector = new Collector(Guid.NewGuid(), new FakeLive(time, _ => Task.FromResult(Snapshot())), 10, time: time,
+                                            checks: checks)
+        {
+            BackupRpo = new BackupRpo(TimeSpan.FromDays(1), TimeSpan.FromMinutes(15)),
+        };
+
+        await collector.CollectNowAsync();
+        // Shown as soon as they're read, without waiting for the next sample.
+        await WaitUntil(() => collector.State.Score!.Checks.Any(c => c.Indicator == HealthIndicator.FailedJobs && !c.IsUnknown) &&
+                             !collector.ReadingChecks);
+
+        var request = Assert.Single(checks.Requests);
+        Assert.Equal((null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(15)), (request.JobsAfterInstanceId, request.FirstLookBack, request.Rpo.LogMaxAge));
+        var score = collector.State.Score!;
+        Assert.Equal(Enum.GetValues<HealthIndicator>(), score.Checks.Select(c => c.Indicator));
+        Assert.Equal(HealthLevel.Warning, collector.State.Health);
+
+        // Within the interval, the samples reuse the read.
+        time.Advance(TimeSpan.FromMinutes(2));
+        await collector.CollectNowAsync();
+        Assert.Single(checks.Requests);
+        Assert.Equal(HealthLevel.Warning, collector.State.Score!.Checks.Single(c => c.Indicator == HealthIndicator.FailedJobs).Level);
+
+        // After it, the next read asks for the failures since the last job row seen.
+        time.Advance(TimeSpan.FromMinutes(3));
+        await collector.CollectNowAsync();
+        await WaitUntil(() => checks.Requests.Count == 2 && !collector.ReadingChecks);
+        Assert.Equal(7, checks.Requests.Last().JobsAfterInstanceId);
+    }
+
+    [Fact]
+    public async Task TheChecksInterval_IsTheHostsToSet()
+    {
+        var time   = new FakeTimeProvider(T0);
+        var checks = new FakeChecks(_ => Task.FromResult(Figures()));
+        using var collector = new Collector(Guid.NewGuid(), new FakeLive(time, _ => Task.FromResult(Snapshot())), 10, time: time,
+                                            checks: checks) { ChecksInterval = TimeSpan.FromMinutes(15) };
+
+        await collector.CollectNowAsync();
+        await WaitUntil(() => checks.Requests.Count == 1 && !collector.ReadingChecks);
+        time.Advance(TimeSpan.FromMinutes(10));
+        await collector.CollectNowAsync();
+        await Task.Delay(50);
+
+        Assert.Single(checks.Requests);
+        Assert.Equal(TimeSpan.FromMinutes(15), checks.Requests.Single().FirstLookBack);
+    }
+
+    [Fact]
+    public async Task WhenTheReadsFail_TheLastOneTurnsUnknown_OnceItsTooOldToTrust()
+    {
+        var time   = new FakeTimeProvider(T0);
+        var fail   = false;
+        var checks = new FakeChecks(_ => fail ? Task.FromException<ServerCheckFigures>(Failed(-2, "Timeout")) : Task.FromResult(Figures()));
+        using var collector = new Collector(Guid.NewGuid(), new FakeLive(time, _ => Task.FromResult(Snapshot())), 10, time: time,
+                                            checks: checks);
+
+        IReadOnlyList<HealthScoreCheck> Slow() =>
+            collector.State.Score!.Checks.Where(c => ServerChecks.IsServerCheck(c.Indicator)).ToList();
+
+        await collector.CollectNowAsync();
+        await WaitUntil(() => Slow().All(c => !c.IsUnknown) && !collector.ReadingChecks);
+
+        fail = true;
+        foreach (var minutes in new[] { 5, 5 })
+        {
+            time.Advance(TimeSpan.FromMinutes(minutes));
+            var before = checks.Requests.Count;
+            await collector.CollectNowAsync();
+            await WaitUntil(() => checks.Requests.Count == before + 1 && !collector.ReadingChecks);
+        }
+        // 10 min old: one missed read is fine.
+        Assert.All(Slow(), c => Assert.False(c.IsUnknown));
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        await collector.CollectNowAsync();
+
+        var slow = Slow();
+        Assert.All(slow, c => Assert.True(c.IsUnknown));
+        Assert.StartsWith("Last read 12 min ago", slow[0].Reading.Note);
+        Assert.Equal(HealthLevel.Healthy, collector.State.Health);
+    }
+
+    [Fact]
+    public async Task WithoutAChecksRepository_OnlyTheSamplesSixChecksAreGraded()
+    {
+        var time = new FakeTimeProvider(T0);
+        using var collector = new Collector(null, new FakeLive(time, _ => Task.FromResult(Snapshot())), 10, time: time);
+
+        await collector.CollectNowAsync();
+
+        Assert.Equal(HealthRules.SampleIndicators, collector.State.Score!.Checks.Select(c => c.Indicator));
     }
 }

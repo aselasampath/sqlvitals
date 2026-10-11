@@ -73,6 +73,8 @@ public sealed class OverviewPageTests : IDisposable
         for (var i = 0; i < 3; i++)
             UiThread.Wait(_monitoring.Get(_hot.Id)!.CollectNowAsync());
         UiThread.Wait(_monitoring.Get(_calm.Id)!.CollectNowAsync());
+        MonitoringManagerTests.WaitForServerChecks(_monitoring.Get(_hot.Id)!);
+        MonitoringManagerTests.WaitForServerChecks(_monitoring.Get(_calm.Id)!);
         try { UiThread.Wait(_monitoring.Get(_down.Id)!.CollectNowAsync()); }
         catch (InvalidOperationException) { /* "No server in tests.": Down can't be reached */ }
 
@@ -186,11 +188,11 @@ public sealed class OverviewPageTests : IDisposable
         Assert.Equal(Visibility.Collapsed, page.OutageRow.Visibility);
         Assert.Equal(Visibility.Visible, page.HealthRow.Visibility);
 
-        // Nothing costs points; the six checks pass, each with its figure.
+        // Nothing costs points; the nine checks pass, each with its figure.
         Assert.Empty(Rows<CostRow>(page.CostsList));
         Assert.Equal("Nothing: every check is within its thresholds.", page.TxtNoCosts.Text);
         var passing = Rows<string>(page.PassingList);
-        Assert.Equal(6, passing.Count);
+        Assert.Equal(9, passing.Count);
         Assert.Contains("Blocking · Nothing blocked", passing);
 
         // No alerts.
@@ -283,12 +285,12 @@ public sealed class OverviewPageTests : IDisposable
         var opened = new List<Route>();
         page.EvidenceRequested += opened.Add;
 
-        Assert.Equal("80", page.RunScore.Text);
+        Assert.Equal("84", page.RunScore.Text);
         var cost = Assert.Single(Rows<CostRow>(page.CostsList));
-        Assert.Equal(("CPU", "−20", "Top CPU queries →"), (cost.Name, cost.Points, cost.LinkText));
+        Assert.Equal(("CPU", "−16", "Top CPU queries →"), (cost.Name, cost.Points, cost.LinkText));
         Assert.StartsWith("Now 99", cost.Why);
-        Assert.EndsWith("all 20 of its points.", cost.Why);
-        Assert.Equal(5, Rows<string>(page.PassingList).Count);
+        Assert.EndsWith("all 16 of its points.", cost.Why);
+        Assert.Equal(8, Rows<string>(page.PassingList).Count);
 
         // As the server is now, without a window (#145).
         Click(Assert.Single(Links(page.CostsList)));
@@ -418,6 +420,8 @@ public sealed class OverviewPageTests : IDisposable
                                                                            0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4,
                                                                            // It reports its log and TempDB, so all six checks pass (#173).
                                                                            LogUsedPct: 5, LogUsedDatabase: "Sales", TempDbUsedPct: 10)),
+        // And its disk, backups and jobs, so all nine do (#174).
+        GetServerChecksAsync = FakeRepository.HealthyChecks,
         GetDeadlockHistoryAsync = () => Task.FromResult(new DeadlockHistory(
             [Deadlock(DateTime.UtcNow.AddHours(-1)), Deadlock(DateTime.UtcNow.AddHours(-5))],
             DeadlockSource.RingBuffer, 2, 0, null, null)),

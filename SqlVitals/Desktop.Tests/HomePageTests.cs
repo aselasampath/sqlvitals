@@ -76,6 +76,7 @@ public sealed class HomePageTests : IDisposable
         _monitoring.Sync(_settings.Load(), ActivitySources.AutomaticAtStartup);
 
         UiThread.Wait(_monitoring.Get(_hot.Id)!.CollectNowAsync());
+        MonitoringManagerTests.WaitForServerChecks(_monitoring.Get(_hot.Id)!);
         try { UiThread.Wait(_monitoring.Get(_down.Id)!.CollectNowAsync()); }
         catch (InvalidOperationException) { /* "No server in tests.": Down can't be reached */ }
 
@@ -159,7 +160,7 @@ public sealed class HomePageTests : IDisposable
 
         Assert.Equal(["Down", "Hot", "Quiet"], page.TilesShown.Select(t => t.Tile.Name));
         Assert.Equal([TileStatus.Unreachable, TileStatus.Critical, TileStatus.Off], page.TilesShown.Select(t => t.Tile.Status));
-        Assert.Equal("80", page.TilesShown[1].Tile.ScoreText);   // CPU past critical: −20
+        Assert.Equal("84", page.TilesShown[1].Tile.ScoreText);   // CPU past critical: −16
         Assert.True(page.TilesShown[1].Tile.IsActive);
 
         var texts = UiThread.Find<TextBlock>(page).Where(t => VisibleUpTo(t, page)).Select(t => t.Text).ToList();
@@ -168,7 +169,7 @@ public sealed class HomePageTests : IDisposable
         Assert.Contains("OFF", texts);
         Assert.Contains("ACTIVE", texts);
         Assert.Contains("3 connections · 2 monitored · sorted by most attention needed", texts);
-        Assert.Contains("Lowered by CPU −20.", texts);
+        Assert.Contains("Lowered by CPU −16.", texts);
 
         // Three tiles across, then "+ Add a connection".
         Assert.Equal(4, page.Tiles.Items.Count);
@@ -317,14 +318,14 @@ public sealed class HomePageTests : IDisposable
         UiThread.Wait(page.RefreshAsync());
         UiThread.Layout(page, 1100, 900);
 
-        // CPU at 99 % is critical; TempDB isn't reported, so CPU is 23 of the 100 among the five
-        // checks that reported (20 × 100 ÷ 88), and all of it is lost.
+        // CPU at 99 % is critical; TempDB isn't reported, so CPU is 18 of the 100 among the eight
+        // checks that reported (16 × 100 ÷ 92, rounded), and all of it is lost.
         var hot = page.TilesShown.Single(t => t.Tile.Id == _hot.Id);
         Assert.Equal("Critical: CPU at 99 %", hot.Tile.Headline);
-        Assert.Equal("77", hot.Tile.ScoreText);
-        Assert.Equal("Lowered by CPU −23. 1 check has no data.", hot.Tile.Reason);
+        Assert.Equal("82", hot.Tile.ScoreText);
+        Assert.Equal("Lowered by CPU −18. 1 check has no data.", hot.Tile.Reason);
         Assert.Equal(HealthLevel.Unknown, hot.Tile.Bars.Single(b => b.Indicator == HealthIndicator.TempDbSpace).Level);
-        Assert.Equal(((SolidColorBrush)HealthBrushes.Grey).Color, ((SolidColorBrush)hot.Bars.Single(b => b.Label == "TempDB").Brush).Color);
+        Assert.Equal(((SolidColorBrush)HealthBrushes.Grey).Color, ((SolidColorBrush)hot.Bars.Single(b => b.Label == "Temp").Brush).Color);
 
         // On the tile, the headline comes before the number, in the status's colour.
         var headline = UiThread.Find<TextBlock>(page).Single(t => t.Text == hot.Tile.Headline);
@@ -340,7 +341,7 @@ public sealed class HomePageTests : IDisposable
         UiThread.Layout(breakdown, 560, 700);
         Assert.Equal("Critical: CPU at 99 %", breakdown.TxtVerdict.Text);
         Assert.Equal(Visibility.Visible, breakdown.TxtLeftOut.Visibility);
-        Assert.Equal("1 check left out of the score, no data: TempDB space used. The score is out of the 5 checks that reported.",
+        Assert.Equal("1 check left out of the score, no data: TempDB space used. The score is out of the 8 checks that reported.",
                      breakdown.TxtLeftOut.Text);
         var cells = breakdown.GridChecks.Children.OfType<TextBlock>().Where(c => Grid.GetRow(c) == 6).OrderBy(Grid.GetColumn)
                              .Select(c => c.Text).ToList();

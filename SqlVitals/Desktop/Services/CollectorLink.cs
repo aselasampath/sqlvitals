@@ -187,6 +187,24 @@ public sealed class CollectorLink : IDisposable
         await RefreshAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Gives the service the Backups page's RPO (#174), when it watches one of this app's servers
+    /// and counts against another. A service without the app's servers keeps its own.
+    /// </summary>
+    public async Task ApplyBackupRpoAsync(Engine.Backups.BackupRpo rpo, IReadOnlyCollection<Guid> appConnections)
+    {
+        await Task.Run(() =>
+        {
+            if (!Directory.Exists(_control.DataDirectory))
+                return;
+            var settings = _control.Read().Settings;
+            if (settings.BackupRpo == rpo || !settings.Servers.Any(s => appConnections.Contains(s.Id)))
+                return;
+            settings.BackupRpo = rpo;
+            _control.Save(settings);
+        }).ConfigureAwait(false);
+    }
+
     /// <summary>Takes a connection back from the service: the app watches it again as its settings say.</summary>
     public async Task TakeBackAsync(Guid connectionId)
     {

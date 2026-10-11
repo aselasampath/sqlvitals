@@ -13,7 +13,8 @@ namespace SqlVitals.Desktop.Controls;
 /// <summary>
 /// The Checks table of the health score breakdown (#130) with a warning and a critical box per check
 /// (#131) and a weight box (#173): Check, Now, Warning, Critical, Weight, Points. Page life
-/// expectancy's row says whether its thresholds are per 4 GB of buffer pool. In Settings for the
+/// expectancy's row says whether its thresholds are per 4 GB of buffer pool, and disk free has a
+/// second row for its GB thresholds (#174). In Settings for the
 /// thresholds every connection shares, and on a connection's Health thresholds tab for its own,
 /// where Now and Points show its latest sample graded on what's in the boxes.
 /// </summary>
@@ -22,6 +23,9 @@ public partial class HealthThresholdsEditor : UserControl
     private sealed record Row(TextBox Warning, TextBox Critical, TextBox Weight, Ellipse Dot, TextBlock Now, TextBlock Points, TextBlock Default);
 
     private readonly Dictionary<HealthIndicator, Row> _rows = new();
+    private TextBox   _gbWarning  = null!;
+    private TextBox   _gbCritical = null!;
+    private TextBlock _gbDefault  = null!;
     private HealthThresholds _defaults = HealthThresholds.Default;
     private HealthScore?     _latest;
     private bool             _showsSample = true;
@@ -47,7 +51,11 @@ public partial class HealthThresholdsEditor : UserControl
 
         AddRow(null);
         foreach (var info in HealthThresholds.Indicators)
+        {
             AddRow(info);
+            if (info.Indicator == HealthIndicator.DiskFree)
+                AddGbRow();
+        }
 
         Show(HealthThresholds.Default);
     }
@@ -70,6 +78,8 @@ public partial class HealthThresholdsEditor : UserControl
             _defaults = value;
             foreach (var (indicator, row) in _rows)
                 row.Default.Text = "Default: " + Describe(indicator, value);
+            var gb = value.DiskFreeGbOrDefault;
+            _gbDefault.Text = $"Default: {Level(HealthThresholds.DiskFreeGbInfo, gb.Warning)} / {Level(HealthThresholds.DiskFreeGbInfo, gb.Critical)}";
             UpdateBorders();
         }
     }
@@ -82,6 +92,7 @@ public partial class HealthThresholdsEditor : UserControl
         {
             foreach (var row in _rows.Values)
                 row.Default.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            _gbDefault.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
@@ -109,8 +120,8 @@ public partial class HealthThresholdsEditor : UserControl
         set
         {
             _isReadOnly = value;
-            foreach (var row in _rows.Values)
-                foreach (var box in new[] { row.Warning, row.Critical, row.Weight })
+            foreach (var box in _rows.Values.SelectMany(row => new[] { row.Warning, row.Critical, row.Weight })
+                                            .Append(_gbWarning).Append(_gbCritical))
                 {
                     box.IsReadOnly = value;
                     box.Focusable  = !value;
@@ -134,6 +145,8 @@ public partial class HealthThresholdsEditor : UserControl
             row.Critical.Text = HealthThresholds.Format(threshold.Critical);
             row.Weight.Text   = thresholds.Weight(indicator).ToString(CultureInfo.CurrentCulture);
         }
+        _gbWarning.Text     = HealthThresholds.Format(thresholds.DiskFreeGbOrDefault.Warning);
+        _gbCritical.Text    = HealthThresholds.Format(thresholds.DiskFreeGbOrDefault.Critical);
         PleScaled.IsChecked = thresholds.ScalesPageLifeExpectancy;
         UpdateBorders();
     }
@@ -181,6 +194,9 @@ public partial class HealthThresholdsEditor : UserControl
     internal TextBox Box(HealthIndicator indicator, bool critical = false) =>
         critical ? _rows[indicator].Critical : _rows[indicator].Warning;
 
+    /// <summary>Disk free's GB warning or critical box (#174).</summary>
+    internal TextBox GbBox(bool critical = false) => critical ? _gbCritical : _gbWarning;
+
     /// <summary>A check's weight box.</summary>
     internal TextBox WeightBox(HealthIndicator indicator) => _rows[indicator].Weight;
 
@@ -190,6 +206,7 @@ public partial class HealthThresholdsEditor : UserControl
     /// <summary>Every box's text and the toggle, to tell whether anything was changed since it was last saved.</summary>
     public string Snapshot =>
         string.Join("|", _rows.Values.Select(r => $"{r.Warning.Text.Trim()};{r.Critical.Text.Trim()};{r.Weight.Text.Trim()}")) +
+        $"|{_gbWarning.Text.Trim()};{_gbCritical.Text.Trim()}" +
         (PleScaled.IsChecked == true ? "|scaled" : "|fixed");
 
     /// <summary>
@@ -221,6 +238,14 @@ public partial class HealthThresholdsEditor : UserControl
             weights = weights.With(info.Indicator, weight);
         }
 
+        if (!HealthThresholds.TryParse(HealthThresholds.DiskFreeGbInfo, _gbWarning.Text, _gbCritical.Text, out var gb, out error))
+        {
+            thresholds = null;
+            if (focus)
+                _gbWarning.Focus();
+            return false;
+        }
+
         if (HealthThresholds.Indicators.All(i => weights.Get(i.Indicator) == 0))
         {
             thresholds = null;
@@ -230,7 +255,7 @@ public partial class HealthThresholdsEditor : UserControl
             return false;
         }
 
-        thresholds = result with { Weights = weights, PageLifeExpectancyFixed = PleScaled.IsChecked != true };
+        thresholds = result with { Weights = weights, PageLifeExpectancyFixed = PleScaled.IsChecked != true, DiskFreeGb = gb };
         error      = string.Empty;
         return true;
     }
@@ -247,20 +272,26 @@ public partial class HealthThresholdsEditor : UserControl
     private static string Level(HealthIndicator indicator, double? value) =>
         value is null ? "off" : AlertText.Threshold(indicator, value);
 
+    // "< 50 GB", or "off".
+    private static string Level(HealthIndicatorInfo info, double? value) =>
+        value is { } v ? $"< {HealthThresholds.Format(v)} {info.Unit}" : "off";
+
     // An accent border on a box that differs from the default, so an edited threshold or weight stands out.
     private void UpdateBorders()
     {
         foreach (var (indicator, row) in _rows)
         {
             var defaults = _defaults.Get(indicator);
-            Mark(row.Warning,  indicator, defaults.Warning);
-            Mark(row.Critical, indicator, defaults.Critical);
+            Mark(row.Warning,  HealthThresholds.Info(indicator), defaults.Warning);
+            Mark(row.Critical, HealthThresholds.Info(indicator), defaults.Critical);
             MarkWeight(row.Weight, indicator);
         }
+        Mark(_gbWarning,  HealthThresholds.DiskFreeGbInfo, _defaults.DiskFreeGbOrDefault.Warning);
+        Mark(_gbCritical, HealthThresholds.DiskFreeGbInfo, _defaults.DiskFreeGbOrDefault.Critical);
     }
 
-    private void Mark(TextBox box, HealthIndicator indicator, double? defaultValue) =>
-        Highlight(box, !_isReadOnly && !Same(indicator, box.Text, defaultValue));
+    private void Mark(TextBox box, HealthIndicatorInfo info, double? defaultValue) =>
+        Highlight(box, !_isReadOnly && !Same(info, box.Text, defaultValue));
 
     private void MarkWeight(TextBox box, HealthIndicator indicator) =>
         Highlight(box, !_isReadOnly && !(int.TryParse(box.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var weight) &&
@@ -276,9 +307,9 @@ public partial class HealthThresholdsEditor : UserControl
     }
 
     // Whether what's typed is the default value; text that can't be read differs.
-    private static bool Same(HealthIndicator indicator, string text, double? value)
+    private static bool Same(HealthIndicatorInfo info, string text, double? value)
     {
-        var both = HealthThresholds.TryParse(indicator, text, string.Empty, out var parsed, out _);
+        var both = HealthThresholds.TryParse(info, text, string.Empty, out var parsed, out _);
         return both ? parsed!.Warning == value : text.Trim().Length == 0 && value is null;
     }
 
@@ -350,6 +381,28 @@ public partial class HealthThresholdsEditor : UserControl
         _rows[info.Indicator] = new Row(warning, critical, weight, dot, now, points, defaults);
     }
 
+    // Disk free's GB thresholds (#174), under its row: "and free space below [ 50 ] GB", with no weight of their own.
+    private void AddGbRow()
+    {
+        GridRows.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var row  = GridRows.RowDefinitions.Count - 1;
+        var info = HealthThresholds.DiskFreeGbInfo;
+
+        var name = Text("and free space below", 12, right: false);
+        name.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
+        _gbDefault = Text(string.Empty, 10, right: false);
+        _gbDefault.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
+        _gbDefault.Margin = new Thickness(0, 2, 0, 0);
+        var names = new StackPanel { Margin = new Thickness(16, 0, 8, 9), ToolTip = info.Hint, Background = Brushes.Transparent,
+                                     Children = { name, _gbDefault } };
+        Place(names, row, 0);
+
+        _gbWarning  = NewBox(info, "warning");
+        _gbCritical = NewBox(info, "critical");
+        Place(Cell(info, _gbWarning),  row, 2);
+        Place(Cell(info, _gbCritical), row, 3);
+    }
+
     // "≥ [ 75 ] %", or "< [ 300 ] s" for a check where lower is worse.
     private static StackPanel Cell(HealthIndicatorInfo info, FrameworkElement box)
     {
@@ -374,7 +427,8 @@ public partial class HealthThresholdsEditor : UserControl
         box.TextChanged += (_, _) =>
         {
             off.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-            Mark(box, info.Indicator, level == "warning" ? _defaults.Get(info.Indicator).Warning : _defaults.Get(info.Indicator).Critical);
+            var defaults = info == HealthThresholds.DiskFreeGbInfo ? _defaults.DiskFreeGbOrDefault : _defaults.Get(info.Indicator);
+            Mark(box, info, level == "warning" ? defaults.Warning : defaults.Critical);
             Changed?.Invoke();
         };
         return box;

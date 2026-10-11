@@ -205,8 +205,14 @@ public partial class MainWindow : Window
                 Monitoring.Log(row);
 
             // Chat channels, and the connection names their messages use, apply from the next
-            // alert. Only reads (see Apply).
-            Chat.Apply(SettingsService.Load());
+            // alert, and the Backups page's RPO from the backups check's next read (#174). Only reads.
+            var saved = SettingsService.Load();
+            Chat.Apply(saved);
+            Monitoring.ApplyBackupRpo(saved);
+            // The collector service watching some of these servers counts against the same RPO.
+            if (rows.Any(r => r.Setting?.StartsWith("Backup RPO", StringComparison.Ordinal) == true))
+                _ = Reported(_collectors.ApplyBackupRpoAsync(saved.BackupRpo, saved.Connections.Select(c => c.Id).ToList()),
+                             "give the collector service the backup RPO");
         };
 
         Chat.Apply(store);

@@ -27,8 +27,18 @@ The dot shows the state **now**. When an indicator stays past a threshold for a 
 | **Memory grants pending** | Queries queued because there isn't enough memory to start them | ≥ 1 | off |
 | **Log space used** | The fullest transaction log on the server. The tooltip names the database and what the log is waiting on. | ≥ 80 % | ≥ 90 % |
 | **TempDB space used** | How full TempDB's data files are | ≥ 80 % | ≥ 90 % |
+| **Disk free** | The volume holding database files with the least free space. *Lower is worse.* | < 20 % **and** < 50 GB | < 10 % **and** < 20 GB |
+| **Backups past RPO** | Databases whose last full or log backup is older than the RPO set on the [Backups](Backups.md) page, or that have none | off | ≥ 1 |
+| **Failed Agent jobs** | SQL Server Agent jobs that failed since the last check | ≥ 1 | off |
 
 These are the defaults. **off** means that level isn't checked.
+
+**Disk, backups and jobs are read every 5 minutes (from 0.76.0).** They change slowly, so they aren't read with every 10-second sample: they are read with the [history](Monitoring-History-Database.md) snapshots, every 5 minutes by default (Settings → Monitoring), and each sample is graded on the last read. They are read after a sample, so with samples further apart than that interval they are read with every sample instead. A read older than **two reads' time and a minute** (11 minutes by default) is too old to trust: one late read is fine, two aren't. Its checks are then **Unknown**, grey and left out of the score, and the panel's tooltip says when they were last read. They are Unknown too until the first read, a few seconds after monitoring starts. An [alert](Alerts.md#how-an-alert-starts-and-ends) on one of them stays open while it is Unknown: it ends only when a read says the problem is gone.
+
+- **Disk free is per volume, on two thresholds.** Every volume that holds a file of an online database is checked (`sys.dm_os_volume_stats`), and the one past the worst level with the least free space is reported: *Disk E:\ 8% free (8 GB)*. A volume is past a level only when **both** its free share and its free GB are below that level's thresholds, so a 4 TB volume at 12 % (480 GB free) isn't flagged, while a 100 GB one at 12 % is. Leave the GB blank to judge a level on the % alone; a blank % turns the level off, as for every check. When a volume is spared by its GB, the tooltip says so.
+- **Backups past RPO** uses the Backups page's RPO, *full backups older than 7 d, log backups older than 1 h* by default, and counts what that page flags: no full backup, a broken log chain, no log backup, a full or log backup overdue. In an availability group a database counts only on the replica its backup preference picks (`sys.fn_hadr_backup_is_preferred_replica`), so a secondary that isn't meant to take backups doesn't turn red. A change on the Backups page applies from the next read.
+- **Failed Agent jobs** counts the jobs whose outcome was *failed* (not *cancelled*) since the last read, from msdb's job history. The first read looks back one interval. A failure counts until the next read, or longer when an [alert](Alerts.md) needs more samples than that to start (*Raise an alert after* × the sample interval), so every failure can raise one. The alert keeps the record. The job history row last seen is remembered per server: after a failover to another replica, the next read starts again as a first one.
+- **Where a check can't be read it is Unknown, never passing:** on **Azure SQL Database** all three (no msdb jobs or backups, no volumes), a login that can't read msdb's history or the volumes (the tooltip says which permission), or a read that failed. SQL Server Express has no Agent, so its jobs check passes with nothing to fail.
 
 **Page life expectancy scales with the server (from 0.75.0).** A fixed 300 s fires on a small VM during CHECKDB or an index rebuild, and stays green on a large server that is short of memory. So by default the threshold is **300 s per 4 GB of buffer pool**, the usual guide: a server with 64 GB of buffer pool is warned below 300 × 64 ÷ 4 = **4,800 s**, one with 2 GB below **150 s**. The panel's tooltip says what it was scaled to. If the server doesn't report its buffer pool, the threshold is used as it is. To use a fixed number of seconds instead, turn off **Per 4 GB of buffer pool** under page life expectancy in [Settings](#change-the-thresholds).
 
@@ -44,12 +54,12 @@ Wherever the score is shown, it comes **second**. First comes the worst state an
 
 | Where | What it says |
 |---|---|
-| A tile on **All servers** | **Critical: blocking for 4 min**, then *Score 80 / 100* |
+| A tile on **All servers** | **Critical: blocking for 4 min**, then *Score 84 / 100* |
 | The server's **Overview** | the same line above the number |
 | The sidebar's server header | the same line under the server's name |
-| **Settings → Connections** | *Critical: blocking for 4 min · score 80* on the connection's card |
+| **Settings → Connections** | *Critical: blocking for 4 min · score 84* on the connection's card |
 
-When several checks are past a threshold, it names the worst and costliest, and how many more: *Warning: CPU at 82 % (+1 more)*. A healthy server says *Healthy: every check passes*, or *Healthy: 5 of 6 checks pass, 1 has no data* when a check isn't reported. So a score of 80 never sits beside a 🔴 without the reason.
+When several checks are past a threshold, it names the worst and costliest, and how many more: *Warning: CPU at 82 % (+1 more)*. A healthy server says *Healthy: every check passes*, or *Healthy: 8 of 9 checks pass, 1 has no data* when a check isn't reported. So a score of 84 never sits beside a 🔴 without the reason.
 
 **Click the score** to see which checks lowered it. The panel leads with the same line, then lists every check with its current figure, its warning and critical thresholds, its worth and the points it cost. The checks that cost points are in bold. A check with no data is greyed, with a dash for its points, and a line under the table says how many were left out. On **All servers**, a tile's **⋯ → Why this score…** opens the panel for that server without opening it.
 
@@ -59,17 +69,22 @@ The score uses the same checks and thresholds as the dot (the table above), so t
 
 | Check | Weight | Why |
 |---|---|---|
-| **CPU** | 20 | A server out of CPU slows every query |
-| **Blocking** | 20 | Blocked queries stop users' work |
-| **Log space used** | 20 | A full transaction log stops all writes to that database |
-| **Page life expectancy** | 16 | Memory pressure slows things down broadly |
-| **Memory grants pending** | 12 | Queries are waiting for memory to start |
-| **TempDB space used** | 12 | A full TempDB fails the queries that need it |
+| **CPU** | 16 | A server out of CPU slows every query |
+| **Blocking** | 16 | Blocked queries stop users' work |
+| **Log space used** | 14 | A full transaction log stops all writes to that database |
+| **Disk free** | 14 | A full disk stops the files on it from growing: writes fail |
+| **Page life expectancy** | 10 | Memory pressure slows things down broadly |
+| **Backups past RPO** | 10 | A restore would lose more than the RPO allows |
+| **Memory grants pending** | 8 | Queries are waiting for memory to start |
+| **TempDB space used** | 8 | A full TempDB fails the queries that need it |
+| **Failed Agent jobs** | 4 | One scheduled task didn't do its work |
+
+From 0.76.0 there are nine checks, and the defaults were shared out again so they still add up to 100 (before, the six were 20, 20, 20, 16, 12 and 12).
 
 - A check inside its thresholds keeps all its points.
 - Past its **warning** threshold, it loses **half** of them.
 - Past its **critical** threshold, it loses **all** of them.
-- **A check with no data is Unknown, never passing** (from 0.75.0). A counter the server doesn't report (page life expectancy or TempDB on some Azure SQL tiers) shows grey, with no tick, and is **left out** of the score. The score is then shared out over the checks that did report, so it is still out of 100: with TempDB missing, the other five share the 100 points among their 88 of weight, and CPU is worth 20 × 100 ÷ 88 = **23**. Missing data can't make a server look healthier than its checks say. Before 0.75.0 a missing check kept its points and was listed under *Passing*.
+- **A check with no data is Unknown, never passing** (from 0.75.0). A counter the server doesn't report (page life expectancy or TempDB on some Azure SQL tiers) shows grey, with no tick, and is **left out** of the score. The score is then shared out over the checks that did report, so it is still out of 100: with TempDB missing, the other eight share the 100 points among their 92 of weight, and CPU is worth 16 × 100 ÷ 92 = 17.4, **18** once the shares are rounded to whole points that add up to 100. Missing data can't make a server look healthier than its checks say. Before 0.75.0 a missing check kept its points and was listed under *Passing*.
 - A server that **can't be reached** scores **0**. The panel shows the error instead of the checks.
 
 The panel calls each check's share its **worth**. With every check reporting and the default weights, the worth is the weight.
@@ -79,10 +94,11 @@ The panel calls each check's share its **worth**. With every check reporting and
 | What's happening | Score |
 |---|---|
 | Everything within its thresholds | **100** |
-| CPU at 80 % (warning) | 100 − 10 = **90** |
-| Blocking for 3 minutes (critical) and CPU at 80 % (warning) | 100 − 20 − 10 = **70** |
-| Blocking critical, page life expectancy low (warning), TempDB 85 % full (warning) | 100 − 20 − 8 − 6 = **66** |
-| CPU at 99 % (critical), TempDB not reported | CPU is worth 23 of 100 among the five that reported: 100 − 23 = **77** |
+| CPU at 80 % (warning) | 100 − 8 = **92** |
+| Blocking for 3 minutes (critical) and CPU at 80 % (warning) | 100 − 16 − 8 = **76** |
+| Blocking critical, page life expectancy low (warning), TempDB 85 % full (warning) | 100 − 16 − 5 − 4 = **75** |
+| A database past its backup RPO (critical) and a failed job (warning) | 100 − 10 − 2 = **88** |
+| CPU at 99 % (critical), TempDB not reported | CPU is worth 18 of 100 among the eight that reported: 100 − 18 = **82** |
 
 The score's **colour is the dot's colour**, not a banding of the number. A single critical check can leave a score of 80 or more, but it still shows 🔴, because something is critical.
 
@@ -101,11 +117,12 @@ The score's **colour is the dot's colour**, not a banding of the number. A singl
 1. Go to **⚙️ Settings → Health thresholds**.
 2. Each check has a **Warning** box and a **Critical** box, in the same table as a server's checks. **Leave a box blank to turn that level off.**
 3. Under **Page life expectancy**, **Per 4 GB of buffer pool** is on: its boxes are seconds per 4 GB. Turn it off to use them as a fixed number of seconds.
-4. Click **Save** in the bar at the bottom. The dots and scores update straight away, and [alerts](Alerts.md) use the new values from the next sample. **Reset to defaults** puts SqlVitals' own values back in the boxes; click Save to use them.
+4. Under **Disk free**, the row **and free space below** holds its GB thresholds (from 0.76.0): a volume reaches a level only when it is below both the % and the GB. Blank a GB box to judge that level on the % alone.
+5. Click **Save** in the bar at the bottom. The dots and scores update straight away, and [alerts](Alerts.md) use the new values from the next sample. **Reset to defaults** puts SqlVitals' own values back in the boxes; click Save to use them.
 
 The critical value must be past the warning one: higher, or lower for page life expectancy.
 
-A settings file from before 0.75.0 keeps its page life expectancy as it was meant: if you had changed it from 300 s, it stays a fixed number of seconds; if not, it now scales with the buffer pool.
+A settings file from before 0.75.0 keeps its page life expectancy as it was meant: if you had changed it from 300 s, it stays a fixed number of seconds; if not, it now scales with the buffer pool. A file from before 0.76.0 gets the new checks' default thresholds.
 
 ### Change the weights
 
@@ -114,16 +131,16 @@ The **Weight** column of the same table sets how much each check counts, from **
 - Weights are **relative**: the score is always out of 100, shared out over the checks that reported. Doubling every weight changes nothing.
 - **0 leaves a check out of the score.** Its thresholds still colour the dot and raise alerts, so a server can show 🔴 with a score of 100; the line before the score then says why (*Critical: CPU at 99 %*). To stop checking something at all, leave its threshold boxes blank instead.
 - At least one check needs a weight above 0.
-- While you type, the page previews every monitored connection on these thresholds: *On the latest sample, UAT would score 70 → 80*.
+- While you type, the page previews every monitored connection on these thresholds: *On the latest sample, UAT would score 76 → 84*.
 
-The defaults stay as in the table above. Changes are logged in the [activity log](Settings.md#activity-log) like the thresholds: *Health weight: CPU* 20 → 0, and *Health threshold: Page life expectancy scaling*.
+The defaults are in the table above. Weights you never changed follow the defaults: a file from 0.75.0 with the six default weights takes the nine new ones. Weights you did change are kept, and the three new checks get their defaults beside them. Changes are logged in the [activity log](Settings.md#activity-log) like the thresholds: *Health weight: CPU* 20 → 0, and *Health threshold: Page life expectancy scaling*.
 
 ### Per-connection thresholds
 
 Some servers always run hot, such as a reporting server that sits at 85 % CPU all night. To stop it showing 🟠 all the time without changing every other server:
 
 1. Open that connection's **Health thresholds** tab: **⚙️ Settings → Connections → Edit**, or **Change** under its checks on [Home](Your-Servers.md#checks).
-2. Turn on **Use its own health thresholds** and enter its values, its weights too. While you type, the table grades its latest sample on them: *On the latest sample, UAT would score 70 → 80*.
+2. Turn on **Use its own health thresholds** and enter its values, its weights too. While you type, the table grades its latest sample on them: *On the latest sample, UAT would score 76 → 84*.
 3. Click **Save**. The tab shows an **OWN** tag from then on.
 
 Other connections keep using the shared thresholds.
@@ -197,6 +214,7 @@ Good to know:
 - **Missing counters:** an indicator the server doesn't report (some counters are missing on certain Azure SQL tiers) is `HealthLevel.Unknown`: it doesn't colour the dot, and from 0.75.0 it is left out of the score, which is shared out over the checks that reported. Before 0.75.0 it kept its points.
 - **Validation:** values out of range in a hand-edited `settings.dat` fall back to the defaults.
 - **Code:** thresholds and grading are in `SqlVitals/Engine/Monitoring/` (`HealthThresholds` with its `HealthWeights` and `PageLifeExpectancyFixed`, `HealthRules`, `LiveMetricSample`). `HealthRules.Grade` grades each indicator separately through `HealthRules.Read`, which also scales page life expectancy (`HealthThresholds.For`) and spares a small reusable log; `Evaluate` (the dot) and the [alert tracker](Alerts.md#under-the-hood) both use it, and Settings' preview grades again through `HealthRules.Regrade`, so it never disagrees. Collectors are run by `Desktop/Services/MonitoringManager.cs`, one `MonitoringSession` per monitored connection. The editor is `Desktop/Controls/HealthThresholdsEditor`.
+- **Disk, backups and jobs (from 0.76.0):** `Engine/Monitoring/ServerChecks.cs` keeps the last read, its schedule (`Interval`, the history's detail interval) and its age (`StaleAfter`, two intervals and a minute), and grades it into three readings (`Readings`); `HealthRules.Read` grades disk free per volume on both thresholds (`DiskLevelOf`, `HealthThresholds.DiskFreeGb`). The `Collector` reads them through `Engine/Repositories/ServerChecksRepository.cs` (SQL in `Engine/Sql/ServerChecks/`, the backups part reusing the Backups page's query) in the background after a sample, when due, and adds them to every sample's grading. Live charts' ad-hoc collector reads none. Unit tested in `Engine.Tests/Monitoring/ServerChecksTests.cs` and `CollectorTests.cs`, and against SQL Server 2017 to 2025 in `Engine.IntegrationTests/ServerHealthTests.cs`.
 - **Which connections are monitored:** `MonitoringPlan.Decide` in `Engine/Monitoring/MonitoringPlan.cs` decides, from Start monitoring automatically, the active connection, Monitor in background, the Start and Stop pressed this run (`MonitoringOverrides`), a missing password and the Entra sign-in. It's a pure function, unit tested in `Engine.Tests/Monitoring/MonitoringPlanTests.cs`. `MonitoringManager.Sync` only starts and stops sessions to match it. The upgrade rule is `MonitoringPlan.StartAutomatically`: `StartMonitoringAutomatically` is nullable in `settings.dat`, so a file without it but with connections reads as on. `Desktop.Tests/MonitoringManagerTests.cs` proves, with a repository that counts calls, that with the setting off neither a start nor a connection switch sends a query.
 - **Score:** `SqlVitals/Engine/Monitoring/HealthScore.cs`. `HealthScore.From(readings, time, weights)` turns the readings of `HealthRules.Grade` into the score and its checks: each check's `Worth` is its weight's share of 100 among the checks that reported, as whole points that add up to 100, and `Verdict` is the worst state and its reason (from 0.75.0); `HealthScore.Unavailable` is the 0 for a failed collection. `MonitoringSession.Score` holds the latest one. The panel is `Desktop/Controls/HealthScoreBreakdown`, shown in a popup by the sidebar (`MainWindow`) and by Live charts. The Overview's *What is costing points* is `Engine/Home/ScoreCosts` over the same checks (tested against the weights for every check state in `Engine.Tests/Home/OverviewTests.cs`). Unit tested in `Engine.Tests/Monitoring/HealthScoreTests.cs`. From 0.53.0 scores are saved to the history (`health_scores`).
 - **Backoff:** unreachable servers retry with exponential backoff, capped at 5 minutes.

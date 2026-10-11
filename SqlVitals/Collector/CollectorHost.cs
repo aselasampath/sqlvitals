@@ -13,7 +13,8 @@ using ServerCollector = SqlVitals.Engine.Monitoring.Collector;
 namespace SqlVitals.Collector;
 
 /// <summary>The repositories a watched server is read through: its live metrics and its history detail.</summary>
-internal sealed record ServerRepositories(ILiveMetricsRepository Live, IHistoryRepository History);
+/// <param name="Checks">Reads the slow health checks (#174); null reads none.</param>
+internal sealed record ServerRepositories(ILiveMetricsRepository Live, IHistoryRepository History, IServerChecksRepository? Checks = null);
 
 /// <summary>
 /// The collector service's monitoring (#172), without the service around it: an Engine
@@ -88,7 +89,7 @@ public sealed class CollectorHost : IDisposable
     internal static ServerRepositories RealRepositories(CollectorServer server, CollectorSettings settings)
     {
         var repository = new WaitStatsRepository(server.Target(settings.CommandTimeoutSeconds));
-        return new ServerRepositories(repository, repository);
+        return new ServerRepositories(repository, repository, repository);
     }
 
     /// <summary>"SRV01 (collector service)": who the chat messages say is watching.</summary>
@@ -267,6 +268,8 @@ public sealed class CollectorHost : IDisposable
             watched.Collector.Thresholds      = settings.ThresholdsFor(server);
             watched.Collector.AlertSamples    = settings.AlertSamples;
             watched.Collector.IntervalSeconds = settings.SampleSeconds;
+            watched.Collector.ChecksInterval  = detail;
+            watched.Collector.BackupRpo       = settings.BackupRpo;
             watched.Recorder.DetailInterval   = detail;
         }
 
@@ -377,10 +380,13 @@ public sealed class CollectorHost : IDisposable
         {
             DetailInterval = TimeSpan.FromMinutes(settings.HistoryIntervalMinutes),
         };
-        var collector = new ServerCollector(id, repositories.Live, settings.SampleSeconds, recorder, _time, Secrets.MaskPasswords)
+        var collector = new ServerCollector(id, repositories.Live, settings.SampleSeconds, recorder, _time, Secrets.MaskPasswords,
+                                            repositories.Checks)
         {
-            Thresholds   = settings.ThresholdsFor(server),
-            AlertSamples = settings.AlertSamples,
+            Thresholds     = settings.ThresholdsFor(server),
+            AlertSamples   = settings.AlertSamples,
+            ChecksInterval = TimeSpan.FromMinutes(settings.HistoryIntervalMinutes),
+            BackupRpo      = settings.BackupRpo,
         };
         collector.Updated += update => OnUpdated(id, update);
         _watched[id] = new Watched(server.Clone(), collector, recorder, server.Fingerprint(settings.CommandTimeoutSeconds));

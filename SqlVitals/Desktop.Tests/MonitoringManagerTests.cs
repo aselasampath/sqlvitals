@@ -482,6 +482,13 @@ public sealed class MonitoringManagerTests : IDisposable
     internal static FakeRepository Counting(string server, ConcurrentQueue<(string, string)> calls) =>
         new() { Unreachable = true, Called = method => calls.Enqueue((server, method)) };
 
+    /// <summary>
+    /// Waits for a session's disk, backup and job checks (#174), read in the background after its
+    /// first sample, to reach its score: until then they are Unknown and the score is shared over six.
+    /// </summary>
+    internal static void WaitForServerChecks(MonitoringSession session) =>
+        UiThread.WaitUntil(() => session.Score?.Checks.Any(c => c.Indicator == HealthIndicator.DiskFree && !c.IsUnknown) == true);
+
     /// <summary>As <see cref="Counting"/>, but live metrics come back, at 99 % CPU.</summary>
     internal static FakeRepository Hot(string server, ConcurrentQueue<(string, string)> calls) => new()
     {
@@ -492,5 +499,7 @@ public sealed class MonitoringManagerTests : IDisposable
                                                                            0, 0, 0, 0, 0, 0, 0,
                                                                            // It reports its log and TempDB, so all six checks are scored (#173).
                                                                            LogUsedPct: 5, LogUsedDatabase: "Sales", TempDbUsedPct: 10)),
+        // And its disk, backups and jobs, so all nine are (#174).
+        GetServerChecksAsync = FakeRepository.HealthyChecks,
     };
 }

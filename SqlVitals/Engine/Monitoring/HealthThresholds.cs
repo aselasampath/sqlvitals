@@ -2,7 +2,10 @@ using System.Globalization;
 
 namespace SqlVitals.Engine.Monitoring;
 
-/// <summary>The figures the health dot is graded on.</summary>
+/// <summary>
+/// The figures the health dot is graded on. The first six are read with every sample; the last
+/// three change slowly and are read every few minutes (#174, <see cref="ServerChecks"/>).
+/// </summary>
 public enum HealthIndicator
 {
     Cpu,
@@ -11,6 +14,9 @@ public enum HealthIndicator
     MemoryGrantsPending,
     LogSpace,
     TempDbSpace,
+    DiskFree,
+    BackupsPastRpo,
+    FailedJobs,
 }
 
 /// <summary>
@@ -42,29 +48,43 @@ public sealed record HealthWeights(
     int? PageLifeExpectancy  = null,
     int? MemoryGrantsPending = null,
     int? LogSpace            = null,
-    int? TempDbSpace         = null)
+    int? TempDbSpace         = null,
+    int? DiskFree            = null,
+    int? BackupsPastRpo      = null,
+    int? FailedJobs          = null)
 {
     public const int MaxWeight = 100;
 
     public static HealthWeights Default { get; } = new(
         DefaultOf(HealthIndicator.Cpu), DefaultOf(HealthIndicator.Blocking), DefaultOf(HealthIndicator.PageLifeExpectancy),
-        DefaultOf(HealthIndicator.MemoryGrantsPending), DefaultOf(HealthIndicator.LogSpace), DefaultOf(HealthIndicator.TempDbSpace));
+        DefaultOf(HealthIndicator.MemoryGrantsPending), DefaultOf(HealthIndicator.LogSpace), DefaultOf(HealthIndicator.TempDbSpace),
+        DefaultOf(HealthIndicator.DiskFree), DefaultOf(HealthIndicator.BackupsPastRpo), DefaultOf(HealthIndicator.FailedJobs));
 
     /// <summary>
-    /// The default points of a check; they add up to 100. CPU, blocking and a full log stop users'
-    /// work outright; memory pressure slows everything; queued memory grants and a full TempDB hit
-    /// fewer queries.
+    /// The default points of a check; they add up to 100. CPU and blocking stop users' work
+    /// outright, and so do a full log and a full disk; memory pressure slows everything and a
+    /// database past its backup RPO risks data; queued memory grants and a full TempDB hit fewer
+    /// queries; a failed job is one task.
     /// </summary>
     public static int DefaultOf(HealthIndicator indicator) => indicator switch
     {
-        HealthIndicator.Cpu                 => 20,
-        HealthIndicator.Blocking            => 20,
-        HealthIndicator.LogSpace            => 20,
-        HealthIndicator.PageLifeExpectancy  => 16,
-        HealthIndicator.MemoryGrantsPending => 12,
-        HealthIndicator.TempDbSpace         => 12,
+        HealthIndicator.Cpu                 => 16,
+        HealthIndicator.Blocking            => 16,
+        HealthIndicator.LogSpace            => 14,
+        HealthIndicator.DiskFree            => 14,
+        HealthIndicator.PageLifeExpectancy  => 10,
+        HealthIndicator.BackupsPastRpo      => 10,
+        HealthIndicator.MemoryGrantsPending => 8,
+        HealthIndicator.TempDbSpace         => 8,
+        HealthIndicator.FailedJobs          => 4,
         _                                   => 0,
     };
+
+    /// <summary>
+    /// The defaults before #174 added disk, backups and failed jobs: a file saved with exactly
+    /// these and none of the new checks' weights was never changed, and takes today's defaults.
+    /// </summary>
+    internal static HealthWeights Before174 { get; } = new(20, 20, 16, 12, 20, 12);
 
     /// <summary>One check's weight; the default when it is missing.</summary>
     public int Get(HealthIndicator indicator) => indicator switch
@@ -75,6 +95,9 @@ public sealed record HealthWeights(
         HealthIndicator.MemoryGrantsPending => MemoryGrantsPending,
         HealthIndicator.LogSpace            => LogSpace,
         HealthIndicator.TempDbSpace         => TempDbSpace,
+        HealthIndicator.DiskFree            => DiskFree,
+        HealthIndicator.BackupsPastRpo      => BackupsPastRpo,
+        HealthIndicator.FailedJobs          => FailedJobs,
         _                                   => null,
     } ?? DefaultOf(indicator);
 
@@ -86,16 +109,20 @@ public sealed record HealthWeights(
         HealthIndicator.MemoryGrantsPending => this with { MemoryGrantsPending = weight },
         HealthIndicator.LogSpace            => this with { LogSpace            = weight },
         HealthIndicator.TempDbSpace         => this with { TempDbSpace         = weight },
+        HealthIndicator.DiskFree            => this with { DiskFree            = weight },
+        HealthIndicator.BackupsPastRpo      => this with { BackupsPastRpo      = weight },
+        HealthIndicator.FailedJobs          => this with { FailedJobs          = weight },
         _                                   => this,
     };
 
     /// <summary>
     /// Saved weights made safe to use: one missing or out of range gets its default, and all of
-    /// them 0, which would leave nothing to score, gives <see cref="Default"/>.
+    /// them 0, which would leave nothing to score, gives <see cref="Default"/>. So do the defaults
+    /// as they were before #174 (<see cref="Before174"/>): weights nobody changed follow the defaults.
     /// </summary>
     public static HealthWeights Normalize(HealthWeights? saved)
     {
-        if (saved is null)
+        if (saved is null || saved == Before174)
             return Default;
 
         var result = Default;
@@ -132,6 +159,11 @@ public sealed record HealthWeights(
 /// pool, so a large server needs a longer one (#173); true uses them as they are. Null, from a file
 /// saved before #173, is read by <see cref="Normalize"/>.
 /// </param>
+/// <param name="DiskFreeGb">
+/// Disk free's second threshold, in GB (#174): a volume is past a level only when both its free %
+/// (<paramref name="DiskFreePct"/>) and its free GB are below it, so a large volume isn't flagged
+/// for a small share that is still plenty. Null takes the default.
+/// </param>
 public sealed record HealthThresholds(
     HealthThreshold? CpuPct,
     HealthThreshold? BlockingSec,
@@ -140,7 +172,11 @@ public sealed record HealthThresholds(
     HealthThreshold? LogUsedPct,
     HealthThreshold? TempDbUsedPct,
     HealthWeights?   Weights                 = null,
-    bool?            PageLifeExpectancyFixed = null)
+    bool?            PageLifeExpectancyFixed = null,
+    HealthThreshold? DiskFreePct             = null,
+    HealthThreshold? DiskFreeGb              = null,
+    HealthThreshold? BackupsPastRpo          = null,
+    HealthThreshold? FailedJobs              = null)
 {
     /// <summary>The buffer pool size a scaled page life expectancy threshold is given for: 300 s per 4 GB.</summary>
     public const double PageLifeExpectancyPerGb = 4;
@@ -166,7 +202,27 @@ public sealed record HealthThresholds(
         new(HealthIndicator.TempDbSpace, "TempDB space used", "%",
             "TempDB data files, as a share of their current size (before they autogrow).",
             LowerIsWorse: false, WholeNumber: false, Min: 1, Max: 100, new(80, 90)),
+        new(HealthIndicator.DiskFree, "Disk free", "%",
+            "The volume holding database files with the least free space, read every few minutes. A volume is " +
+            "past a level only when both its free % and its free GB are below it, so a large volume isn't " +
+            "flagged for a small share that is still plenty.",
+            LowerIsWorse: true, WholeNumber: false, Min: 1, Max: 99, new(20, 10)),
+        new(HealthIndicator.BackupsPastRpo, "Backups past RPO", "",
+            "Databases whose last full or log backup is older than the RPO set on the Backups page, or that " +
+            "have none, read every few minutes. In an availability group, only on the replica that should " +
+            "take the backups.",
+            LowerIsWorse: false, WholeNumber: true, Min: 1, Max: 10_000, new(null, 1)),
+        new(HealthIndicator.FailedJobs, "Failed Agent jobs", "",
+            "SQL Server Agent jobs that failed since the last check, read every few minutes.",
+            LowerIsWorse: false, WholeNumber: true, Min: 1, Max: 10_000, new(1, null)),
     ];
+
+    /// <summary>Disk free's second threshold, in GB (see <see cref="DiskFreeGb"/>); it has no weight of its own.</summary>
+    public static HealthIndicatorInfo DiskFreeGbInfo { get; } = new(
+        HealthIndicator.DiskFree, "Disk free (GB)", "GB",
+        "And the volume's free space below this many GB: both must be below a level for the volume to reach it. " +
+        "Blank leaves that level to the % alone; a blank % turns the level off.",
+        LowerIsWorse: true, WholeNumber: false, Min: 1, Max: 1_000_000, new(50, 20));
 
     public static HealthThresholds Default { get; } = new(
         Info(HealthIndicator.Cpu).Default,
@@ -176,13 +232,20 @@ public sealed record HealthThresholds(
         Info(HealthIndicator.LogSpace).Default,
         Info(HealthIndicator.TempDbSpace).Default,
         HealthWeights.Default,
-        PageLifeExpectancyFixed: false);
+        PageLifeExpectancyFixed: false,
+        Info(HealthIndicator.DiskFree).Default,
+        DiskFreeGbInfo.Default,
+        Info(HealthIndicator.BackupsPastRpo).Default,
+        Info(HealthIndicator.FailedJobs).Default);
 
     public static HealthIndicatorInfo Info(HealthIndicator indicator) =>
         Indicators.First(i => i.Indicator == indicator);
 
     /// <summary>A check's weight in the score.</summary>
     public int Weight(HealthIndicator indicator) => (Weights ?? HealthWeights.Default).Get(indicator);
+
+    /// <summary>Disk free's GB threshold; the default when it is missing.</summary>
+    public HealthThreshold DiskFreeGbOrDefault => DiskFreeGb ?? DiskFreeGbInfo.Default;
 
     /// <summary>Page life expectancy's thresholds are per 4 GB of buffer pool (the default), not fixed.</summary>
     public bool ScalesPageLifeExpectancy => PageLifeExpectancyFixed != true;
@@ -212,6 +275,9 @@ public sealed record HealthThresholds(
         HealthIndicator.MemoryGrantsPending => MemoryGrantsPending,
         HealthIndicator.LogSpace            => LogUsedPct,
         HealthIndicator.TempDbSpace         => TempDbUsedPct,
+        HealthIndicator.DiskFree            => DiskFreePct,
+        HealthIndicator.BackupsPastRpo      => BackupsPastRpo,
+        HealthIndicator.FailedJobs          => FailedJobs,
         _                                   => null,
     } ?? Info(indicator).Default;
 
@@ -223,6 +289,9 @@ public sealed record HealthThresholds(
         HealthIndicator.MemoryGrantsPending => this with { MemoryGrantsPending   = threshold },
         HealthIndicator.LogSpace            => this with { LogUsedPct            = threshold },
         HealthIndicator.TempDbSpace         => this with { TempDbUsedPct         = threshold },
+        HealthIndicator.DiskFree            => this with { DiskFreePct           = threshold },
+        HealthIndicator.BackupsPastRpo      => this with { BackupsPastRpo        = threshold },
+        HealthIndicator.FailedJobs          => this with { FailedJobs            = threshold },
         _                                   => this,
     };
 
@@ -246,8 +315,10 @@ public sealed record HealthThresholds(
         }
 
         var ple = Info(HealthIndicator.PageLifeExpectancy);
+        var gb  = saved.DiskFreeGbOrDefault;
         return result with
         {
+            DiskFreeGb              = Validate(DiskFreeGbInfo, gb) is null ? gb : DiskFreeGbInfo.Default,
             Weights                 = HealthWeights.Normalize(saved.Weights),
             PageLifeExpectancyFixed = saved.PageLifeExpectancyFixed ?? result.Get(ple.Indicator) != ple.Default,
         };
@@ -258,10 +329,14 @@ public sealed record HealthThresholds(
     /// a message to show when it can't be used.
     /// </summary>
     public static bool TryParse(HealthIndicator indicator, string warningText, string criticalText,
+                                out HealthThreshold? threshold, out string error) =>
+        TryParse(Info(indicator), warningText, criticalText, out threshold, out error);
+
+    /// <summary>Reads a threshold as <see cref="TryParse(HealthIndicator, string, string, out HealthThreshold?, out string)"/>, on <paramref name="info"/>'s range: disk free's GB too.</summary>
+    public static bool TryParse(HealthIndicatorInfo info, string warningText, string criticalText,
                                 out HealthThreshold? threshold, out string error)
     {
         threshold = null;
-        var info = Info(indicator);
 
         if (!TryParseValue(info, warningText, out var warning) || !TryParseValue(info, criticalText, out var critical))
         {
@@ -288,7 +363,10 @@ public sealed record HealthThresholds(
     private static bool TryParseValue(HealthIndicatorInfo info, string text, out double? value)
     {
         value = null;
-        var trimmed = (text ?? string.Empty).Trim().TrimEnd('%', 's').Trim();
+        var trimmed = (text ?? string.Empty).Trim();
+        if (trimmed.EndsWith("GB", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^2];
+        trimmed = trimmed.TrimEnd('%', 's').Trim();
         if (trimmed.Length == 0)
             return true;
 

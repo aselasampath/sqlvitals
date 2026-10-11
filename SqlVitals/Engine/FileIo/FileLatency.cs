@@ -250,6 +250,17 @@ public sealed record VolumeLatency(string Volume, int FileCount, int SlowFileCou
 {
     public string VolumeText => Volume.Length == 0 ? "(unknown)" : Volume;
 
+    /// <summary>Its free space (#174); null when it couldn't be read.</summary>
+    public Monitoring.VolumeSpace? Space { get; init; }
+
+    /// <summary>For sorting by free space: the share free, or above any share when unknown.</summary>
+    public double FreePct => Space?.FreePct ?? double.MaxValue;
+
+    /// <summary>"240 GB (12 %)", the disk check's figures; empty when unknown.</summary>
+    public string FreeText => Space is { } space
+        ? string.Format(CultureInfo.CurrentCulture, "{0} ({1:0} %)", Monitoring.HealthRules.Gigabytes(space.FreeGb), space.FreePct)
+        : string.Empty;
+
     public string FilesText => SlowFileCount == 0 ? FileCount.ToString("N0", CultureInfo.CurrentCulture)
         : string.Format(CultureInfo.CurrentCulture, "{0:N0} ({1:N0} slow)", FileCount, SlowFileCount);
 
@@ -329,7 +340,9 @@ public sealed record FileLatencyList(
         var notes = new[] { note, current.Note }.Where(n => !string.IsNullOrEmpty(n));
         return new FileLatencyList(
             files,
-            VolumeLatency.From(files, seconds, thresholds),
+            VolumeLatency.From(files, seconds, thresholds)
+                         .Select(v => v with { Space = current.Space.FirstOrDefault(s => s.Volume.Equals(v.Volume, StringComparison.OrdinalIgnoreCase)) })
+                         .ToList(),
             thresholds,
             baseline?.ServerTime,
             current.ServerTime,

@@ -62,7 +62,7 @@ public class HealthThresholdsTests
     {
         var readings = HealthRules.Grade(Sample(cpuPct: 80, logPct: 95), HealthThresholds.Default);
 
-        Assert.Equal(Enum.GetValues<HealthIndicator>(), readings.Select(r => r.Indicator));
+        Assert.Equal(HealthRules.SampleIndicators, readings.Select(r => r.Indicator));
         var cpu = readings[0];
         Assert.Equal((HealthLevel.Warning, 80.0, new HealthThreshold(75, 90), "CPU 80%"),
                      (cpu.Level, cpu.Value, cpu.Limits, cpu.Reason));
@@ -399,7 +399,7 @@ public class HealthThresholdsTests
         var read = HealthThresholds.Normalize(JsonSerializer.Deserialize<HealthThresholds>(JsonSerializer.Serialize(original, options), options));
 
         Assert.Equal(original, read);
-        Assert.Equal((0, 30, 20), (read.Weight(HealthIndicator.Cpu), read.Weight(HealthIndicator.TempDbSpace), read.Weight(HealthIndicator.Blocking)));
+        Assert.Equal((0, 30, 16), (read.Weight(HealthIndicator.Cpu), read.Weight(HealthIndicator.TempDbSpace), read.Weight(HealthIndicator.Blocking)));
     }
 
     [Fact]
@@ -419,19 +419,29 @@ public class HealthThresholdsTests
     // ── Weights (#173) ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Weights_DefaultsStayAsTheyWere()
+    public void Weights_DefaultsAreTheNineChecksOutOf100()
     {
-        Assert.Equal(new HealthWeights(20, 20, 16, 12, 20, 12), HealthWeights.Default);
+        Assert.Equal(new HealthWeights(16, 16, 10, 8, 14, 8, 14, 10, 4), HealthWeights.Default);
         Assert.Equal(HealthWeights.Default, HealthThresholds.Default.Weights);
+    }
+
+    [Fact]
+    public void Weights_SavedBefore174Unchanged_TakeTodaysDefaults()
+    {
+        // A file from #173 holds its six defaults and nothing for the new checks.
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(20, 20, 16, 12, 20, 12)));
+
+        // Changed ones are the user's: kept, and the new checks get their defaults.
+        Assert.Equal(new HealthWeights(30, 20, 16, 12, 20, 12, 14, 10, 4), HealthWeights.Normalize(new HealthWeights(30, 20, 16, 12, 20, 12)));
     }
 
     [Fact]
     public void Weights_NormalizeFixesOutOfRange_AndAllZeroGivesTheDefaults()
     {
-        var fixedUp = HealthWeights.Normalize(new HealthWeights(Cpu: 0, Blocking: 101, TempDbSpace: -1));
-        Assert.Equal(new HealthWeights(0, 20, 16, 12, 20, 12), fixedUp);
+        var fixedUp = HealthWeights.Normalize(new HealthWeights(Cpu: 0, Blocking: 101, TempDbSpace: -1, FailedJobs: 200));
+        Assert.Equal(new HealthWeights(0, 16, 10, 8, 14, 8, 14, 10, 4), fixedUp);
 
-        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0)));
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0)));
         Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(null));
     }
 

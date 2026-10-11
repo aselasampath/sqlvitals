@@ -16,6 +16,8 @@ Every sample a monitored connection collects (every 10 seconds by default) is ch
 
 Needing a run of samples **to end** as well as to start is what stops a value hovering around a threshold from raising a new alert every few seconds. A CPU bouncing between 74 % and 76 % either never raises an alert or raises **one** that stays open, never a stream of them.
 
+A sample with **no figure** for the check (it's [Unknown](Health-Dot-and-Background-Monitoring.md#how-its-calculated): not reported, or a disk, backup or job read too old to trust) counts neither way (from 0.76.0): an alert doesn't end because SqlVitals stopped being able to see the problem, and a run of samples waits for one that has a figure. Before 0.76.0 it counted as back to normal.
+
 **Example** (warning at 75 %, 3 samples, 10-second interval):
 
 | Sample | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
@@ -35,7 +37,7 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 |---|---|
 | **Status** | **● Active**: still past its threshold. **Ended**: finished. |
 | **Severity** | 🟠 **Warning** or 🔴 **Critical**: the worst level it held for long enough |
-| **Connection**, **Indicator** | Which server, and which of the six health indicators |
+| **Connection**, **Indicator** | Which server, and which of the nine health indicators |
 | **Evidence** | **Investigate →**: the page that shows why, filtered and set to the alert's time (see [below](#from-an-alert-to-its-evidence)). Double-click a row or press **Enter** on it to do the same. |
 | **Started**, **Ended**, **Duration** | On this PC's clock. Duration keeps counting while it's active. |
 | **Worst value** | The highest figure seen, or the **lowest** for page life expectancy |
@@ -61,6 +63,9 @@ From 0.61.0 every alert has an **evidence route**: the page that shows why, alre
 | Memory grants pending | 🧠 Memory Grants | the grants still waiting for memory | Live charts (memory) |
 | Log space used | 📦 DB Storage | the files of the database whose log was fullest | none kept |
 | TempDB space used | 🗄️ TempDB | (the whole page) | none kept |
+| Disk free (from 0.76.0) | 💽 File I/O | (the whole page: its **Volumes** grid has each volume's free space) | none kept |
+| Backups past RPO (from 0.76.0) | 💾 Backups | (the whole page: the databases past the RPO come first) | none kept |
+| Failed Agent jobs (from 0.76.0) | 🕒 Agent Jobs | (the whole page: failed jobs at the top, after any running long) | none kept |
 
 **Where to start from:**
 

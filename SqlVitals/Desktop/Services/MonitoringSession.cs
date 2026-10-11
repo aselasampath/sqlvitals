@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Windows.Threading;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
@@ -45,7 +46,9 @@ public sealed class MonitoringSession : IDisposable
         Repository   = repository;
         Fingerprint  = fingerprint;
         _dispatcher  = Dispatcher.CurrentDispatcher;
-        _collector   = new Collector(connectionId, repository, intervalSeconds, history, time, ConnectionSettingsService.RedactSecrets);
+        // A session that keeps history reads the slow checks too (#174); the ad-hoc one doesn't.
+        _collector   = new Collector(connectionId, repository, intervalSeconds, history, time, ConnectionSettingsService.RedactSecrets,
+                                     checks: history is null ? null : repository);
         _state       = _collector.State;
         _collector.Updated += OnUpdated;
     }
@@ -106,6 +109,20 @@ public sealed class MonitoringSession : IDisposable
     {
         get => _collector.Thresholds;
         set { _collector.Thresholds = value; DrainHere(); }
+    }
+
+    /// <summary>Time between reads of the slow checks (#174): the history's detail interval.</summary>
+    public TimeSpan ChecksInterval
+    {
+        get => _collector.ChecksInterval;
+        set => _collector.ChecksInterval = value;
+    }
+
+    /// <summary>The RPO the backups check counts databases against (#174), from its next read.</summary>
+    public BackupRpo BackupRpo
+    {
+        get => _collector.BackupRpo;
+        set => _collector.BackupRpo = value;
     }
 
     /// <summary>

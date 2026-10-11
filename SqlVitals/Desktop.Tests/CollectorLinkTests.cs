@@ -3,6 +3,7 @@ using System.IO;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
@@ -93,6 +94,35 @@ public sealed class CollectorLinkTests : IDisposable
         Assert.Empty(service.Servers);
         Assert.Empty(service.ChatChannels);   // it posted for no other server
         Assert.False(CollectorHandover.TakeBack(service, conn.Id));
+    }
+
+    [Fact]
+    public void HandingOver_GivesTheServiceTheBackupsPagesRpo()
+    {
+        var conn = Save("sql01");
+        _settings.SetBackupRpo(new BackupRpo(TimeSpan.FromDays(2), TimeSpan.FromMinutes(20)));
+        var store = _settings.Load();
+
+        var service = CollectorHandover.HandOver(new CollectorSettings(), store, store.Connections.First(c => c.Id == conn.Id));
+
+        Assert.Equal(new BackupRpo(TimeSpan.FromDays(2), TimeSpan.FromMinutes(20)), service.BackupRpo);
+    }
+
+    [Fact]
+    public async Task ANewRpo_ReachesTheService_OnlyWhenItWatchesOneOfTheAppsServers()
+    {
+        var conn = Save("sql01");
+        var rpo  = new BackupRpo(TimeSpan.FromDays(1), TimeSpan.FromMinutes(30));
+        var link = Link();
+
+        await link.ApplyBackupRpoAsync(rpo, [conn.Id]);
+        Assert.Equal(BackupRpo.Default, _control.Read().Settings.BackupRpo);   // none of ours there
+
+        var store = _settings.Load();
+        _control.Save(CollectorHandover.HandOver(_control.Read().Settings, store, store.Connections.Single()));
+        await link.ApplyBackupRpoAsync(rpo, [conn.Id]);
+
+        Assert.Equal(rpo, _control.Read().Settings.BackupRpo);
     }
 
     [Fact]

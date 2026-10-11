@@ -20,6 +20,7 @@
 |---|---|---|---|
 | **Live Metrics query** | Every **monitored** connection: those started with ▶ / Start, plus, with *Start monitoring automatically* on, the active one and those with *Monitor in background* | Every **10 s** by default (user-adjustable) | Performance counters, `sys.dm_os_ring_buffers` (`sys.dm_db_resource_stats` on Azure SQL Database), `sys.dm_exec_requests`; from 0.59.0 a count of `sys.dm_os_waiting_tasks` joined to `sys.dm_exec_sessions` (user tasks waiting now); from 0.75.0 `log_reuse_wait_desc` of the fullest log from `sys.databases` |
 | **History detail snapshot** | Same connections | Every **5 min** by default (1 / 5 / 15 / 30) | `sys.dm_os_wait_stats`, `sys.dm_io_virtual_file_stats`, `sys.dm_exec_query_stats` (top 20 by CPU), memory and performance counters |
+| **Disk, backup and job checks** (from 0.76.0) | Same connections, after a sample that worked | On the history snapshot's interval: every **5 min** by default, never with every sample | Three light reads, each on its own so one the login can't do leaves the others ([health checks](Health-Dot-and-Background-Monitoring.md#what-is-checked)): free space per volume, `sys.dm_os_volume_stats` over `sys.master_files` of online databases, one row per volume; the Backups page's query (`msdb.dbo.backupset`, `backupmediafamily`, `sys.databases`, `sys.database_recovery_status`), reading only the backups that finished within the RPO's longer age, with `sys.fn_hadr_backup_is_preferred_replica` for databases in an availability group; the jobs that failed since the last read, from `msdb.dbo.sysjobhistory` (outcome rows after the last row seen) and `sysjobs`. None on Azure SQL Database |
 | **Screens** (Index Health, Query Store, Plan Cache, …) | A user opens the screen or presses Refresh | On demand | **Active connection only** |
 | **Query Regressions** | On demand | On demand | Query Store runtime stats, up to ~8 days; timeout raised to 2 min. From 0.62.0 the Query Store page's verdict runs the same check for its period (preset periods only) each time the page is opened, refreshed or given a new period |
 | **Query Store** tabs | A user opens the page or a tab, presses Refresh or picks a period | On demand; each tab only when opened | `sys.query_store_*` and `sys.database_query_store_options` in the connection's database: the period's runtime stats (up to 30 days, or what Query Store keeps), grouped and ranked on the server so only the top rows come back; timeout raised to 2 min; **active connection only** |
@@ -27,7 +28,7 @@
 | **A session's plan** (details drawer) | **Show the plan** pressed for a session on Processes | On demand | `sys.dm_exec_requests` and `sys.dm_exec_query_plan` for what it runs; for a session between requests, `sys.dm_exec_connections` and `sys.dm_exec_query_stats` for its last statement's cached plan; **active connection only** |
 | **Agent Jobs** | A user opens the page or presses Refresh; every 30 s while *Every 30 s* is ticked and the page is open | On demand | `msdb` job tables (`sysjobs`, `sysjobhistory`, `sysjobactivity`, `sysjobschedules`, …) and `sys.dm_server_services`; one job's history when it's selected; **active connection only** |
 | **Backups** | A user opens the page, presses Refresh or Apply | On demand, no timer | One query: `msdb.dbo.backupset` read once (newest full, differential and log per database), `backupmediafamily`, `sys.databases`, `sys.database_recovery_status`; up to 500 `backupset` rows when a database is selected; **active connection only** |
-| **File I/O** | The File I/O page is open (not paused), or a user presses Refresh | The page's interval: 5 s to 1 min, 10 s by default | Two light queries per reading: `sys.dm_os_sys_info` (start time) and `sys.dm_io_virtual_file_stats` with `sys.master_files`; `sys.dm_os_volume_stats` once per file; **active connection only**, stops when the page is left |
+| **File I/O** | The File I/O page is open (not paused), or a user presses Refresh | The page's interval: 5 s to 1 min, 10 s by default | Two light queries per reading: `sys.dm_os_sys_info` (start time) and `sys.dm_io_virtual_file_stats` with `sys.master_files`; `sys.dm_os_volume_stats` once per file; from 0.76.0 each volume's free space, the disk check's query, at most once a minute; **active connection only**, stops when the page is left |
 | **Config Checks** | A user opens the page, presses Check again or Refresh | On demand, no timer | A handful of light catalog queries: `sys.configurations`, `sys.databases`, `tempdb.sys.database_files`, and `sys.dm_os_schedulers`, `sys.dm_os_nodes`, `sys.dm_os_sys_info` for the processors and memory; **active connection only** |
 | **Security Audit** | A user opens the page, presses Audit again or Refresh | On demand, no timer | Light catalog queries: `sys.server_principals`, `sys.server_role_members`, `sys.server_permissions`, `sys.sql_logins`, `sys.databases`, the connection's own `sys.login_token`, and `sys.database_principals` once per database for orphaned users; **active connection only** |
 | **DB Storage** | A user opens the page or presses Refresh | On demand, no timer | `sys.master_files`, `sys.databases`, `sys.configurations`; the used space of each database the login can open, read with one light `sys.database_files` query in that database (through its `sys.sp_executesql`) into a temporary table that is dropped at the end of the batch; **active connection only** |
@@ -95,6 +96,7 @@ Most of what SqlVitals reads is DMVs and system views, which user schema changes
 | SP Trace, Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
 | Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
 | Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups; none are in msdb |
+| Health checks: disk free, backups past RPO, failed jobs (from 0.76.0) | `VIEW SERVER STATE` and `VIEW ANY DEFINITION` (to see every database's files) for the disk; the Backups grants above; `SELECT` on `msdb.dbo.sysjobs` and `sysjobhistory`. A check the login can't read is *Unknown*, and says which permission | ➖ all three Unknown |
 | Config Checks | `VIEW SERVER STATE` for the processors and memory; without it those checks are partly *Not checked* | Nothing extra |
 | Security Audit | `VIEW ANY DEFINITION` to list the sysadmin members and orphaned users; without it those two show *Not checked* | ➖ not available (no sysadmin, sa or TRUSTWORTHY; the button is marked N/A) |
 
@@ -139,7 +141,7 @@ GRANT SELECT ON dbo.sysschedules    TO [sqlvitals_login];
 GRANT SELECT ON dbo.syscategories   TO [sqlvitals_login];
 ```
 
-This is read-only: the login can't start, stop or change a job. With `VIEW SERVER STATE` as well, the page can also tell whether the Agent service is running (`sys.dm_server_services`).
+This is read-only: the login can't start, stop or change a job. With `VIEW SERVER STATE` as well, the page can also tell whether the Agent service is running (`sys.dm_server_services`). The *Failed Agent jobs* health check (from 0.76.0) needs only `sysjobs` and `sysjobhistory` of these.
 
 ### Backups
 
@@ -152,7 +154,7 @@ GRANT SELECT ON dbo.backupset         TO [sqlvitals_login];
 GRANT SELECT ON dbo.backupmediafamily TO [sqlvitals_login];
 ```
 
-It also reads `sys.databases` and `sys.database_recovery_status`, which every login can see for the databases it can see. This is read-only: the login can't take, restore or delete a backup.
+It also reads `sys.databases` and `sys.database_recovery_status`, which every login can see for the databases it can see. This is read-only: the login can't take, restore or delete a backup. The *Backups past RPO* health check (from 0.76.0) runs the same query every 5 minutes on a monitored server, so it needs the same two grants.
 
 ### Security Audit
 
@@ -194,6 +196,7 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')          
 | Deadlocks (system_health) | ✅ | ✅ | ➖ not available (no system_health) |
 | Agent Jobs (SQL Server Agent) | ✅ (not Express, which has no Agent) | ✅ | ➖ not available (no Agent; the button is marked N/A) |
 | Backups (msdb backup history) | ✅ | ✅ | ➖ not available (Azure backs up by itself; the button is marked N/A) |
+| Health checks: disk free, backups past RPO, failed jobs | ✅ (Express has no Agent: no job ever fails) | ✅ | ➖ *Unknown*, left out of the score |
 | File I/O (`sys.dm_io_virtual_file_stats`) | ✅ Every database | ✅ Every database | ⚠️ The current database's files only; no volumes |
 | Config Checks | ✅ | ✅ (compatibility level held to the highest level in use) | ⚠️ This database's MAXDOP, auto-shrink, page verify and compatibility level only |
 | Security Audit | ✅ | ✅ (Microsoft Entra logins and groups too) | ➖ not available (the button is marked N/A) |

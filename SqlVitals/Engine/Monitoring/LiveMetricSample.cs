@@ -116,12 +116,20 @@ public enum HealthLevel
 /// <param name="LogReuseWait">Its log_reuse_wait_desc, e.g. "LOG_BACKUP"; null when not reported.</param>
 /// <param name="LogDatabase">The database whose log it is.</param>
 /// <param name="BlockedSessions">Requests blocked now.</param>
+/// <param name="Volumes">Disk free (#174): every volume holding database files, so it can be graded again on other thresholds.</param>
+/// <param name="Volume">Disk free: the volume graded, the one past the worst level with the least free space.</param>
+/// <param name="FreeGb">Disk free: that volume's free space.</param>
+/// <param name="Names">Backups past RPO and failed Agent jobs (#174): the databases or jobs, in the order read.</param>
 public sealed record HealthFacts(
-    double  BufferPoolGb    = 0,
-    double  LogSizeMb       = 0,
-    string? LogReuseWait    = null,
-    string? LogDatabase     = null,
-    double  BlockedSessions = 0)
+    double                       BufferPoolGb    = 0,
+    double                       LogSizeMb       = 0,
+    string?                      LogReuseWait    = null,
+    string?                      LogDatabase     = null,
+    double                       BlockedSessions = 0,
+    IReadOnlyList<VolumeSpace>?  Volumes         = null,
+    string?                      Volume          = null,
+    double                       FreeGb          = 0,
+    IReadOnlyList<string>?       Names           = null)
 {
     public static HealthFacts None { get; } = new();
 
@@ -155,6 +163,10 @@ public static class HealthRules
     /// the next checkpoint.
     /// </summary>
     public static IReadOnlyList<string> ReusableLogWaits { get; } = ["NOTHING", "CHECKPOINT"];
+
+    /// <summary>The checks graded on every sample (<see cref="Grade"/>); the rest are <see cref="ServerChecks"/>.</summary>
+    public static IReadOnlyList<HealthIndicator> SampleIndicators { get; } =
+        Enum.GetValues<HealthIndicator>().Where(i => !ServerChecks.IsServerCheck(i)).ToList();
 
     /// <summary>Grades a sample on the default thresholds.</summary>
     public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample) =>
@@ -206,6 +218,9 @@ public static class HealthRules
     /// </summary>
     public static HealthReading Read(HealthIndicator indicator, double value, bool measured, HealthFacts facts, HealthThresholds thresholds)
     {
+        if (indicator == HealthIndicator.DiskFree && facts.Volumes is { Count: > 0 } volumes)
+            return ReadDisk(volumes, facts, thresholds);
+
         var limits = thresholds.For(indicator, facts.BufferPoolGb);
         var level  = LevelOf(indicator, value, measured, limits);
         string? note = null;
@@ -225,6 +240,50 @@ public static class HealthRules
 
         var reason = level is HealthLevel.Warning or HealthLevel.Critical ? ReasonFor(indicator, value, facts) : null;
         return new HealthReading(indicator, level, value, limits, reason, measured, facts, note);
+    }
+
+    /// <summary>
+    /// Disk free (#174): each volume graded on both thresholds (<see cref="DiskLevelOf"/>), and the
+    /// one past the worst level with the least free space reported, its free % as the figure.
+    /// </summary>
+    private static HealthReading ReadDisk(IReadOnlyList<VolumeSpace> volumes, HealthFacts facts, HealthThresholds thresholds)
+    {
+        var graded = volumes.Select(v => (Volume: v, Level: DiskLevelOf(v, thresholds)))
+                            .OrderByDescending(g => g.Level)
+                            .ThenBy(g => g.Volume.FreePct)
+                            .ToList();
+        var (volume, level) = graded[0];
+        facts = facts with { Volume = volume.Volume, FreeGb = volume.FreeGb };
+        var limits = thresholds.Get(HealthIndicator.DiskFree);
+
+        // A volume a share alone would have flagged, spared by its free GB: said, so it isn't a surprise.
+        string? note = null;
+        if (level == HealthLevel.Healthy &&
+            graded.Select(g => g.Volume).FirstOrDefault(v => LevelOf(HealthIndicator.DiskFree, v.FreePct, true, limits) > HealthLevel.Healthy) is { } spared)
+            note = string.Format(CultureInfo.CurrentCulture, "Not a warning: {0} is only {1:0} % free, but still has {2}.",
+                                 spared.Volume, spared.FreePct, Gigabytes(spared.FreeGb));
+
+        var reason = level is HealthLevel.Warning or HealthLevel.Critical ? ReasonFor(HealthIndicator.DiskFree, volume.FreePct, facts) : null;
+        return new HealthReading(HealthIndicator.DiskFree, level, volume.FreePct, limits, reason, Measured: true, facts, note);
+    }
+
+    /// <summary>
+    /// A volume's level (#174): past a level when both its free % and its free GB are below that
+    /// level's thresholds. The % turns a level on or off, as for every check; a GB left blank
+    /// leaves that level to the % alone.
+    /// </summary>
+    public static HealthLevel DiskLevelOf(VolumeSpace volume, HealthThresholds thresholds)
+    {
+        var pct = thresholds.Get(HealthIndicator.DiskFree);
+        var gb  = thresholds.DiskFreeGbOrDefault;
+
+        bool Past(double? pctLimit, double? gbLimit) =>
+            pctLimit is { } p && volume.FreePct < p &&
+            (gbLimit is not { } g || volume.FreeGb < g);
+
+        return Past(pct.Critical, gb.Critical) ? HealthLevel.Critical
+             : Past(pct.Warning, gb.Warning)   ? HealthLevel.Warning
+             : HealthLevel.Healthy;
     }
 
     /// <summary>A reading's figure graded again on other thresholds, as Settings' preview does (#131).</summary>
@@ -273,9 +332,18 @@ public static class HealthRules
             HealthIndicator.LogSpace            => string.Format(culture, "log {0:0} % full", v) +
                                                    (string.IsNullOrWhiteSpace(facts.LogDatabase) ? string.Empty : $" in {facts.LogDatabase}"),
             HealthIndicator.TempDbSpace         => string.Format(culture, "TempDB {0:0} % full", v),
+            HealthIndicator.DiskFree            => string.Format(culture, "disk {0} {1:0} % free ({2})", facts.Volume, v, Gigabytes(facts.FreeGb)),
+            HealthIndicator.BackupsPastRpo      => v == 1 && OnlyName(facts) is { } database
+                                                       ? $"{database} past its backup RPO"
+                                                       : string.Format(culture, "{0:N0} databases past their backup RPO", v),
+            HealthIndicator.FailedJobs          => v == 1 && OnlyName(facts) is { } job
+                                                       ? $"Agent job {job} failed"
+                                                       : string.Format(culture, "{0:N0} Agent jobs failed", v),
             _                                   => reading.Indicator.ToString(),
         };
     }
+
+    private static string? OnlyName(HealthFacts facts) => facts.Names is [var name] ? name : null;
 
     // The health dot's tooltip line for an indicator past a threshold.
     private static string ReasonFor(HealthIndicator indicator, double value, HealthFacts facts) => indicator switch
@@ -286,8 +354,21 @@ public static class HealthRules
         HealthIndicator.MemoryGrantsPending => $"{value:0} memory grant(s) pending",
         HealthIndicator.LogSpace            => $"Log {value:0}% full" + LogDetail(facts),
         HealthIndicator.TempDbSpace         => $"TempDB {value:0}% full",
+        HealthIndicator.DiskFree            => $"Disk {facts.Volume} {value:0}% free ({Gigabytes(facts.FreeGb)})",
+        HealthIndicator.BackupsPastRpo      => $"{value:0} past backup RPO" + NameList(facts),
+        HealthIndicator.FailedJobs          => $"{value:0} Agent job(s) failed" + NameList(facts),
         _                                   => indicator.ToString(),
     };
+
+    // " (Sales, HR, Stock +2)": the first three names, or nothing.
+    private static string NameList(HealthFacts facts)
+    {
+        if (facts.Names is not { Count: > 0 } names)
+            return string.Empty;
+        const int Shown = 3;
+        var more = names.Count > Shown ? $" +{names.Count - Shown}" : string.Empty;
+        return $" ({string.Join(", ", names.Take(Shown))}{more})";
+    }
 
     // " (Sales, waiting on LOG_BACKUP)", " (Sales)", or nothing.
     private static string LogDetail(HealthFacts facts)

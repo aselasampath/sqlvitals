@@ -132,6 +132,17 @@ An application that opens connections and doesn't close them fills its pool with
 4. **Data at risk** is how much work each database would lose right now. Sort by it to see the worst.
 5. Select a database for its backup history: check **Checksum** says *Yes* and the files go where you expect.
 6. If an amber line mentions an **availability group**, look at the replica that takes the backups too. See [Backups → Reading it](Backups.md#reading-it).
+7. To hear about it without opening the page, monitor the server: from 0.76.0 the *Backups past RPO* check turns its dot red, and raises an [alert](Alerts.md), when a database falls past these ages.
+
+## Hear about a full disk, a missed backup or a failed job
+
+*Overnight problems show up in the morning, after the disk filled or the backup didn't run.*
+
+1. [Monitor the server](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring), and for nights and weekends keep it watched: [the collector service](Collector-Service.md), or SqlVitals left running in the tray.
+2. From 0.76.0 three checks are read every 5 minutes: **Disk free** (each volume holding database files), **Backups past RPO** (the ages on **💾 Backups**) and **Failed Agent jobs**. A problem turns the dot amber or red, lowers the score and raises an [alert](Alerts.md); send alerts to [Slack or Teams](Chat-Notifications.md) to hear about it away from the PC.
+3. **Investigate** on the alert opens the page that explains it: **💽 File I/O** (its *Free* column), **💾 Backups** or **🕒 Agent Jobs**.
+4. A big volume that is low only as a share (a 4 TB disk at 12 % still has 480 GB) isn't flagged: a volume must be below both the % and the GB. Change either in [Settings → Health thresholds](Health-Dot-and-Background-Monitoring.md#change-the-thresholds).
+5. A grey bar means the check couldn't be read: hover it for why, usually a missing permission on msdb (see [Server impact and permissions](Server-Impact-and-Permissions.md#permissions)).
 
 ## Is the storage slow?
 

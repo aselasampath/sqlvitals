@@ -98,6 +98,11 @@ public static class EvidenceRoutes
         HealthIndicator.MemoryGrantsPending => new("Memory grants", "Memory", FocusKind.PendingGrants, "LiveMetrics", NowOnly: true),
         HealthIndicator.LogSpace            => new("Log space", "DbStorage", FocusKind.Database, null),
         HealthIndicator.TempDbSpace         => new("TempDB", "TempDb", FocusKind.None, null),
+        // The slow checks (#174): the volumes with their free space, the databases past their RPO,
+        // the jobs with their last outcome. None of them is kept in the history.
+        HealthIndicator.DiskFree            => new("Volumes", "FileIo", FocusKind.None, null),
+        HealthIndicator.BackupsPastRpo      => new("Backups", "Backups", FocusKind.None, null),
+        HealthIndicator.FailedJobs          => new("Agent jobs", "AgentJobs", FocusKind.None, null),
         _ => throw new ArgumentOutOfRangeException(nameof(indicator), indicator, "No page explains this check."),
     };
 

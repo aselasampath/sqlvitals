@@ -13,6 +13,7 @@ WITH ranked AS (
       ON d.name = b.database_name COLLATE DATABASE_DEFAULT
      AND b.backup_finish_date >= d.create_date
     WHERE b.type IN ('D', 'I', 'L')
+      AND (@windowMinutes IS NULL OR b.backup_finish_date >= DATEADD(MINUTE, -@windowMinutes, SYSDATETIME()))
 ),
 latest AS (
     SELECT r.database_id, r.type, r.backup_start_date, r.backup_finish_date, r.bytes, r.is_copy_only,
@@ -49,6 +50,8 @@ SELECT d.name                  AS Name,
        CAST(d.is_read_only AS INT) AS IsReadOnly,
        d.create_date           AS CreateDate,
        CASE WHEN d.replica_id IS NULL THEN 0 ELSE 1 END              AS InAvailabilityGroup,
+       CASE WHEN d.replica_id IS NULL THEN 1
+            ELSE CAST(sys.fn_hadr_backup_is_preferred_replica(d.name) AS INT) END AS PreferredBackupReplica,
        CASE WHEN drs.database_id IS NULL THEN 0 ELSE 1 END           AS LogChainKnown,
        CASE WHEN drs.last_log_backup_lsn IS NULL THEN 0 ELSE 1 END   AS LogChainStarted,
        p.FullStart, p.FullFinish, p.FullBytes, p.FullCopyOnly, p.FullDevice,
@@ -59,3 +62,4 @@ LEFT JOIN sys.database_recovery_status drs ON drs.database_id = d.database_id
 LEFT JOIN pivoted p ON p.database_id = d.database_id
 WHERE d.database_id <> 2
   AND d.source_database_id IS NULL
+OPTION (RECOMPILE)

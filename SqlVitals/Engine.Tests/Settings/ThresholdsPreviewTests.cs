@@ -19,12 +19,12 @@ public sealed class ThresholdsPreviewTests
         var edited  = Defaults.With(HealthIndicator.Cpu, new HealthThreshold(85, 95));
         var preview = ThresholdsPreview.For(Uat, edited)!;
 
-        Assert.Equal(70, preview.Before);
-        Assert.Equal(80, preview.After);
+        Assert.Equal(76, preview.Before);
+        Assert.Equal(84, preview.After);
         var cpu = preview.Regraded.Checks.Single(c => c.Indicator == HealthIndicator.Cpu);
         Assert.Equal((HealthLevel.Healthy, 0), (cpu.Level, cpu.PointsLost));
         var blocking = preview.Regraded.Checks.Single(c => c.Indicator == HealthIndicator.Blocking);
-        Assert.Equal((HealthLevel.Critical, 20), (blocking.Level, blocking.PointsLost));
+        Assert.Equal((HealthLevel.Critical, 16), (blocking.Level, blocking.PointsLost));
         Assert.Equal(HealthLevel.Critical, preview.Regraded.Level);
         Assert.Equal(new HealthThreshold(85, 95), cpu.Reading.Limits);
     }
@@ -32,11 +32,11 @@ public sealed class ThresholdsPreviewTests
     [Fact]
     public void AWeightChanged_PreviewsTheScoreOnTheNewWeights()
     {
-        // Blocking weighed 0: CPU's warning is half of its 25 (20 × 100 ÷ 80).
+        // Blocking weighed 0: CPU's warning is half of its 19 (16 × 100 ÷ 84).
         var edited  = Defaults with { Weights = HealthWeights.Default.With(HealthIndicator.Blocking, 0) };
         var preview = ThresholdsPreview.For(Uat, edited)!;
 
-        Assert.Equal((70, 88), (preview.Before, preview.After));
+        Assert.Equal((76, 91), (preview.Before, preview.After));
         Assert.Equal(HealthLevel.Critical, preview.Regraded.Level);
         Assert.Equal((0, 0), (preview.Regraded.Checks[1].Worth, preview.Regraded.Checks[1].PointsLost));
     }
@@ -48,7 +48,7 @@ public sealed class ThresholdsPreviewTests
         var latest  = ServerTileTests.Score(ServerTileTests.Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 });
         var preview = ThresholdsPreview.For(latest, Defaults with { PageLifeExpectancyFixed = true })!;
 
-        Assert.Equal((92, 100), (preview.Before, preview.After));
+        Assert.Equal((95, 100), (preview.Before, preview.After));
     }
 
     [Fact]
@@ -71,8 +71,8 @@ public sealed class ThresholdsPreviewTests
             var changed   = ThresholdsPreview.For(Uat, Defaults.With(HealthIndicator.Cpu, new HealthThreshold(85, 95)))!;
             var unchanged = ThresholdsPreview.For(Uat, Defaults)!;
 
-            Assert.Equal("On the latest sample, UAT would score 70 → 80", changed.Text("UAT"));
-            Assert.Equal("On the latest sample, UAT would still score 70", unchanged.Text("UAT"));
+            Assert.Equal("On the latest sample, UAT would score 76 → 84", changed.Text("UAT"));
+            Assert.Equal("On the latest sample, UAT would still score 76", unchanged.Text("UAT"));
         }
         finally
         {
@@ -85,7 +85,7 @@ public sealed class ThresholdsPreviewTests
     {
         var sample = ServerTileTests.Sample(cpuPct: 95, ple: 120, logPct: 85, tempDbPct: 91);
         var own    = Defaults.With(HealthIndicator.LogSpace, new HealthThreshold(70, 80));
-        var graded = HealthScore.From(HealthRules.Grade(sample, own), DateTime.Now);
+        var graded = HealthScore.From(Monitoring.TestChecks.All(sample, own), DateTime.Now);
 
         // From the default grading, regraded on the connection's own: as if graded on them in the first place.
         var regraded = ThresholdsPreview.Regrade(ServerTileTests.Score(sample), own);

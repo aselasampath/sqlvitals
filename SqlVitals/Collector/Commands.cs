@@ -38,7 +38,9 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
           set                     [--sample-seconds <5-300>] [--detail-minutes 1|5|15|30] [--retention-days 7|14|30|90]
                                   [--alert-samples 1|2|3|5|10] [--command-timeout <s>]
                                   [--share-copy-minutes <5-1440>|0] [--share-copy-folder <folder>]
-                                  A share copy of the history, for SqlVitals on other PCs to read over a share.
+                                  [--backup-rpo-full <age, e.g. 7d>] [--backup-rpo-log <age, e.g. 1h>]
+                                  A share copy of the history, for SqlVitals on other PCs to read over a share. The
+                                  backup RPO is what the backups check counts databases against.
           test                    Reads each server once and posts a test message to each channel.
           install                 As an administrator: install the Windows service. [--account <name>] [--password-stdin] [--start]
           uninstall               As an administrator: remove it. Its settings and history stay unless --delete-data.
@@ -124,6 +126,7 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
         o.WriteLine($"Samples every {settings.SampleSeconds} s · detail every {settings.HistoryIntervalMinutes} min · " +
                     $"history kept {settings.HistoryRetentionDays} days · alerts after {settings.AlertSamples} samples · " +
                     $"query timeout {settings.CommandTimeoutSeconds} s");
+        o.WriteLine($"Backups checked against {settings.BackupRpo.Describe()}.");
         o.WriteLine(settings.ShareCopyMinutes == 0
             ? "No share copy of the history."
             : $"Share copy every {settings.ShareCopyMinutes} min: {settings.ShareCopyPath(dataDirectory)}");
@@ -326,6 +329,17 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
         {
             settings.ShareCopyFolder = folder.Trim();
             changed.Add($"the share copy in {settings.ShareCopyPath(dataDirectory)}");
+        }
+        if (line.Option("backup-rpo-full") is not null || line.Option("backup-rpo-log") is not null)
+        {
+            // Each box's own unit when it has none, as on the Backups page: days for full, minutes for log.
+            var current = settings.BackupRpo;
+            if (!Engine.Backups.BackupRpo.TryParse(line.Option("backup-rpo-full") ?? Engine.Backups.BackupRpo.Format(current.FullMaxAge),
+                                                   line.Option("backup-rpo-log") ?? Engine.Backups.BackupRpo.Format(current.LogMaxAge),
+                                                   out var rpo, out var error))
+                throw new UsageException(error);
+            settings.BackupRpo = rpo!;
+            changed.Add($"backups checked against {rpo!.Describe()}");
         }
         if (changed.Count == 0)
             throw new UsageException("Nothing to set. See: SqlVitals.Collector help");

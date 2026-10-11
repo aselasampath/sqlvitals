@@ -168,7 +168,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         Assert.Contains("Volume: D:\\", page.DetailsView!.RowTexts);
         Assert.False(page.DetailsView.TextShown);
         Assert.Equal(16, page.FilesGrid.Columns.Count);
-        Assert.Equal(10, page.VolumesGrid.Columns.Count);
+        Assert.Equal(11, page.VolumesGrid.Columns.Count);
 
         // How it's measured folds to one line, remembered; Pause is the top bar's.
         page.MeasureSection.Toggle.IsChecked = false;
@@ -486,6 +486,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         _monitoring.Sync(settings.Load(), ActivitySources.AutomaticAtStartup);
         for (var i = 0; i < 3; i++)
             UiThread.Wait(_monitoring.Get(hot.Id)!.CollectNowAsync());
+        MonitoringManagerTests.WaitForServerChecks(_monitoring.Get(hot.Id)!);
 
         var navigator = new FakeNavigator();
         var page = new AlertsPage(_monitoring, settings, navigator: navigator);

@@ -4,6 +4,7 @@ using SqlVitals.Engine.ConfigChecks;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.FileIo;
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Regressions;
 using SqlVitals.Engine.Repositories;
@@ -68,6 +69,14 @@ internal sealed class FakeRepository : IWaitStatsRepository
     public Func<string, DateTime, Task<IReadOnlyList<BackupHistoryEntry>>>? GetBackupHistoryAsync { get; set; }
     Task<IReadOnlyList<BackupHistoryEntry>> IBackupRepository.GetBackupHistoryAsync(string databaseName, DateTime createDate, CancellationToken cancellationToken) =>
         GetBackupHistoryAsync is { } answer ? Answered(nameof(GetBackupHistoryAsync), answer(databaseName, createDate), cancellationToken) : Unanswered<Task<IReadOnlyList<BackupHistoryEntry>>>(nameof(GetBackupHistoryAsync), cancellationToken);
+
+    /// <summary>The slow checks of a healthy server (#174): half of a 1 TB disk free, no backup past its RPO, no job failed.</summary>
+    public static Func<ServerChecksRequest, Task<ServerCheckFigures>> HealthyChecks { get; } = _ =>
+        Task.FromResult(new ServerCheckFigures([new VolumeSpace(@"D:\", 1000, 500)], null, [], null, [], null, LastJobInstanceId: 1));
+
+    public Func<ServerChecksRequest, Task<ServerCheckFigures>>? GetServerChecksAsync { get; set; }
+    Task<ServerCheckFigures> IServerChecksRepository.GetServerChecksAsync(ServerChecksRequest request, CancellationToken cancellationToken) =>
+        GetServerChecksAsync is { } answer ? Answered(nameof(GetServerChecksAsync), answer(request), cancellationToken) : Unanswered<Task<ServerCheckFigures>>(nameof(GetServerChecksAsync), cancellationToken);
 
     public Func<Task<ConfigCheckList>>? GetConfigurationChecksAsync { get; set; }
     Task<ConfigCheckList> IConfigurationRepository.GetConfigurationChecksAsync(CancellationToken cancellationToken) =>

@@ -259,7 +259,9 @@ public static class ChatMessageBuilder
         if (sorted.Count == 1)
         {
             var alert = sorted[0];
-            var title = $"{good} Back to normal: {names[0]} on {connectionName}";
+            var title = alert.EndReason == AlertEndReason.NoData
+                ? $"{good} No longer measured: {names[0]} on {connectionName}"
+                : $"{good} Back to normal: {names[0]} on {connectionName}";
             var facts = new List<ChatFact> { new("Worst", AlertText.Figure(alert)) };
             if (AlertText.Context(alert) is { } context)
                 facts.Add(new ChatFact("Detail", context));
@@ -279,7 +281,8 @@ public static class ChatMessageBuilder
         var lines = sorted.Take(MaxLines).Select(a => new ChatLine(
             ChatTone.Good,
             HealthThresholds.Info(a.Indicator).Name,
-            $"worst {AlertText.Figure(a)}, lasted {Lasted(a)}")).ToList();
+            $"worst {AlertText.Figure(a)}, lasted {Lasted(a)}" +
+            (a.EndReason == AlertEndReason.NoData ? ", no longer measured" : string.Empty))).ToList();
         var ended = sorted.Max(a => a.EndedUtc ?? a.StartedUtc);
 
         return new ChatMessage(ChatTone.Good, many, "", [new ChatFact("Ended", "", ended)], SentFrom(pcName),

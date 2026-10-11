@@ -45,6 +45,10 @@ public sealed record BackupInfo(DateTime Start, DateTime Finish, long? Bytes, bo
 /// </summary>
 /// <param name="LogChainKnown">sys.database_recovery_status had a row for it (the login can see it).</param>
 /// <param name="LogChainStarted">Its last_log_backup_lsn is set: a log backup can be taken.</param>
+/// <param name="PreferredBackupReplica">
+/// Not in an availability group, or this replica is the one its backup preference picks
+/// (sys.fn_hadr_backup_is_preferred_replica): backups are expected here (#174).
+/// </param>
 public sealed record DatabaseBackupRow(
     string      Name,
     string      RecoveryModel,
@@ -56,7 +60,8 @@ public sealed record DatabaseBackupRow(
     bool        LogChainStarted,
     BackupInfo? Full,
     BackupInfo? Differential,
-    BackupInfo? Log);
+    BackupInfo? Log,
+    bool        PreferredBackupReplica = true);
 
 /// <summary>A problem with a database's backups, in a sentence.</summary>
 public sealed record BackupWarning(BackupStatus Kind, string Text);
