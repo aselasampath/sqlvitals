@@ -73,6 +73,7 @@ public sealed class SettingsPageTests : IDisposable
                                             (conn, _) => Repository(conn));
         _monitoring.Sync(_settings.Load(), ActivitySources.AutomaticAtStartup);
         UiThread.Wait(_monitoring.Get(_hot.Id)!.CollectNowAsync());
+        MonitoringManagerTests.WaitForServerChecks(_monitoring.Get(_hot.Id)!);
         try { UiThread.Wait(_monitoring.Get(_down.Id)!.CollectNowAsync()); }
         catch (InvalidOperationException) { /* "No server in tests.": Down can't be reached */ }
 
@@ -297,7 +298,7 @@ public sealed class SettingsPageTests : IDisposable
 
         Assert.Equal(["Down", "Hot", "Quiet"], cards.Select(c => c.Name));
         Assert.Equal([ConnectionRole.Background, ConnectionRole.Active, ConnectionRole.Off], cards.Select(c => c.Role));
-        Assert.Equal(["Unreachable · can't connect", "Critical: CPU at 99 % · score 80", "No score: not monitored"], cards.Select(c => c.StateText));
+        Assert.Equal(["Unreachable · can't connect", "Critical: CPU at 99 % · score 84", "No score: not monitored"], cards.Select(c => c.StateText));
         Assert.Equal(["Windows auth", "Monitor in background", "Default thresholds"], cards[0].Tags);
         Assert.Equal(["Windows auth", "Monitored", "Default thresholds"], cards[1].Tags);
         Assert.Equal(["Windows auth", "Not monitored", "Default thresholds"], cards[2].Tags);
@@ -512,7 +513,7 @@ public sealed class SettingsPageTests : IDisposable
 
         // The defaults, read-only, with the sample graded on them: CPU 99 % is critical.
         Assert.True(editor.ConnectionThresholds.IsReadOnly);
-        Assert.Equal(("99 %", "−20"), editor.ConnectionThresholds.Cells(HealthIndicator.Cpu));
+        Assert.Equal(("99 %", "−16"), editor.ConnectionThresholds.Cells(HealthIndicator.Cpu));
         Assert.Equal(Visibility.Collapsed, editor.TxtPreview.Visibility);
 
         editor.ChkCustomThresholds.IsChecked = true;
@@ -521,7 +522,7 @@ public sealed class SettingsPageTests : IDisposable
 
         Assert.False(editor.ConnectionThresholds.IsReadOnly);
         Assert.Equal(Visibility.Visible, editor.TxtPreview.Visibility);
-        Assert.Equal("On the latest sample, Hot would score 80 → 100", editor.TxtPreview.Text);
+        Assert.Equal("On the latest sample, Hot would score 84 → 100", editor.TxtPreview.Text);
         Assert.Equal(("99 %", "0"), editor.ConnectionThresholds.Cells(HealthIndicator.Cpu));
 
         // Turning it off again shows the defaults: nothing left to save.
@@ -573,19 +574,19 @@ public sealed class SettingsPageTests : IDisposable
         var logged = new List<ActivityEntry>();
         _settings!.Changed += logged.AddRange;
 
-        // CPU at 99 % costs Hot 20 points; weighted 0, it costs none (#173).
+        // CPU at 99 % costs Hot 16 points; weighted 0, it costs none (#173).
         Assert.Equal(Visibility.Visible, category.TxtPreview.Visibility);
-        Assert.Equal("On the latest sample, Hot would still score 80", category.TxtPreview.Text);
+        Assert.Equal("On the latest sample, Hot would still score 84", category.TxtPreview.Text);
         category.GlobalThresholds.WeightBox(HealthIndicator.Cpu).Text = "0";
         Assert.True(category.IsDirty);
-        Assert.Equal("On the latest sample, Hot would score 80 → 100", category.TxtPreview.Text);
+        Assert.Equal("On the latest sample, Hot would score 84 → 100", category.TxtPreview.Text);
 
         Assert.True(category.Save());
         Assert.Equal(0, _settings.Load().HealthThresholds.Weight(HealthIndicator.Cpu));
         Assert.Equal(0, _monitoring!.Get(_hot.Id)!.Thresholds.Weight(HealthIndicator.Cpu));
         Assert.Equal(100, _monitoring.Get(_hot.Id)!.Score!.Value);
         var row = Assert.Single(logged, r => r.Setting == "Health weight: CPU");
-        Assert.Equal(("20", "0"), (row.OldValue, row.NewValue));
+        Assert.Equal(("16", "0"), (row.OldValue, row.NewValue));
         Assert.Equal(SettingPlace.In(SettingsCategory.Thresholds), SettingsNav.PlaceOf(row.Setting!));
     });
 
@@ -605,6 +606,32 @@ public sealed class SettingsPageTests : IDisposable
         Assert.False(_settings.Load().HealthThresholds.ScalesPageLifeExpectancy);
         var row = Assert.Single(logged, r => r.Setting == "Health threshold: Page life expectancy scaling");
         Assert.Equal(("Per 4 GB of buffer pool", "Fixed"), (row.OldValue, row.NewValue));
+    });
+
+    [Fact]
+    public void TheDiskGbThresholds_AreSaved_Checked_AndLogged() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
+        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var editor = category.GlobalThresholds;
+        var logged = new List<ActivityEntry>();
+        _settings!.Changed += logged.AddRange;
+        Assert.Equal(("50", "20"), (editor.GbBox().Text, editor.GbBox(critical: true).Text));
+
+        // The critical one must be below the warning one, as for any check where lower is worse.
+        editor.GbBox(critical: true).Text = "80";
+        Assert.False(category.Save());
+        Assert.Equal("Disk free (GB): the critical threshold must be lower than the warning one.",
+                     category.TxtStatus.Text.TrimStart('✗', ' ', '⚠'));
+
+        editor.GbBox().Text = "100";
+        editor.GbBox(critical: true).Text = "";
+        Assert.True(category.Save());
+
+        Assert.Equal(new HealthThreshold(100, null), _settings.Load().HealthThresholds.DiskFreeGb);
+        Assert.Equal(new HealthThreshold(100, null), _monitoring!.Get(_hot.Id)!.Thresholds.DiskFreeGb);
+        var row = Assert.Single(logged, r => r.Setting == "Health threshold: Disk free (GB)");
+        Assert.Equal(("warning 50 GB, critical 20 GB", "warning 100 GB, critical off"), (row.OldValue, row.NewValue));
     });
 
     [Fact]

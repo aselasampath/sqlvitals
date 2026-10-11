@@ -22,10 +22,18 @@ public sealed record HealthScoreCheck(HealthReading Reading, int Weight, int Poi
     /// <summary>It counts towards the score: it reported, and its weight isn't 0.</summary>
     public bool IsScored => !IsUnknown && Weight > 0;
 
-    /// <summary>"82 %", "3.5 min"; "Nothing blocked"; "No data" when the server didn't report it.</summary>
+    /// <summary>"82 %", "3.5 min"; "Nothing blocked", "None failed"; "No data" when the server didn't report it.</summary>
     public string ValueText => !Reading.Measured
         ? "No data"
-        : Indicator == HealthIndicator.Blocking && Reading.Value <= 0 ? "Nothing blocked" : AlertText.Value(Indicator, Reading.Value);
+        : Reading.Value <= 0 && Indicator switch
+          {
+              HealthIndicator.Blocking       => "Nothing blocked",
+              HealthIndicator.BackupsPastRpo => "None past",
+              HealthIndicator.FailedJobs     => "None failed",
+              _                              => null,
+          } is { } none
+            ? none
+            : AlertText.Value(Indicator, Reading.Value);
 
     /// <summary>"≥ 75 %", or "off" when that level isn't checked.</summary>
     public string WarningText  => ThresholdText(Reading.Limits.Warning);
@@ -64,7 +72,7 @@ public sealed record HealthScore(
 {
     public const int Max = 100;
 
-    /// <summary>A check's default weight; they add up to <see cref="Max"/>. See <see cref="HealthWeights.DefaultOf"/>.</summary>
+    /// <summary>A check's default weight, relative to the others. See <see cref="HealthWeights.DefaultOf"/>.</summary>
     public static int Weight(HealthIndicator indicator) => HealthWeights.DefaultOf(indicator);
 
     /// <summary>Half the points for a warning, all of them for critical, nothing otherwise.</summary>

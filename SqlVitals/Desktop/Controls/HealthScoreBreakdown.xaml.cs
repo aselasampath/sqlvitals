@@ -123,7 +123,9 @@ public partial class HealthScoreBreakdown : UserControl
     {
         var lines = new List<string>(3);
         if (check.IsUnknown)
-            lines.Add("No data: the server didn't report it, so it's left out of the score.");
+            lines.Add(check.Reading.Note is null
+                ? "No data: the server didn't report it, so it's left out of the score."
+                : "No data, so it's left out of the score.");
         else if (check.Reading.Reason is { } reason)
             lines.Add(reason);
         if (check.Reading.Note is { } note)

@@ -53,6 +53,8 @@ public class WaitStatsRepository(SqlTarget target, ServerCapabilitiesCache capab
 
     private readonly BackupRepository _backups = new(target, capabilities);
 
+    private readonly ServerChecksRepository _serverChecks = new(target, capabilities);
+
     // Remembers which volume each file is on, so one instance per connection.
     private readonly FileIoRepository _fileIo = new(target, capabilities);
 
@@ -223,6 +225,10 @@ public class WaitStatsRepository(SqlTarget target, ServerCapabilitiesCache capab
 
     public Task<IReadOnlyList<Backups.BackupHistoryEntry>> GetBackupHistoryAsync(string databaseName, DateTime createDate, CancellationToken cancellationToken = default)
         => _backups.GetBackupHistoryAsync(databaseName, createDate, cancellationToken: cancellationToken);
+
+    // ── Slow health checks (delegated to ServerChecksRepository) ──────
+    public Task<Monitoring.ServerCheckFigures> GetServerChecksAsync(Monitoring.ServerChecksRequest request, CancellationToken cancellationToken = default)
+        => _serverChecks.GetServerChecksAsync(request, cancellationToken: cancellationToken);
 
     // ── File I/O latency (delegated to FileIoRepository) ──────────────
     public Task<FileIo.FileIoReading> ReadFileIoAsync(CancellationToken cancellationToken = default)

@@ -29,6 +29,36 @@ public class AlertTrackerTests
     // ── Starting ──────────────────────────────────────────────────────────────
 
     [Fact]
+    public void ACheckWithNoFigure_IsntBackToNormal_AndEndsAnAlertAsNoLongerMeasured()
+    {
+        // A disk alert (#174) whose reads then go stale: Unknown isn't back to normal.
+        IReadOnlyList<AlertChange> Disk(HealthLevel level) => _tracker.Evaluate(
+            [new HealthReading(HealthIndicator.DiskFree, level, level == HealthLevel.Unknown ? 0 : 5, new HealthThreshold(20, 10),
+                               level == HealthLevel.Unknown ? null : "Disk E: 5% free (5 GB)", Measured: level != HealthLevel.Unknown)],
+            At(_sample++));
+
+        Assert.Empty(Disk(HealthLevel.Critical));
+        Assert.Empty(Disk(HealthLevel.Unknown));
+        Assert.Empty(Disk(HealthLevel.Critical));
+        Assert.Equal(AlertChangeKind.Started, Assert.Single(Disk(HealthLevel.Critical)).Kind);
+
+        // A figure between breaks a run without one; back to normal needs normal figures.
+        Assert.Empty(Disk(HealthLevel.Healthy));
+        Assert.Empty(Disk(HealthLevel.Unknown));
+        Assert.Empty(Disk(HealthLevel.Unknown));
+        Assert.Empty(Disk(HealthLevel.Critical));
+        Assert.Single(_tracker.Active);
+
+        var firstUnknown = At(_sample);
+        Assert.Empty(Disk(HealthLevel.Unknown));
+        Assert.Empty(Disk(HealthLevel.Unknown));
+        var ended = Assert.Single(Disk(HealthLevel.Unknown));
+        Assert.Equal((AlertChangeKind.Ended, AlertEndReason.NoData, firstUnknown), (ended.Kind, ended.Alert.EndReason, ended.Alert.EndedUtc));
+        Assert.Equal("No longer measured", AlertText.EndReason(ended.Alert.EndReason));
+        Assert.Empty(_tracker.Active);
+    }
+
+    [Fact]
     public void Starts_OnlyAfterTheSetNumberOfSamplesInARow()
     {
         Assert.Empty(Cpu(80));

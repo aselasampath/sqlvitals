@@ -256,6 +256,7 @@
                             <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource VolumeStatusText}"/>
                             <DataGridTextColumn Header="Volume" Binding="{Binding VolumeText}" Width="220" ElementStyle="{StaticResource DatabaseName}"/>
                             <DataGridTextColumn Header="Files" Binding="{Binding FilesText}" Width="90" SortMemberPath="FileCount" ElementStyle="{StaticResource Number}"/>
+                            <DataGridTextColumn Header="Free" Binding="{Binding FreeText}" Width="96" SortMemberPath="FreePct" ElementStyle="{StaticResource Number}"/>
                             <DataGridTextColumn Header="Read ms" Binding="{Binding ReadLatencyText}" Width="70" SortMemberPath="ReadLatencyMs" ElementStyle="{StaticResource ReadMs}"/>
                             <DataGridTextColumn Header="Reads/s" Binding="{Binding ReadsPerSec, StringFormat='N0'}" Width="70" SortMemberPath="ReadsPerSec" ElementStyle="{StaticResource Number}"/>
                             <DataGridTextColumn Header="Write ms" Binding="{Binding WriteLatencyText}" Width="70" SortMemberPath="WriteLatencyMs" ElementStyle="{StaticResource WriteMs}"/>

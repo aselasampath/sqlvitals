@@ -341,6 +341,32 @@ public class FileLatencyTests
         Assert.Contains("sys.dm_os_volume_stats", FileIoRepository.VolumesSql);
     }
 
+    [Fact]
+    public void A_volume_shows_its_free_space_the_disk_check_reads()
+    {
+        using var culture = new CultureScope("en-GB");
+        var before = Reading(T0, File(volume: @"D:\"), File("Stock", dbId: 6, volume: @"E:\"));
+        var now    = Reading(T0.AddSeconds(10), File(volume: @"D:\"), File("Stock", dbId: 6, volume: @"E:\")) with
+        {
+            Space = [new SqlVitals.Engine.Monitoring.VolumeSpace(@"d:\", 2000, 240)],
+        };
+
+        var list = FileLatencyList.Between(before, now, FileLatencyThresholds.Default);
+
+        var d = list.Volumes.Single(v => v.Volume == @"D:\");
+        Assert.Equal(("240 GB (12 %)", 12.0), (d.FreeText, d.FreePct));
+        var e = list.Volumes.Single(v => v.Volume == @"E:\");
+        Assert.Equal((string.Empty, double.MaxValue), (e.FreeText, e.FreePct));
+    }
+
+    [Fact]
+    public void Free_space_is_read_with_the_disk_checks_query()
+    {
+        Assert.Contains("sys.dm_os_volume_stats", ServerChecksRepository.VolumesSql);
+        Assert.Contains("available_bytes", ServerChecksRepository.VolumesSql);
+        Assert.Contains("d.state = 0", ServerChecksRepository.VolumesSql);
+    }
+
     private sealed class CultureScope : IDisposable
     {
         private readonly System.Globalization.CultureInfo _previous = System.Globalization.CultureInfo.CurrentCulture;

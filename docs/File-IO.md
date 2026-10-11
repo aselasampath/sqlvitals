@@ -55,6 +55,8 @@ The lower grid adds up every file on each volume: total stall over total reads o
 - **Several slow files on one volume**: the storage (or the path to it) is the bottleneck.
 - **One slow file on an otherwise fine volume**: that database's workload is asking too much (large scans, a missing index), or it has its own storage.
 
+From 0.76.0 the **Free** column shows each volume's free space and its share: *240 GB (12 %)*. It's the figure the [Disk free](Health-Dot-and-Background-Monitoring.md#what-is-checked) health check grades, so this page is where that check's evidence opens. It's read at most once a minute; on Azure SQL Database, or where the login can't read it, the column is empty.
+
 The volume comes from `sys.dm_os_volume_stats`, asked once per file. Where that isn't available it's worked out from the file's path: the drive (`D:\`), the share (`\\filer\sql\`), or the folder.
 
 The grids have the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).

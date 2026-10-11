@@ -14,6 +14,13 @@ public enum AlertEndReason
     /// app was closed), so nobody was watching any more. The end is the last sample taken.
     /// </summary>
     MonitoringStopped,
+
+    /// <summary>
+    /// The indicator had no figure for the set number of samples (#174): a check the server
+    /// stopped reporting, or one read too long ago to trust. Not back to normal: SqlVitals can no
+    /// longer see it. The end is the first sample without a figure.
+    /// </summary>
+    NoData,
 }
 
 /// <summary>
@@ -137,7 +144,8 @@ public static class AlertText
     /// which database's log is full. Null for the indicators whose detail only repeats the figure.
     /// </summary>
     public static string? Context(Alert alert) =>
-        alert.Indicator is HealthIndicator.Blocking or HealthIndicator.LogSpace && !string.IsNullOrWhiteSpace(alert.Detail)
+        alert.Indicator is HealthIndicator.Blocking or HealthIndicator.LogSpace or HealthIndicator.DiskFree
+                        or HealthIndicator.BackupsPastRpo or HealthIndicator.FailedJobs && !string.IsNullOrWhiteSpace(alert.Detail)
             ? alert.Detail
             : null;
 
@@ -160,6 +168,11 @@ public static class AlertText
                                                        : $"{value} queries are waiting for memory to start running{limit}.",
             HealthIndicator.LogSpace            => $"The fullest transaction log is {value} full{limit}." + Also(alert.Detail),
             HealthIndicator.TempDbSpace         => $"TempDB's data files are {value} full{limit}.",
+            HealthIndicator.DiskFree            => $"A volume holding database files is down to {value} free{limit}." + Also(alert.Detail),
+            HealthIndicator.BackupsPastRpo      => (alert.Value == 1 ? "1 database is" : $"{value} databases are") +
+                                                   $" past their backup RPO{limit}: a restore would lose more than it allows." + Also(alert.Detail),
+            HealthIndicator.FailedJobs          => (alert.Value == 1 ? "1 SQL Server Agent job" : $"{value} SQL Server Agent jobs") +
+                                                   $" failed{limit}." + Also(alert.Detail),
             _                                   => Describe(alert),
         };
 
@@ -189,6 +202,7 @@ public static class AlertText
     {
         AlertEndReason.Recovered         => "Back to normal",
         AlertEndReason.MonitoringStopped => "Monitoring stopped",
+        AlertEndReason.NoData            => "No longer measured",
         _                                => string.Empty,
     };
 }

@@ -1,4 +1,5 @@
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
@@ -51,7 +52,10 @@ public sealed record CollectorUpdate(
 /// due, at the connection's interval, later after failures (<see cref="HealthRules.NextDelay"/>).
 /// A collection never overlaps another: a tick while one runs is skipped, and
 /// <see cref="CollectNowAsync"/> joins it. Each sample is graded, scored, checked for alerts and
-/// queued to the history, all off the caller's thread.
+/// queued to the history, all off the caller's thread. With a <see cref="IServerChecksRepository"/>,
+/// the slow checks (#174: disk, backups, Agent jobs) are read every <see cref="ChecksInterval"/>
+/// after a sample, in the background, and the last read is graded with each sample
+/// (<see cref="ServerChecks"/>).
 ///
 /// Thread-safe. <see cref="Updated"/> is raised under the collector's lock, in order, from
 /// whichever thread made the change (the loop's, or the caller of <see cref="Pause"/> and
@@ -78,6 +82,8 @@ public sealed class Collector : IDisposable
     private readonly Func<string, string> _redact;
     private readonly HistoryRecorder?     _history;
     private readonly AlertTracker?        _alerts;
+    private readonly IServerChecksRepository? _checksRepository;
+    private readonly ServerChecks?        _checks;
 
     private LiveMetricSnapshot? _previous;
     private LiveMetricSample?   _lastSample;
@@ -91,6 +97,8 @@ public sealed class Collector : IDisposable
     private string?             _gradedText;
     private bool                _running;
     private bool                _disposed;
+    private bool                _checksInFlight;
+    private BackupRpo           _backupRpo = BackupRpo.Default;
 
     private HealthLevel  _health     = HealthLevel.Unknown;
     private string       _healthText = "Waiting for the first sample…";
@@ -109,8 +117,13 @@ public sealed class Collector : IDisposable
     /// </param>
     /// <param name="time">The clock for the schedule and the times it reports; the system clock when null.</param>
     /// <param name="redact">Removes secrets from an error before it's kept or shown; none when null.</param>
+    /// <param name="checks">
+    /// Reads the slow checks (#174); null (Live Metrics' ad-hoc collector) grades only the six read
+    /// with every sample.
+    /// </param>
     public Collector(Guid? connectionId, ILiveMetricsRepository repository, int intervalSeconds = DefaultIntervalSeconds,
-                     HistoryRecorder? history = null, TimeProvider? time = null, Func<string, string>? redact = null)
+                     HistoryRecorder? history = null, TimeProvider? time = null, Func<string, string>? redact = null,
+                     IServerChecksRepository? checks = null)
     {
         ConnectionId     = connectionId;
         Repository       = repository;
@@ -121,6 +134,11 @@ public sealed class Collector : IDisposable
 
         if (connectionId is { } id && history is not null)
             _alerts = new AlertTracker(id);
+        if (checks is not null)
+        {
+            _checksRepository = checks;
+            _checks           = new ServerChecks { SampleInterval = TimeSpan.FromSeconds(_intervalSeconds) };
+        }
     }
 
     /// <summary>The saved connection it collects for; null for an ad-hoc collector.</summary>
@@ -154,6 +172,7 @@ public sealed class Collector : IDisposable
                 var seconds = Math.Max(1, value);
                 if (seconds == _intervalSeconds) return;
                 _intervalSeconds = seconds;
+                _checks?.SampleInterval = TimeSpan.FromSeconds(seconds);
                 _nextDueUtc = UtcNow + CurrentDelay();
                 Raise(CollectorUpdateKind.State);
             }
@@ -175,11 +194,34 @@ public sealed class Collector : IDisposable
                 _thresholds = value;
                 if (_consecutiveFailures == 0 && _lastSample is { } sample)
                 {
-                    GradeHealth(HealthRules.Grade(sample, _thresholds), sample);
+                    GradeHealth(Grade(sample), sample);
                     Raise(CollectorUpdateKind.State);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Time between reads of the slow checks (#174): the history's detail interval. A change
+    /// applies to the next check. Nothing to set without a <see cref="IServerChecksRepository"/>.
+    /// </summary>
+    public TimeSpan ChecksInterval
+    {
+        get { lock (_gate) return _checks?.Interval ?? ServerChecks.DefaultInterval; }
+        set { lock (_gate) _checks?.Interval = value; }
+    }
+
+    /// <summary>A read of the slow checks is running (#174); tests wait for it to end.</summary>
+    internal bool ReadingChecks
+    {
+        get { lock (_gate) return _checksInFlight; }
+    }
+
+    /// <summary>The RPO the backups check counts databases against (#174), from the next read.</summary>
+    public BackupRpo BackupRpo
+    {
+        get { lock (_gate) return _backupRpo; }
+        set { lock (_gate) _backupRpo = value; }
     }
 
     /// <summary>
@@ -189,7 +231,14 @@ public sealed class Collector : IDisposable
     public int AlertSamples
     {
         get { lock (_gate) return _alerts?.Samples ?? AlertSettings.DefaultSamples; }
-        set { lock (_gate) _alerts?.Samples = Math.Max(1, value); }
+        set
+        {
+            lock (_gate)
+            {
+                _alerts?.Samples = Math.Max(1, value);
+                _checks?.AlertSamples = Math.Max(1, value);
+            }
+        }
     }
 
     /// <summary>Time left before the next scheduled collection; zero when paused.</summary>
@@ -338,7 +387,7 @@ public sealed class Collector : IDisposable
                 _failingSince        = null;
                 _lastError           = null;
                 _lastSuccess         = LocalNow;
-                var readings = HealthRules.Grade(sample, _thresholds);
+                var readings = Grade(sample);
                 GradeHealth(readings, sample);
                 _history?.RecordScore(_score!);
                 // Every collected sample counts towards an alert, the first one too: the health
@@ -354,9 +403,11 @@ public sealed class Collector : IDisposable
 
                 Raise(CollectorUpdateKind.Sample, sample);
             }
-            // Details are only read from a server that just answered, never from one that is failing.
+            // Details and the slow checks are only read from a server that just answered, never
+            // from one that is failing.
             if (_history is not null)
                 _ = _history.CollectDetailIfDueAsync(cancel);
+            ReadChecksIfDue(cancel);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
@@ -403,6 +454,58 @@ public sealed class Collector : IDisposable
                     Raise(CollectorUpdateKind.State);
             }
         }
+    }
+
+    // Under the lock: the sample's six checks, and the slow checks' last read (#174).
+    private IReadOnlyList<HealthReading> Grade(LiveMetricSample sample)
+    {
+        var readings = HealthRules.Grade(sample, _thresholds);
+        return _checks is null ? readings : [.. readings, .. _checks.Readings(_thresholds, UtcNow)];
+    }
+
+    // Reads the slow checks in the background when due and none is running (#174). A read that
+    // fails keeps the last one, which turns Unknown once it's too old to trust; the next is due
+    // an interval after this one started either way.
+    private void ReadChecksIfDue(CancellationToken cancel)
+    {
+        ServerChecksRequest request;
+        lock (_gate)
+        {
+            if (_checks is null || _disposed || _checksInFlight || !_checks.IsDue(UtcNow))
+                return;
+            _checksInFlight = true;
+            request         = _checks.Start(UtcNow, _backupRpo);
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var figures = await _checksRepository!.GetServerChecksAsync(request, cancel).ConfigureAwait(false);
+                lock (_gate)
+                {
+                    if (_disposed || cancel.IsCancellationRequested)
+                        return;
+                    _checks.Apply(figures, UtcNow);
+                    // Shown straight away rather than at the next sample; alerts wait for it.
+                    if (_consecutiveFailures == 0 && _lastSample is { } sample)
+                    {
+                        GradeHealth(Grade(sample), sample);
+                        Raise(CollectorUpdateKind.State);
+                    }
+                }
+            }
+            catch
+            {
+                // Cancelled by Pause or Dispose, or the server failed: the last read stands
+                // until it's too old to trust.
+            }
+            finally
+            {
+                lock (_gate)
+                    _checksInFlight = false;
+            }
+        }, CancellationToken.None);
     }
 
     // Under the lock.

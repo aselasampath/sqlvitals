@@ -122,7 +122,7 @@ public sealed record ServerTile(
         _                      => "Off",
     };
 
-    /// <summary>The bar labels, short enough for six across a tile.</summary>
+    /// <summary>The bar labels, short enough for nine across a tile.</summary>
     public static string ShortName(HealthIndicator indicator) => indicator switch
     {
         HealthIndicator.Cpu                 => "CPU",
@@ -130,7 +130,10 @@ public sealed record ServerTile(
         HealthIndicator.PageLifeExpectancy  => "PLE",
         HealthIndicator.MemoryGrantsPending => "Grants",
         HealthIndicator.LogSpace            => "Log",
-        HealthIndicator.TempDbSpace         => "TempDB",
+        HealthIndicator.TempDbSpace         => "Temp",
+        HealthIndicator.DiskFree            => "Disk",
+        HealthIndicator.BackupsPastRpo      => "RPO",
+        HealthIndicator.FailedJobs          => "Jobs",
         _                                   => indicator.ToString(),
     };
 
@@ -291,7 +294,8 @@ public sealed record ServerTile(
             return score.Checks.Select(c => new CheckBar(
                 c.Indicator, ShortName(c.Indicator), c.Level,
                 c.IsUnknown
-                    ? $"{c.Name}: no data, so it's left out of the score"
+                    // Why there's none when it's known (#174): not read yet, too old, no permission.
+                    ? $"{c.Name}: no data, so it's left out of the score" + (c.Reading.Note is { } why ? $". {why}" : string.Empty)
                     : $"{c.Name}: {c.ValueText} (warning {c.WarningText}, critical {c.CriticalText})" +
                       (c.PointsLost > 0 ? $" · −{c.PointsLost}" : string.Empty) +
                       (c.Weight == 0 ? " · not scored, weight 0" : string.Empty))).ToList();

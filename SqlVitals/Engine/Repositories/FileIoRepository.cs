@@ -1,5 +1,6 @@
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.FileIo;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Repositories;
 
@@ -30,6 +31,12 @@ public class FileIoRepository(SqlTarget target, ServerCapabilitiesCache? capabil
     private readonly Dictionary<(int, int), string> _volumes = new();
     private readonly HashSet<(int, int)> _volumesAsked = new();
     private bool _volumeStatsFailed;
+
+    // Free space per volume (#174), read at most once a SpaceEvery: it changes slowly, and the
+    // query asks sys.dm_os_volume_stats about every file.
+    internal static readonly TimeSpan SpaceEvery = TimeSpan.FromMinutes(1);
+    private IReadOnlyList<VolumeSpace> _space = [];
+    private DateTime _spaceReadUtc = DateTime.MinValue;
 
     public async Task<FileIoReading> ReadFileIoAsync(CancellationToken cancellationToken = default)
     {
@@ -71,7 +78,10 @@ public class FileIoRepository(SqlTarget target, ServerCapabilitiesCache? capabil
         }
 
         var serverTime = rows.Count > 0 ? (DateTime)rows[0].ServerTime : DateTime.Now;
-        return new FileIoReading(serverTime, (DateTime)server.ServerStartTime, files, Note(isAzure, files));
+        return new FileIoReading(serverTime, (DateTime)server.ServerStartTime, files, Note(isAzure, files))
+        {
+            Space = isAzure ? [] : await ReadSpaceAsync(conn, cancellationToken),
+        };
     }
 
     // Asks sys.dm_os_volume_stats about files it hasn't been asked about. It isn't needed for
@@ -94,6 +104,25 @@ public class FileIoRepository(SqlTarget target, ServerCapabilitiesCache? capabil
 
         foreach (var f in files)
             _volumesAsked.Add(f.Key);
+    }
+
+    // Free space on each volume (#174), as the disk check reads it, at most once a SpaceEvery.
+    // Like the volumes above, a server that won't answer isn't asked again, and the column stays empty.
+    private async Task<IReadOnlyList<VolumeSpace>> ReadSpaceAsync(System.Data.IDbConnection conn, CancellationToken cancellationToken)
+    {
+        if (_volumeStatsFailed || DateTime.UtcNow - _spaceReadUtc < SpaceEvery)
+            return _space;
+        try
+        {
+            _space = ServerChecksRepository.ToVolumes(await Q(conn, ServerChecksRepository.VolumesSql, cancellationToken));
+        }
+        catch (WaitStatsException)
+        {
+            _volumeStatsFailed = true;
+            _space             = [];
+        }
+        _spaceReadUtc = DateTime.UtcNow;
+        return _space;
     }
 
     private static string? Note(bool isAzure, IReadOnlyList<FileIoCounters> files)

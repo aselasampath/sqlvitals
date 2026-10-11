@@ -57,6 +57,8 @@ public static class CollectorHandover
         };
         service.Servers.RemoveAll(s => s.Id == server.Id);
         service.Servers.Add(server);
+        // The service has one RPO for every server, as the app does (#174): the app's.
+        service.BackupRpo = app.BackupRpo;
 
         foreach (var channel in app.ChatChannels.Where(c => c.Enabled && c.Includes(connection.Id)))
         {

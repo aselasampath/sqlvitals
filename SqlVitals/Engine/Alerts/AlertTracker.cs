@@ -53,9 +53,12 @@ public sealed class AlertTracker(Guid connectionId, int samples = AlertSettings.
             if (!_states.TryGetValue(reading.Indicator, out var state))
                 _states[reading.Indicator] = state = new IndicatorState();
 
-            var change = reading.Level is HealthLevel.Warning or HealthLevel.Critical
-                ? Breached(state, reading, nowUtc)
-                : Normal(state, nowUtc);
+            var change = reading.Level switch
+            {
+                HealthLevel.Warning or HealthLevel.Critical => Breached(state, reading, nowUtc),
+                HealthLevel.Unknown => NoFigure(state, nowUtc),
+                _                   => Normal(state, nowUtc),
+            };
             if (change is not null)
                 changes.Add(change);
         }
@@ -85,8 +88,31 @@ public sealed class AlertTracker(Guid connectionId, int samples = AlertSettings.
         return changes.OrderBy(c => c.Alert.Indicator).ToList();
     }
 
+    // No figure (#173), or a slow check's read too old to trust (#174): not back to normal. A run
+    // towards starting or ending an alert waits for a sample that has one; an active alert ends,
+    // as no longer measured, after the set number of samples without one.
+    private AlertChange? NoFigure(IndicatorState state, DateTime nowUtc)
+    {
+        if (state.Active is not { } alert)
+            return null;
+
+        if (state.NoFigureRun == 0)
+            state.NoFigureStartUtc = nowUtc;
+        state.NoFigureRun++;
+        if (state.NoFigureRun < _samples)
+            return null;
+
+        state.Active      = null;
+        state.NoFigureRun = 0;
+        state.NormalRun   = 0;
+        return new AlertChange(
+            alert with { EndedUtc = state.NoFigureStartUtc, EndReason = AlertEndReason.NoData },
+            AlertChangeKind.Ended);
+    }
+
     private AlertChange? Breached(IndicatorState state, HealthReading reading, DateTime nowUtc)
     {
+        state.NoFigureRun = 0;
         if (state.BreachRun == 0)
         {
             state.BreachStartUtc = nowUtc;
@@ -132,6 +158,7 @@ public sealed class AlertTracker(Guid connectionId, int samples = AlertSettings.
 
     private AlertChange? Normal(IndicatorState state, DateTime nowUtc)
     {
+        state.NoFigureRun = 0;
         state.BreachRun   = 0;
         state.CriticalRun = 0;
         state.Worst       = null;
@@ -168,8 +195,10 @@ public sealed class AlertTracker(Guid connectionId, int samples = AlertSettings.
         public int            BreachRun;        // samples in a row past a threshold
         public int            CriticalRun;      // of those, critical in a row
         public int            NormalRun;        // samples in a row back to normal, while an alert is active
+        public int            NoFigureRun;      // samples in a row with no figure, while an alert is active (#174)
         public DateTime       BreachStartUtc;
         public DateTime       NormalStartUtc;
+        public DateTime       NoFigureStartUtc;
         public HealthReading? Worst;            // worst reading of the breach run, before the alert starts
         public Alert?         Active;
     }

@@ -268,8 +268,21 @@ public sealed class MonitoringManager : IDisposable
         _detailInterval    = TimeSpan.FromMinutes(store.HistoryIntervalMinutes);
         _history.Retention = TimeSpan.FromDays(store.HistoryRetentionDays);
         foreach (var session in _sessions.Values)
+        {
             if (session.History is { } recorder)
                 recorder.DetailInterval = _detailInterval;
+            session.ChecksInterval = _detailInterval;
+        }
+    }
+
+    /// <summary>
+    /// Gives every running session the RPO set on the Backups page, which the backups check counts
+    /// databases against (#174), from its next read.
+    /// </summary>
+    public void ApplyBackupRpo(ConnectionStore store)
+    {
+        foreach (var session in _sessions.Values)
+            session.BackupRpo = store.BackupRpo;
     }
 
     /// <summary>
@@ -355,6 +368,7 @@ public sealed class MonitoringManager : IDisposable
     {
         ApplyHistorySettings(store);
         ApplyAlertSettings(store);
+        ApplyBackupRpo(store);
 
         // Turning the setting on or off applies straight away to every connection, including
         // any the user started or stopped by hand.
@@ -487,8 +501,10 @@ public sealed class MonitoringManager : IDisposable
             _intervals.TryGetValue(id, out var seconds) ? seconds : MonitoringSession.DefaultIntervalSeconds,
             recorder)
         {
-            Thresholds   = store.ThresholdsFor(conn),
-            AlertSamples = _alertSamples,
+            Thresholds     = store.ThresholdsFor(conn),
+            AlertSamples   = _alertSamples,
+            ChecksInterval = _detailInterval,
+            BackupRpo      = store.BackupRpo,
         };
 
         session.StateChanged  += OnSessionStateChanged;

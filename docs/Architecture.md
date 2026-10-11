@@ -128,7 +128,7 @@ MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor
    └─► MonitoringManager ─ one MonitoringSession per monitored connection; logs each start and stop
          └─ MonitoringSession (Desktop, UI thread) ◄── CollectorUpdate, in order ── Collector (Engine, thread pool)
    └─ Collector, every interval: ILiveMetricsRepository → LiveMetricSample.From(previous, current)  (counters + ring buffer + requests)
-         ├─► HealthRules.Grade(sample, thresholds) → one reading per indicator
+         ├─► HealthRules.Grade(sample, thresholds) + ServerChecks.Readings → one reading per indicator
          │     ├─► HealthRules.Summarize → (level, reasons) → 🟢 🟠 🔴 dot + tooltip
          │     ├─► HealthScore.From(readings) → 0–100 score + checks → sidebar, Overview, Home, breakdown popup
          │     │     └─► HistoryRecorder.RecordScore → health_scores (failed collections too, as 0)
@@ -136,12 +136,14 @@ MonitoringPlan.Decide(Start monitoring automatically, active connection, Monitor
          │           └─► HistoryRecorder.RecordAlerts → alerts table;  MonitoringManager.AlertsChanged → Alerts page, sidebar count
          ├─► last 60 samples in memory, in the MonitoringSession (for the Overview and Live charts)
          ├─► HistoryRecorder.RecordSample(sample)
-         └─► HistoryRecorder.CollectDetailIfDueAsync()
-               └─ every N minutes: HistoryRepository detail snapshot → HistoryDetailTracker (deltas)
-                     └─► HistoryWriter (bounded queue, one thread) → HistoryStore (SQLite)
+         ├─► HistoryRecorder.CollectDetailIfDueAsync()
+         │     └─ every N minutes: HistoryRepository detail snapshot → HistoryDetailTracker (deltas)
+         │           └─► HistoryWriter (bounded queue, one thread) → HistoryStore (SQLite)
+         └─► every N minutes, in the background (#174): IServerChecksRepository (volumes, backups past RPO,
+               failed jobs) → ServerChecks, the last read graded with each sample until too old to trust
 ```
 
-`HealthRules.Evaluate` returns the worst level any indicator reached and one reason per indicator past its threshold. Page life expectancy and TempDB are skipped when the counter reads 0 (not reported, e.g. Azure SQL Database). Blocking is checked only when a session is blocked. `HealthScore` weights each indicator (CPU, blocking and log space 20, page life expectancy 16, memory grants and TempDB 12); a warning costs half the weight, critical all of it, and a failed collection is `HealthScore.Unavailable` (0). See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). Unreachable servers back off exponentially: `HealthRules.NextDelay` doubles the delay per consecutive failure, capped at 5 minutes. MFA connections, and SQL logins without a saved password, start only after the user has switched to them once.
+`HealthRules.Evaluate` returns the worst level any indicator reached and one reason per indicator past its threshold. Page life expectancy and TempDB are skipped when the counter reads 0 (not reported, e.g. Azure SQL Database). Blocking is checked only when a session is blocked. `HealthScore` weights each indicator (from 0.76.0: CPU and blocking 16, log space and disk free 14, page life expectancy and backups past RPO 10, memory grants and TempDB 8, failed jobs 4, adding up to 100); a check with no figure is left out and the 100 shared over the rest (#173); a warning costs half the weight, critical all of it, and a failed collection is `HealthScore.Unavailable` (0). See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). Unreachable servers back off exponentially: `HealthRules.NextDelay` doubles the delay per consecutive failure, capped at 5 minutes. MFA connections, and SQL logins without a saved password, start only after the user has switched to them once.
 
 **Off the UI thread (#171).** The loop is Engine's `Monitoring/Collector`, one per monitored connection, with no window: a `PeriodicTimer` on a `TimeProvider` wakes every second (`Collector.Tick`) and collects when a sample is due (up to half a tick early, so a 10-second interval stays 10 seconds), never two at once (a tick while one runs is skipped; `CollectNowAsync` joins it), later after failures (`NextDelay`). Grading, scoring, alerts and history queuing run on the thread pool too, under the collector's lock; the history writer and recorder were already thread-safe. Each change is raised as a `CollectorUpdate` (alerts, sample, or state, with an immutable `CollectorState`) under that lock, in order. Desktop's `MonitoringSession` is now a thin adapter with the same API: it queues the updates and applies them on the UI thread (`Dispatcher.BeginInvoke`), raising `SampleAdded`, `AlertsChanged` and `StateChanged` there, and keeping the 60-sample window. `Pause` and `Dispose`, called on the UI thread, apply what's queued and then their own alert ends before they return, which the chat channels' exit messages rely on (#123). So a page that keeps the UI thread busy no longer delays samples; the window catches up when it's free (`MonitoringSessionTests`, timestamps in the #171 PR). The collector depends only on `ILiveMetricsRepository`, so the headless collector (#172) can host it as it is. Tested in `CollectorTests` on a `FakeTimeProvider`.
 

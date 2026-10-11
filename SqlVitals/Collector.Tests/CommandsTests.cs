@@ -203,6 +203,25 @@ public sealed class CommandsTests : IDisposable
     }
 
     [Fact]
+    public async Task Set_TheBackupRpo_TheBackupsCheckCountsAgainst()
+    {
+        var (code, console) = await Run("set --backup-rpo-full 2d --backup-rpo-log 30");
+
+        Assert.Equal(0, code);
+        Assert.Equal((TimeSpan.FromDays(2), TimeSpan.FromMinutes(30)), (Saved().BackupRpo.FullMaxAge, Saved().BackupRpo.LogMaxAge));
+        Assert.Contains("backups checked against full backups older than 2 d, log backups older than 30 min", console.Text);
+        Assert.Contains("Backups checked against full backups older than 2 d", (await Run("list")).Console.Text);
+
+        // One alone keeps the other.
+        Assert.Equal(0, (await Run("set --backup-rpo-log 2h")).Code);
+        Assert.Equal((TimeSpan.FromDays(2), TimeSpan.FromHours(2)), (Saved().BackupRpo.FullMaxAge, Saved().BackupRpo.LogMaxAge));
+
+        var (bad, badConsole) = await Run("set --backup-rpo-full 0");
+        Assert.Equal(2, bad);
+        Assert.Contains("full backup age", badConsole.Text);
+    }
+
+    [Fact]
     public async Task List_SaysWhatNeedsFixing_WithoutASecret()
     {
         await Run("add-server --server sql01 --sql-login vitals --password-stdin", new FakeConsole("Pa55word"));

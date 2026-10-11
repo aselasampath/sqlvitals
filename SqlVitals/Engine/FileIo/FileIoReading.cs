@@ -72,6 +72,9 @@ public sealed record FileIoReading(
     /// <summary>Why nothing could be read (no permission); null when the files were read.</summary>
     public string? Problem { get; init; }
 
+    /// <summary>Free space on each volume, the disk check's evidence (#174); empty when it couldn't be read.</summary>
+    public IReadOnlyList<Monitoring.VolumeSpace> Space { get; init; } = [];
+
     public bool Available => Problem is null;
 
     public static FileIoReading Unavailable(string problem) =>

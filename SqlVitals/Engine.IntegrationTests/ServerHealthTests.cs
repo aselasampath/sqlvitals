@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.Deadlocks;
+using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Security;
 
@@ -82,6 +83,36 @@ public class ServerHealthTests(SqlServerFixture server)
         var unnamed = reading.Files.Where(f => f.FileType.Length == 0).Select(f => $"{f.DatabaseName} ({f.DatabaseId}) {f.FileName}");
         Assert.True(reading.Note is null, $"{reading.Note} {string.Join(", ", unnamed)}");
         Assert.Contains(reading.Files, f => f.DatabaseName == SqlServerFixture.Database);
+        // Each volume's free space, the disk check's evidence (#174).
+        Assert.NotEmpty(reading.Space);
+    }
+
+    [SqlServerFact]
+    [Covers(nameof(IServerChecksRepository.GetServerChecksAsync))]
+    public async Task ServerChecks_ReadVolumesBackupsAndFailedJobs()
+    {
+        // The first read counts the failures of the last ten years: the fixture's failed run.
+        var first = await _repo.GetServerChecksAsync(new ServerChecksRequest(Rpo, null, TimeSpan.FromDays(3650)));
+
+        Assert.Equal((null, null, null), (first.VolumesNoData, first.BackupsNoData, first.JobsNoData));
+        Assert.True(first.Volumes!.Count > 0, "No volume: " + await server.DescribeAsync("SELECT COUNT(*) AS files FROM sys.master_files") +
+                    " · " + await server.DescribeAsync("SELECT TOP (3) vs.* FROM sys.master_files mf CROSS APPLY sys.dm_os_volume_stats(mf.database_id, mf.file_id) vs"));
+        Assert.All(first.Volumes!, v => Assert.True(v.TotalGb > 0 && v.FreeGb >= 0 && v.FreeGb <= v.TotalGb, $"{v}"));
+        // Backed up just now: full, differential and log.
+        Assert.DoesNotContain(SqlServerFixture.Database, first.PastRpo!);
+        Assert.NotNull(first.LastJobInstanceId);
+        if (!server.AgentRan)
+        {
+            Assert.Empty(first.FailedJobs!);
+            return;
+        }
+        Assert.Contains("SqlVitalsIT fails", first.FailedJobs!);
+        Assert.DoesNotContain("SqlVitalsIT succeeds", first.FailedJobs!);
+
+        // The next read counts only what failed since: nothing ran in between.
+        var next = await _repo.GetServerChecksAsync(new ServerChecksRequest(Rpo, first.LastJobInstanceId, TimeSpan.FromDays(3650)));
+        Assert.Empty(next.FailedJobs!);
+        Assert.Equal(first.LastJobInstanceId, next.LastJobInstanceId);
     }
 
     /// <summary>

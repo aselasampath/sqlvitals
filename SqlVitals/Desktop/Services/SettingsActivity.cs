@@ -101,7 +101,7 @@ internal static class SettingsActivity
     public static Func<ConnectionSnapshot, string?> Describe(ConnectionStore store) =>
         snapshot => store.Connections.FirstOrDefault(c => c.Id == snapshot.Id)?.Summary;
 
-    // Each check's thresholds, then how page life expectancy is judged and each check's weight
+    // Each check's thresholds, disk free's GB ones (#174), then how page life expectancy is judged and each check's weight
     // (#173): "Health threshold: Page life expectancy scaling" → "Per 4 GB of buffer pool",
     // "Health weight: CPU" → "20".
     private static IEnumerable<SettingValue> Thresholds(string prefix, HealthThresholds thresholds) =>
@@ -111,6 +111,9 @@ internal static class SettingsActivity
             return new SettingValue($"{prefix}: {info.Name}",
                                     $"warning {Level(t.Warning, info.Unit)}, critical {Level(t.Critical, info.Unit)}");
         })
+        .Append(new SettingValue($"{prefix}: {HealthThresholds.DiskFreeGbInfo.Name}",
+                                 $"warning {Level(thresholds.DiskFreeGbOrDefault.Warning, " GB")}, " +
+                                 $"critical {Level(thresholds.DiskFreeGbOrDefault.Critical, " GB")}"))
         .Append(new SettingValue($"{prefix}: Page life expectancy scaling",
                                  thresholds.ScalesPageLifeExpectancy ? "Per 4 GB of buffer pool" : "Fixed"))
         .Concat(HealthThresholds.Indicators.Select(info => new SettingValue(

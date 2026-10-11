@@ -107,7 +107,7 @@ SqlVitals.Collector.exe list
 | `remove-server <server>` | Stops watching it. Its history is kept for the retention days |
 | `add-channel --name <name>` | Adds a Slack or Teams channel. Options: `--service slack\|teams` (otherwise worked out from the URL), `--servers a,b` (otherwise all), `--critical-only`, `--no-ends`, `--heartbeat off\|<1–12>h\|daily@HH:mm`, `--ping` (a dead man's switch URL as well) |
 | `remove-channel <name>` | Removes a channel |
-| `set` | `--sample-seconds 5–300` (default 15), `--detail-minutes 1\|5\|15\|30`, `--retention-days 7\|14\|30\|90`, `--alert-samples 1\|2\|3\|5\|10`, `--command-timeout <s>`, `--share-copy-minutes 5–1440\|0` and `--share-copy-folder <folder>` ([share copy](#a-collector-on-another-pc)) |
+| `set` | `--sample-seconds 5–300` (default 15), `--detail-minutes 1\|5\|15\|30`, `--retention-days 7\|14\|30\|90`, `--alert-samples 1\|2\|3\|5\|10`, `--command-timeout <s>`, `--share-copy-minutes 5–1440\|0` and `--share-copy-folder <folder>` ([share copy](#a-collector-on-another-pc)), from 0.76.0 `--backup-rpo-full <age>` and `--backup-rpo-log <age>` (`7d`, `1h`, as on the Backups page): what the [Backups past RPO](Health-Dot-and-Background-Monitoring.md#what-is-checked) check counts against. The app sets them to its own when it hands a server over |
 | `test` | Reads each server once and posts a test message to each channel. It reads **as you**, not as the service's account |
 | `list` | The servers, channels and settings, the service's state, and anything that needs fixing |
 | `run` | Watches in this console until Ctrl+C: for a first try, before installing |

@@ -16,7 +16,7 @@ public sealed class ServerTileTests
         new(Now, 0, 0, 0, 0, 0, 0, cpuPct, 0, 0, 0, 0, 0, 0, ple, grants, 99.9, blocked, blockSec, logPct, "Sales", tempDbPct);
 
     internal static HealthScore Score(LiveMetricSample sample, DateTime? time = null) =>
-        HealthScore.From(HealthRules.Grade(sample, HealthThresholds.Default), time ?? Now.AddSeconds(-16));
+        HealthScore.From(Monitoring.TestChecks.All(sample), time ?? Now.AddSeconds(-16));
 
     internal static TileInput Input(string name = "UAT", HealthScore? score = null, bool monitored = true, bool active = false,
                                     Guid? id = null) =>
@@ -42,8 +42,8 @@ public sealed class ServerTileTests
         Assert.Equal(TileStatus.Critical, tile.Status);
         Assert.Equal("CRITICAL", tile.StatusLabel);
         Assert.Equal(HealthLevel.Critical, tile.Level);
-        Assert.Equal("70", tile.ScoreText);
-        Assert.Equal("Lowered by Blocking −20 · CPU −10.", tile.Reason);
+        Assert.Equal("76", tile.ScoreText);
+        Assert.Equal("Lowered by Blocking −16 · CPU −8.", tile.Reason);
         Assert.Equal("uat-sql01 / Sales", tile.ServerLine);
         Assert.Equal(TileAction.Open, tile.Action);
         Assert.Equal("Open", tile.ActionText);
@@ -56,7 +56,7 @@ public sealed class ServerTileTests
         var warning = Tile(Input(score: Score(Sample(ple: 95))));
         var healthy = Tile(Input(score: Score(Sample())));
 
-        Assert.Equal((TileStatus.Warning, "WARNING", "92", "Lowered by Page life expectancy −8."),
+        Assert.Equal((TileStatus.Warning, "WARNING", "95", "Lowered by Page life expectancy −5."),
                      (warning.Status, warning.StatusLabel, warning.ScoreText, warning.Reason));
         Assert.Equal((TileStatus.Healthy, "HEALTHY", "100", "Every check is within its thresholds."),
                      (healthy.Status, healthy.StatusLabel, healthy.ScoreText, healthy.Reason));
@@ -147,14 +147,14 @@ public sealed class ServerTileTests
     // ── Bars ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Bars_AreTheSixChecks_InThePopupsOrder_ColouredByLevel_WithFigureAndThresholdsInTheTooltip()
+    public void Bars_AreTheNineChecks_InThePopupsOrder_ColouredByLevel_WithFigureAndThresholdsInTheTooltip()
     {
         var tile = InCulture("en-GB", () => Tile(Input(score: Score(Sample(cpuPct: 81, blocked: 3, blockSec: 180)))));
 
-        Assert.Equal(["CPU", "Block", "PLE", "Grants", "Log", "TempDB"], tile.Bars.Select(b => b.Label));
-        Assert.Equal([HealthLevel.Warning, HealthLevel.Critical, HealthLevel.Healthy, HealthLevel.Healthy, HealthLevel.Healthy, HealthLevel.Healthy],
+        Assert.Equal(["CPU", "Block", "PLE", "Grants", "Log", "Temp", "Disk", "RPO", "Jobs"], tile.Bars.Select(b => b.Label));
+        Assert.Equal([HealthLevel.Warning, HealthLevel.Critical, .. Enumerable.Repeat(HealthLevel.Healthy, 7)],
                      tile.Bars.Select(b => b.Level));
-        Assert.Equal("CPU: 81 % (warning ≥ 75 %, critical ≥ 90 %) · −10", tile.Bars[0].ToolTip);
+        Assert.Equal("CPU: 81 % (warning ≥ 75 %, critical ≥ 90 %) · −8", tile.Bars[0].ToolTip);
         Assert.DoesNotContain("−", tile.Bars[2].ToolTip);
     }
 
@@ -166,7 +166,7 @@ public sealed class ServerTileTests
         var critical = Tile(Input(score: Score(Sample(blocked: 3, blockSec: 240))));
 
         Assert.Equal("Critical: blocking for 4 min", critical.Headline);
-        Assert.Equal("80", critical.ScoreText);
+        Assert.Equal("84", critical.ScoreText);
         Assert.Equal("Not monitored", Tile(Input(monitored: false)).Headline);
         Assert.Equal("Waiting for the first sample", Tile(Input(score: null)).Headline);
         Assert.Equal("Unreachable", Tile(Input(score: HealthScore.Unavailable("Login failed.", Now))).Headline);
@@ -179,7 +179,7 @@ public sealed class ServerTileTests
 
         var tempDb = tile.Bars.Single(b => b.Indicator == HealthIndicator.TempDbSpace);
         Assert.Equal((HealthLevel.Unknown, "TempDB space used: no data, so it's left out of the score"), (tempDb.Level, tempDb.ToolTip));
-        Assert.Equal("Lowered by CPU −11. 1 check has no data.", tile.Reason);
+        Assert.Equal("Lowered by CPU −9. 1 check has no data.", tile.Reason);
         Assert.Equal("1 check left out of the score, no data: TempDB space used", tile.ReasonToolTip);
         Assert.Equal("Every check that reported is within its thresholds. 1 check has no data.",
                      Tile(Input(score: Score(Sample(tempDbPct: 0)))).Reason);
@@ -198,11 +198,11 @@ public sealed class ServerTileTests
     }
 
     [Fact]
-    public void Bars_WithNoScore_AreSixGreyBars()
+    public void Bars_WithNoScore_AreAGreyBarPerCheck()
     {
         var tile = Tile(Input(score: null));
 
-        Assert.Equal(6, tile.Bars.Count);
+        Assert.Equal(Enum.GetValues<HealthIndicator>().Length, tile.Bars.Count);
         Assert.All(tile.Bars, b => Assert.Equal(HealthLevel.Unknown, b.Level));
     }
 
@@ -211,7 +211,7 @@ public sealed class ServerTileTests
     [Fact]
     public void AutomationName_SaysTheStatusAndScoreInWords()
     {
-        Assert.Equal("UAT, critical: blocking for 3 min (+1 more), score 70 of 100",
+        Assert.Equal("UAT, critical: blocking for 3 min (+1 more), score 76 of 100",
                      Tile(Input(score: Score(Sample(cpuPct: 81, blocked: 3, blockSec: 180)))).AutomationName);
         Assert.Equal("Production, healthy: every check passes, score 100 of 100, the active connection",
                      Tile(Input("Production", Score(Sample()), active: true)).AutomationName);

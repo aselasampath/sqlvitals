@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Backups;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
@@ -215,6 +216,24 @@ public sealed class CollectorSettings
     /// <summary>Health thresholds for every server without its own.</summary>
     public HealthThresholds HealthThresholds { get; set; } = HealthThresholds.Default;
 
+    /// <summary>The backups check's RPO for full backups (#174), in minutes; the app's Backups page sets it when it hands a server over.</summary>
+    public int BackupFullMaxAgeMinutes { get; set; } = (int)BackupRpo.DefaultFullMaxAge.TotalMinutes;
+
+    /// <summary>The backups check's RPO for log backups (#174), in minutes.</summary>
+    public int BackupLogMaxAgeMinutes { get; set; } = (int)BackupRpo.DefaultLogMaxAge.TotalMinutes;
+
+    /// <summary>The RPO the backups check counts databases against (#174).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public BackupRpo BackupRpo
+    {
+        get => new(BackupRpo.NormalizeFull(BackupFullMaxAgeMinutes), BackupRpo.NormalizeLog(BackupLogMaxAgeMinutes));
+        set
+        {
+            BackupFullMaxAgeMinutes = (int)value.FullMaxAge.TotalMinutes;
+            BackupLogMaxAgeMinutes  = (int)value.LogMaxAge.TotalMinutes;
+        }
+    }
+
     /// <summary>
     /// Minutes between share copies of the history (<see cref="HistoryShareCopy"/>), for the app on
     /// other PCs to read (#172): 5 to 1440; 0, the default, writes none.
@@ -261,6 +280,8 @@ public sealed class CollectorSettings
         ShareCopyMinutes       = NormalizeShareCopyMinutes(ShareCopyMinutes);
         ShareCopyFolder      ??= string.Empty;
         HealthThresholds       = HealthThresholds.Normalize(HealthThresholds);
+        BackupFullMaxAgeMinutes = (int)BackupRpo.NormalizeFull(BackupFullMaxAgeMinutes).TotalMinutes;
+        BackupLogMaxAgeMinutes  = (int)BackupRpo.NormalizeLog(BackupLogMaxAgeMinutes).TotalMinutes;
         Servers                = (Servers ?? []).Where(s => s is not null).ToList();
         ChatChannels           = (ChatChannels ?? []).Where(c => c is not null).ToList();
 
