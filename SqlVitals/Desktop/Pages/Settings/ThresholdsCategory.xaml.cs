@@ -2,12 +2,14 @@ using System.Windows;
 using System.Windows.Controls;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Engine.Settings;
 
 namespace SqlVitals.Desktop.Pages.Settings;
 
 /// <summary>
-/// Settings → Health thresholds (#131): the thresholds every connection without its own is graded
-/// on, in the Checks table, with an explicit Save so a half-typed threshold never grades a sample.
+/// Settings → Health thresholds (#131): the thresholds and weights (#173) every connection without
+/// its own is graded on, in the Checks table, with an explicit Save so a half-typed threshold never
+/// grades a sample, and what each monitored connection on them would score.
 /// </summary>
 internal partial class ThresholdsCategory : UserControl, ISettingsCategory
 {
@@ -26,6 +28,7 @@ internal partial class ThresholdsCategory : UserControl, ISettingsCategory
         GlobalThresholds.ShowsDefaults = false;
         GlobalThresholds.Defaults      = HealthThresholds.Default;
         GlobalThresholds.Changed      += UpdateBar;
+        GlobalThresholds.Changed      += UpdatePreview;
         Load();
     }
 
@@ -70,6 +73,31 @@ internal partial class ThresholdsCategory : UserControl, ISettingsCategory
                             var n => $"{n} connections use their own instead, set on their Health thresholds tabs.",
                         });
         UpdateBar();
+        UpdatePreview();
+    }
+
+    // "On the latest sample, UAT would score 70 → 80": each monitored connection on the default
+    // thresholds, graded on what's in the boxes (#173).
+    private void UpdatePreview()
+    {
+        if (TxtPreview is null)
+            return;
+        if (!GlobalThresholds.TryRead(out var thresholds, out _, focus: false))
+        {
+            TxtPreview.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var lines = _context.Service.Load().Connections
+            .Where(c => c.HealthThresholds is null)
+            .Select(c => (c.DisplayName, Session: _context.Monitoring.Get(c.Id)))
+            .Where(c => c.Session is { IsRunning: true })
+            .Select(c => ThresholdsPreview.For(c.Session!.Score, thresholds!)?.Text(c.DisplayName))
+            .OfType<string>()
+            .OrderBy(line => line, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        TxtPreview.Text       = string.Join("\n", lines);
+        TxtPreview.Visibility = lines.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void UpdateBar()

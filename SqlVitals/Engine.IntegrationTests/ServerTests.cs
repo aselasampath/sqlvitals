@@ -76,6 +76,21 @@ public class ServerTests(SqlServerFixture server)
     }
 
     [SqlServerFact]
+    [Covers(nameof(ILiveMetricsRepository.GetLiveMetricsAsync))]
+    public async Task LiveMetrics_ReadTheBufferPool_AndTheFullestLogsSizeAndReuseWait()
+    {
+        // What the health score judges page life expectancy and log space by (#173).
+        var metrics = await _repo.GetLiveMetricsAsync();
+
+        Assert.True(metrics.BufferPoolPages > 0, $"BufferPoolPages {metrics.BufferPoolPages}");
+        Assert.False(string.IsNullOrEmpty(metrics.LogUsedDatabase));
+        Assert.True(metrics.LogSizeMb > 0, $"LogSizeMb {metrics.LogSizeMb} for {metrics.LogUsedDatabase}");
+        Assert.False(string.IsNullOrEmpty(metrics.LogReuseWait),
+                     $"No reuse wait for {metrics.LogUsedDatabase}. " +
+                     await server.DescribeAsync("SELECT name, log_reuse_wait_desc FROM sys.databases"));
+    }
+
+    [SqlServerFact]
     [Covers(nameof(ILiveMetricsRepository.GetPerfmonCountersAsync))]
     public async Task PerfmonCounters_AreRead()
     {

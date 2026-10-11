@@ -1,4 +1,5 @@
 using SqlVitals.Engine.Models;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Repositories;
 
@@ -25,7 +26,9 @@ public class LiveMetricsRepository(SqlTarget target, ServerCapabilitiesCache? ca
         var isAzureSqlDb = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
 
         using var conn = CreateConnection();
-        var r = await QFirst(conn, LiveMetricsSql(isAzureSqlDb), cancellationToken) ?? throw new InvalidOperationException("Failed to capture metrics");
+        var r = await QFirst(conn, LiveMetricsSql(isAzureSqlDb), cancellationToken,
+                             new { SmallLogKb = (long)(HealthRules.SmallLogMb * 1024) })
+                ?? throw new InvalidOperationException("Failed to capture metrics");
         return ToLiveMetricSnapshot(r);
     }
 
@@ -59,7 +62,10 @@ public class LiveMetricsRepository(SqlTarget target, ServerCapabilitiesCache? ca
             LogUsedPct: Convert.ToDouble(r.LogUsedPct ?? 0),
             LogUsedDatabase: (string?)r.LogUsedDatabase,
             TempDbUsedPct: Math.Clamp(Convert.ToDouble(r.TempDbUsedPct ?? 0), 0, 100),
-            WaitingTasks: Convert.ToInt32(r.WaitingTasks ?? 0)
+            WaitingTasks: Convert.ToInt32(r.WaitingTasks ?? 0),
+            BufferPoolPages: Convert.ToInt64(r.BufferPoolPages ?? 0),
+            LogSizeMb: Convert.ToDouble(r.LogSizeMb ?? 0),
+            LogReuseWait: (string?)r.LogReuseWait
         );
     }
 

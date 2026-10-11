@@ -12,13 +12,14 @@ namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
 /// The Checks table of the health score breakdown (#130) with a warning and a critical box per check
-/// (#131): Check, Now, Warning, Critical, Weight, Points. In Settings for the thresholds every
-/// connection shares, and on a connection's Health thresholds tab for its own, where Now and
-/// Points show its latest sample graded on what's in the boxes.
+/// (#131) and a weight box (#173): Check, Now, Warning, Critical, Weight, Points. Page life
+/// expectancy's row says whether its thresholds are per 4 GB of buffer pool. In Settings for the
+/// thresholds every connection shares, and on a connection's Health thresholds tab for its own,
+/// where Now and Points show its latest sample graded on what's in the boxes.
 /// </summary>
 public partial class HealthThresholdsEditor : UserControl
 {
-    private sealed record Row(TextBox Warning, TextBox Critical, Ellipse Dot, TextBlock Now, TextBlock Points, TextBlock Default);
+    private sealed record Row(TextBox Warning, TextBox Critical, TextBox Weight, Ellipse Dot, TextBlock Now, TextBlock Points, TextBlock Default);
 
     private readonly Dictionary<HealthIndicator, Row> _rows = new();
     private HealthThresholds _defaults = HealthThresholds.Default;
@@ -30,6 +31,20 @@ public partial class HealthThresholdsEditor : UserControl
     {
         InitializeComponent();
 
+        PleScaled = new CheckBox
+        {
+            Content   = "Per 4 GB of buffer pool",
+            FontSize  = 11,
+            Margin    = new Thickness(0, 4, 0, 0),
+            IsChecked = true,
+            ToolTip   = "On: the thresholds are seconds per 4 GB of buffer pool, so a 64 GB server is warned below " +
+                        "4,800 s (300 × 64 ÷ 4) and a 2 GB one below 150 s. Off: the seconds are used as they are.",
+        };
+        PleScaled.SetResourceReference(ForegroundProperty, "TextPrimary");
+        AutomationProperties.SetName(PleScaled, "Page life expectancy thresholds per 4 GB of buffer pool");
+        PleScaled.Checked   += (_, _) => Changed?.Invoke();
+        PleScaled.Unchecked += (_, _) => Changed?.Invoke();
+
         AddRow(null);
         foreach (var info in HealthThresholds.Indicators)
             AddRow(info);
@@ -37,8 +52,11 @@ public partial class HealthThresholdsEditor : UserControl
         Show(HealthThresholds.Default);
     }
 
-    /// <summary>A box was typed in, or <see cref="Show"/> filled them.</summary>
+    /// <summary>A box was typed in, the page life expectancy toggle changed, or <see cref="Show"/> filled them.</summary>
     public event Action? Changed;
+
+    /// <summary>Page life expectancy's thresholds are per 4 GB of buffer pool (#173), under its name.</summary>
+    internal CheckBox PleScaled { get; }
 
     /// <summary>
     /// What a box is compared with: one that differs has an accent border, and the line under each
@@ -51,12 +69,12 @@ public partial class HealthThresholdsEditor : UserControl
         {
             _defaults = value;
             foreach (var (indicator, row) in _rows)
-                row.Default.Text = "Default: " + Describe(indicator, value.Get(indicator));
+                row.Default.Text = "Default: " + Describe(indicator, value);
             UpdateBorders();
         }
     }
 
-    /// <summary>The "Default: ≥ 75 % / ≥ 90 %" line under each check's name.</summary>
+    /// <summary>The "Default: ≥ 75 % / ≥ 90 % · weight 20" line under each check's name.</summary>
     public bool ShowsDefaults
     {
         get => _rows.Values.First().Default.Visibility == Visibility.Visible;
@@ -92,7 +110,7 @@ public partial class HealthThresholdsEditor : UserControl
         {
             _isReadOnly = value;
             foreach (var row in _rows.Values)
-                foreach (var box in new[] { row.Warning, row.Critical })
+                foreach (var box in new[] { row.Warning, row.Critical, row.Weight })
                 {
                     box.IsReadOnly = value;
                     box.Focusable  = !value;
@@ -101,11 +119,12 @@ public partial class HealthThresholdsEditor : UserControl
                     else
                         box.SetResourceReference(BackgroundProperty, "BgDeep");
                 }
+            PleScaled.IsEnabled = !value;
             UpdateBorders();
         }
     }
 
-    /// <summary>Fills the boxes; a level that is off shows blank.</summary>
+    /// <summary>Fills the boxes and the toggle; a level that is off shows blank.</summary>
     public void Show(HealthThresholds thresholds)
     {
         foreach (var (indicator, row) in _rows)
@@ -113,7 +132,9 @@ public partial class HealthThresholdsEditor : UserControl
             var threshold = thresholds.Get(indicator);
             row.Warning.Text  = HealthThresholds.Format(threshold.Warning);
             row.Critical.Text = HealthThresholds.Format(threshold.Critical);
+            row.Weight.Text   = thresholds.Weight(indicator).ToString(CultureInfo.CurrentCulture);
         }
+        PleScaled.IsChecked = thresholds.ScalesPageLifeExpectancy;
         UpdateBorders();
     }
 
@@ -129,15 +150,25 @@ public partial class HealthThresholdsEditor : UserControl
         ShowGrades(_latest is null ? null : graded);
     }
 
-    /// <summary>Each check's dot and points, as graded on the boxes; null clears them.</summary>
+    /// <summary>
+    /// Each check's dot and points, as graded on the boxes; null clears them. A check with no data
+    /// or a weight of 0 shows a dash: it isn't scored (#173).
+    /// </summary>
     public void ShowGrades(HealthScore? graded)
     {
         foreach (var (indicator, row) in _rows)
         {
             var check = graded?.Checks.FirstOrDefault(c => c.Indicator == indicator);
             row.Dot.Fill          = check is null ? Brushes.Transparent : HealthBrushes.For(check.Level);
-            row.Points.Text       = check is null ? "—" : check.PointsLost > 0 ? $"−{check.PointsLost}" : "0";
+            row.Points.Text       = check is null || !check.IsScored ? "—" : check.PointsLost > 0 ? $"−{check.PointsLost}" : "0";
             row.Points.FontWeight = check?.PointsLost > 0 ? FontWeights.SemiBold : FontWeights.Normal;
+            row.Points.ToolTip    = check switch
+            {
+                null                => null,
+                { IsUnknown: true } => "No data, so it's left out of the score.",
+                { Weight: 0 }       => "Weight 0: not scored.",
+                _                   => $"{check.Worth} of the 100 points among the checks that reported.",
+            };
             if (check is { PointsLost: > 0 })
                 row.Points.Foreground = HealthBrushes.For(check.Level);
             else
@@ -150,11 +181,16 @@ public partial class HealthThresholdsEditor : UserControl
     internal TextBox Box(HealthIndicator indicator, bool critical = false) =>
         critical ? _rows[indicator].Critical : _rows[indicator].Warning;
 
+    /// <summary>A check's weight box.</summary>
+    internal TextBox WeightBox(HealthIndicator indicator) => _rows[indicator].Weight;
+
     /// <summary>A check's "Now" and "Points" cells, as shown.</summary>
     internal (string Now, string Points) Cells(HealthIndicator indicator) => (_rows[indicator].Now.Text, _rows[indicator].Points.Text);
 
-    /// <summary>Every box's text, to tell whether anything was typed since it was last saved.</summary>
-    public string Snapshot => string.Join("|", _rows.Values.Select(r => $"{r.Warning.Text.Trim()};{r.Critical.Text.Trim()}"));
+    /// <summary>Every box's text and the toggle, to tell whether anything was changed since it was last saved.</summary>
+    public string Snapshot =>
+        string.Join("|", _rows.Values.Select(r => $"{r.Warning.Text.Trim()};{r.Critical.Text.Trim()};{r.Weight.Text.Trim()}")) +
+        (PleScaled.IsChecked == true ? "|scaled" : "|fixed");
 
     /// <summary>
     /// Reads the boxes. Returns false with a message naming the first check that can't be used,
@@ -162,7 +198,8 @@ public partial class HealthThresholdsEditor : UserControl
     /// </summary>
     public bool TryRead(out HealthThresholds? thresholds, out string error, bool focus = true)
     {
-        var result = HealthThresholds.Default;
+        var result  = HealthThresholds.Default;
+        var weights = HealthWeights.Default;
         foreach (var info in HealthThresholds.Indicators)
         {
             var row = _rows[info.Indicator];
@@ -173,22 +210,44 @@ public partial class HealthThresholdsEditor : UserControl
                     row.Warning.Focus();
                 return false;
             }
-            result = result.With(info.Indicator, threshold!);
+            if (!HealthWeights.TryParse(info.Indicator, row.Weight.Text, out var weight, out error))
+            {
+                thresholds = null;
+                if (focus)
+                    row.Weight.Focus();
+                return false;
+            }
+            result  = result.With(info.Indicator, threshold!);
+            weights = weights.With(info.Indicator, weight);
         }
 
-        thresholds = result;
+        if (HealthThresholds.Indicators.All(i => weights.Get(i.Indicator) == 0))
+        {
+            thresholds = null;
+            error      = "Give at least one check a weight above 0, or there is nothing to score.";
+            if (focus)
+                _rows[HealthIndicator.Cpu].Weight.Focus();
+            return false;
+        }
+
+        thresholds = result with { Weights = weights, PageLifeExpectancyFixed = PleScaled.IsChecked != true };
         error      = string.Empty;
         return true;
     }
 
-    // "≥ 75 % / ≥ 90 %", "< 300 s / off".
-    private static string Describe(HealthIndicator indicator, HealthThreshold threshold) =>
-        $"{Level(indicator, threshold.Warning)} / {Level(indicator, threshold.Critical)}";
+    // "≥ 75 % / ≥ 90 % · weight 20", "< 300 s per 4 GB / off · weight 16".
+    private static string Describe(HealthIndicator indicator, HealthThresholds thresholds)
+    {
+        var threshold = thresholds.Get(indicator);
+        var perGb     = indicator == HealthIndicator.PageLifeExpectancy && thresholds.ScalesPageLifeExpectancy ? " per 4 GB" : string.Empty;
+        return $"{Level(indicator, threshold.Warning)}{(threshold.Warning is null ? "" : perGb)} / " +
+               $"{Level(indicator, threshold.Critical)}{(threshold.Critical is null ? "" : perGb)} · weight {thresholds.Weight(indicator)}";
+    }
 
     private static string Level(HealthIndicator indicator, double? value) =>
         value is null ? "off" : AlertText.Threshold(indicator, value);
 
-    // An accent border on a box that differs from the default, so an edited threshold stands out.
+    // An accent border on a box that differs from the default, so an edited threshold or weight stands out.
     private void UpdateBorders()
     {
         foreach (var (indicator, row) in _rows)
@@ -196,12 +255,19 @@ public partial class HealthThresholdsEditor : UserControl
             var defaults = _defaults.Get(indicator);
             Mark(row.Warning,  indicator, defaults.Warning);
             Mark(row.Critical, indicator, defaults.Critical);
+            MarkWeight(row.Weight, indicator);
         }
     }
 
-    private void Mark(TextBox box, HealthIndicator indicator, double? defaultValue)
+    private void Mark(TextBox box, HealthIndicator indicator, double? defaultValue) =>
+        Highlight(box, !_isReadOnly && !Same(indicator, box.Text, defaultValue));
+
+    private void MarkWeight(TextBox box, HealthIndicator indicator) =>
+        Highlight(box, !_isReadOnly && !(int.TryParse(box.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var weight) &&
+                                         weight == _defaults.Weight(indicator)));
+
+    private static void Highlight(TextBox box, bool differs)
     {
-        var differs = !_isReadOnly && !Same(indicator, box.Text, defaultValue);
         if (differs)
             box.SetResourceReference(BorderBrushProperty, "Accent");
         else
@@ -233,6 +299,9 @@ public partial class HealthThresholdsEditor : UserControl
                 header.FontWeight = FontWeights.SemiBold;
                 header.Margin     = new Thickness(0, 0, column >= 4 ? 0 : 8, 8);
                 header.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
+                if (column == 4)
+                    header.ToolTip = "What each check is worth in the score. Weights are relative: the score is always out of 100, " +
+                                     "shared over the checks that reported. 0 leaves a check out of the score.";
                 Place(header, row, column);
             }
             return;
@@ -252,6 +321,8 @@ public partial class HealthThresholdsEditor : UserControl
         defaults.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
         defaults.Margin = new Thickness(0, 2, 0, 0);
         var names = new StackPanel { Children = { name, defaults } };
+        if (info.Indicator == HealthIndicator.PageLifeExpectancy)
+            names.Children.Add(PleScaled);
         var nameCell = new DockPanel { Margin = new Thickness(0, 9, 8, 9), ToolTip = info.Hint, Background = Brushes.Transparent };
         DockPanel.SetDock(dot, Dock.Left);
         nameCell.Children.Add(dot);
@@ -268,9 +339,7 @@ public partial class HealthThresholdsEditor : UserControl
         Place(Cell(info, warning),  row, 2);
         Place(Cell(info, critical), row, 3);
 
-        var weight = Text(HealthScore.Weight(info.Indicator).ToString(CultureInfo.CurrentCulture), 12, right: true);
-        weight.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimary");
-        weight.VerticalAlignment = VerticalAlignment.Center;
+        var weight = NewWeightBox(info);
         Place(weight, row, 4);
 
         var points = Text("—", 12, right: true);
@@ -278,7 +347,7 @@ public partial class HealthThresholdsEditor : UserControl
         points.VerticalAlignment = VerticalAlignment.Center;
         Place(points, row, 5);
 
-        _rows[info.Indicator] = new Row(warning, critical, dot, now, points, defaults);
+        _rows[info.Indicator] = new Row(warning, critical, weight, dot, now, points, defaults);
     }
 
     // "≥ [ 75 ] %", or "< [ 300 ] s" for a check where lower is worse.
@@ -296,20 +365,7 @@ public partial class HealthThresholdsEditor : UserControl
     // A box with "off" showing through while it's blank, which is what blank means.
     private TextBox NewBox(HealthIndicatorInfo info, string level)
     {
-        var box = new TextBox
-        {
-            Width                    = 64,
-            Height                   = 28,
-            FontSize                 = 12,
-            Padding                  = new Thickness(6, 0, 6, 0),
-            VerticalContentAlignment = VerticalAlignment.Center,
-            BorderThickness          = new Thickness(1),
-            ToolTip                  = $"{info.Name}, {level}: leave blank to turn this level off.",
-        };
-        box.SetResourceReference(BackgroundProperty,         "BgDeep");
-        box.SetResourceReference(ForegroundProperty,         "TextPrimary");
-        box.SetResourceReference(BorderBrushProperty,        "Border");
-        box.SetResourceReference(TextBox.CaretBrushProperty, "TextPrimary");
+        var box = StyledBox(64, $"{info.Name}, {level}: leave blank to turn this level off.");
         AutomationProperties.SetName(box, $"{info.Name} {level} threshold");
 
         var off = Muted("off", new Thickness(8, 0, 0, 0));
@@ -321,6 +377,41 @@ public partial class HealthThresholdsEditor : UserControl
             Mark(box, info.Indicator, level == "warning" ? _defaults.Get(info.Indicator).Warning : _defaults.Get(info.Indicator).Critical);
             Changed?.Invoke();
         };
+        return box;
+    }
+
+    // The check's weight (#173): a whole number from 0 to 100, 0 leaving it out of the score.
+    private TextBox NewWeightBox(HealthIndicatorInfo info)
+    {
+        var box = StyledBox(44, $"{info.Name}'s weight in the score, 0 to 100. 0 leaves it out of the score; " +
+                                "its thresholds still colour the dot and raise alerts.");
+        box.HorizontalAlignment      = HorizontalAlignment.Right;
+        box.HorizontalContentAlignment = HorizontalAlignment.Right;
+        AutomationProperties.SetName(box, $"{info.Name} weight");
+        box.TextChanged += (_, _) =>
+        {
+            MarkWeight(box, info.Indicator);
+            Changed?.Invoke();
+        };
+        return box;
+    }
+
+    private static TextBox StyledBox(double width, string toolTip)
+    {
+        var box = new TextBox
+        {
+            Width                    = width,
+            Height                   = 28,
+            FontSize                 = 12,
+            Padding                  = new Thickness(6, 0, 6, 0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            BorderThickness          = new Thickness(1),
+            ToolTip                  = toolTip,
+        };
+        box.SetResourceReference(BackgroundProperty,         "BgDeep");
+        box.SetResourceReference(ForegroundProperty,         "TextPrimary");
+        box.SetResourceReference(BorderBrushProperty,        "Border");
+        box.SetResourceReference(TextBox.CaretBrushProperty, "TextPrimary");
         return box;
     }
 

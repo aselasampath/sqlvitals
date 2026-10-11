@@ -7,8 +7,9 @@ using SqlVitals.Engine.Monitoring;
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
-/// What a health score is made of (#36): each check's figure, thresholds, weight and the points
-/// it cost, with the ones that lowered the score highlighted.
+/// What a health score is made of (#36): the worst state and its reason first (#173), then each
+/// check's figure, thresholds, worth and the points it cost, with the ones that lowered the score
+/// highlighted, and the checks with no data, which are left out of it.
 /// </summary>
 public partial class HealthScoreBreakdown : UserControl
 {
@@ -26,6 +27,7 @@ public partial class HealthScoreBreakdown : UserControl
         Frame.MinWidth        = 0;
         Frame.MaxWidth        = double.PositiveInfinity;
         Header.Visibility     = Visibility.Collapsed;
+        TxtVerdict.Visibility = Visibility.Collapsed;
         TxtLoweredBy.Visibility = Visibility.Collapsed;
         GridChecks.Margin     = new Thickness(0);
     }
@@ -50,12 +52,14 @@ public partial class HealthScoreBreakdown : UserControl
     {
         GridChecks.Children.Clear();
         GridChecks.RowDefinitions.Clear();
+        TxtLeftOut.Visibility = Visibility.Collapsed;
 
         if (score is null)
         {
             RunScore.Text       = "—";
             RunScore.Foreground = HealthBrushes.Grey;
             TxtSubtitle.Text    = connectionName;
+            TxtVerdict.Visibility = Visibility.Collapsed;
             TxtLoweredBy.Text   = noScore;
             GridChecks.Visibility = Visibility.Collapsed;
             return;
@@ -65,6 +69,9 @@ public partial class HealthScoreBreakdown : UserControl
         RunScore.Foreground = HealthBrushes.For(score.Level);
         TxtSubtitle.Text    = $"{connectionName} · latest sample at {score.Time:HH:mm:ss}" +
                               (paused ? " · monitoring paused" : string.Empty);
+        TxtVerdict.Text       = score.Verdict;
+        TxtVerdict.Foreground = HealthBrushes.For(score.Level);
+        TxtVerdict.Visibility = Visibility.Visible;
 
         if (score.Level == HealthLevel.Unavailable)
         {
@@ -74,21 +81,27 @@ public partial class HealthScoreBreakdown : UserControl
         }
 
         TxtLoweredBy.Text = score.Lowering.Count == 0
-            ? "Nothing lowered it: every check is within its thresholds."
+            ? (score.LeftOut.Count == 0
+                  ? "Nothing lowered it: every check is within its thresholds."
+                  : "Nothing lowered it: every check that reported is within its thresholds.")
             : $"Lowered by {score.LoweredBy()}.";
         GridChecks.Visibility = Visibility.Visible;
 
-        AddRow(header: true, null, "Check", "Now", "Warning", "Critical", "Weight", "Points");
+        AddRow(header: true, null, "Check", "Now", "Warning", "Critical", "Worth", "Points");
         foreach (var check in score.Checks)
         {
             var lost = check.PointsLost > 0;
             var row  = AddRow(header: false, check.Level, check.Name, check.ValueText, check.WarningText, check.CriticalText,
-                              check.Weight.ToString(CultureInfo.CurrentCulture), lost ? $"−{check.PointsLost}" : "0");
+                              check.IsScored ? check.Worth.ToString(CultureInfo.CurrentCulture) : "—",
+                              lost ? $"−{check.PointsLost}" : check.IsScored ? "0" : "—");
             foreach (var cell in row)
             {
-                cell.ToolTip = check.Reading.Reason ?? HealthThresholds.Info(check.Indicator).Hint;
+                cell.ToolTip = ToolTipFor(check);
                 if (lost)
                     cell.FontWeight = FontWeights.SemiBold;
+                // No data: muted, so it never reads as passing (#173).
+                if (check.IsUnknown && cell != row[0])
+                    cell.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
             }
             if (lost)
                 row[^1].Foreground = HealthBrushes.For(check.Level);
@@ -96,6 +109,30 @@ public partial class HealthScoreBreakdown : UserControl
                 AddLink(row[0], check.Indicator, open);
         }
         AddRow(header: true, null, "Score", "", "", "", HealthScore.Max.ToString(CultureInfo.CurrentCulture), score.Value.ToString(CultureInfo.CurrentCulture));
+
+        if (score.LeftOutText is { } leftOut)
+        {
+            TxtLeftOut.Text       = $"{leftOut}. The score is out of the {score.Checks.Count(c => c.IsScored)} checks that reported.";
+            TxtLeftOut.Visibility = Visibility.Visible;
+        }
+    }
+
+    // Why a check is graded as it is: past a threshold, adjusted (a scaled PLE, a reusable log),
+    // left out, or what it measures.
+    private static string ToolTipFor(HealthScoreCheck check)
+    {
+        var lines = new List<string>(3);
+        if (check.IsUnknown)
+            lines.Add("No data: the server didn't report it, so it's left out of the score.");
+        else if (check.Reading.Reason is { } reason)
+            lines.Add(reason);
+        if (check.Reading.Note is { } note)
+            lines.Add(note);
+        if (check is { IsUnknown: false, Weight: 0 })
+            lines.Add("Weight 0: not scored. Its thresholds still colour the dot and raise alerts.");
+        if (lines.Count == 0)
+            lines.Add(HealthThresholds.Info(check.Indicator).Hint);
+        return string.Join("\n", lines);
     }
 
     // "Blocking chain →" on a line of its own under the check's name. The name cell's tooltip

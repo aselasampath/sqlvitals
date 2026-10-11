@@ -120,7 +120,7 @@ internal sealed class NavRail
         ServerMark.ToolTip = _hasScore ? $"{server.ToolTipText}\nClick to see what lowered the score." : server.ToolTipText;
         ServerMark.Cursor  = _hasScore ? Cursors.Hand : Cursors.Arrow;
         AutomationProperties.SetName(ServerMark, server.Score is { } s
-            ? $"Server {server.DisplayName}, health score {s.Value}: show what lowered it"
+            ? $"Server {server.DisplayName}, {s.Verdict}, health score {s.Value}: show what lowered it"
             : server.HealthText.Length > 0 ? $"Server {server.DisplayName}, {server.HealthText}" : $"Server {server.DisplayName}");
     }
 

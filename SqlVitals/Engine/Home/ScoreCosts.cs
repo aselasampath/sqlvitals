@@ -11,6 +11,9 @@ public sealed record ScoreCost(HealthIndicator Indicator, string Name, HealthLev
 /// <summary>A check within its thresholds, for the Overview's compact list: "CPU 12 %".</summary>
 public sealed record PassingCheck(HealthIndicator Indicator, string Name, string ValueText);
 
+/// <summary>A check with no figure, left out of the score (#173), for the Overview's compact list.</summary>
+public sealed record UnknownCheck(HealthIndicator Indicator, string Name);
+
 /// <summary>
 /// What is costing a health score its points (#143), in the words the Overview uses: each check
 /// that lowers it with its points and why, the costliest first, and the checks that pass.
@@ -20,18 +23,24 @@ public static class ScoreCosts
 {
     public static IReadOnlyList<ScoreCost> Lowering(HealthScore score) =>
         score.Lowering
-             .Select(c => new ScoreCost(c.Indicator, c.Name, c.Level, c.Weight, c.PointsLost, Why(c)))
+             .Select(c => new ScoreCost(c.Indicator, c.Name, c.Level, c.Worth, c.PointsLost, Why(c)))
              .ToList();
 
+    /// <summary>The checks within their thresholds; never one with no figure (#173).</summary>
     public static IReadOnlyList<PassingCheck> Passing(HealthScore score) =>
         score.Checks
-             .Where(c => c.PointsLost == 0)
+             .Where(c => c.Level == HealthLevel.Healthy)
              .Select(c => new PassingCheck(c.Indicator, c.Name, c.ValueText))
              .ToList();
 
+    /// <summary>The checks with no figure, which the score leaves out (#173).</summary>
+    public static IReadOnlyList<UnknownCheck> Unknown(HealthScore score) =>
+        score.LeftOut.Select(c => new UnknownCheck(c.Indicator, c.Name)).ToList();
+
     /// <summary>
     /// "Now 99 %, past critical (≥ 90 %): all 20 of its points." or
-    /// "Now 82 %, past warning (≥ 75 %): half of its 20 points."
+    /// "Now 82 %, past warning (≥ 75 %): half of its 20 points." The points are its share of
+    /// the 100 among the checks that reported (#173).
     /// </summary>
     public static string Why(HealthScoreCheck check)
     {
@@ -41,9 +50,9 @@ public static class ScoreCosts
             : ("warning", check.Reading.Limits.Warning);
         var threshold = AlertText.Threshold(check.Indicator, limit);
         var past      = threshold.Length == 0 ? $"past {level}" : $"past {level} ({threshold})";
-        var points    = check.PointsLost == check.Weight
-            ? string.Format(culture, "all {0} of its points", check.Weight)
-            : string.Format(culture, "half of its {0} points", check.Weight);
+        var points    = check.PointsLost == check.Worth
+            ? string.Format(culture, "all {0} of its points", check.Worth)
+            : string.Format(culture, "half of its {0} points", check.Worth);
         return $"Now {check.ValueText}, {past}: {points}.";
     }
 }

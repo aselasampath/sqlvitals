@@ -121,15 +121,132 @@ public class HealthScoreTests
     }
 
     [Fact]
-    public void AnIndicatorWithoutAFigure_KeepsItsPointsAndSaysSo()
+    public void AnIndicatorWithoutAFigure_IsLeftOut_AndSaysSo()
     {
-        // PLE and TempDB not reported (Azure SQL); nothing blocked.
-        var score = Score(Sample(ple: 0, tempDbPct: 0, blocked: 0, blockSec: 500));
+        // PLE and TempDB not reported (Azure SQL); nothing blocked (#173).
+        var score = InCulture("en-GB", () => Score(Sample(ple: 0, tempDbPct: 0, blocked: 0, blockSec: 500)));
 
         Assert.Equal(100, score.Value);
-        Assert.Equal("Not reported",    score.Checks.Single(c => c.Indicator == HealthIndicator.PageLifeExpectancy).ValueText);
-        Assert.Equal("Not reported",    score.Checks.Single(c => c.Indicator == HealthIndicator.TempDbSpace).ValueText);
+        var ple = score.Checks.Single(c => c.Indicator == HealthIndicator.PageLifeExpectancy);
+        Assert.Equal((HealthLevel.Unknown, "No data", 0, 0), (ple.Level, ple.ValueText, ple.Worth, ple.PointsLost));
+        Assert.Equal("No data",         score.Checks.Single(c => c.Indicator == HealthIndicator.TempDbSpace).ValueText);
         Assert.Equal("Nothing blocked", score.Checks.Single(c => c.Indicator == HealthIndicator.Blocking).ValueText);
+        Assert.Equal([HealthIndicator.PageLifeExpectancy, HealthIndicator.TempDbSpace], score.LeftOut.Select(c => c.Indicator));
+        Assert.Equal("2 checks left out of the score, no data: Page life expectancy, TempDB space used", score.LeftOutText);
+        Assert.Equal("Healthy: 4 of 6 checks pass, 2 have no data", score.Verdict);
+    }
+
+    [Fact]
+    public void TheScore_IsScaledOverTheChecksThatReported()
+    {
+        // TempDB not reported: the other five share 100 points among their 88 of weight, so CPU
+        // past warning loses half of its 23 (20 × 100 ÷ 88, rounded).
+        var score = Score(Sample(cpuPct: 80, tempDbPct: 0));
+
+        var cpu = score.Checks.Single(c => c.Indicator == HealthIndicator.Cpu);
+        Assert.Equal((20, 23, 11), (cpu.Weight, cpu.Worth, cpu.PointsLost));
+        Assert.Equal(89, score.Value);
+        Assert.Equal(HealthScore.Max - score.Checks.Sum(c => c.PointsLost), score.Value);
+    }
+
+    [Theory]
+    [InlineData(10, 5000)]   // every check reported: the default weights, as they are
+    [InlineData(0,  5000)]   // TempDB not reported
+    [InlineData(10, 0)]      // PLE not reported
+    [InlineData(0,  0)]      // neither
+    public void TheWorths_AlwaysAddUpTo100(double tempDbPct, double ple)
+    {
+        var score = Score(Sample(tempDbPct: tempDbPct, ple: ple));
+
+        Assert.Equal(HealthScore.Max, score.Checks.Sum(c => c.Worth));
+    }
+
+    [Fact]
+    public void TheWorths_WithTempDbMissing_AreTheRoundedShares()
+    {
+        var score = Score(Sample(tempDbPct: 0));
+
+        Assert.Equal([23, 23, 18, 13, 23, 0], score.Checks.Select(c => c.Worth));
+    }
+
+    [Fact]
+    public void MissingData_NeverRaisesTheScore_AboveWhatTheChecksThatReportedEarn()
+    {
+        // Blocking critical, everything else unreported but CPU, grants and log: 0 of blocking's share.
+        var score = Score(Sample(blocked: 2, blockSec: 600, ple: 0, tempDbPct: 0));
+
+        // 20 of 72 reported weight is 28 points.
+        Assert.Equal(72, score.Value);
+    }
+
+    // ── Custom weights (#173) ─────────────────────────────────────────────────
+
+    [Fact]
+    public void AWeightOf0_LeavesTheCheckOutOfTheScore_ButNotTheDot()
+    {
+        var weights = HealthWeights.Default.With(HealthIndicator.Cpu, 0);
+
+        var score = HealthScore.From(HealthRules.Grade(Sample(cpuPct: 99), HealthThresholds.Default), T0, weights);
+
+        Assert.Equal(100, score.Value);
+        Assert.Equal(HealthLevel.Critical, score.Level);
+        var cpu = score.Checks.Single(c => c.Indicator == HealthIndicator.Cpu);
+        Assert.Equal((0, 0, 0, false), (cpu.Weight, cpu.Worth, cpu.PointsLost, cpu.IsScored));
+        Assert.Equal("Critical: CPU at 99 %", InCulture("en-GB", () => score.Verdict));
+    }
+
+    [Fact]
+    public void CustomWeights_AreRelative_AndTheScoreStaysOutOf100()
+    {
+        // Every check weighs 10: CPU critical loses its 17 of the 100 (10 × 100 ÷ 60, rounded).
+        var weights = new HealthWeights(10, 10, 10, 10, 10, 10);
+
+        var score = HealthScore.From(HealthRules.Grade(Sample(cpuPct: 95), HealthThresholds.Default), T0, weights);
+
+        Assert.Equal(83, score.Value);
+        Assert.Equal(17, score.Checks.Single(c => c.Indicator == HealthIndicator.Cpu).Worth);
+    }
+
+    [Fact]
+    public void TheDefaultWeights_GiveTheSameScoresAsBefore()
+    {
+        var sample = Sample(cpuPct: 80, logPct: 85, blocked: 1, blockSec: 150);
+
+        Assert.Equal(Score(sample).Value,
+                     HealthScore.From(HealthRules.Grade(sample, HealthThresholds.Default), T0, HealthThresholds.Default.Weights).Value);
+        Assert.Equal(60, Score(sample).Value);
+    }
+
+    // ── Verdict: the worst state first (#173) ─────────────────────────────────
+
+    [Fact]
+    public void Verdict_LeadsWithTheWorstStateAndItsReason()
+    {
+        var (blocking, several, healthy) = InCulture("en-GB", () => (
+            Score(Sample(blocked: 3, blockSec: 240)).Verdict,
+            Score(Sample(cpuPct: 80, blocked: 1, blockSec: 150, logPct: 85)).Verdict,
+            Score(Sample()).Verdict));
+
+        Assert.Equal("Critical: blocking for 4 min", blocking);
+        Assert.Equal("Critical: blocking for 2.5 min (+2 more)", several);
+        Assert.Equal("Healthy: every check passes", healthy);
+        Assert.Equal("Unreachable: the server can't be reached or read", HealthScore.Unavailable("x", T0).Verdict);
+    }
+
+    [Fact]
+    public void Verdict_OfALevelWithNoCheckToExplainIt_IsTheLevel_NeverHealthy()
+    {
+        Assert.Equal("Warning", new HealthScore(84, HealthLevel.Warning, [], T0).Verdict);
+        Assert.Equal("Critical", new HealthScore(60, HealthLevel.Critical, [], T0).Verdict);
+    }
+
+    [Fact]
+    public void Verdict_AmongWarnings_NamesTheCostliest()
+    {
+        // PLE (16) and TempDB (12) past warning: PLE costs more.
+        var verdict = InCulture("en-GB", () => Score(Sample(ple: 120, tempDbPct: 85)).Verdict);
+
+        Assert.Equal("Warning: page life expectancy 120 s (+1 more)", verdict);
     }
 
     [Fact]
@@ -160,15 +277,17 @@ public class HealthScoreTests
     {
         var summary = InCulture("en-US", () => Score(Sample(cpuPct: 80, blocked: 1, blockSec: 150)).Summary());
 
-        Assert.Equal("Health score 70/100, lowered by Blocking −20 · CPU −10", summary);
+        Assert.Equal("Critical: blocking for 2.5 min (+1 more) · health score 70/100, lowered by Blocking −20 · CPU −10", summary);
     }
 
     [Fact]
     public void Summary_FullAndUnavailableScores()
     {
-        Assert.Equal("Health score 100/100: every check is within its thresholds", Score(Sample()).Summary());
-        Assert.Equal("Health score 0/100: the server couldn't be reached or read",
+        Assert.Equal("Healthy: every check passes · health score 100/100", Score(Sample()).Summary());
+        Assert.Equal("Unreachable · health score 0/100: the server couldn't be reached or read",
                      HealthScore.Unavailable("x", T0).Summary());
+        Assert.Equal("Healthy: 5 of 6 checks pass, 1 has no data · health score 100/100 · 1 check left out of the score, no data: TempDB space used",
+                     Score(Sample(tempDbPct: 0)).Summary());
     }
 
     [Fact]

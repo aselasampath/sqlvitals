@@ -42,5 +42,11 @@ public record LiveMetricSnapshot(
     double  LogUsedPct        = 0,     // the fullest transaction log on the server
     string? LogUsedDatabase   = null,
     double  TempDbUsedPct     = 0,     // TempDB data files, of their current size
-    int     WaitingTasks      = 0      // user tasks waiting on a resource now (#143)
+    int     WaitingTasks      = 0,     // user tasks waiting on a resource now (#143)
+
+    // What the health score judges them by (#173): the buffer pool for page life expectancy, and
+    // the fullest log's size and why it can't be reused yet (sys.databases.log_reuse_wait_desc)
+    long    BufferPoolPages   = 0,     // 8 KB data pages in the buffer pool
+    double  LogSizeMb         = 0,
+    string? LogReuseWait      = null
 );

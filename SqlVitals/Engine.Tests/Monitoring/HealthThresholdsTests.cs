@@ -71,12 +71,102 @@ public class HealthThresholdsTests
     }
 
     [Fact]
-    public void Grade_AnIndicatorWithoutAFigureIsHealthy()
+    public void Grade_AFigureTheServerDidntReportIsUnknown_NotHealthy()
     {
-        // Nothing blocked, PLE and TempDB not reported: none of them can be past a threshold.
-        var readings = HealthRules.Grade(Sample(ple: 0, blocked: 0, blockSec: 500, tempDbPct: 0), HealthThresholds.Default);
+        // PLE, TempDB and the log not reported (#173): grey, never passing.
+        var readings = HealthRules.Grade(Sample(ple: 0, tempDbPct: 0, logPct: 0, logDb: null), HealthThresholds.Default);
 
-        Assert.All(readings, r => Assert.Equal(HealthLevel.Healthy, r.Level));
+        Assert.Equal([HealthIndicator.PageLifeExpectancy, HealthIndicator.LogSpace, HealthIndicator.TempDbSpace],
+                     readings.Where(r => r.Level == HealthLevel.Unknown).Select(r => r.Indicator));
+        Assert.All(readings.Where(r => r.Level == HealthLevel.Unknown), r => Assert.False(r.Measured));
+        Assert.Equal(HealthLevel.Healthy, HealthRules.Summarize(readings).Level);
+    }
+
+    [Fact]
+    public void Grade_NothingBlockedIsAFigure_AndAWaitWithoutABlockedRequestIsIgnored()
+    {
+        var blocking = HealthRules.Grade(Sample(blocked: 0, blockSec: 500), HealthThresholds.Default)[1];
+
+        Assert.Equal((HealthIndicator.Blocking, HealthLevel.Healthy, 0.0, true), (blocking.Indicator, blocking.Level, blocking.Value, blocking.Measured));
+    }
+
+    // ── Page life expectancy per 4 GB of buffer pool (#173) ───────────────────
+
+    [Theory]
+    [InlineData(64 * 1024, 3000, 4800, HealthLevel.Warning)]  // 64 GB: 300 × 64 ÷ 4
+    [InlineData(2 * 1024,  200,  150,  HealthLevel.Healthy)]  // a small VM during CHECKDB
+    [InlineData(4 * 1024,  250,  300,  HealthLevel.Warning)]  // 4 GB: the classic 300 s
+    [InlineData(0,         250,  300,  HealthLevel.Warning)]  // buffer pool not reported: as typed
+    public void Ple_ScalesWithTheBufferPoolByDefault(double bufferPoolMb, double ple, double expectedWarning, HealthLevel expected)
+    {
+        var reading = HealthRules.Grade(Sample(ple: ple) with { BufferPoolMb = bufferPoolMb }, HealthThresholds.Default)[2];
+
+        Assert.Equal(expectedWarning, reading.Limits.Warning);
+        Assert.Null(reading.Limits.Critical);
+        Assert.Equal(expected, reading.Level);
+    }
+
+    [Fact]
+    public void Ple_FixedUsesTheSecondsAsTheyAre()
+    {
+        var fixedPle = HealthThresholds.Default with { PageLifeExpectancyFixed = true };
+
+        var reading = HealthRules.Grade(Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 }, fixedPle)[2];
+
+        Assert.Equal((HealthLevel.Healthy, new HealthThreshold(300, null)), (reading.Level, reading.Limits));
+        Assert.Null(reading.Note);
+    }
+
+    [Fact]
+    public void Ple_ScalesBothLevels_AndSaysWhatItScaledTo()
+    {
+        var thresholds = HealthThresholds.Default.With(HealthIndicator.PageLifeExpectancy, new HealthThreshold(300, 150));
+
+        var reading = InCulture("en-GB", () => HealthRules.Grade(Sample(ple: 1000) with { BufferPoolMb = 32 * 1024 }, thresholds)[2]);
+
+        Assert.Equal((new HealthThreshold(2400, 1200), HealthLevel.Critical), (reading.Limits, reading.Level));
+        Assert.Equal("Thresholds scaled to its 32 GB buffer pool: 300 / 150 s per 4 GB.", reading.Note);
+    }
+
+    // ── Log space and log_reuse_wait_desc (#173) ──────────────────────────────
+
+    [Theory]
+    [InlineData(200,  "NOTHING",            HealthLevel.Healthy)]   // small, reusable: sized tight
+    [InlineData(200,  "CHECKPOINT",         HealthLevel.Healthy)]   // reusable at the next checkpoint
+    [InlineData(200,  "LOG_BACKUP",         HealthLevel.Critical)]  // waiting on a log backup
+    [InlineData(200,  "ACTIVE_TRANSACTION", HealthLevel.Critical)]
+    [InlineData(4096, "NOTHING",            HealthLevel.Critical)]  // reusable, but not small
+    [InlineData(200,  null,                 HealthLevel.Critical)]  // reuse wait not reported
+    [InlineData(0,    "NOTHING",            HealthLevel.Critical)]  // size not reported
+    public void Log_ASmallLogThatIsFullButReusable_IsntAWarning(double sizeMb, string? wait, HealthLevel expected)
+    {
+        var sample  = Sample(logPct: 95) with { LogSizeMb = sizeMb, LogReuseWait = wait };
+        var reading = HealthRules.Grade(sample, HealthThresholds.Default)[4];
+
+        Assert.Equal(expected, reading.Level);
+        Assert.Equal(expected == HealthLevel.Healthy, reading.Note is not null);
+    }
+
+    [Fact]
+    public void Log_ReasonAndNoteNameTheDatabaseAndItsReuseWait()
+    {
+        var waiting = HealthRules.Grade(Sample(logPct: 95) with { LogSizeMb = 200, LogReuseWait = "LOG_BACKUP" }, HealthThresholds.Default)[4];
+        var spared  = InCulture("en-GB", () =>
+            HealthRules.Grade(Sample(logPct: 95) with { LogSizeMb = 200, LogReuseWait = "NOTHING" }, HealthThresholds.Default)[4]);
+
+        Assert.Equal("Log 95% full (Sales, waiting on LOG_BACKUP)", waiting.Reason);
+        Assert.Null(spared.Reason);
+        Assert.Equal("Not a warning: the log of Sales is only 200 MB, and SQL Server can reuse it (NOTHING).", spared.Note);
+    }
+
+    [Fact]
+    public void Regrade_GradesTheFigureAgainWithTheSameFacts()
+    {
+        var reading = HealthRules.Grade(Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 }, HealthThresholds.Default)[2];
+
+        var regraded = HealthRules.Regrade(reading, HealthThresholds.Default with { PageLifeExpectancyFixed = true });
+
+        Assert.Equal((HealthLevel.Warning, HealthLevel.Healthy), (reading.Level, regraded.Level));
     }
 
     [Fact]
@@ -293,5 +383,74 @@ public class HealthThresholdsTests
         var read = HealthThresholds.Normalize(JsonSerializer.Deserialize<HealthThresholds>("{}"));
 
         Assert.Equal(HealthThresholds.Default, read);
+        Assert.True(read.ScalesPageLifeExpectancy);
+    }
+
+    [Fact]
+    public void Json_WeightsAndPleScalingRoundTrip()
+    {
+        var options  = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+        var original = HealthThresholds.Default with
+        {
+            Weights                 = HealthWeights.Default.With(HealthIndicator.Cpu, 0).With(HealthIndicator.TempDbSpace, 30),
+            PageLifeExpectancyFixed = true,
+        };
+
+        var read = HealthThresholds.Normalize(JsonSerializer.Deserialize<HealthThresholds>(JsonSerializer.Serialize(original, options), options));
+
+        Assert.Equal(original, read);
+        Assert.Equal((0, 30, 20), (read.Weight(HealthIndicator.Cpu), read.Weight(HealthIndicator.TempDbSpace), read.Weight(HealthIndicator.Blocking)));
+    }
+
+    [Fact]
+    public void Normalize_AFileFromBefore173_ScalesPle_UnlessItsThresholdHadBeenChanged()
+    {
+        // Saved before #173: no weights, and nothing about how PLE is judged.
+        const string untouched = "{\"CpuPct\":{\"Warning\":75,\"Critical\":90},\"PageLifeExpectancySec\":{\"Warning\":300}}";
+        const string changed   = "{\"PageLifeExpectancySec\":{\"Warning\":1000}}";
+
+        var scaled  = HealthThresholds.Normalize(JsonSerializer.Deserialize<HealthThresholds>(untouched));
+        var kept    = HealthThresholds.Normalize(JsonSerializer.Deserialize<HealthThresholds>(changed));
+
+        Assert.Equal((false, HealthWeights.Default), (scaled.PageLifeExpectancyFixed!.Value, scaled.Weights));
+        Assert.Equal((true, 1000.0), (kept.PageLifeExpectancyFixed!.Value, kept.Get(HealthIndicator.PageLifeExpectancy).Warning!.Value));
+    }
+
+    // ── Weights (#173) ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Weights_DefaultsStayAsTheyWere()
+    {
+        Assert.Equal(new HealthWeights(20, 20, 16, 12, 20, 12), HealthWeights.Default);
+        Assert.Equal(HealthWeights.Default, HealthThresholds.Default.Weights);
+    }
+
+    [Fact]
+    public void Weights_NormalizeFixesOutOfRange_AndAllZeroGivesTheDefaults()
+    {
+        var fixedUp = HealthWeights.Normalize(new HealthWeights(Cpu: 0, Blocking: 101, TempDbSpace: -1));
+        Assert.Equal(new HealthWeights(0, 20, 16, 12, 20, 12), fixedUp);
+
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0)));
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(null));
+    }
+
+    [Theory]
+    [InlineData("0", true, 0)]
+    [InlineData(" 35 ", true, 35)]
+    [InlineData("100", true, 100)]
+    [InlineData("101", false, 0)]
+    [InlineData("-1", false, 0)]
+    [InlineData("2.5", false, 0)]
+    [InlineData("", false, 0)]
+    public void Weights_TryParseAcceptsWholeNumbersFrom0To100(string text, bool ok, int expected)
+    {
+        var parsed = InCulture("en-GB", () => (HealthWeights.TryParse(HealthIndicator.Cpu, text, out var weight, out var error), weight, error));
+
+        Assert.Equal(ok, parsed.Item1);
+        if (ok)
+            Assert.Equal(expected, parsed.weight);
+        else
+            Assert.Equal("CPU: enter a weight from 0 to 100; 0 leaves it out of the score.", parsed.error);
     }
 }

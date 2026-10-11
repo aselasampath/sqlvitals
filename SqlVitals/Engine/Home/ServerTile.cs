@@ -63,6 +63,10 @@ public sealed record CheckBar(HealthIndicator Indicator, string Label, HealthLev
 /// A connection as a Home tile shows it (#130): its status in words as well as colour, its score,
 /// why the score is lower, a bar per check, and what its button does.
 /// </summary>
+/// <param name="Headline">
+/// The worst state and its reason, which the tile leads with, before the number (#173):
+/// "Critical: blocking for 4 min", "Unreachable", "Not monitored".
+/// </param>
 public sealed record ServerTile(
     Guid                    Id,
     string                  Name,
@@ -71,6 +75,7 @@ public sealed record ServerTile(
     TileStatus              Status,
     HealthLevel             Level,
     string                  ScoreText,
+    string                  Headline,
     string                  Reason,
     string?                 ReasonToolTip,
     IReadOnlyList<CheckBar> Bars,
@@ -89,12 +94,12 @@ public sealed record ServerTile(
         _                => "Open",
     };
 
-    /// <summary>What a screen reader says for the tile: "UAT, critical, score 70 of 100".</summary>
+    /// <summary>What a screen reader says for the tile: "UAT, critical: blocking for 4 min, score 70 of 100".</summary>
     public string AutomationName => Status switch
     {
         TileStatus.Off     => $"{Name}, not monitored",
         TileStatus.Waiting => $"{Name}, waiting for the first sample",
-        _                  => $"{Name}, {Label(Status).ToLowerInvariant()}, score {ScoreText} of {HealthScore.Max}",
+        _                  => $"{Name}, {Headline.ToLower(CultureInfo.CurrentCulture)}, score {ScoreText} of {HealthScore.Max}",
     } + (IsActive ? ", the active connection" : string.Empty);
 
     /// <summary>Its place in the sort: unreachable and critical first, not monitored last.</summary>
@@ -158,8 +163,17 @@ public sealed record ServerTile(
                                            : "Can't be reached or read.",
                                        input.LastError ?? score?.Problem),
             _ when score!.Lowering.Count == 0
-                                   => ("Every check is within its thresholds.", null),
-            _                      => ($"Lowered by {score.LoweredBy()}.", null),
+                                   => ((score.LeftOut.Count == 0 ? "Every check is within its thresholds." : "Every check that reported is within its thresholds.") +
+                                       NoData(score), score.LeftOutText),
+            _                      => ($"Lowered by {score.LoweredBy()}." + NoData(score), score.LeftOutText),
+        };
+
+        var headline = status switch
+        {
+            TileStatus.Off         => "Not monitored",
+            TileStatus.Waiting     => "Waiting for the first sample",
+            TileStatus.Unreachable => "Unreachable",
+            _                      => score!.Verdict,
         };
 
         var footer = status switch
@@ -185,6 +199,7 @@ public sealed record ServerTile(
             status,
             score?.Level ?? HealthLevel.Unknown,
             score?.Value.ToString(CultureInfo.CurrentCulture) ?? "—",
+            headline,
             reason,
             toolTip,
             BarsFor(score, status),
@@ -218,20 +233,31 @@ public sealed record ServerTile(
         };
         var sampled = watch.Last is { } last ? When(last.TimeUtc.ToLocalTime(), now) : null;
 
+        var alertingOn = string.Join(", ", watch.ActiveAlerts.OrderByDescending(a => a.Severity)
+                                                .Select(a => HealthThresholds.Info(a.Indicator).Name).Distinct());
+        // The history keeps a score's number, not its checks, so the checks are Unknown here (#173),
+        // as a check with no data is anywhere else: grey, and never shown as passing.
         var reason = status switch
         {
             TileStatus.Off         => watch.NotWatching!,
             TileStatus.Waiting     => $"Waiting for {watch.By}'s first sample…",
             TileStatus.Unreachable => $"Can't be reached or read, at {watch.By}'s last sample ({sampled}).",
-            _ when worst is null   => "No check has alerted.",
-            _                      => "Alerting on " + string.Join(", ", watch.ActiveAlerts.OrderByDescending(a => a.Severity)
-                                                                           .Select(a => HealthThresholds.Info(a.Indicator).Name).Distinct()) + ".",
+            _ when worst is null   => $"No check has alerted. {Capitalized(watch.By)} keeps the score, not each check's figure.",
+            _                      => $"Alerting on {alertingOn}.",
+        };
+        var headline = status switch
+        {
+            TileStatus.Off         => "Not watched",
+            TileStatus.Waiting     => "Waiting for the first sample",
+            TileStatus.Unreachable => "Unreachable",
+            TileStatus.Healthy     => "Healthy: no check is alerting",
+            _                      => $"{Label(status)}: alerting on {alertingOn.ToLower(CultureInfo.CurrentCulture)}",
         };
         var alerting = watch.ActiveAlerts.GroupBy(a => a.Indicator).ToDictionary(g => g.Key, g => g.Max(a => a.Severity));
         var bars = Enum.GetValues<HealthIndicator>()
             .Select(i => alerting.TryGetValue(i, out var severity)
                 ? new CheckBar(i, ShortName(i), severity, $"{HealthThresholds.Info(i).Name}: alerting ({severity.ToString().ToLowerInvariant()}), from {watch.By}")
-                : new CheckBar(i, ShortName(i), HealthLevel.Unknown, $"{HealthThresholds.Info(i).Name}: no figure here, {watch.By} keeps the score; no alert"))
+                : new CheckBar(i, ShortName(i), HealthLevel.Unknown, $"{HealthThresholds.Info(i).Name}: unknown here, {watch.By} keeps the score, not the figure; no alert"))
             .ToList();
 
         return new ServerTile(
@@ -243,6 +269,7 @@ public sealed record ServerTile(
             level,
             status is TileStatus.Off or TileStatus.Waiting || watch.Last is null
                 ? "—" : watch.Last.Score.ToString(CultureInfo.CurrentCulture),
+            headline,
             reason,
             null,
             bars,
@@ -263,8 +290,11 @@ public sealed record ServerTile(
         if (score is { Checks.Count: > 0 })
             return score.Checks.Select(c => new CheckBar(
                 c.Indicator, ShortName(c.Indicator), c.Level,
-                $"{c.Name}: {c.ValueText} (warning {c.WarningText}, critical {c.CriticalText})" +
-                (c.PointsLost > 0 ? $" · −{c.PointsLost}" : string.Empty))).ToList();
+                c.IsUnknown
+                    ? $"{c.Name}: no data, so it's left out of the score"
+                    : $"{c.Name}: {c.ValueText} (warning {c.WarningText}, critical {c.CriticalText})" +
+                      (c.PointsLost > 0 ? $" · −{c.PointsLost}" : string.Empty) +
+                      (c.Weight == 0 ? " · not scored, weight 0" : string.Empty))).ToList();
 
         var why = status switch
         {
@@ -276,6 +306,17 @@ public sealed record ServerTile(
                    .Select(i => new CheckBar(i, ShortName(i), HealthLevel.Unknown, $"{HealthThresholds.Info(i).Name}: no figure, {why}"))
                    .ToList();
     }
+
+    // " 1 check has no data." after the reason; nothing when every check reported.
+    private static string NoData(HealthScore score) => score.LeftOut.Count switch
+    {
+        0     => string.Empty,
+        1     => " 1 check has no data.",
+        var n => $" {n} checks have no data.",
+    };
+
+    private static string Capitalized(string text) =>
+        text.Length == 0 ? text : char.ToUpper(text[0], CultureInfo.CurrentCulture) + text[1..];
 
     // "21:55:14" today, "30 Sep 21:55" on another day.
     internal static string When(DateTime time, DateTime now) =>

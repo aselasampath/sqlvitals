@@ -158,6 +158,45 @@ public sealed class ServerTileTests
         Assert.DoesNotContain("−", tile.Bars[2].ToolTip);
     }
 
+    // ── The worst state first (#173) ──────────────────────────────────────────
+
+    [Fact]
+    public void Headline_LeadsWithTheWorstStateAndItsReason()
+    {
+        var critical = Tile(Input(score: Score(Sample(blocked: 3, blockSec: 240))));
+
+        Assert.Equal("Critical: blocking for 4 min", critical.Headline);
+        Assert.Equal("80", critical.ScoreText);
+        Assert.Equal("Not monitored", Tile(Input(monitored: false)).Headline);
+        Assert.Equal("Waiting for the first sample", Tile(Input(score: null)).Headline);
+        Assert.Equal("Unreachable", Tile(Input(score: HealthScore.Unavailable("Login failed.", Now))).Headline);
+    }
+
+    [Fact]
+    public void ACheckWithNoData_IsAGreyBar_AndTheReasonSaysItWasLeftOut()
+    {
+        var tile = Tile(Input(score: Score(Sample(cpuPct: 80, tempDbPct: 0))));
+
+        var tempDb = tile.Bars.Single(b => b.Indicator == HealthIndicator.TempDbSpace);
+        Assert.Equal((HealthLevel.Unknown, "TempDB space used: no data, so it's left out of the score"), (tempDb.Level, tempDb.ToolTip));
+        Assert.Equal("Lowered by CPU −11. 1 check has no data.", tile.Reason);
+        Assert.Equal("1 check left out of the score, no data: TempDB space used", tile.ReasonToolTip);
+        Assert.Equal("Every check that reported is within its thresholds. 1 check has no data.",
+                     Tile(Input(score: Score(Sample(tempDbPct: 0)))).Reason);
+    }
+
+    [Fact]
+    public void ABarWeighted0_SaysItIsntScored()
+    {
+        var weights = HealthWeights.Default.With(HealthIndicator.Cpu, 0);
+        var score   = HealthScore.From(HealthRules.Grade(Sample(cpuPct: 80), HealthThresholds.Default), Now, weights);
+
+        var cpu = Tile(Input(score: score)).Bars.Single(b => b.Indicator == HealthIndicator.Cpu);
+
+        Assert.Equal(HealthLevel.Warning, cpu.Level);
+        Assert.EndsWith(" · not scored, weight 0", cpu.ToolTip);
+    }
+
     [Fact]
     public void Bars_WithNoScore_AreSixGreyBars()
     {
@@ -172,9 +211,9 @@ public sealed class ServerTileTests
     [Fact]
     public void AutomationName_SaysTheStatusAndScoreInWords()
     {
-        Assert.Equal("UAT, critical, score 70 of 100",
+        Assert.Equal("UAT, critical: blocking for 3 min (+1 more), score 70 of 100",
                      Tile(Input(score: Score(Sample(cpuPct: 81, blocked: 3, blockSec: 180)))).AutomationName);
-        Assert.Equal("Production, healthy, score 100 of 100, the active connection",
+        Assert.Equal("Production, healthy: every check passes, score 100 of 100, the active connection",
                      Tile(Input("Production", Score(Sample()), active: true)).AutomationName);
         Assert.Equal("Dev, not monitored", Tile(Input("Dev", monitored: false)).AutomationName);
     }

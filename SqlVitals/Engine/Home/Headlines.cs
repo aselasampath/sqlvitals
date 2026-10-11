@@ -26,7 +26,8 @@ public sealed record Headline(HeadlineKind Kind, string Label, string ValueText,
 /// <summary>
 /// CPU, batch requests/s, waiting tasks and page life expectancy from a connection's live
 /// samples (#143). CPU and page life expectancy are coloured by the same thresholds as the health
-/// score; batch requests and waiting tasks have no threshold, so they stay neutral.
+/// score, page life expectancy's scaled to the latest sample's buffer pool as the score's are
+/// (#173); batch requests and waiting tasks have no threshold, so they stay neutral.
 /// </summary>
 public static class Headlines
 {
@@ -44,10 +45,13 @@ public static class Headlines
     private static Headline Graded(HeadlineKind kind, string label, HealthIndicator indicator, IReadOnlyList<LiveMetricSample> samples,
                                    Func<LiveMetricSample, double> value, HealthThresholds thresholds, Func<double, bool> measured)
     {
-        var threshold = thresholds.Get(indicator);
-        var note      = Note(indicator, threshold);
         if (samples.Count == 0)
-            return new Headline(kind, label, "—", null, note, []);
+            return new Headline(kind, label, "—", null, Note(indicator, thresholds.Get(indicator)), []);
+
+        var bufferPoolGb = samples[^1].BufferPoolMb / 1024;
+        var threshold    = thresholds.For(indicator, bufferPoolGb);
+        var note         = Note(indicator, threshold) +
+                           (threshold != thresholds.Get(indicator) ? $" (for its {HealthRules.Gigabytes(bufferPoolGb)} buffer pool)" : string.Empty);
 
         var latest = value(samples[^1]);
         return measured(latest)

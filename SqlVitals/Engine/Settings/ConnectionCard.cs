@@ -40,7 +40,7 @@ public sealed record ConnectionCardInput(
 /// </summary>
 /// <param name="Tags">The sign-in type, the monitoring mode, and default or own thresholds.</param>
 /// <param name="Status">As its Home tile (#130) has it, which colours the dot and the state.</param>
-/// <param name="StateText">"Score 70 · Critical", "Unreachable · can't connect", "No score: not monitored".</param>
+/// <param name="StateText">"Critical: blocking for 4 min · score 70", "Unreachable · can't connect", "No score: not monitored".</param>
 public sealed record ConnectionCard(
     Guid                  Id,
     string                Name,
@@ -57,7 +57,7 @@ public sealed record ConnectionCard(
     /// <summary>"ACTIVE", "BACKGROUND" or "OFF".</summary>
     public string RoleLabel => Role.ToString().ToUpperInvariant();
 
-    /// <summary>What a screen reader says for the card: "UAT, background, score 70 · critical".</summary>
+    /// <summary>What a screen reader says for the card: "UAT, background, critical: blocking for 4 min · score 70".</summary>
     public string AutomationName =>
         $"{Name}, {Role.ToString().ToLowerInvariant()}, {StateText.ToLower(CultureInfo.CurrentCulture)}";
 
@@ -80,7 +80,8 @@ public sealed record ConnectionCard(
             TileStatus.Off         => "No score: not monitored",
             TileStatus.Waiting     => "Waiting for the first sample",
             TileStatus.Unreachable => "Unreachable · can't connect",
-            _                      => string.Format(CultureInfo.CurrentCulture, "Score {0} · {1}", input.Score!.Value, ServerTile.Label(status)),
+            // The worst state and its reason first, the number second (#173).
+            _                      => string.Format(CultureInfo.CurrentCulture, "{0} · score {1}", input.Score!.Verdict, input.Score.Value),
         };
 
         return new ConnectionCard(

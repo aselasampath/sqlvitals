@@ -158,9 +158,13 @@
                                             ToolTipService.ShowOnDisabled="True"/>
                                 </StackPanel>
 
-                                <!-- Monitored: the score, its last hour, why it's lower, and a bar per check -->
+                                <!-- Monitored: the worst state and its reason first (#173), then the score, its last
+                                     hour, why it's lower, and a bar per check -->
                                 <StackPanel DockPanel.Dock="Top" Visibility="{Binding ScoreVisibility}">
-                                    <DockPanel>
+                                    <TextBlock Text="{Binding Tile.Headline}" Foreground="{Binding StatusBrush}" FontSize="15"
+                                               FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                               MaxHeight="42" ToolTip="{Binding Tile.Headline}"/>
+                                    <DockPanel Margin="0,2,0,0">
                                         <StackPanel DockPanel.Dock="Right" VerticalAlignment="Bottom">
                                             <controls:ScoreChart Width="120" Height="36" HorizontalAlignment="Right"
                                                                  Data="{Binding Trend}" LineBrush="{Binding StatusBrush}"
@@ -171,7 +175,8 @@
                                                        ToolTip="{Binding CoverageToolTip}"/>
                                         </StackPanel>
                                         <TextBlock VerticalAlignment="Bottom">
-                                            <Run Text="{Binding Tile.ScoreText, Mode=OneWay}" FontSize="38" FontWeight="Bold"
+                                            <Run Text="Score " FontSize="12" Foreground="{StaticResource TextMuted}"/><Run
+                                                 Text="{Binding Tile.ScoreText, Mode=OneWay}" FontSize="26" FontWeight="Bold"
                                                  Foreground="{Binding StatusBrush, Mode=OneWay}"/><Run
                                                  Text=" / 100" FontSize="12" Foreground="{StaticResource TextMuted}"/>
                                         </TextBlock>

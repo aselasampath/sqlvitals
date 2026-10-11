@@ -20,9 +20,10 @@ Each tile shows:
 |---|---|
 | **Name and status** | The health dot, the connection's name, and its status in words: **CRITICAL**, **WARNING**, **HEALTHY**, **UNREACHABLE**, **WAITING** or **OFF**. The active connection also says **ACTIVE** and has an accent border. |
 | **Server / database** | The connection's server and database |
+| **Worst state first** | From 0.75.0, before the number: the worst state and its reason, in the dot's colour: *Critical: blocking for 4 min*, *Healthy: every check passes*, *Unreachable*. See [The worst state first](Health-Dot-and-Background-Monitoring.md#the-worst-state-first). |
 | **Score** | 0 to 100, in the dot's colour, with a sparkline of the **last hour**: shaded red where the server couldn't be reached, grey where it wasn't monitored. Under it, how much of the last day was watched: *Monitored 14 h of the last 24 h* (point at it for the longest gap). See [How much was monitored](#how-much-was-monitored). |
 | **Why** | What lowered it, in the words of the score's breakdown: *Lowered by Page life expectancy −8.* |
-| **Six bars** | One per check (CPU, Blocking, PLE, Grants, Log, TempDB), each in its own colour. Point at a bar for its figure and thresholds. |
+| **Six bars** | One per check (CPU, Blocking, PLE, Grants, Log, TempDB), each in its own colour. Point at a bar for its figure and thresholds. A check with no data is grey, and left out of the score. |
 | **Footer** | When the last sample was taken, and whether it's the active connection or monitored in the background |
 | **Button** | **Open** its Overview, **Retry** a server that can't be reached, or **▶ Start monitoring** one that isn't monitored |
 | **⋯ menu** | From 0.57.0: **Open**, **Start monitoring** or **Stop monitoring**, **Why this score…** (the score's breakdown, beside the tile) and **Edit connection…**: what the sidebar's connection selector did for each server before |
@@ -77,7 +78,7 @@ With none: *None: no check has stayed past its threshold long enough to alert*, 
 
 ### Health score
 
-The score, its status, and how it got there: *Was 100 at 21:45 · lowest today 70 at 21:52*. Under it, *Monitored 14 h of the last 24 h* ([below](#how-much-was-monitored)).
+The worst state and its reason first (*Critical: blocking for 4 min*, from 0.75.0), then the score and how it got there: *Was 100 at 21:45 · lowest today 70 at 21:52*. Under it, *Monitored 14 h of the last 24 h* ([below](#how-much-was-monitored)).
 
 ### What is costing points
 

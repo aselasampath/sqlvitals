@@ -566,12 +566,8 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         var brush = HealthBrushes.For(tile.Status);
         RunScore.Text       = tile.ScoreText;
         RunScore.Foreground = brush;
-        TxtLevel.Text       = tile.Status switch
-        {
-            TileStatus.Off     => "Not monitored",
-            TileStatus.Waiting => "Waiting for the first sample",
-            _                  => ServerTile.Label(tile.Status),
-        };
+        // "Critical: blocking for 4 min", as its Home tile leads with (#173).
+        TxtLevel.Text       = tile.Headline;
         TxtLevel.Foreground = brush;
         TxtContext.Text     = score is null
             ? tile.Footer
@@ -603,6 +599,10 @@ public partial class OverviewPage : Page, ICodeBehindPage, IPageContext
         var passing = graded is null ? [] : ScoreCosts.Passing(graded).Select(p => $"{p.Name} · {p.ValueText}").ToList();
         Show(PassingList, passing);
         TxtPassingTitle.Visibility = passing.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        var unknown = graded is null ? [] : ScoreCosts.Unknown(graded).Select(u => u.Name).ToList();
+        Show(UnknownList, unknown);
+        TxtUnknownTitle.Visibility = unknown.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         RunThresholds.Text = conn.HealthThresholds is null
             ? $"{conn.DisplayName} uses the default thresholds. "

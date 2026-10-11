@@ -34,6 +34,9 @@ public sealed class ConnectionSelectorItem : INotifyPropertyChanged
 
     public string ScoreText => Score?.Value.ToString(CultureInfo.CurrentCulture) ?? string.Empty;
 
+    /// <summary>The worst state and its reason, shown before the number (#173): "Critical: blocking for 4 min".</summary>
+    public string Verdict => Score?.Verdict ?? string.Empty;
+
     public Brush ScoreBrush => Score is { } score ? HealthBrushes.For(score.Level) : HealthBrushes.Grey;
 
     public Visibility ScoreVisibility => Score is null ? Visibility.Collapsed : Visibility.Visible;
@@ -89,7 +92,7 @@ public sealed class ConnectionSelectorItem : INotifyPropertyChanged
         CanToggle    = IsMonitoring || monitoring.CanStart(Settings.Id);
 
         foreach (var name in new[] { nameof(HealthFill), nameof(HealthStroke), nameof(HealthText), nameof(Score),
-                                     nameof(ScoreText), nameof(ScoreBrush), nameof(ScoreVisibility), nameof(ScoreOpacity),
+                                     nameof(ScoreText), nameof(Verdict), nameof(ScoreBrush), nameof(ScoreVisibility), nameof(ScoreOpacity),
                                      nameof(ToolTipText), nameof(IsMonitoring), nameof(CanToggle), nameof(ToggleGlyph),
                                      nameof(ToggleName), nameof(ToggleToolTip) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
