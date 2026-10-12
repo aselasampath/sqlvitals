@@ -67,10 +67,10 @@ See [Your Servers → Overview](Your-Servers.md#a-servers-overview).
    | **Locks** | [Users say the application is hanging](#users-say-the-application-is-hanging) |
    | **CPU** | [CPU is high](#cpu-is-high) |
    | **I/O** | 🔥 Resource Queries → **By Logical Reads**, then 🔍 Index Health → Missing Indexes |
-   | **Memory** | 🧠 Memory Grants → look for **Pending** grants |
+   | **Memory** | 🧠 Memory → look for **Pending** grants |
    | **Network** | The application is slow to read results. Look at what it's fetching (🛰️ SP Trace). |
 
-3. **⚡ Active Waits** lists exactly which sessions are waiting, and on what.
+3. **🔗 Processes → Waiting** lists exactly which sessions are waiting, and on what.
 
 ## Users say the application is hanging
 
@@ -183,7 +183,7 @@ An application that opens connections and doesn't close them fills its pool with
 
 1. History only exists for times the connection was **monitored**. To have it next time, see [Monitor my servers all the time](#monitor-my-servers-all-the-time).
 2. **💓 Live charts → Custom…**: set From/To around the incident, and press **Show**. Look for the CPU or wait spike.
-3. **📈 Wait Trend → same range → Top Waits**: which wait types rose.
+3. **📊 Waits → same range**: the table ranks the waits of that range, and **Top 20** charts them: which wait types rose.
 4. **⏱️ Perfmon → same range**: tick counters such as batch requests, lock waits or page life expectancy.
 5. **🐢 Query Regressions**: *Recent: last 24 hours*, to see if a query got slower.
 
@@ -213,7 +213,7 @@ An application that opens connections and doesn't close them fills its pool with
 
 ## Is today normal?
 
-1. Open **💓 Live charts**, **📈 Wait Trend** or **⏱️ Perfmon**.
+1. Open **💓 Live charts**, **📊 Waits** or **⏱️ Perfmon**.
 2. Tick **Compare to baseline**. Dashed lines show **the same time last week**.
 3. Current line well above the dashed line = unusual. Both similar = that's just your normal load.
 
@@ -221,7 +221,7 @@ An application that opens connections and doesn't close them fills its pool with
 
 1. **🔥 Resource Queries → By CPU**. Sort by *Total CPU µs* (total cost) or *Avg CPU µs* (per run).
 2. **View Plan** on the top queries. In the [graphical plan](Execution-Plans.md), look at the highlighted (≥ 25 % cost) operators: scans on big tables, big sorts, and **⚠** warnings. A green missing-index hint is worth reviewing.
-3. **⚠️ Implicit Conv.**: data-type mismatches cause scans that burn CPU.
+3. **🔎 Plan Cache Health → Implicit Conversions**: data-type mismatches cause scans that burn CPU.
 4. **🔎 Plan Cache Health → Multi-Plan Queries**: many compilations cost CPU too.
 5. **📦 DB Storage → Max DOP / Cost Threshold**: a cost threshold of 5 (the default) often causes too much parallelism (`CXPACKET` waits). **✅ Config Checks** says what to set them to for this server.
 

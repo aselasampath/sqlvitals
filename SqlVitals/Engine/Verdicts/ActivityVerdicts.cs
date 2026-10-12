@@ -7,12 +7,12 @@ using SqlVitals.Engine.Monitoring;
 namespace SqlVitals.Engine.Verdicts;
 
 /// <summary>
-/// Active Waits' verdict (#149): the requests blocked and the longest wait, or what most requests
-/// wait on, or that nothing waits.
+/// The verdict of Processes' Waiting view (#149; the Active Waits page until #178): the requests
+/// blocked and the longest wait, or what most requests wait on, or that nothing waits.
 /// </summary>
 public static class ActiveWaitsVerdict
 {
-    /// <summary>Opens Processes on the blocking chain.</summary>
+    /// <summary>Shows the blocking chain on the map: <see cref="VerdictAction.Id"/> is the blocker.</summary>
     public const string Processes = "processes";
 
     /// <param name="waits">Every user request now, waiting or not.</param>
@@ -45,8 +45,8 @@ public static class ActiveWaitsVerdict
                                 blocked.Count, longest.SessionId, Wait(longest.WaitTimeMs));
             var why = $"It waits on {longest.WaitType}" + (string.IsNullOrWhiteSpace(longest.WaitResource) ? "" : $" ({longest.WaitResource.Trim()})")
                     + (heads == 1 ? $", held by session {longest.BlockingSessionId}." : string.Format(culture, "; {0:N0} sessions hold the locks.", heads))
-                    + " Processes shows the whole chain.";
-            return new PageVerdict(level, headline, why, [new(Processes, "Blocking in Processes", longest.BlockingSessionId)]);
+                    + " The map shows the whole chain.";
+            return new PageVerdict(level, headline, why, [new(Processes, "Show the chain on the map", longest.BlockingSessionId)]);
         }
 
         // Nothing blocked: what most of them wait on, and the longest wait.

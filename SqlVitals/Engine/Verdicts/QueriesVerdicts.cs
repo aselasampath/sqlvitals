@@ -124,11 +124,16 @@ public static class PlanCacheHealthVerdict
     /// <summary>Shows a tab: <see cref="VerdictAction.Id"/> is its index.</summary>
     public const string ShowTab = "show-tab";
 
-    public const int MultiPlanTab  = 0;
-    public const int KeyLookupTab  = 1;
-    public const int PlanGuidesTab = 4;
+    /// <summary>Shows the Implicit Conversions tab with its most used plan selected (#178).</summary>
+    public const string ShowWorstConversion = "show-worst-conversion";
 
-    public static PageVerdict From(PlanCacheHealthSummary summary, int keyLookups)
+    public const int MultiPlanTab           = 0;
+    public const int KeyLookupTab           = 1;
+    public const int PlanGuidesTab          = 4;
+    public const int ImplicitConversionsTab = 5;
+
+    /// <param name="conversions">The cached plans with CONVERT_IMPLICIT (#178); null when they weren't read.</param>
+    public static PageVerdict From(PlanCacheHealthSummary summary, int keyLookups, IReadOnlyList<ImplicitConversion>? conversions = null)
     {
         var culture = CultureInfo.CurrentCulture;
         var level = summary.Severity switch
@@ -151,11 +156,20 @@ public static class PlanCacheHealthVerdict
                 "A query compiled again for each set of literal values isn't parameterised: it fills the cache and burns CPU on compiles. Parameterise it, or turn on Optimize for ad hoc workloads. " + plans,
                 [new(ShowTab, "Multi-plan queries", MultiPlanTab)]);
 
+        // A busy plan that converts implicitly scans on every run: before a plan guide that is only
+        // a note, and before lookups, which cost less.
+        var converting = conversions is { Count: > 0 } ? Conversions(conversions) : null;
         if (summary.PlanGuidesEnabled > 0)
-            return new PageVerdict(level == VerdictLevel.Ok ? VerdictLevel.Info : level,
+        {
+            var guides = new PageVerdict(level == VerdictLevel.Ok ? VerdictLevel.Info : level,
                 summary.PlanGuidesEnabled == 1 ? "1 plan guide freezes a plan" : string.Format(culture, "{0:N0} plan guides freeze plans", summary.PlanGuidesEnabled),
                 "A plan guide keeps a plan however the data or the indexes change: check that each still helps. " + plans,
                 [new(ShowTab, "Plan guides", PlanGuidesTab)]);
+            return converting is not null && converting.Level > guides.Level ? converting : guides;
+        }
+
+        if (converting is { Level: VerdictLevel.Warning })
+            return converting;
 
         if (keyLookups > 0)
             return new PageVerdict(VerdictLevel.Info,
@@ -163,12 +177,22 @@ public static class PlanCacheHealthVerdict
                 "A key or RID lookup for every row found is often one INCLUDE column away from a covering index. " + plans,
                 [new(ShowTab, "Key lookups", KeyLookupTab)]);
 
+        if (converting is not null)
+            return converting;
+
         return new PageVerdict(VerdictLevel.Ok, "The plan cache looks healthy",
-            "No query with many plans, no plan guide, no busy plan doing lookups. " + plans);
+            "No query with many plans, no plan guide, no busy plan doing lookups" + (conversions is null ? ". " : " and no plan converting implicitly. ") + plans);
+    }
+
+    // Implicit Conversions' verdict, with its action on this page's tab.
+    private static PageVerdict Conversions(IReadOnlyList<ImplicitConversion> conversions)
+    {
+        var verdict = ImplicitConversionsVerdict.From(conversions);
+        return new PageVerdict(verdict.Level, verdict.Headline, verdict.Why, [new(ShowWorstConversion, "Show it")]);
     }
 }
 
-/// <summary>Implicit Conversions' verdict (#149): how many cached plans convert implicitly, the most used first.</summary>
+/// <summary>Implicit Conversions' verdict (#149), a tab of Plan Cache Health since #178: how many cached plans convert implicitly, the most used first.</summary>
 public static class ImplicitConversionsVerdict
 {
     /// <summary>Selects the most used plan.</summary>

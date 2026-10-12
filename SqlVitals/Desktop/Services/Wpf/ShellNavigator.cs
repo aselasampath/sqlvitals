@@ -29,10 +29,10 @@ internal sealed class ShellNavigator(Func<MainWindow?> shell) : INavigator
     public Task ForwardAsync() => shell() is { } main ? main.GoAsync(back: false) : Task.CompletedTask;
 
     // The window opens Live Metrics for a tag it doesn't know; a link to one is a bug, said at once,
-    // with or without a window.
+    // with or without a window. A page merged into another (#178) opens that one.
     private static void Check(string tag)
     {
-        if (!PageCatalog.Types.ContainsKey(tag))
+        if (!PageCatalog.Types.ContainsKey(NavMenu.Current(tag)))
             throw new ArgumentException($"No page has the tag \"{tag}\" (PageCatalog).", nameof(tag));
     }
 }

@@ -59,7 +59,7 @@ The most expensive reads, worth knowing on very large servers:
 | Screen | Why it can be heavy | Mitigation |
 |---|---|---|
 | Index Health → Fragmentation | `sys.dm_db_index_physical_stats` scans index pages | Uses the *Min Page Count* filter; runs only on demand |
-| Implicit Conversions, Plan Cache Health | Searches cached plan XML | Runs only on demand |
+| Plan Cache Health (with its Implicit Conversions tab) | Searches cached plan XML | Runs only on demand |
 | Query Regressions (Query Store source) | Reads a week of runtime stats | Runs only on demand; per database |
 | Query Store tabs over 7 or 30 days | Reads every runtime-stats row in the period (one per plan, interval and execution type) | Runs only on demand, one tab at a time; grouped on the server; per database |
 | Deadlocks | Reads every system_health `.xel` file (tens of MB or more, depending on version and settings) | Runs only on demand; the server returns only the deadlock events; the XML is parsed on your PC |

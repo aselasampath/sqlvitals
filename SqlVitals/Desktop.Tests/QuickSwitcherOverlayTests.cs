@@ -44,7 +44,7 @@ public sealed class QuickSwitcherOverlayTests
         var recent = Assert.Single(switcher.Sections);
         Assert.Equal(SwitcherGroup.Recent, recent.Group);
         // The page on screen isn't listed.
-        Assert.Equal(["Overview · PROD-SQL01", "Top Waits · PROD-SQL01", "All servers"], recent.Items.Select(i => i.Text));
+        Assert.Equal(["Overview · PROD-SQL01", "Waits · PROD-SQL01", "All servers"], recent.Items.Select(i => i.Text));
         Assert.Same(recent.Items[0], switcher.Selected);
         Assert.Equal(Visibility.Visible, switcher.TxtPrompt.Visibility);
         // Inside a server's workspace: the footer says how to keep the page on another.
@@ -201,7 +201,7 @@ public sealed class QuickSwitcherOverlayTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // On PROD-SQL01's Processes, having opened its Overview, Top Waits and All servers before. Azure:
+    // On PROD-SQL01's Processes, having opened its Overview, Waits and All servers before. Azure:
     // PROD-SQL01 lacks Agent Jobs.
     private static void Open(QuickSwitcherOverlay switcher, UIElement? focused = null, bool azure = false)
     {
@@ -210,7 +210,7 @@ public sealed class QuickSwitcherOverlayTests
         var current = new Route("Processes", ConnectionId: id);
         var scope = new SwitcherScope(current, id,
             servers.Select(s => new SwitcherServer(s.Settings.Id, s.DisplayName, s.Server)).ToList(),
-            [current, Workspace.Overview(id), new Route("TopWaits", ConnectionId: id), new Route("Home")])
+            [current, Workspace.Overview(id), new Route("Waits", ConnectionId: id), new Route("Home")])
         {
             Unavailable = (tag, server) => azure && tag == "AgentJobs" && server == id ? AgentReason : null,
         };

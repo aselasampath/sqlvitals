@@ -46,8 +46,8 @@ public class TemplateVerdictsTests
 
         Assert.Equal(VerdictLevel.Critical, verdict.Level);
         Assert.Equal("2 requests are blocked; session 52 the longest, for 4.2 min", verdict.Headline);
-        Assert.Equal("It waits on LCK_M_S (KEY: 5:72057594 (a1b2)), held by session 87. Processes shows the whole chain.", verdict.Why);
-        Assert.Equal([new VerdictAction(ActiveWaitsVerdict.Processes, "Blocking in Processes", 87)], verdict.Actions);
+        Assert.Equal("It waits on LCK_M_S (KEY: 5:72057594 (a1b2)), held by session 87. The map shows the whole chain.", verdict.Why);
+        Assert.Equal([new VerdictAction(ActiveWaitsVerdict.Processes, "Show the chain on the map", 87)], verdict.Actions);
 
         var brief = Invariant(() => ActiveWaitsVerdict.From([Wait(51, "LCK_M_X", 2_000, blockedBy: 87)], new HealthThreshold(30, 120)));
         Assert.Equal((VerdictLevel.Info, "Session 51 is blocked by session 87, for 2 s"), (brief.Level, brief.Headline));
@@ -151,7 +151,7 @@ public class TemplateVerdictsTests
         Assert.Equal(VerdictLevel.Ok, AppConnectionsVerdict.From([App("OrderService", 480, 60)]).Level);
     }
 
-    // ── Top Waits ────────────────────────────────────────────────────────
+    // ── Waits: the top waits (Top Waits until #178) ──────────────────────
 
     private static TopWaitType Top(int rank, string type, string category, long ms) =>
         new(rank, type, category, 100, ms, 0, 0, 0, 0, ms / 1000.0, 0, 0, 0, DateTime.Now, "#000", "");
@@ -166,8 +166,20 @@ public class TemplateVerdictsTests
         Assert.Equal("Most waiting is on I/O: 60 % of the wait time, mostly PAGEIOLATCH_SH", verdict.Headline);
         Assert.StartsWith("Queries wait for pages read from disk (PAGEIOLATCH)", verdict.Why);
         Assert.Contains(" Then CPU, 30 %.", verdict.Why);
-        Assert.Equal([new VerdictAction(TopWaitsVerdict.Cause, "File I/O"), new VerdictAction(TopWaitsVerdict.Trend, "Wait Trend")], verdict.Actions);
+        Assert.EndsWith(" Counted since the server started; the trend shows whether it is happening now.", verdict.Why);
+        Assert.Equal([new VerdictAction(TopWaitsVerdict.Cause, "File I/O")], verdict.Actions);
         Assert.Equal(("FileIo", "File I/O"), TopWaitsVerdict.CausePage("I/O"));
+        Assert.Equal(("Memory", "Memory"), TopWaitsVerdict.CausePage("Memory"));
+    }
+
+    [Fact]
+    public void TopWaits_OverARange_SaysSo()
+    {
+        var verdict = Invariant(() => TopWaitsVerdict.From([Top(1, "WRITELOG", "I/O", 500)], "over the last 24 hours"));
+        Assert.EndsWith(" Counted over the last 24 hours, from the monitoring history.", verdict.Why);
+
+        var none = TopWaitsVerdict.From([], "over the last hour");
+        Assert.Equal((VerdictLevel.Ok, "Nothing waited worth noting over the last hour"), (none.Level, none.Headline));
     }
 
     [Fact]
@@ -178,13 +190,13 @@ public class TemplateVerdictsTests
 
         var other = Invariant(() => TopWaitsVerdict.From([Top(1, "HADR_SYNC_COMMIT", "Other", 10)]));
         Assert.Equal("Most waiting is on less common waits: 100 %, mostly HADR_SYNC_COMMIT", other.Headline);
-        Assert.Equal(TopWaitsVerdict.Trend, Assert.Single(other.Actions).Key);
+        Assert.Empty(other.Actions);
 
         Assert.Equal(VerdictLevel.Ok, TopWaitsVerdict.From([]).Level);
         Assert.Equal(VerdictLevel.Ok, TopWaitsVerdict.From([Top(1, "X", "CPU", 0)]).Level);
     }
 
-    // ── Wait Trend ───────────────────────────────────────────────────────
+    // ── Waits: the trend (Wait Trend until #178) ─────────────────────────
 
     [Fact]
     public void WaitTrend_NamesTheWaitTypeThatWaitsMost_AndWhetherItRises()
@@ -199,6 +211,7 @@ public class TemplateVerdictsTests
         Assert.Equal(VerdictLevel.Warning, verdict.Level);
         Assert.Equal("CXPACKET waits the most: 25.3 ms/s on average over the last minute, and rising", verdict.Headline);
         Assert.Equal("84 % of the waiting drawn. Then WRITELOG, 5. Its last readings are at least twice its first.", verdict.Why);
+        Assert.Equal(new VerdictAction(WaitTrendVerdict.TopWaits, "Chart the top 20"), Assert.Single(verdict.Actions));
 
         var steady = Invariant(() => WaitTrendVerdict.From([new("WRITELOG", [5, 5, 5, 5, 5, 5])], WaitTrendState.History, "ms/s", "over the last hour"));
         Assert.Equal((VerdictLevel.Info, "WRITELOG waits the most: 5 ms/s on average over the last hour"), (steady.Level, steady.Headline));
@@ -220,6 +233,40 @@ public class TemplateVerdictsTests
     }
 
     private static (VerdictLevel, string) Pair(PageVerdict v) => (v.Level, v.Headline);
+
+    // ── Waits: one verdict for the page (#178) ───────────────────────────
+
+    [Fact]
+    public void Waits_TheTrendWhileItDrawsLines_ElseTheTopWaits()
+    {
+        IReadOnlyList<TopWaitType> top = [Top(1, "PAGEIOLATCH_SH", "I/O", 500)];
+
+        // Lines with values: the trend's.
+        var trend = Invariant(() => WaitsVerdict.From(top, null, [new("CXPACKET", [10, 12])], WaitTrendState.Live, "ms/s", "over the last minute"))!;
+        Assert.StartsWith("CXPACKET waits the most", trend.Headline);
+
+        // Not started: the table's, with Start trending.
+        var notStarted = Invariant(() => WaitsVerdict.From(top, null, [new("CXPACKET", [])], WaitTrendState.NotStarted, "ms/s", ""))!;
+        Assert.Equal("Most waiting is on I/O: 100 % of the wait time, mostly PAGEIOLATCH_SH", notStarted.Headline);
+        Assert.Equal([TopWaitsVerdict.Cause, WaitsVerdict.StartTrend], notStarted.Actions.Select(a => a.Key));
+
+        // Reading its first samples: the table's, without Start trending.
+        var reading = Invariant(() => WaitsVerdict.From(top, null, [new("CXPACKET", [])], WaitTrendState.Live, "ms/s", ""))!;
+        Assert.Equal([TopWaitsVerdict.Cause], reading.Actions.Select(a => a.Key));
+
+        // A past range: the table over it.
+        var range = Invariant(() => WaitsVerdict.From(top, "over the last hour", [], WaitTrendState.History, "ms/s", "over the last hour"))!;
+        Assert.EndsWith(" Counted over the last hour, from the monitoring history.", range.Why);
+    }
+
+    [Fact]
+    public void Waits_NothingRead_NothingToSay_ARangeNotRecorded_SaysWhy()
+    {
+        Assert.Null(WaitsVerdict.From(null, null, [], WaitTrendState.NotStarted, "ms/s", ""));
+
+        var unrecorded = WaitsVerdict.From([], "over the last hour", [new("CXPACKET", [])], WaitTrendState.History, "ms/s", "", noData: "Not recorded: monitoring was off.")!;
+        Assert.Equal((VerdictLevel.Unknown, "Nothing recorded in this range"), Pair(unrecorded));
+    }
 
     [Fact]
     public void WaitTrend_RisingNeedsEnoughPoints()
@@ -315,6 +362,37 @@ public class TemplateVerdictsTests
 
         var lookups = PlanCacheHealthVerdict.From(Summary(), 3);
         Assert.Equal((VerdictLevel.Info, "No parameterisation problems; 3 busy plans do key lookups"), (lookups.Level, lookups.Headline));
+    }
+
+    [Fact]
+    public void PlanCacheHealth_ImplicitConversions_ABusyOneBeforeLookups_AQuietOneAfter()
+    {
+        // #178: Implicit Conversions is a tab of the page, and its verdict one of the page's.
+        var busy = Invariant(() => PlanCacheHealthVerdict.From(Summary(), 3, [Conversion("usp_Find", 12_400)]));
+        Assert.Equal((VerdictLevel.Warning, "1 cached plan converts implicitly; the most used ran 12,400 times"), Pair(busy));
+        Assert.Equal(new VerdictAction(PlanCacheHealthVerdict.ShowWorstConversion, "Show it"), Assert.Single(busy.Actions));
+
+        var quiet = Invariant(() => PlanCacheHealthVerdict.From(Summary(), 3, [Conversion("usp_Find", 40)]));
+        Assert.Equal("No parameterisation problems; 3 busy plans do key lookups", quiet.Headline);
+
+        var onlyQuiet = Invariant(() => PlanCacheHealthVerdict.From(Summary(), 0, [Conversion("usp_Find", 40)]));
+        Assert.Equal((VerdictLevel.Info, PlanCacheHealthVerdict.ShowWorstConversion), (onlyQuiet.Level, Assert.Single(onlyQuiet.Actions).Key));
+
+        // A multi-plan query still comes first.
+        var multi = PlanCacheHealthVerdict.From(Summary(multi: 4, severity: "WARNING"), 0, [Conversion("usp_Find", 12_400)]);
+        Assert.Equal("4 queries have more than 5 cached plans each", multi.Headline);
+
+        // A busy converting plan (a warning) before a plan guide that is only a note; a plan guide
+        // the page counts as a warning comes first, as before.
+        var guideNote = PlanCacheHealthVerdict.From(Summary(guides: 1), 0, [Conversion("usp_Find", 12_400)]);
+        Assert.Equal(PlanCacheHealthVerdict.ShowWorstConversion, Assert.Single(guideNote.Actions).Key);
+        var guideWarning = PlanCacheHealthVerdict.From(Summary(guides: 1, severity: "WARNING"), 0, [Conversion("usp_Find", 12_400)]);
+        Assert.Equal("1 plan guide freezes a plan", guideWarning.Headline);
+        var quietBehindGuide = PlanCacheHealthVerdict.From(Summary(guides: 1), 0, [Conversion("usp_Find", 40)]);
+        Assert.Equal("1 plan guide freezes a plan", quietBehindGuide.Headline);
+
+        var healthy = Invariant(() => PlanCacheHealthVerdict.From(Summary(), 0, []));
+        Assert.StartsWith("No query with many plans, no plan guide, no busy plan doing lookups and no plan converting implicitly.", healthy.Why);
     }
 
     [Fact]

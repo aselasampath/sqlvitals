@@ -22,11 +22,19 @@ public sealed class VerdictNavigationTests
         model.ActCommand.ExecuteAsync(new VerdictAction(key, "pressed", id));
 
     [Fact]
-    public async Task ActiveWaits_Processes_OpensTheBlockingChains()
+    public async Task Processes_Waiting_ShowsTheChainOnTheMap_WithoutLeavingThePage()
     {
-        await Press(new ActiveWaitsViewModel(_navigator), ActiveWaitsVerdict.Processes, id: 87);
+        // #178: the Waiting view is part of Processes, so the chain is on the same page.
+        var shown = new List<string>();
+        var model = new ProcessesViewModel(goToSession: id => shown.Add($"session {id}"), chainsOnly: () => shown.Add("chains"),
+                                           chainOnMap: id => shown.Add($"chain of {id}"));
 
-        Assert.Equal(["Processes ⟵ Active Waits: BlockingChain"], _navigator.Moves);
+        await Press(model, ActiveWaitsVerdict.Processes, id: 87);
+        await Press(model, ProcessesVerdict.GoToHead, id: 51);
+        await Press(model, ProcessesVerdict.ChainsOnly);
+
+        Assert.Equal(["chain of 87", "session 51", "chains"], shown);
+        Assert.Empty(_navigator.Moves);
     }
 
     [Fact]
@@ -67,35 +75,36 @@ public sealed class VerdictNavigationTests
         Assert.Equal(["Memory"], _navigator.Moves);
     }
 
+    private WaitsViewModel Waits(List<string>? done = null) =>
+        new(_navigator, startTrend: () => done?.Add("start"), chartTopWaits: () => done?.Add("top 20"));
+
+    private static void ShowTop(WaitsViewModel model, IReadOnlyList<TopWaitType> top) =>
+        model.Show(top, during: null, [], WaitTrendState.NotStarted, "ms/s", "", noData: null);
+
     [Fact]
-    public async Task TopWaits_OpensTheTrend_AndThePageOfTheTopCategory()
+    public async Task Waits_OpensThePageOfTheTopCategory_AndStartsAndChartsTheTrendOnThePage()
     {
-        var model = new TopWaitsViewModel(_navigator);
-        model.Show([Wait("SOS_SCHEDULER_YIELD", "CPU", 9_000), Wait("PAGEIOLATCH_SH", "I/O", 4_000), Wait("WRITELOG", "I/O", 3_000)]);
+        var done  = new List<string>();
+        var model = Waits(done);
+        ShowTop(model, [Wait("SOS_SCHEDULER_YIELD", "CPU", 9_000), Wait("PAGEIOLATCH_SH", "I/O", 4_000), Wait("WRITELOG", "I/O", 3_000)]);
 
-        await Press(model, TopWaitsVerdict.Trend);
         await Press(model, TopWaitsVerdict.Cause);
+        await Press(model, WaitsVerdict.StartTrend);
+        await Press(model, WaitTrendVerdict.TopWaits);
 
-        Assert.Equal(["WaitTrend", "ResourceQueries"], _navigator.Moves);
+        Assert.Equal(["ResourceQueries"], _navigator.Moves);
+        Assert.Equal(["start", "top 20"], done);
     }
 
     [Fact]
-    public async Task TopWaits_Cause_NowhereForACategoryNoPageExplains()
+    public async Task Waits_Cause_NowhereForACategoryNoPageExplains()
     {
-        var model = new TopWaitsViewModel(_navigator);
-        model.Show([Wait("ASYNC_NETWORK_IO", "Network", 9_000)]);
+        var model = Waits();
+        ShowTop(model, [Wait("ASYNC_NETWORK_IO", "Network", 9_000)]);
 
         await Press(model, TopWaitsVerdict.Cause);
 
         Assert.Empty(_navigator.Moves);
-    }
-
-    [Fact]
-    public async Task WaitTrend_TopWaits_OpensTopWaits()
-    {
-        await Press(new WaitStatsTrendViewModel(_navigator), WaitTrendVerdict.TopWaits);
-
-        Assert.Equal(["TopWaits"], _navigator.Moves);
     }
 
     [Fact]
@@ -127,7 +136,7 @@ public sealed class VerdictNavigationTests
     [Fact]
     public void ShowError_SaysWhatCouldNotBeRead_InTheTopBarsWords()
     {
-        var model = new WaitStatsTrendViewModel(_navigator);
+        var model = Waits();
         var error = new TimeoutException("Execution Timeout Expired");
 
         model.ShowError("the wait stats", error);

@@ -20,7 +20,6 @@ public sealed class MvvmGuardTests
     /// <summary>Page code that reads through a repository itself.</summary>
     private static readonly string[] RepositoryReferencesAllowed =
     [
-        "Pages/ActiveWaitsPage.xaml.cs",
         "Pages/AgentJobsPage.xaml.cs",
         "Pages/ApplicationConnectionsPage.xaml.cs",
         "Pages/BackupsPage.xaml.cs",
@@ -28,10 +27,9 @@ public sealed class MvvmGuardTests
         "Pages/DatabaseStoragePage.xaml.cs",
         "Pages/DeadlocksPage.xaml.cs",
         "Pages/FileIoPage.xaml.cs",
-        "Pages/ImplicitConversionsPage.xaml.cs",
         "Pages/IndexHealthPage.xaml.cs",
         "Pages/LiveMetricsDashboardPage.xaml.cs",
-        "Pages/MemoryGrantsPage.xaml.cs",
+        "Pages/MemoryPage.xaml.cs",
         "Pages/OverviewPage.xaml.cs",
         "Pages/PerfmonPage.xaml.cs",
         "Pages/PlanCacheHealthPage.xaml.cs",
@@ -43,8 +41,7 @@ public sealed class MvvmGuardTests
         "Pages/SpTracePage.xaml.cs",
         "Pages/StaleStatisticsPage.xaml.cs",
         "Pages/TempDbPage.xaml.cs",
-        "Pages/TopWaitsPage.xaml.cs",
-        "Pages/WaitStatsTrendPage.xaml.cs",
+        "Pages/WaitsPage.xaml.cs",
     ];
 
     /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
@@ -76,13 +73,12 @@ public sealed class MvvmGuardTests
         ["Pages/SettingsPage.xaml"]                      = 1,
         ["Pages/SpTracePage.xaml"]                       = 2,
         ["Pages/StaleStatisticsPage.xaml"]               = 1,
-        ["Pages/WaitStatsTrendPage.xaml"]                = 2,
+        ["Pages/WaitsPage.xaml"]                         = 2,
     };
 
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
     private static readonly string[] CodeBehindPagesAllowed =
     [
-        "ActiveWaitsPage",
         "AgentJobsPage",
         "AlertsPage",
         "ApplicationConnectionsPage",
@@ -93,10 +89,9 @@ public sealed class MvvmGuardTests
         "ExportPage",
         "FileIoPage",
         "HomePage",
-        "ImplicitConversionsPage",
         "IndexHealthPage",
         "LiveMetricsDashboardPage",
-        "MemoryGrantsPage",
+        "MemoryPage",
         "OverviewPage",
         "PerfmonPage",
         "PlanCacheHealthPage",
@@ -108,8 +103,7 @@ public sealed class MvvmGuardTests
         "SpTracePage",
         "StaleStatisticsPage",
         "TempDbPage",
-        "TopWaitsPage",
-        "WaitStatsTrendPage",
+        "WaitsPage",
     ];
 
     // ── View models stay out of the view ─────────────────────────────────

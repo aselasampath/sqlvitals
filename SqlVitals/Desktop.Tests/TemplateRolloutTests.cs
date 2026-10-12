@@ -12,6 +12,7 @@ using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Deadlocks;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Verdicts;
@@ -99,7 +100,7 @@ public sealed class TemplateRolloutTests : IDisposable
         </Statements></Batch></BatchSequence></ShowPlanXML>
         """;
 
-    // ── Active Waits ─────────────────────────────────────────────────────
+    // ── Processes' Waiting view (Active Waits until #178) ────────────────
 
     private static ActiveWait Wait(int spid, string? type, long ms, int blockedBy = 0, string category = "Locks", string login = "svc_orders") =>
         new(spid, blockedBy, type, ms, ms / 1000.0, null, type is null ? null : "KEY: 7:72057594043039744 (8194443284a0)", "suspended", "UPDATE",
@@ -114,17 +115,21 @@ public sealed class TemplateRolloutTests : IDisposable
     ];
 
     [Fact]
-    public void ActiveWaits_OpensWithTheBlockedRequests() => UiThread.Run(() =>
+    public void Processes_Waiting_OpensWithTheBlockedRequests() => UiThread.Run(() =>
     {
-        var page = new ActiveWaitsPage(new FakeRepository { GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>(Waits) }, Settings());
-        Hosted(page, page.RefreshAsync, "active-waits.png", () => AssertLaidOut(page.Shell, page.ActiveGrid));
+        var page = new ProcessesPage(new FakeRepository
+        {
+            GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
+            GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>(Waits),
+        }, Settings(), view: nameof(ProcessesView.Waiting));
+        Hosted(page, page.RefreshAsync, "processes-waiting.png", () => AssertLaidOut(page.Shell, page.WaitingGrid));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal(VerdictLevel.Critical, verdict.Level);
         Assert.Equal("3 requests are blocked; session 112 the longest, for 4.2 min", verdict.Headline);
-        Assert.Equal("Blocking in Processes", Assert.Single(verdict.Actions).Text);
-        Assert.Equal(6, page.ActiveGrid.Items.Count);
-        Assert.Equal(12, page.ActiveGrid.Columns.Count);
+        Assert.Equal("Show the chain on the map", Assert.Single(verdict.Actions).Text);
+        Assert.Equal(6, page.WaitingGrid.Items.Count);
+        Assert.Equal(12, page.WaitingGrid.Columns.Count);
     });
 
     // ── Deadlocks ────────────────────────────────────────────────────────
@@ -216,7 +221,7 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Equal(["chart", "summary"], settings.Folded("AppConnections").Order());
     });
 
-    // ── Top Waits ────────────────────────────────────────────────────────
+    // ── Waits: the top waits (Top Waits until #178) ──────────────────────
 
     private static TopWaitType Top(int rank, string type, string category, long ms, double pct, double cumulative) =>
         new(rank, type, category, ms / 7, ms, ms / 50, ms / 9, ms - ms / 9, 11, ms / 1000.0, 7, pct, cumulative, DateTime.Now, "#000", "");
@@ -230,57 +235,101 @@ public sealed class TemplateRolloutTests : IDisposable
         Top(9, "LCK_M_S", "Locks", 210_000, 1.9, 95.9), Top(10, "HADR_SYNC_COMMIT", "Other", 190_000, 1.8, 97.7),
     ];
 
+    private static FakeRepository WaitsRepo(Func<int, IEnumerable<WaitStatCumulative>>? cumulative = null)
+    {
+        var reads = 0;
+        return new FakeRepository
+        {
+            GetTopWaitTypesAsync    = () => Task.FromResult<IEnumerable<TopWaitType>>(TopWaitTypes),
+            GetCumulativeWaitsAsync = () => Task.FromResult(cumulative?.Invoke(reads++) ?? [Cumulative("WRITELOG", "I/O", 800_000, 900)]),
+        };
+    }
+
     [Fact]
-    public void TopWaits_OpensWithTheTopCategory_AndTheChartFolds() => UiThread.Run(() =>
+    public void Waits_OpensWithTheTopCategory_UnderTheTrend_AndTheChartFolds() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new TopWaitsPage(new FakeRepository { GetTopWaitTypesAsync = () => Task.FromResult<IEnumerable<TopWaitType>>(TopWaitTypes) }, settings);
-        Hosted(page, page.RefreshAsync, "top-waits.png", () => AssertLaidOut(page.Shell, page.WaitsGrid, minDetail: 200));
+        var page = new WaitsPage(WaitsRepo(), null, settings);
+        ((IPageContext)page).TakeBarTools();
+        Hosted(page, page.RefreshAsync, "waits.png", () =>
+        {
+            // The trend and the table share what the verdict and the top 15 leave (#178).
+            AssertLaidOut(page.Shell, page.TrendChart, minDetail: 180);
+            AssertLaidOut(page.Shell, page.WaitsGrid, minDetail: 150);
+            // The trend above the table (#178).
+            var trendTop = page.TrendChart.TranslatePoint(new Point(), page).Y;
+            var tableTop = page.WaitsGrid.TranslatePoint(new Point(), page).Y;
+            Assert.True(trendTop < tableTop, $"trend at {trendTop}, table at {tableTop}");
+        });
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal("Most waiting is on I/O: 53 % of the wait time, mostly PAGEIOLATCH_SH",
                      verdict.Headline.Replace(System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator, "."));
-        Assert.Equal(["File I/O", "Wait Trend"], verdict.Actions.Select(a => a.Text));
+        Assert.Equal(["File I/O", "Start trending"], verdict.Actions.Select(a => a.Text));
         Assert.Equal(10, page.WaitsGrid.Items.Count);
+        Assert.Equal("Top wait types since the server started", page.TxtTopHeader.Text);
 
         page.ChartSection.Toggle.IsChecked = false;
         Assert.StartsWith("PAGEIOLATCH_SH 38", page.ChartSection.FoldedSummary);
-        Assert.Equal(["chart"], settings.Folded("TopWaits"));
+        Assert.Equal(["chart"], settings.Folded("Waits"));
 
         // Opened again: still folded.
-        var again = new TopWaitsPage(new FakeRepository(), settings);
+        var again = new WaitsPage(new FakeRepository(), null, settings);
         Assert.True(again.ChartSection.IsFolded);
     });
 
-    // ── Wait Trend ───────────────────────────────────────────────────────
+    [Fact]
+    public void Waits_APastRange_ShowsItsTopWaits_FromTheHistory() => UiThread.Run(() =>
+    {
+        var now     = DateTime.UtcNow;
+        var history = new FakeHistoryReader
+        {
+            Waits =
+            [
+                new(now.AddMinutes(-40), 300, new Dictionary<string, WaitTypeTotals> { ["LCK_M_X"] = new("LCK_M_X", 4, 9_000, 0), ["WRITELOG"] = new("WRITELOG", 90, 1_000, 100) }),
+                new(now.AddMinutes(-20), 300, new Dictionary<string, WaitTypeTotals> { ["LCK_M_X"] = new("LCK_M_X", 2, 6_000, 0) }),
+            ],
+        };
+        var page   = new WaitsPage(WaitsRepo(), new ConnectionHistory(history, Guid.NewGuid()), Settings());
+        var picker = (TimeRangePicker)((IPageContext)page).TakeBarTools()!;
+        UiThread.Wait(page.RefreshAsync());
+        Assert.Equal(10, page.WaitsGrid.Items.Count);
+
+        picker.Pick(HistoryRange.LastHour);
+        UiThread.WaitUntil(() => page.WaitsGrid.Items.Count == 2);
+
+        Assert.Equal(["LCK_M_X", "WRITELOG"], page.WaitsGrid.Items.Cast<TopWaitType>().Select(w => w.WaitType));
+        Assert.Equal("Top wait types over the last hour, from the monitoring history", page.TxtTopHeader.Text);
+        Assert.Equal(PageKind.History, ((IPageContext)page).Kind);
+
+        // Back to live: the server's own again, as it was read.
+        picker.Pick(HistoryRange.Live);
+        Assert.Equal(10, page.WaitsGrid.Items.Count);
+        Assert.Equal("Top wait types since the server started", page.TxtTopHeader.Text);
+    });
+
+    // ── Waits: the trend (Wait Trend until #178) ─────────────────────────
 
     private static WaitStatCumulative Cumulative(string type, string category, long ms, long tasks) =>
         new(type, category, 0, tasks, ms, ms / 10, ms / 8, ms - ms / 8, 1, 12, 10, ms / 1000.0, DateTime.Now, DateTime.Now.AddDays(-3), "#000", "");
 
     [Fact]
-    public void WaitTrend_OpensWithTheWaitTypeThatWaitsMost_AndTheBarStartsAndStopsIt() => UiThread.Run(() =>
+    public void Waits_TheTrendsVerdict_OnceItDrawsLines_AndTheBarStartsAndStopsIt() => UiThread.Run(() =>
     {
-        var reads = 0;
-        var page = new WaitStatsTrendPage(new FakeRepository
-        {
-            GetCumulativeWaitsAsync = () =>
-            {
-                var n = reads++;
-                // CXPACKET waits more and more; WRITELOG steadily.
-                return Task.FromResult<IEnumerable<WaitStatCumulative>>(
-                [
-                    Cumulative("CXPACKET", "CPU", 1_000_000 + n * n * 40, 1000 + n * 10),
-                    Cumulative("WRITELOG", "I/O", 800_000 + n * 60, 900 + n * 5),
-                    Cumulative("PAGEIOLATCH_SH", "I/O", 600_000 + n * 30, 800 + n * 3),
-                ]);
-            },
-        }, null, Settings());
+        // CXPACKET waits more and more; WRITELOG steadily.
+        var page = new WaitsPage(WaitsRepo(n =>
+        [
+            Cumulative("CXPACKET", "CPU", 1_000_000 + n * n * 40, 1000 + n * 10),
+            Cumulative("WRITELOG", "I/O", 800_000 + n * 60, 900 + n * 5),
+            Cumulative("PAGEIOLATCH_SH", "I/O", 600_000 + n * 30, 800 + n * 3),
+        ]), null, Settings());
         var context = (IPageContext)page;
         context.TakeBarTools();   // the range picker goes to the top bar, as in the app
 
         Assert.Null(page.Shell.Verdict);   // nothing read yet
         UiThread.Wait(page.RefreshAsync());
-        Assert.Equal("Not trending yet", page.Shell.Verdict!.Headline);
+        // Not trending yet: the top waits' verdict, which can start it.
+        Assert.StartsWith("Most waiting is on I/O", page.Shell.Verdict!.Headline);
         Assert.True(context.IsPaused);
 
         Hosted(page, async () =>
@@ -292,7 +341,7 @@ public sealed class TemplateRolloutTests : IDisposable
             }
         }, "wait-trend.png", () =>
         {
-            AssertLaidOut(page.Shell, page.TrendChart, minDetail: 300);
+            AssertLaidOut(page.Shell, page.TrendChart, minDetail: 180);
 
             // The bar's Resume and Pause are what Start and Stop were.
             context.SetPaused(false);
@@ -309,10 +358,30 @@ public sealed class TemplateRolloutTests : IDisposable
     });
 
     [Fact]
-    public void WaitTrend_ThatCantRead_SaysSoInTheVerdict() => UiThread.Run(() =>
+    public void Waits_TheTopWaitsUnread_TheTrendStillReads_AndTheVerdictSaysWhatWasnt() => UiThread.Run(() =>
     {
-        var page = new WaitStatsTrendPage(new FakeRepository
+        var page = new WaitsPage(new FakeRepository
         {
+            GetTopWaitTypesAsync    = () => Task.FromException<IEnumerable<TopWaitType>>(new InvalidOperationException("Timeout expired.")),
+            GetCumulativeWaitsAsync = () => Task.FromResult<IEnumerable<WaitStatCumulative>>([Cumulative("WRITELOG", "I/O", 800_000, 900)]),
+        }, null, Settings());
+
+        var error = Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
+
+        Assert.Equal("Timeout expired.", error.Message);
+        Assert.Equal("Couldn't read the wait statistics", page.Shell.Verdict!.Headline);
+        // The trend read its wait types, so Top 20 and Resume work.
+        Assert.Equal(["WRITELOG"], page.WaitTypeList.Items.Cast<WaitTypeItem>().Select(i => i.WaitType));
+        // Not read isn't the same as nothing waited.
+        Assert.Equal("Not read yet", page.ChartSection.FoldedSummary);
+    });
+
+    [Fact]
+    public void Waits_ThatCantRead_SaysSoInTheVerdict() => UiThread.Run(() =>
+    {
+        var page = new WaitsPage(new FakeRepository
+        {
+            GetTopWaitTypesAsync    = () => Task.FromResult<IEnumerable<TopWaitType>>(TopWaitTypes),
             GetCumulativeWaitsAsync = () => Task.FromException<IEnumerable<WaitStatCumulative>>(new InvalidOperationException("Timeout expired.")),
         });
         // The page says so in its verdict, and rethrows for its view model to report it once (#169).
@@ -446,6 +515,7 @@ public sealed class TemplateRolloutTests : IDisposable
                  new(17, 380, "0x1122334455667788", "SELECT Name FROM dbo.Customers WHERE Email = 'a@b.c'", "SalesDb", "INFO")],
                 [new("Key Lookup", 81_200, 9_410_000, 115.9, "SalesDb", "usp_GetOrderHistory", "SELECT o.OrderId, o.Placed FROM dbo.Orders o WHERE CustomerId = @c")],
                 [], [], [])),
+            GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(Conversions),
         }, settings);
         Hosted(page, page.RefreshAsync, "plan-cache-health.png", () =>
         {
@@ -462,30 +532,79 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Equal(["summary"], settings.Folded("PlanCacheHealth"));
     });
 
-    // ── Implicit Conversions ─────────────────────────────────────────────
+    // ── Plan Cache Health's Implicit Conversions (a page until #178) ─────
+
+    private static readonly ImplicitConversion[] Conversions =
+    [
+        new("SalesDb", "usp_FindCustomer", 48_120, 96, "SELECT CustomerId FROM dbo.Customers WHERE Email = @email -- @email NVARCHAR(256), Email VARCHAR(256)", DateTime.Now),
+        new("SalesDb", "", 3_410, 40, "SELECT * FROM dbo.Orders WHERE OrderRef = @p0", DateTime.Now),
+        new("HR", "usp_GetEmployee", 120, 64, "SELECT * FROM dbo.Employees WHERE BadgeNo = @badge", DateTime.Now),
+    ];
+
+    // A plan cache with nothing worse than the plans converting implicitly.
+    private static FakeRepository ConvertingRepo() => new()
+    {
+        GetPlanCacheHealthAsync = () => Task.FromResult<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
+                                                          IEnumerable<CardinalityMisestimate>, IEnumerable<SkewedParallelQuery>, IEnumerable<PlanGuide>)>((
+            new PlanCacheHealthSummary(false, 0, 18_420, 0, 0, "OK"), [], [], [], [], [])),
+        GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(Conversions),
+    };
 
     [Fact]
-    public void ImplicitConversions_OpensWithHowManyConvert_TheMostUsedFirst() => UiThread.Run(() =>
+    public void PlanCacheHealth_ImplicitConversions_HowManyConvert_TheMostUsedShownOnItsTab() => UiThread.Run(() =>
     {
-        var page = new ImplicitConversionsPage(new FakeRepository
+        var page = new PlanCacheHealthPage(ConvertingRepo(), Settings());
+        Hosted(page, page.RefreshAsync, null, () =>
         {
-            GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(
-            [
-                new("SalesDb", "usp_FindCustomer", 48_120, 96, "SELECT CustomerId FROM dbo.Customers WHERE Email = @email -- @email NVARCHAR(256), Email VARCHAR(256)", DateTime.Now),
-                new("SalesDb", "", 3_410, 40, "SELECT * FROM dbo.Orders WHERE OrderRef = @p0", DateTime.Now),
-                new("HR", "usp_GetEmployee", 120, 64, "SELECT * FROM dbo.Employees WHERE BadgeNo = @badge", DateTime.Now),
-            ]),
-        }, Settings());
-        Hosted(page, page.RefreshAsync, "implicit-conversions.png", () =>
-        {
-            AssertLaidOut(page.Shell, page.ConvGrid, minDetail: 200);
-            Press(page.Shell.VerdictView, 0);
+            Press(page.Shell.VerdictView, 0);   // Show it
+            Assert.Same(page.TabImplicitConversions, page.Tabs.SelectedItem);
+            // The tab's grid lays out its columns while the dispatcher runs, as in the app.
+            UiThread.Wait(Task.Delay(150));
+            page.UpdateLayout();
+            AssertLaidOut(page.Shell, page.ConvGrid, minDetail: 150);
+            Render(page, "plan-cache-implicit-conversions.png");
             Assert.Equal("usp_FindCustomer", ((ImplicitConversion)page.ConvGrid.SelectedItem).ObjectName);
         });
 
         Assert.Equal((VerdictLevel.Warning, $"3 cached plans convert implicitly; the most used ran {48_120:N0} times"),
                      (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
         Assert.Equal(5, page.ConvGrid.Columns.Count);
+        Assert.Equal(3, page.ConvGrid.Items.Count);
+    });
+
+    [Fact]
+    public void PlanCacheHealth_TheConversionsUnread_TheTabSaysSo_AndTheRestOfThePageShows() => UiThread.Run(() =>
+    {
+        // A plan XML search can time out on a very large cache: the checks read are still shown.
+        var repo = ConvertingRepo();
+        repo.GetImplicitConversionsAsync = () => Task.FromException<IEnumerable<ImplicitConversion>>(new InvalidOperationException("Timeout expired."));
+        var page = new PlanCacheHealthPage(repo, Settings());
+
+        UiThread.Wait(page.RefreshAsync());
+
+        Assert.Equal((VerdictLevel.Ok, "The plan cache looks healthy"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
+        Assert.Equal(5, page.KpiStrip.Children.Count);
+        Assert.Equal(Visibility.Visible, page.TxtConvProblem.Visibility);
+        Assert.StartsWith("Couldn't read the implicit conversions: ", page.TxtConvProblem.Text);
+        Assert.Contains("Timeout expired.", page.TxtConvProblem.Text);
+        Assert.Empty(page.ConvGrid.Items);
+
+        // Read again, and read: the note goes.
+        repo.GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(Conversions);
+        UiThread.Wait(page.RefreshAsync());
+        Assert.Equal(Visibility.Collapsed, page.TxtConvProblem.Visibility);
+        Assert.Equal(3, page.ConvGrid.Items.Count);
+    });
+
+    [Fact]
+    public void PlanCacheHealth_AnOldImplicitConvRoute_OpensOnItsTab() => UiThread.Run(() =>
+    {
+        var route = NavMenu.Current(new Route("ImplicitConv", Guid.NewGuid()));
+        Assert.Equal(("PlanCacheHealth", NavMenu.ImplicitConversionsView), (route.Tag, route.View));
+
+        var page = new PlanCacheHealthPage(ConvertingRepo(), Settings(), route.View);
+        Assert.Same(page.TabImplicitConversions, page.Tabs.SelectedItem);
+        Assert.NotSame(page.TabImplicitConversions, new PlanCacheHealthPage(ConvertingRepo(), Settings()).Tabs.SelectedItem);
     });
 
     // ── SP Trace ─────────────────────────────────────────────────────────
@@ -549,8 +668,8 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── A page that can't read says so in its verdict ────────────────────
 
-    public static TheoryData<string> Unreadable => new() { "ActiveWaits", "Deadlocks", "AppConnections", "TopWaits", "ResourceQueries",
-                                                           "QueryRegressions", "PlanCacheHealth", "ImplicitConv", "SpTrace" };
+    public static TheoryData<string> Unreadable => new() { "Processes", "Deadlocks", "AppConnections", "Waits", "ResourceQueries",
+                                                           "QueryRegressions", "PlanCacheHealth", "SpTrace" };
 
     [Theory, MemberData(nameof(Unreadable))]
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
@@ -558,10 +677,12 @@ public sealed class TemplateRolloutTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
+            GetProcessesAsync                 = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
             GetActiveWaitsAsync               = () => Task.FromException<IEnumerable<ActiveWait>>(error),
             GetDeadlockHistoryAsync           = () => Task.FromException<DeadlockHistory>(error),
             GetApplicationConnectionsAsync    = () => Task.FromException<IEnumerable<ApplicationConnection>>(error),
             GetTopWaitTypesAsync              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
+            GetCumulativeWaitsAsync           = () => Task.FromException<IEnumerable<WaitStatCumulative>>(error),
             GetResourceIntensiveQueriesAsync  = _ => Task.FromException<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(error),
             GetQueryStoreRegressionStatsAsync = _ => Task.FromException<QueryStoreRegressionStats>(error),
             GetPlanCacheHealthAsync           = () => Task.FromException<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
@@ -571,14 +692,14 @@ public sealed class TemplateRolloutTests : IDisposable
         };
         ICodeBehindPage page = tag switch
         {
-            "ActiveWaits"      => new ActiveWaitsPage(repo),
+            // The sessions read, the Waiting view's waits not.
+            "Processes"        => new ProcessesPage(repo, Settings(), view: nameof(ProcessesView.Waiting)),
             "Deadlocks"        => new DeadlocksPage(repo),
             "AppConnections"   => new ApplicationConnectionsPage(repo),
-            "TopWaits"         => new TopWaitsPage(repo),
+            "Waits"            => new WaitsPage(repo),
             "ResourceQueries"  => new ResourceQueriesPage(repo),
             "QueryRegressions" => new QueryRegressionsPage(repo, null, Settings()),
             "PlanCacheHealth"  => new PlanCacheHealthPage(repo),
-            "ImplicitConv"     => new ImplicitConversionsPage(repo),
             _                  => new SpTracePage(repo),
         };
 
@@ -600,15 +721,13 @@ public sealed class TemplateRolloutTests : IDisposable
             var repo = new FakeRepository();
             (string Key, Page Page, PageKind Kind)[] pages =
             [
-                ("ActiveWaits", new ActiveWaitsPage(repo, Settings()), PageKind.Snapshot),
+                ("Processes", new ProcessesPage(repo, Settings()), PageKind.Live),
                 ("Deadlocks", new DeadlocksPage(repo, Settings()), PageKind.Snapshot),
                 ("AppConnections", new ApplicationConnectionsPage(repo, Settings()), PageKind.Snapshot),
-                ("TopWaits", new TopWaitsPage(repo, Settings()), PageKind.Snapshot),
-                ("WaitTrend", new WaitStatsTrendPage(repo, null, Settings()), PageKind.Live),
+                ("Waits", new WaitsPage(repo, null, Settings()), PageKind.Live),
                 ("ResourceQueries", new ResourceQueriesPage(repo, null, Settings()), PageKind.Snapshot),
                 ("QueryRegressions", new QueryRegressionsPage(repo, null, Settings()), PageKind.History),
                 ("PlanCacheHealth", new PlanCacheHealthPage(repo, Settings()), PageKind.Snapshot),
-                ("ImplicitConv", new ImplicitConversionsPage(repo, Settings()), PageKind.Snapshot),
                 ("SpTrace", new SpTracePage(repo, Settings()), PageKind.Live),
             ];
             foreach (var (key, page, kind) in pages)

@@ -1,13 +1,12 @@
 # Query Performance
 
-Four screens find the queries that cost the most and the plan problems behind them.
+Three screens find the queries that cost the most and the plan problems behind them.
 
 | Screen | Answers |
 |---|---|
 | [🔥 Resource Queries](#resource-queries) | Which queries use the most CPU and I/O? |
 | [📋 Query Store](#query-store) | Which queries cost most by any measure, how did the workload change, which vary, wait or have forced plans? |
-| [⚠️ Implicit Conv.](#implicit-conversions) | Which queries lose index seeks to data-type mismatches? |
-| [🔎 Plan Cache Health](#plan-cache-health) | Are plans being reused, and are any badly estimated? |
+| [🔎 Plan Cache Health](#plan-cache-health) | Are plans being reused, and are any badly estimated? Which queries lose index seeks to data-type mismatches ([implicit conversions](#implicit-conversions))? |
 
 To find queries that **got slower**, see [Query Regressions](Query-Regressions.md). For **stored-procedure calls as they happen**, see [SP Trace](SP-Trace.md).
 
@@ -147,27 +146,12 @@ Double-click a row on any tab, or enter a **Query ID**, to open a window for one
 - the plans: Plan ID, first and last used in the period, Executions, avg Duration, avg CPU, avg Reads, Failed, Forced, Force failures and **View Plan**. A forced plan is listed even when it didn't run.
 
 ---
-## Implicit Conversions
-
-> **Where:** sidebar → ⚠️ Implicit Conv.
-
-Cached plans that contain `CONVERT_IMPLICIT`, sorted by execution count.
-
-**Why it matters:** when a query compares values of different data types, for example an `NVARCHAR` parameter against a `VARCHAR` column, SQL Server converts one side. If it has to convert the **column**, it often can't seek on that column's index and scans instead.
-
-**Typical fix:** make the application's parameter type match the column, e.g. send `VARCHAR` for a `VARCHAR` column. In .NET, set the parameter's `SqlDbType` explicitly instead of passing a string.
-
-**The verdict** (from 0.65.0) counts the cached plans that convert and names the most used first: *3 cached plans convert implicitly; the most used ran 48,120 times* (amber from 1,000 runs; *At least 50* when the page's limit is reached). **Show it** selects that plan. The explanation folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
-
-![Implicit Conversions: the verdict counts the plans that convert, above the grid](images/page-template/implicit-conversions.png)
-
----
 
 ## Plan Cache Health
 
 > **Where:** sidebar → 🔎 Plan Cache Health
 
-Five tabs, each looking for a different plan problem:
+Six tabs, each looking for a different plan problem:
 
 | Tab | Finds | Usual fix |
 |---|---|---|
@@ -176,12 +160,27 @@ Five tabs, each looking for a different plan problem:
 | **Cardinality Misestimates (live)** | Queries running **now** whose actual row counts are ≥ 1,000× off the estimate | Update statistics ([Stale Stats](Index-and-Statistics-Maintenance.md#stale-statistics)), simplify predicates |
 | **Skewed Parallelism (live)** | Parallel queries running **now** whose threads have very uneven work (≥ 5×) | Often caused by skewed data or bad estimates; review the plan |
 | **Plan Guides** | Plan guides: plans frozen by hand | Check they're still wanted, and not disabled or stale |
+| **Implicit Conversions** | Cached plans that contain `CONVERT_IMPLICIT`, sorted by execution count (a page of its own until 0.79.0) | Make the parameter's type match the column. See [Implicit conversions](#implicit-conversions) |
 
 *(live)* tabs show only queries running at that moment. Refresh while the problem is happening.
 
-**The verdict** (from 0.65.0) says the worst of what the page found, coloured by the page's own severity: the plan cache emptied in the last 24 hours, else queries with more than 5 cached plans, else plan guides, else busy plans doing key lookups, or *The plan cache looks healthy*. Its button opens the tab concerned. The explanation, the cache-erased banner and the cards fold to one line (*Plan cache OK · 18,420 plans · 4 multi-plan queries · 0 plan guides · WARNING*), and the tabs take the rest of the screen, each grid scrolling in it. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+**The verdict** (from 0.65.0) says the worst of what the page found, coloured by the page's own severity: the plan cache emptied in the last 24 hours, else queries with more than 5 cached plans, else plan guides or a busy plan converting implicitly (1,000 runs or more), whichever is more serious, else busy plans doing key lookups, else any plan converting implicitly, or *The plan cache looks healthy*. Its button opens the tab concerned; for implicit conversions, **Show it** opens their tab with the most used plan selected. The explanation, the cache-erased banner and the cards fold to one line (*Plan cache OK · 18,420 plans · 4 multi-plan queries · 0 plan guides · WARNING*), and the tabs take the rest of the screen, each grid scrolling in it. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
 ![Plan Cache Health: the verdict says 4 queries have more than 5 cached plans, above the summary cards and the tabs](images/page-template/plan-cache-health.png)
+
+### Implicit conversions
+
+> **Where:** sidebar → 🔎 Plan Cache Health → **Implicit Conversions** tab · The Implicit Conv. page until 0.79.0 ([#178](https://github.com/aselasampath/sqlvitals/issues/178)); a link or a saved setting that names it opens this tab
+
+**Why it matters:** when a query compares values of different data types, for example an `NVARCHAR` parameter against a `VARCHAR` column, SQL Server converts one side. If it has to convert the **column**, it often can't seek on that column's index and scans instead.
+
+**Typical fix:** make the application's parameter type match the column, e.g. send `VARCHAR` for a `VARCHAR` column. In .NET, set the parameter's `SqlDbType` explicitly instead of passing a string.
+
+When they are the worst the page found, the verdict counts the cached plans that convert and names the most used first: *3 cached plans convert implicitly; the most used ran 48,120 times* (amber from 1,000 runs; *At least 50* when the tab's limit is reached). **Show it** opens the tab with that plan selected.
+
+The tab is read with the rest of the page, at the same time. If its search fails, for example a timeout on a very large plan cache, the tab says so (*Couldn't read the implicit conversions: …*) and the rest of the page still shows; raise **Command timeout** (Settings → Monitoring & history) and **Refresh**.
+
+![Plan Cache Health on its Implicit Conversions tab: the verdict counts the plans that convert, above the tab's grid](images/page-template/plan-cache-implicit-conversions.png)
 
 ---
 
@@ -206,8 +205,7 @@ See [Execution Plans](Execution-Plans.md) for how to read the diagram.
 |---|---|
 | Resource Queries | `sys.dm_exec_query_stats` + `sys.dm_exec_sql_text` + `sys.dm_exec_query_plan` |
 | Query Store | `sys.database_query_store_options` and `sys.query_store_query`, `_query_text`, `_plan`, `_runtime_stats`, `_runtime_stats_interval`, `_wait_stats` (2017+) and `_query_hints` (2022+), for the connected database |
-| Implicit Conversions | Cached plan XML (`sys.dm_exec_cached_plans` + `sys.dm_exec_query_plan`) searched for `CONVERT_IMPLICIT` |
-| Plan Cache Health | `sys.dm_exec_cached_plans` / `sys.dm_exec_query_stats` grouped by `query_hash`; live tabs use `sys.dm_exec_query_profiles`; plan guides from `sys.plan_guides` |
+| Plan Cache Health | `sys.dm_exec_cached_plans` / `sys.dm_exec_query_stats` grouped by `query_hash`; live tabs use `sys.dm_exec_query_profiles`; plan guides from `sys.plan_guides`; the Implicit Conversions tab searches cached plan XML (`sys.dm_exec_cached_plans` + `sys.dm_exec_query_plan`) for `CONVERT_IMPLICIT`, read with the rest of the page |
 
 - These run **on demand** against the active connection only, never in the background. Plan-XML searches are the heaviest queries SqlVitals runs; on a server with a very large plan cache they may need a longer **Command timeout** (Settings → Monitoring & history).
 - The live tabs depend on lightweight query profiling, which is on by default from SQL Server 2019 and in Azure SQL. On older versions they may be empty.

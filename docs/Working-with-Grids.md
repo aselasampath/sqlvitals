@@ -22,7 +22,7 @@ From 0.63.0 a row's details open in a **details drawer** at the right of the scr
 
 | Comfortable | Compact |
 |---|---|
-| ![Active Waits with comfortable rows: 20 rows on screen](images/grid-density/comfortable.png) | ![The same page with compact rows: 28 rows on screen](images/grid-density/compact.png) |
+| ![Processes' Waiting view with comfortable rows](images/grid-density/comfortable.png) | ![The same view with compact rows: more rows on screen](images/grid-density/compact.png) |
 
 For the most rows of all, add [focus mode](Getting-Started.md#focus-mode) (**F11**): full screen, without the sidebar.
 

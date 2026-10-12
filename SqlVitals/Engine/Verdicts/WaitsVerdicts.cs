@@ -4,14 +4,11 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Engine.Verdicts;
 
 /// <summary>
-/// Top Waits' verdict (#149): the wait category the server spends most of its waiting on since it
-/// started, and what that usually means.
+/// The Waits page's verdict on its table (#149, #178): the wait category the server spends most of
+/// its waiting on, since it started or over the range picked, and what that usually means.
 /// </summary>
 public static class TopWaitsVerdict
 {
-    /// <summary>Opens Wait Trend, to see whether it is happening now.</summary>
-    public const string Trend = "trend";
-
     /// <summary>Opens the page that shows the category's cause: Processes, Resource Queries, File I/O, Memory.</summary>
     public const string Cause = "cause";
 
@@ -20,7 +17,7 @@ public static class TopWaitsVerdict
     {
         "CPU"     => "Queries wait for a CPU after using up their time slice (SOS_SCHEDULER_YIELD), or for parallel threads (CX…): the server is short of CPU, or queries do more work than they need. Resource Queries shows which use the most CPU.",
         "I/O"     => "Queries wait for pages read from disk (PAGEIOLATCH) or for the log to be written (WRITELOG): storage is slow, or queries read more than they need, often for a missing index. File I/O shows the latency of each file.",
-        "Memory"  => "Queries wait for a memory grant (RESOURCE_SEMAPHORE) or for a page in memory (PAGELATCH), such as TempDB's allocation pages: memory pressure, or a hot page. Memory Grants shows who waits for memory.",
+        "Memory"  => "Queries wait for a memory grant (RESOURCE_SEMAPHORE) or for a page in memory (PAGELATCH), such as TempDB's allocation pages: memory pressure, or a hot page. Memory shows who waits for memory.",
         "Locks"   => "Sessions wait for locks other sessions hold: blocking. Long transactions and missing indexes make it worse. Processes shows who blocks whom.",
         "Network" => "SQL Server waits for the client to take the results (ASYNC_NETWORK_IO): usually the application reads the rows one at a time while doing other work, rarely the network itself.",
         _         => "Waits outside the usual groups. The grid lists each type; look its name up before acting on it.",
@@ -31,18 +28,22 @@ public static class TopWaitsVerdict
     {
         "CPU"     => ("ResourceQueries", "Resource Queries"),
         "I/O"     => ("FileIo", "File I/O"),
-        "Memory"  => ("Memory", "Memory Grants"),
+        "Memory"  => ("Memory", "Memory"),
         "Locks"   => ("Processes", "Processes"),
         _         => null,
     };
 
-    /// <param name="waits">The top wait types since the server started, benign ones left out.</param>
-    public static PageVerdict From(IReadOnlyList<TopWaitType> waits)
+    /// <param name="waits">The top wait types, benign ones left out.</param>
+    /// <param name="during">The range they were counted over, e.g. "over the last 24 hours"; null for since the server started.</param>
+    public static PageVerdict From(IReadOnlyList<TopWaitType> waits, string? during = null)
     {
         var culture = CultureInfo.CurrentCulture;
         if (waits.Count == 0 || waits.Sum(w => w.WaitTimeMs) <= 0)
-            return new PageVerdict(VerdictLevel.Ok, "Nothing has waited worth noting",
-                "Since the server started, its only waits are the idle ones SQL Server always has.");
+            return during is null
+                ? new PageVerdict(VerdictLevel.Ok, "Nothing has waited worth noting",
+                    "Since the server started, its only waits are the idle ones SQL Server always has.")
+                : new PageVerdict(VerdictLevel.Ok, $"Nothing waited worth noting {during}",
+                    "The monitoring history holds no waits but the idle ones SQL Server always has.");
 
         var total = waits.Sum(w => (double)w.WaitTimeMs);
         var categories = waits
@@ -58,22 +59,22 @@ public static class TopWaitsVerdict
         var next = categories.Count > 1
             ? string.Format(culture, " Then {0}, {1:0} %.", categories[1].Category, categories[1].Share * 100)
             : "";
-        var why = Meaning(top.Category) + next + " Counted since the server started; Wait Trend shows whether it is happening now.";
+        var why = Meaning(top.Category) + next + (during is null
+            ? " Counted since the server started; the trend shows whether it is happening now."
+            : $" Counted {during}, from the monitoring history.");
 
         // Locks at the top mean sessions spend most of their waiting blocked by others.
         var level = top.Category == "Locks" ? VerdictLevel.Warning : VerdictLevel.Info;
 
-        List<VerdictAction> actions = [new(Trend, "Wait Trend")];
-        if (CausePage(top.Category) is { } cause)
-            actions.Insert(0, new(Cause, cause.Text));
+        List<VerdictAction> actions = CausePage(top.Category) is { } cause ? [new(Cause, cause.Text)] : [];
         return new PageVerdict(level, headline, why, actions);
     }
 }
 
-/// <summary>One wait type's line on Wait Trend: its values per point, a null where nothing was recorded.</summary>
+/// <summary>One wait type's line on the Waits page's trend: its values per point, a null where nothing was recorded.</summary>
 public sealed record WaitTrendSeries(string WaitType, IReadOnlyList<double?> Values);
 
-/// <summary>What Wait Trend is showing, for its verdict.</summary>
+/// <summary>What the Waits page's trend is showing, for its verdict.</summary>
 public enum WaitTrendState
 {
     /// <summary>Live, and not reading: Resume in the top bar starts it.</summary>
@@ -86,10 +87,13 @@ public enum WaitTrendState
     History,
 }
 
-/// <summary>Wait Trend's verdict (#149): the wait type that waits the most over the lines shown, and whether it is rising.</summary>
+/// <summary>
+/// The Waits page's verdict on its trend (#149, #178): the wait type that waits the most over the
+/// lines shown, and whether it is rising.
+/// </summary>
 public static class WaitTrendVerdict
 {
-    /// <summary>Opens Top Waits.</summary>
+    /// <summary>Ticks the top 20 wait types, to chart them.</summary>
     public const string TopWaits = "top-waits";
 
     /// <summary>Points needed before a line can be called rising.</summary>
@@ -104,7 +108,7 @@ public static class WaitTrendVerdict
         var culture = CultureInfo.CurrentCulture;
         if (series.Count == 0)
             return new PageVerdict(VerdictLevel.Unknown, "No wait type is selected",
-                "Tick wait types on the left, or press Top Waits.");
+                "Tick wait types on the left, or press Top 20.");
 
         var averages = series
             .Select(s => (s.WaitType, Values: s.Values.OfType<double>().ToList()))
@@ -135,7 +139,7 @@ public static class WaitTrendVerdict
         var why = string.Format(culture, "{0:0} % of the waiting drawn.", top.Average / total * 100)
                 + (ranked.Count > 1 ? string.Format(culture, " Then {0}, {1}.", ranked[1].WaitType, Amount(ranked[1].Average)) : "")
                 + (rising ? " Its last readings are at least twice its first." : "");
-        return new PageVerdict(rising ? VerdictLevel.Warning : VerdictLevel.Info, headline, why, [new(TopWaits, "Top Waits")]);
+        return new PageVerdict(rising ? VerdictLevel.Warning : VerdictLevel.Info, headline, why, [new(TopWaits, "Chart the top 20")]);
     }
 
     /// <summary>The last third of the line averages at least twice its first third.</summary>
@@ -151,4 +155,33 @@ public static class WaitTrendVerdict
 
     private static string Amount(double value) =>
         string.Format(CultureInfo.CurrentCulture, value >= 100 ? "{0:N0}" : "{0:0.#}", value);
+}
+
+/// <summary>
+/// The Waits page's verdict (#178): its trend's while the chart draws lines with values, since that
+/// says what is happening now or over the range picked; else its table's, the top waits since the
+/// server started or over the range, with Start trending while the trend hasn't started.
+/// </summary>
+public static class WaitsVerdict
+{
+    /// <summary>Starts reading the trend, as the top bar's Resume does.</summary>
+    public const string StartTrend = "start-trend";
+
+    /// <param name="top">The table; null until it has been read.</param>
+    /// <param name="during">The range the table covers, e.g. "over the last 24 hours"; null for since the server started.</param>
+    /// <param name="noData">Why a past range has nothing to show; null when it has, or live.</param>
+    public static PageVerdict? From(IReadOnlyList<TopWaitType>? top, string? during,
+                                    IReadOnlyList<WaitTrendSeries> series, WaitTrendState state, string unit, string over, string? noData = null)
+    {
+        var drawn = series.Any(s => s.Values.Any(v => v is not null));
+        if (drawn || (state == WaitTrendState.History && noData is not null))
+            return WaitTrendVerdict.From(series, state, unit, over, noData);
+        if (top is null)
+            return null;
+
+        var table = TopWaitsVerdict.From(top, during);
+        return state == WaitTrendState.NotStarted
+            ? new PageVerdict(table.Level, table.Headline, table.Why, [.. table.Actions, new(StartTrend, "Start trending")])
+            : table;
+    }
 }

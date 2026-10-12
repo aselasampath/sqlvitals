@@ -1,12 +1,13 @@
 # Live Monitoring
 
-Three screens show what the server is doing **right now**. For *is it OK, and if not, why?*, start on the server's [Overview](Your-Servers.md#a-servers-overview): its alerts, what is costing its score points, its headline numbers and the same charts, smaller.
+Two screens show what the server is doing **right now**. For *is it OK, and if not, why?*, start on the server's [Overview](Your-Servers.md#a-servers-overview): its alerts, what is costing its score points, its headline numbers and the same charts, smaller.
 
 | Screen | Answers |
 |---|---|
 | [💓 Live charts](#live-charts) | How busy is the server, and on what? |
-| [🔗 Processes](#processes-blocking-chains) | Who is blocking whom, and who is at the head? Which login has the most sessions ([Grid view](#grid-view))? |
-| [⚡ Active Waits](#active-waits) | Which sessions are waiting right now, and on what? |
+| [🔗 Processes](#processes-blocking-chains) | Who is blocking whom, and who is at the head? Which login has the most sessions ([Grid view](#grid-view))? Which requests are waiting right now, and on what ([Waiting view](#waiting-view))? |
+
+> **From 0.79.0** the Active Waits page is Processes' **Waiting** view ([#178](https://github.com/aselasampath/sqlvitals/issues/178)). A link, a bookmark in your history or a saved setting that names Active Waits opens Processes on it.
 
 ---
 
@@ -53,7 +54,7 @@ From 0.46.0 SqlVitals doesn't monitor anything until you ask, unless **⚙️ Se
 
 Live **blocking chains drawn as trees**. The head blocker is at the root and every session hangs under the one blocking it (`blocking_session_id`). Sessions not in a chain are shown below the chains.
 
-The **Map | Grid** switch at the top right shows the same sessions as a [grid grouped by login](#grid-view) instead: better for scanning, sorting and comparing hundreds of sessions. **Map** is the default; the choice is remembered.
+The **Map | Grid | Waiting** switch at the top right shows the same sessions as a [grid grouped by login](#grid-view) instead, better for scanning, sorting and comparing hundreds of sessions, or [the requests waiting now](#waiting-view). **Map** is the default; the choice is remembered.
 
 **The verdict** (from 0.62.0) says first, in words, whether anything is blocked, and is coloured by your [blocking threshold](Health-Dot-and-Background-Monitoring.md#what-is-checked): *No blocking · 214 sessions, none waiting on another*, or *Session 87 is blocking 3 sessions, the longest for 4.2 min*, with what the head blocker is doing (*sleeping with an open transaction: the application most likely didn't commit*). With several chains it counts them and names the one waiting longest. **Go to session 87** selects it and opens its details; **Blocking chains only** hides the rest. The **⌄** at its right folds it to its first line, and the page remembers that. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
@@ -74,7 +75,7 @@ The **Map | Grid** switch at the top right shows the same sessions as a [grid gr
 
 4. **Hover a node** for login, host, program, status, open transactions, what blocks it, its wait and the start of its SQL.
 5. **Click a node** to see the session in the [details drawer](Working-with-Grids.md#details-beside-the-grid) at the right (from 0.63.0; before, a Session Details panel over the map). The selected node gets a purple ring. The drawer shows its status and **open transactions**, what it **blocks** (how many sessions, the longest wait) or what **blocks it** (and the head of its chain), its wait type, time and resource, **how long its transaction has been open** (amber when it sleeps with one open for a minute or more), login, host, program, database, command, its last batch (and how long it has been idle), login time, CPU, I/O and memory. Then:
-   - **Last statement**, with **Copy SQL** and **Active waits →** (Active Waits filtered to it and the sessions it blocks);
+   - **Last statement**, with **Copy SQL** and **Its waits →** (the [Waiting view](#waiting-view) filtered to it and the sessions it blocks; **Back** returns to the map);
    - **Execution plan**: **Show the plan** draws what it runs, or its last statement's cached plan, with **Open in window**;
    - **KILL script (review)**: **Show the script** gives `KILL 87;` with what it blocks, when its transaction began and that the rollback can take as long as the work did, `DBCC INPUTBUFFER` to check first and `KILL … WITH STATUSONLY` to follow the rollback. **Copy** it, or **Open in window** to save it. SqlVitals never runs it.
 
@@ -138,17 +139,15 @@ Going to a session that a filter hides (from a head blocker chip, or a SPID link
 
 The **Process Map** chart on Live charts is always the map.
 
----
+### Waiting view
 
-## Active Waits
+> **Where:** sidebar → 🔗 Processes → **Waiting** · **Use it when:** you want a list, rather than a map, of the requests that are waiting · The Active Waits page until 0.79.0
 
-> **Where:** sidebar → ⚡ Active Waits · **Use it when:** you want a list, rather than a map, of sessions that are waiting
+A grid of every user request currently waiting, one row per session. It reads the waits only while it is on screen, with the sessions, on the same **Auto-refresh**; switching to it reads them at once.
 
-A grid of every user request currently waiting, one row per session.
+**The verdict** on this view says first whether anything is blocked, coloured by your [blocking threshold](Health-Dot-and-Background-Monitoring.md#what-is-checked): *3 requests are blocked; session 112 the longest, for 4.2 min*, with what it waits on and who holds the lock, and **Show the chain on the map**, which switches to the map with the blocking chains only and the blocker selected. With nothing blocked it says what most requests wait on (*4 requests are waiting, 2 on I/O waits*) and the longest wait, amber when one has waited over a minute; or *No request is waiting*. The map and the grid have the sessions' verdict above. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
-**The verdict** (from 0.65.0) says first whether anything is blocked, coloured by your [blocking threshold](Health-Dot-and-Background-Monitoring.md#what-is-checked): *3 requests are blocked; session 112 the longest, for 4.2 min*, with what it waits on and who holds the lock, and **Blocking in Processes** to see the chain. With nothing blocked it says what most requests wait on (*4 requests are waiting, 2 on I/O waits*) and the longest wait, amber when one has waited over a minute; or *No request is waiting*. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
-
-![Active Waits: the verdict says 3 requests are blocked, session 112 the longest for 4.2 min, above the grid](images/page-template/active-waits.png)
+![Processes' Waiting view: the verdict says 3 requests are blocked, session 112 the longest for 4.2 min, above the grid](images/page-template/processes-waiting.png)
 
 | Column | Meaning |
 |---|---|
@@ -159,7 +158,7 @@ A grid of every user request currently waiting, one row per session.
 | **Status**, **Command**, **Login**, **Database** | What the session is doing and who it is |
 | **CPU (ms)**, **Logical Reads** | Work done so far |
 
-Press **↻ Refresh** for a new snapshot.
+Press **↻ Refresh** for a new snapshot. Opened from a session's **Its waits →**, it shows that session and the sessions it blocks, under an *Opened from Processes* banner, until **Show all**.
 
 ---
 
@@ -167,6 +166,6 @@ Press **↻ Refresh** for a new snapshot.
 
 - **Live charts** (and the Overview) read `sys.dm_os_performance_counters` and `sys.dm_os_ring_buffers` in one lightweight query per interval, with a count of the user tasks waiting now from `sys.dm_os_waiting_tasks` (from 0.59.0, for the Overview's *Waiting tasks*). On Azure SQL Database, CPU comes from `sys.dm_db_resource_stats` instead (the portal's *CPU percentage*, a share of the service tier's limit, per 15 seconds), so it can jump between 0 and a high figure where the portal's one-minute average looks smoother. Rates such as batch requests/sec are computed from the difference between two samples, so the first sample after a start has nothing to compare with.
 - The collector belongs to the connection (`MonitoringSession`), not to the page. Leaving the page doesn't stop it. The page keeps the last 60 samples in memory, and every sample is also written to the [history database](Monitoring-History-Database.md) (table `metric_samples`).
-- **Active Waits** reads `sys.dm_exec_requests` joined to `sys.dm_exec_sessions` and `sys.dm_exec_sql_text`, user sessions only, excluding SqlVitals' own session. Query text is cut to 500 characters.
+- **The Waiting view** reads `sys.dm_exec_requests` joined to `sys.dm_exec_sessions` and `sys.dm_exec_sql_text`, user sessions only, excluding SqlVitals' own session. Query text is cut to 500 characters.
 - **Processes** uses `GetProcessesAsync`: `sys.dm_exec_sessions` joined to `sys.dm_exec_requests`, user sessions plus any session blocking one. A session without a request gets its text from `sys.dm_exec_connections.most_recent_sql_handle` and its open transactions from the session. `Engine/Monitoring/BlockingChains` marks head blockers and builds the trees; `Controls/ProcessMapControl` draws them. It runs only while the page (or the Live charts *Process Map*) is on screen. The grid view uses the same query, so it adds no load: `Engine/Monitoring/ProcessGroups` groups the sessions by login and sums up each group, and the grid draws only the rows on screen (rows are virtualised while grouped).
 - All queries run under `READ UNCOMMITTED` so monitoring never waits on the locks it's reporting. See [Server Impact](Server-Impact-and-Permissions.md).

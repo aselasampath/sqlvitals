@@ -12,9 +12,11 @@ namespace SqlVitals.Desktop.Services;
 /// <param name="Settings">Where Settings opens (#131); null for the category last used.</param>
 /// <param name="Focus">What the page was opened to show (#145): an alert's evidence, filtered and
 /// set to its time, or a link's session or query. Null for the page as the sidebar opens it.</param>
+/// <param name="View">The part of the page it opens on, for a page that took in another (#178):
+/// Processes' Waiting view, Plan Cache Health's Implicit Conversions tab. Null for the page's own choice.</param>
 public sealed record Route(string Tag, Guid? ConnectionId = null, Guid? ServerId = null,
                            Guid? AlertsConnectionId = null, SettingsLocation? Settings = null,
-                           PageFocus? Focus = null)
+                           PageFocus? Focus = null, string? View = null)
 {
     /// <summary>
     /// Pages that read every connection, or a connection named in the route, rather than the
@@ -26,10 +28,11 @@ public sealed record Route(string Tag, Guid? ConnectionId = null, Guid? ServerId
     /// The same page about the same server, opened with different details: Settings on another
     /// category, Alerts filtered from a notification, or a page opened as evidence (#145). Moving
     /// between them replaces the current entry instead of adding one, so Back doesn't stop at the
-    /// same page twice.
+    /// same page twice. Another part of a page (<see cref="View"/>, #178) is another place: a
+    /// session's waits opened from the map, and Back returns to the map.
     /// </summary>
     public bool IsSamePlace(Route other) =>
-        Tag == other.Tag && ConnectionId == other.ConnectionId && ServerId == other.ServerId;
+        Tag == other.Tag && ConnectionId == other.ConnectionId && ServerId == other.ServerId && View == other.View;
 }
 
 /// <summary>

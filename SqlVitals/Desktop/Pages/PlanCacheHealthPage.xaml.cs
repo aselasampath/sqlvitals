@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -19,19 +20,25 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, ICodeBe
     internal PlanCacheHealthViewModel ViewModel { get; }
 
     /// <param name="folds">Where the verdict's and the summary's folds are remembered; none in some tests.</param>
-    public PlanCacheHealthPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    /// <param name="view">The tab to open on, from the route (#178): <see cref="NavMenu.ImplicitConversionsView"/>
+    /// for a link to the Implicit Conv. page; null for the first.</param>
+    public PlanCacheHealthPage(IWaitStatsRepository repo, ISectionFolds? folds = null, string? view = null)
     {
         _repo = repo;
         InitializeComponent();
 
-        ViewModel = new PlanCacheHealthViewModel(showTab: index => Tabs.SelectedIndex = index);
+        ViewModel = new PlanCacheHealthViewModel(showTab: index => Tabs.SelectedIndex = index, showWorstConversion: ShowWorstConversion);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
+        if (view == NavMenu.ImplicitConversionsView)
+            Tabs.SelectedItem = TabImplicitConversions;
     }
 
     public async System.Threading.Tasks.Task RefreshAsync()
     {
-        var read = _repo.GetPlanCacheHealthAsync();
+        // The checks, and at the same time the plans converting implicitly for their tab (#178).
+        var read        = _repo.GetPlanCacheHealthAsync();
+        var conversions = ReadConversionsAsync();
         try
         {
             await read;
@@ -43,7 +50,9 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, ICodeBe
         }
         var (summary, multiPlan, keyLookups, cardinality, skewed, guides) = read.Result;
         var lookups = keyLookups.ToList();
-        ViewModel.Show(summary, lookups.Count);
+        var converting = await conversions;
+        ViewModel.Show(summary, lookups.Count, converting);
+        ConvGrid.ItemsSource = converting ?? [];
 
         // ── KPI strip ─────────────────────────────────────────────────
         KpiStrip.Children.Clear();
@@ -84,6 +93,36 @@ public partial class PlanCacheHealthPage : System.Windows.Controls.Page, ICodeBe
         CardinalityGrid.ItemsSource = cardinality.ToList();
         SkewGrid.ItemsSource        = skewed.ToList();
         PlanGuidesGrid.ItemsSource  = guides.ToList();
+    }
+
+    // The plans converting implicitly; null when they couldn't be read. A plan XML search can time
+    // out on a very large plan cache: the tab says so, and the rest of the page still shows.
+    private async Task<List<ImplicitConversion>?> ReadConversionsAsync()
+    {
+        try
+        {
+            var rows = (await _repo.GetImplicitConversionsAsync()).ToList();
+            TxtConvProblem.Visibility = Visibility.Collapsed;
+            return rows;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AppLog.Error("Plan Cache Health: reading the implicit conversions failed", ex);
+            TxtConvProblem.Text       = $"Couldn't read the implicit conversions: {ErrorStatus.Format(ex)} Refresh to try again.";
+            TxtConvProblem.Visibility = Visibility.Visible;
+            return null;
+        }
+    }
+
+    // The verdict's Show it: the Implicit Conversions tab, its most used plan selected and in view.
+    private void ShowWorstConversion()
+    {
+        Tabs.SelectedItem = TabImplicitConversions;
+        if (ConvGrid.ItemsSource is not IEnumerable<ImplicitConversion> rows || rows.OrderByDescending(r => r.ExecutionCount).FirstOrDefault() is not { } worst)
+            return;
+        ConvGrid.SelectedItem = worst;
+        ConvGrid.ScrollIntoView(worst);
+        ConvGrid.Focus();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────

@@ -59,8 +59,8 @@ From 0.61.0 every alert has an **evidence route**: the page that shows why, alre
 |---|---|---|---|
 | Blocking | 🔗 Processes | the head blocker's chain: the one whose blocked session has waited longest | Live charts (lock waits) |
 | CPU | 🔥 Resource Queries, **By CPU** tab | the queries last run since 15 min before the alert started | Live charts (CPU) |
-| Page life expectancy | 🧠 Memory Grants | (the whole page: memory clerks and grants) | Live charts (memory) |
-| Memory grants pending | 🧠 Memory Grants | the grants still waiting for memory | Live charts (memory) |
+| Page life expectancy | 🧠 Memory | (the whole page: memory clerks and grants) | Live charts (memory) |
+| Memory grants pending | 🧠 Memory | the grants still waiting for memory | Live charts (memory) |
 | Log space used | 📦 DB Storage | the files of the database whose log was fullest | none kept |
 | TempDB space used | 🗄️ TempDB | (the whole page) | none kept |
 | Disk free (from 0.76.0) | 💽 File I/O | (the whole page: its **Volumes** grid has each volume's free space) | none kept |
@@ -87,12 +87,12 @@ The page opens with a banner above it naming the alert and its time, and what th
 
 Its window is **15 minutes before it started to 15 minutes after it ended**.
 
-- Processes, Memory Grants, Resource Queries, DB Storage and TempDB only show the server **now**. The banner says so (*It ended at 14:05; this page shows the server now.*) and offers **Open Live charts for 13:43–14:20**, which charts that window from the monitoring history. A filter that only means something while the alert lasts (a blocking chain, a waiting grant) isn't applied.
+- Processes, Memory, Resource Queries, DB Storage and TempDB only show the server **now**. The banner says so (*It ended at 14:05; this page shows the server now.*) and offers **Open Live charts for 13:43–14:20**, which charts that window from the monitoring history. A filter that only means something while the alert lasts (a blocking chain, a waiting grant) isn't applied.
 - SqlVitals keeps no history of log space or TempDB space, so for those the banner says so.
 
 ### Links that carry their filter
 
-- **Processes** → a session in the [details drawer](Working-with-Grids.md#details-beside-the-grid) → **Active waits →** opens Active Waits filtered to that session and the sessions it blocks.
+- **Processes** → a session in the [details drawer](Working-with-Grids.md#details-beside-the-grid) → **Its waits →** opens Processes' [Waiting view](Live-Monitoring.md#waiting-view) filtered to that session and the sessions it blocks (Active Waits before 0.79.0).
 - **Query Regressions** → a query ID (when Query Store is the source) opens **Query Store** on that query: the Top queries tab shows only it, and its details open in their own window.
 
 Both show the same banner, *Opened from Processes · session 87*, with Show all, and Back returns to the page the link was on.

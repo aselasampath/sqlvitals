@@ -1086,7 +1086,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Opens another page of the same server with a filter, for links between pages that carry it
-    /// (#145): a session from Processes on Active Waits, a query on Query Store.
+    /// (#145): a session on Processes' Waiting view, a query on Query Store.
     /// </summary>
     /// <param name="fromPage">The page the link is on, as its banner names it.</param>
     internal System.Threading.Tasks.Task OpenLinkAsync(string tag, FocusFilter filter, string fromPage) =>
@@ -1348,6 +1348,9 @@ public partial class MainWindow : Window
     private async System.Threading.Tasks.Task OpenAsync(Route route, string? settingsMessage, Action<Route> record,
                                                         string switchSource = ActivitySources.BackOrForward)
     {
+        // A page merged into another (#178), as a saved setting or an old link may still name it.
+        route = NavMenu.Current(route);
+
         // A connection's page, or the default thresholds, may hold unsaved changes: ask first, and
         // stay when the user says so (#131). The page navigated to, as the Frame shows it a moment later.
         if (_page is SettingsPage leaving && !await leaving.TryLeaveAsync())

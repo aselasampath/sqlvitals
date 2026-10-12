@@ -45,7 +45,7 @@ From 0.78.0, **Check permissions** on a connection's card (and the first-run flo
 
 | Area | It needs | Without it |
 |---|---|---|
-| **Server state** | `VIEW SERVER STATE`; on Azure SQL Database, `VIEW DATABASE STATE` in the connection's database | Monitoring and the health score, and the pages that read DMVs: Overview, Live charts, Processes, Active Waits, Deadlocks, App Connections, Top Waits, Resource Queries, Plan Cache Health, Implicit Conv., SP Trace, Memory Grants, TempDB, File I/O, DB Storage, Perfmon, Config Checks |
+| **Server state** | `VIEW SERVER STATE`; on Azure SQL Database, `VIEW DATABASE STATE` in the connection's database | Monitoring and the health score, and the pages that read DMVs: Overview, Live charts, Processes, Deadlocks, App Connections, Waits, Resource Queries, Plan Cache Health, SP Trace, Memory, TempDB, File I/O, DB Storage, Perfmon, Config Checks |
 | **Backup history** | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` | Backups, and the *Backups past RPO* check. *Not needed* on Azure SQL Database |
 | **SQL Server Agent jobs** | `SELECT` on msdb's job tables (`sysjobs`, `sysjobhistory`, `sysjobactivity`, `sysjobschedules`, `sysschedules`, `syscategories`, `syssessions`) | Agent Jobs, the *Failed Agent jobs* check, and the jobs in an Overview's *Since you last looked*. *Not needed* on Azure SQL Database or Express |
 | **Definitions** | `VIEW ANY DEFINITION` | The Security Audit's sysadmin members and orphaned users, and the *Disk free* check's view of every database's files. *Not needed* on Azure SQL Database |
