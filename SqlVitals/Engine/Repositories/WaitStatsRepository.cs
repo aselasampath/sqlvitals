@@ -70,6 +70,8 @@ public class WaitStatsRepository(SqlTarget target, ServerCapabilitiesCache capab
 
     public Task<bool> SupportsOnlineIndexRebuildAsync(CancellationToken cancellationToken = default) => _server.SupportsOnlineIndexRebuildAsync(cancellationToken: cancellationToken);
 
+    public Task<Permissions.PermissionProbe> CheckPermissionsAsync(CancellationToken cancellationToken = default) => _server.CheckPermissionsAsync(cancellationToken: cancellationToken);
+
     // ── Waits (delegated to WaitsRepository) ──────────────────────────
     public Task<IEnumerable<WaitStatCumulative>> GetCumulativeWaitsAsync(CancellationToken cancellationToken = default) => _waits.GetCumulativeWaitsAsync(cancellationToken: cancellationToken);
 

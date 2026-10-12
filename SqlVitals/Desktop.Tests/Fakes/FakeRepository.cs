@@ -210,6 +210,10 @@ internal sealed class FakeRepository : IWaitStatsRepository
     Task<bool> IServerRepository.IsAzureSqlDatabaseAsync(CancellationToken cancellationToken) =>
         IsAzureSqlDatabaseAsync is { } answer ? Answered(nameof(IsAzureSqlDatabaseAsync), answer(), cancellationToken) : Unanswered<Task<bool>>(nameof(IsAzureSqlDatabaseAsync), cancellationToken);
 
+    public Func<Task<SqlVitals.Engine.Permissions.PermissionProbe>>? CheckPermissionsAsync { get; set; }
+    Task<SqlVitals.Engine.Permissions.PermissionProbe> IServerRepository.CheckPermissionsAsync(CancellationToken cancellationToken) =>
+        CheckPermissionsAsync is { } answer ? Answered(nameof(CheckPermissionsAsync), answer(), cancellationToken) : Unanswered<Task<SqlVitals.Engine.Permissions.PermissionProbe>>(nameof(CheckPermissionsAsync), cancellationToken);
+
     public Func<Task<bool>>? SupportsOnlineIndexRebuildAsync { get; set; }
     Task<bool> IServerRepository.SupportsOnlineIndexRebuildAsync(CancellationToken cancellationToken) =>
         SupportsOnlineIndexRebuildAsync is { } answer ? Answered(nameof(SupportsOnlineIndexRebuildAsync), answer(), cancellationToken) : Unanswered<Task<bool>>(nameof(SupportsOnlineIndexRebuildAsync), cancellationToken);

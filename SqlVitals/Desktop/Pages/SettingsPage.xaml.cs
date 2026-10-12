@@ -45,14 +45,17 @@ public partial class SettingsPage : Page, IPageContext
         Func<bool, Task> applyConnections,
         SettingsLocation? location = null,
         string? message = null,
-        CollectorLink? collectors = null)
+        CollectorLink? collectors = null,
+        PermissionChecker? checkPermissions = null,
+        IWatchStarter? starter = null,
+        IClipboard? clipboard = null)
     {
         InitializeComponent();
         _context = new SettingsContext(service, monitoring, chat, applyConnections,
                                        (text, caption, buttons, icon) => Prompt(text, caption, buttons, icon),
                                        target => _ = OpenAsync(target),
                                        id => ServerRequested?.Invoke(id),
-                                       collectors);
+                                       collectors, checkPermissions, starter, clipboard);
         BuildMenu();
         UpdateCount();
 
@@ -90,6 +93,9 @@ public partial class SettingsPage : Page, IPageContext
     /// <summary>The category's control on screen.</summary>
     internal FrameworkElement? Shown => CategoryHost.Content as FrameworkElement;
 
+    /// <summary>The first-run flow (#177) while it is shown; null otherwise.</summary>
+    internal FirstRunFlow? FirstRun => FlowHost.Content as FirstRunFlow;
+
     /// <summary>Connections, once it has been opened.</summary>
     internal ConnectionsCategory? Connections => _built.GetValueOrDefault(SettingsCategory.Connections) as ConnectionsCategory;
 
@@ -100,7 +106,8 @@ public partial class SettingsPage : Page, IPageContext
     /// or the default thresholds, it asks to save, discard or stay; false when the user stays.
     /// </summary>
     public Task<bool> TryLeaveAsync() =>
-        Shown is ISettingsCategory category ? category.TryLeaveAsync() : Task.FromResult(true);
+        FirstRun is { } flow ? flow.TryLeaveAsync()
+        : Shown is ISettingsCategory category ? category.TryLeaveAsync() : Task.FromResult(true);
 
     /// <summary>Opens a category, or a connection's tab, leaving the one on screen first.</summary>
     public async Task OpenAsync(SettingsLocation location)
@@ -124,6 +131,23 @@ public partial class SettingsPage : Page, IPageContext
 
         if (control is ConnectionsCategory connections)
             await connections.ShowAsync(location);
+
+        // First run (#177): only while nothing is saved, so Back to it later is Connections.
+        if (location.FirstRun && FirstRun is null && _context.Service.Load().Connections.Count == 0)
+            ShowFirstRun();
+    }
+
+    private void ShowFirstRun()
+    {
+        var flow = new FirstRunFlow(_context);
+        flow.Closed += () =>
+        {
+            FlowHost.Content    = null;
+            FlowHost.Visibility = Visibility.Collapsed;
+            _ = Connections?.ShowAsync(new SettingsLocation(SettingsCategory.Connections));
+        };
+        FlowHost.Content    = flow;
+        FlowHost.Visibility = Visibility.Visible;
     }
 
     /// <summary>A message above the category; null or empty hides it.</summary>

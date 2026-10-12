@@ -33,6 +33,9 @@ internal partial class ConnectionEditor : UserControl
     private bool _loading;
     private bool _busy;
 
+    // Step 1 of the first-run flow (#177): no way back to the cards, and Save moves on to Check.
+    private bool _firstRun;
+
     // Connection string the database list was last loaded with, so it's only queried again for another server.
     private string? _databaseListSource;
     private bool    _isLoadingDatabases;
@@ -78,6 +81,24 @@ internal partial class ConnectionEditor : UserControl
 
     /// <summary>The connection was removed, with what to say about it on the cards.</summary>
     public event Action<string>? Removed;
+
+    /// <summary>Saved, and the app has picked it up: the first-run flow's cue to check it (#177).</summary>
+    public event Action<Guid>? ConnectionSaved;
+
+    /// <summary>
+    /// The first-run flow's Connect step (#177): no "← Connections", no Save &amp; make active (the
+    /// first connection saved is the active one anyway), and Save is the step's main button.
+    /// </summary>
+    public void UseForFirstRun()
+    {
+        _firstRun = true;
+        Crumb.Visibility = Visibility.Collapsed;
+        BtnSave.Content  = "Save & continue";
+        BtnSave.Style    = (Style)FindResource("RefreshButton");
+        BtnSave.ToolTip  = "Sign in with these details, save them, and go on to check the login's permissions";
+        RenderHeader();
+        UpdateBar(ReadDraft(), _saved);
+    }
 
     /// <summary>The connection on the page; null for a new one not saved yet.</summary>
     public Guid? ConnectionId => _id;
@@ -182,7 +203,7 @@ internal partial class ConnectionEditor : UserControl
         BtnDiscard.IsEnabled        = dirty && !_busy;
         BtnSave.IsEnabled           = (dirty || IsNew) && !_busy;
         BtnSaveAndConnect.IsEnabled = !_busy;
-        BtnSaveAndConnect.Visibility = active ? Visibility.Collapsed : Visibility.Visible;
+        BtnSaveAndConnect.Visibility = active || _firstRun ? Visibility.Collapsed : Visibility.Visible;
         BtnTest.IsEnabled           = !_busy;
         BtnMore.IsEnabled           = !_busy;
         OwnTag.Visibility           = draft.OwnThresholds ? Visibility.Visible : Visibility.Collapsed;
@@ -205,7 +226,9 @@ internal partial class ConnectionEditor : UserControl
         {
             TxtName.Text = RunCrumb.Text = "New connection";
             Dot.Visibility = StatusChip.Visibility = ActiveChip.Visibility = Visibility.Collapsed;
-            TxtLine.Text = "Enter the server's details, then Save. SqlVitals signs in to check them first.";
+            TxtLine.Text = _firstRun
+                ? "Enter the server's details, then Save & continue. SqlVitals signs in to check them first."
+                : "Enter the server's details, then Save. SqlVitals signs in to check them first.";
             TxtViewOnHome.Visibility = BtnMore.Visibility = Visibility.Collapsed;
             BtnSave.ToolTip = "Save this connection without switching to it";
             return;
@@ -430,6 +453,7 @@ internal partial class ConnectionEditor : UserControl
             // Not busy any more: making it active opens its Overview, which asks this page whether it can be left.
             SetBusy(false);
             await _context.ApplyConnections(connect);
+            ConnectionSaved?.Invoke(settings.Id);
             return true;
         }
         catch (Exception ex)

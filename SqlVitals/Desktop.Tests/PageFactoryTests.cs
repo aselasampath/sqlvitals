@@ -41,6 +41,7 @@ public sealed class PageFactoryTests : IDisposable
             .AddSingleton(new OverviewVisits(settings))
             .AddSingleton(new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }))
             .AddSingleton<IWatchStarter>(new DirectWatchStarter(_monitoring))
+            .AddSingleton<IClipboard>(new FakeClipboard())
             .AddSingleton(new CollectorLink(new FakeCollectorControl(_dir), settings, new FakeUiDispatcher(), TimeProvider.System))
             .AddSingleton<Func<IWaitStatsRepository, ExportService>>(repository => new ExportService(repository))
             .AddPages()

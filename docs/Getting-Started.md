@@ -2,17 +2,31 @@
 
 This page takes you from a fresh install to your first look at a server in about five minutes.
 
-## 1. Add your first connection
+## 1. Connect, check and start
 
-On first launch SqlVitals opens **⚙️ Settings → Connections**. Click **+ New connection**, then on the *Connection* tab:
+From 0.78.0, with no connection saved yet, SqlVitals opens on **Welcome to SqlVitals**: three steps, shown across the top, from install to a monitored server. **Skip for now** at the top right leaves it for **⚙️ Settings → Connections** at any step; it doesn't show again once a connection is saved.
+
+![The first step, Connect: the new connection's page, with Save & continue](images/first-run/connect.png)
+
+**1. Connect.** The new connection's page, as in [Connections](Connections.md). On the *Connection* tab:
 
 1. **Connection name**: something you'll recognise, like *Production* or *UAT*. Leave it blank to use *server / database*.
 2. **Server name**: for example `myserver.database.windows.net`, `localhost\SQLEXPRESS`, or `host,1433` for a custom port.
 3. **Authentication**: *Windows Authentication*, *SQL Server Authentication* (login and password) or *Microsoft Entra MFA* (sign in with your Microsoft account).
 4. **Database name**: leave it blank for your login's default database, or open the list to browse the server.
-5. Click **Save & make active** in the bar at the bottom.
+5. Click **Save & continue** in the bar at the bottom.
 
-SqlVitals checks the connection before saving it. If the check fails, it tells you why and saves nothing. More options, such as encryption, certificates and timeouts, are explained in [Connections](Connections.md).
+SqlVitals signs in before saving. If it can't, it tells you why and saves nothing. More options, such as encryption, certificates and timeouts, are explained in [Connections](Connections.md).
+
+![The second step, Check: two of four permissions missing, the pages each one affects, and the GRANT script](images/first-run/check.png)
+
+**2. Check.** SqlVitals signs in again and reads which of the permissions it reads with the login holds: the server's state (`VIEW SERVER STATE`, or `VIEW DATABASE STATE` on Azure SQL Database), msdb's backup history and Agent job tables, and `VIEW ANY DEFINITION`. Each is **✓ Granted**, **✗ Missing** or *Not needed* (no msdb on Azure SQL Database, no Agent on Express), with the pages and checks that need it. For what's missing there is a **GRANT script** for the login: **Copy script**, have a DBA run it, then **Check again**. Nothing missing stops you: **Next: Start** goes on, and each page that needs a permission says so later. See [Check permissions](Connections.md#check-permissions).
+
+![The third step, Start: Start monitoring now, on, and Open Sales DB's Overview](images/first-run/start.png)
+
+**3. Start.** **Start monitoring now** is on: one light query every 10 seconds and a snapshot every 5 minutes, while SqlVitals runs. **Open *name*'s Overview** starts it (with the [collector service](Collector-Service.md) installed, it asks which should watch it) and opens the server's [Overview](Your-Servers.md#a-servers-overview). Turn the switch off to open the Overview without monitoring.
+
+Before 0.78.0, a first launch opened **⚙️ Settings → Connections** with **+ New connection**, and the Overview said the server wasn't monitored until you pressed Start.
 
 ## 2. Find your way around
 
@@ -174,14 +188,14 @@ A screen reader reads the badge and its time out in words, *"Snapshot, taken at 
 
 A good first tour, in order:
 
-1. **The server's Overview**: is it OK, and if not, why? It says the server isn't monitored at first: nothing is collected from a server until you ask. Press **Start monitoring**, then watch the score, the headline numbers and the charts for a minute. **💓 Live charts** has the charts full size.
+1. **The server's Overview**: is it OK, and if not, why? Watch the score, the headline numbers and the charts for a minute. If you turned **Start monitoring now** off, or skipped the first steps, it says the server isn't monitored: nothing is collected from a server until you ask, so press **Start monitoring**. **💓 Live charts** has the charts full size.
 2. **📊 Top Waits**: what SQL Server has spent most of its time waiting on since it last started. This is the single best clue to *why* a server is slow. See [Wait Statistics](Wait-Statistics.md).
 3. **🔥 Resource Queries**: the queries using the most CPU and I/O.
 4. **🔍 Index Health**: missing and unused indexes.
 
 ## 4. Add your other servers
 
-Repeat step 1 for each server you look after. A connection you started keeps collecting while you look at another one, until SqlVitals exits; on **All servers**, press **▶ Start monitoring** on its tile, or **⋯ → Start monitoring**, to start one without opening it. That keeps its health dot and score current, fills its history and raises its alerts.
+In **⚙️ Settings → Connections**, click **+ New connection** for each server you look after, and **Check permissions** on its card to see what its login can read. A connection you started keeps collecting while you look at another one, until SqlVitals exits; on **All servers**, press **▶ Start monitoring** on its tile, or **⋯ → Start monitoring**, to start one without opening it. That keeps its health dot and score current, fills its history and raises its alerts.
 
 To have SqlVitals monitor your servers every time it starts, turn on **⚙️ Settings → Monitoring & history → Start monitoring automatically**, and **Monitor in background** on each connection's *Monitoring & alerts* tab to watch while another is active. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring).
 

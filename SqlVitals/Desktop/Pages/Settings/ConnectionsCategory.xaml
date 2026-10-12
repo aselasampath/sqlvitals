@@ -78,11 +78,19 @@
                                                FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,3,0,10"
                                                ToolTip="{Binding Card.ServerLine}" />
 
-                                    <!-- State, Test and Edit -->
+                                    <!-- State, then Check permissions, Test and Edit -->
                                     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0"
                                             Padding="0,10,0,0" Margin="0,4,0,0">
                                         <DockPanel>
-                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock DockPanel.Dock="Top" Text="{Binding StateText}" Foreground="{Binding StateBrush}" FontSize="12"
+                                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,0,8"
+                                                       ToolTip="{Binding StateToolTip}" />
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Content="Check permissions" Style="{StaticResource SecondaryButton}" Padding="12,5"
+                                                        Command="{Binding CheckPermissionsCommand}"
+                                                        Visibility="{Binding CheckPermissionsVisibility}"
+                                                        AutomationProperties.Name="{Binding CheckPermissionsName}"
+                                                        ToolTip="Which permissions the login has, which pages miss out without the others, and the GRANT that adds them" />
                                                 <Button Content="Test" Style="{StaticResource SecondaryButton}" Padding="14,5" Margin="8,0,0,0"
                                                         Click="Test_Click" IsEnabled="{Binding CanTest}"
                                                         AutomationProperties.Name="{Binding TestName}"
@@ -92,9 +100,6 @@
                                                         AutomationProperties.Name="{Binding EditName}"
                                                         ToolTip="Open this connection's settings" />
                                             </StackPanel>
-                                            <TextBlock Text="{Binding StateText}" Foreground="{Binding StateBrush}" FontSize="12" FontWeight="SemiBold"
-                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                                       ToolTip="{Binding StateToolTip}" />
                                         </DockPanel>
                                     </Border>
 

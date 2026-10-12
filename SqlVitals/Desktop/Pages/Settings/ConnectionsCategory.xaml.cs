@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
@@ -82,6 +83,9 @@ internal partial class ConnectionsCategory : UserControl, ISettingsCategory
     /// <summary>The connection's page that is open; null while the cards are shown.</summary>
     internal ConnectionEditor? Editor { get; private set; }
 
+    /// <summary>A connection's Check permissions (#177) that is open; null otherwise.</summary>
+    internal ConnectionPermissions? Permissions { get; private set; }
+
     public async Task<bool> TryLeaveAsync() => Editor is null || await Editor.TryCloseAsync();
 
     /// <summary>
@@ -113,6 +117,7 @@ internal partial class ConnectionsCategory : UserControl, ISettingsCategory
     private void ShowList(string? status)
     {
         Editor = null;
+        Permissions = null;
         EditorHost.Content    = null;
         EditorHost.Visibility = Visibility.Collapsed;
         ListView.Visibility   = Visibility.Visible;
@@ -150,7 +155,7 @@ internal partial class ConnectionsCategory : UserControl, ISettingsCategory
                     _cards.Add(existing);
                 }
                 else
-                    _cards.Add(new ConnectionCardItem(card));
+                    _cards.Add(new ConnectionCardItem(card, _context.CheckPermissions is null ? null : new RelayCommand(() => OpenCheck(card.Id))));
             }
         }
 
@@ -228,6 +233,23 @@ internal partial class ConnectionsCategory : UserControl, ISettingsCategory
 
     // ── A connection's page ───────────────────────────────────────────────────
 
+    /// <summary>Check permissions on a card (#177): the check's page over the cards, checking as it opens.</summary>
+    internal void OpenCheck(Guid id)
+    {
+        if (Editor is not null || _context.CheckPermissions is not { } check ||
+            _context.Service.Load().Connections.FirstOrDefault(c => c.Id == id) is not { } conn)
+            return;
+
+        var page = new ConnectionPermissions(conn, check, _context.Clipboard);
+        page.Closed += () => ShowList(null);
+        Permissions = page;
+        EditorHost.Content    = page;
+        EditorHost.Visibility = Visibility.Visible;
+        ListView.Visibility   = Visibility.Collapsed;
+        SettingsContext.ShowStatus(TxtStatus, string.Empty, null);
+        _ = page.Check.Model.CheckAsync();   // says its own errors
+    }
+
     private void OpenEditor(Guid? id, ConnectionTab tab)
     {
         var editor = new ConnectionEditor(_context, id);
@@ -254,9 +276,20 @@ public sealed class ConnectionCardItem : INotifyPropertyChanged
     private bool     _testing;
     private DateTime _testShownUntil;
 
-    public ConnectionCardItem(ConnectionCard card) => Card = card;
+    /// <param name="checkPermissions">Opens its Check permissions (#177); null hides the button.</param>
+    public ConnectionCardItem(ConnectionCard card, ICommand? checkPermissions = null)
+    {
+        Card = card;
+        CheckPermissionsCommand = checkPermissions;
+    }
 
     public ConnectionCard Card { get; private set; }
+
+    public ICommand? CheckPermissionsCommand { get; }
+
+    public Visibility CheckPermissionsVisibility => CheckPermissionsCommand is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public string CheckPermissionsName => $"Check the permissions of {Card.Name}";
 
     private string? TestResult => _testing || DateTime.UtcNow < _testShownUntil ? _testText : null;
 

@@ -19,7 +19,7 @@ SqlVitals installs with one guided setup file, or runs from a [portable zip](#po
 4. **Options**: by default SqlVitals installs for you only, in `%LocalAppData%\Programs\SqlVitals`, with Start menu and desktop shortcuts. No admin rights are needed. You can pick another folder. A folder outside your user profile, with admin rights, installs for all users.
 5. Click **Install**, then **Launch SqlVitals** on the last page.
 
-On first launch the app opens **Settings** so you can add your first connection. Continue with [Getting Started](Getting-Started.md).
+On first launch the app walks you through adding your first connection, checking its login's permissions and starting monitoring. Continue with [Getting Started](Getting-Started.md).
 
 > **If a step fails:** Setup offers **Retry** or **Cancel**. Cancel rolls everything back and restores your previous installation exactly.
 
