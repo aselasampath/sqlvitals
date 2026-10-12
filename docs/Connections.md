@@ -37,6 +37,43 @@ A new connection, or a change to how it connects (server, sign-in, database, enc
 
 To delete a connection, open it and choose **⋯ → Remove connection…**. Its monitoring history stays in the history file until it ages out. See [Monitoring History Database](Monitoring-History-Database.md).
 
+## Check permissions
+
+From 0.78.0, **Check permissions** on a connection's card (and the first-run flow's *Check* step) signs in with the saved details and reads which permissions the login holds, without waiting for a page to fail. It asks the server for nothing else and changes nothing.
+
+![A connection's Check permissions: four areas, each granted or missing with the pages it affects, and the GRANT script](images/first-run/card-check.png)
+
+| Area | It needs | Without it |
+|---|---|---|
+| **Server state** | `VIEW SERVER STATE`; on Azure SQL Database, `VIEW DATABASE STATE` in the connection's database | Monitoring and the health score, and the pages that read DMVs: Overview, Live charts, Processes, Active Waits, Deadlocks, App Connections, Top Waits, Resource Queries, Plan Cache Health, Implicit Conv., SP Trace, Memory Grants, TempDB, File I/O, DB Storage, Perfmon, Config Checks |
+| **Backup history** | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` | Backups, and the *Backups past RPO* check. *Not needed* on Azure SQL Database |
+| **SQL Server Agent jobs** | `SELECT` on msdb's job tables (`sysjobs`, `sysjobhistory`, `sysjobactivity`, `sysjobschedules`, `sysschedules`, `syscategories`, `syssessions`) | Agent Jobs, the *Failed Agent jobs* check, and the jobs in an Overview's *Since you last looked*. *Not needed* on Azure SQL Database or Express |
+| **Definitions** | `VIEW ANY DEFINITION` | The Security Audit's sysadmin members and orphaned users, and the *Disk free* check's view of every database's files. *Not needed* on Azure SQL Database |
+
+The line above the list says how many are missing (*2 of 4 permissions are missing.*). The permissions are the login's effective ones, so a server role, sysadmin or a Windows group counts.
+
+For what's missing there is a **GRANT script**, for the login as the server knows it (`SUSER_SNAME()`). **Copy script** copies it; a DBA runs it once; **Check again** reads the permissions again. It only grants reads. For example:
+
+```sql
+-- SqlVitals: what CONTOSO\svc_vitals is missing. Run it once, as a DBA; it only grants reads.
+
+USE [master];
+GRANT VIEW SERVER STATE TO [CONTOSO\svc_vitals];
+
+USE [msdb];
+IF DATABASE_PRINCIPAL_ID(N'CONTOSO\svc_vitals') IS NULL
+    CREATE USER [CONTOSO\svc_vitals] FOR LOGIN [CONTOSO\svc_vitals];
+GRANT SELECT ON dbo.backupset TO [CONTOSO\svc_vitals];
+GRANT SELECT ON dbo.backupmediafamily TO [CONTOSO\svc_vitals];
+```
+
+- **Azure SQL Database** has no `USE` and no server scope: the script is `GRANT VIEW DATABASE STATE TO [user];`, for the database user, to run in the connection's database.
+- **Managed Instance** gets the same script as SQL Server.
+- **A login through a Windows group**, with no login of its own: the script says so, and that the grant goes to the group's login (every member gets it), or to a login created for the user first.
+- **It can't sign in:** the check says why, in the server's words (*Login failed for user …*).
+
+**← Connections** goes back to the cards. See [Server Impact and Permissions](Server-Impact-and-Permissions.md#permissions) for what each permission is for.
+
 ## Authentication types
 
 | Type | Use it when | Notes |

@@ -51,7 +51,8 @@ public static class PageRegistrations
             .AddPage("Export",           (s, a) => new ExportPage(s.GetRequiredService<Func<IWaitStatsRepository, ExportService>>()(a.Repo), Settings(s)), p => p.ViewModel)
             .AddPage("Settings",         (s, a) => new SettingsPage(Settings(s), Monitoring(s), s.GetRequiredService<ChatNotificationService>(),
                                                                     a.ApplyConnections!, a.Route.Settings, a.SettingsMessage,
-                                                                    s.GetRequiredService<CollectorLink>()), p => p.ViewModel);
+                                                                    s.GetRequiredService<CollectorLink>(), s.GetService<PermissionChecker>(),
+                                                                    s.GetRequiredService<IWatchStarter>(), s.GetRequiredService<IClipboard>()), p => p.ViewModel);
 
     // What the pages share, from the container (#166).
     private static ConnectionSettingsService Settings(IServiceProvider s) => s.GetRequiredService<ConnectionSettingsService>();

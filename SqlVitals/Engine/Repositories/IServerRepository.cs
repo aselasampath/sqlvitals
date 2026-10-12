@@ -9,4 +9,10 @@ public interface IServerRepository
 
     Task<bool> IsAzureSqlDatabaseAsync(CancellationToken cancellationToken = default);
     Task<bool> SupportsOnlineIndexRebuildAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Which of the permissions SqlVitals reads with the login holds (#177), for the first-run and
+    /// Settings check. Always asks the server: a GRANT made since is seen.
+    /// </summary>
+    Task<Permissions.PermissionProbe> CheckPermissionsAsync(CancellationToken cancellationToken = default);
 }

@@ -33,6 +33,7 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **dire
 │  FileIo/        FileIoTracker (readings) → FileLatencyList (per file, per volume), thresholds      │
 │  ConfigChecks/  ConfigurationChecks: Pass / Warn, recommended values, fix scripts                  │
 │  Security/      SecurityAudit: Risk / Review / Pass, the risk explained, fix scripts               │
+│  Permissions/   PermissionCheck: what the login lacks, the pages it costs, the GRANT (#177)        │
 │  Home/          ServerTile, TileOrder, ScoreTrend, BlockingNow, OutageTimeline, ThingsToCheck      │
 │  Settings/      ConnectionCard (a card in Settings → Connections), ThresholdsPreview               │
 │  History/       HistoryRecorder → HistoryWriter → IHistoryStore (SQLite)  IHistoryReader           │
@@ -297,6 +298,7 @@ Every query is a `.sql` file under `Engine/Sql/<Area>/`, one folder per reposito
 | File I/O | `sys.dm_io_virtual_file_stats`, `sys.master_files` (`sys.database_files` on Azure SQL Database), `sys.dm_os_volume_stats`, `sys.dm_os_sys_info`; latency worked out by `Engine/FileIo` from the change between readings |
 | Config Checks | `sys.configurations`, `sys.dm_os_schedulers`, `sys.dm_os_nodes`, `sys.dm_os_sys_info`, `tempdb.sys.database_files`, `sys.databases`; `sys.database_scoped_configurations` on Azure SQL Database; checked by `Engine/ConfigChecks` |
 | Security Audit | `sys.server_principals` (sa by `sid = 0x01`), `sys.server_role_members`, `sys.server_permissions` (CONTROL SERVER), `sys.sql_logins`, `sys.databases` (`is_trustworthy_on`, owner), `<db>.sys.database_principals` and `sys.schemas` per database; audited by `Engine/Security` |
+| Permission check | One row: `SERVERPROPERTY('EngineEdition')`, `SUSER_SNAME()`, `USER_NAME()`, `DB_NAME()`, `sys.server_principals` (the login's own row), `HAS_PERMS_BY_NAME` for `VIEW SERVER STATE`, `VIEW ANY DEFINITION` and `SELECT` on nine msdb tables (`VIEW DATABASE STATE` only on Azure SQL Database); `IServerRepository.CheckPermissionsAsync`, judged by `Engine/Permissions/PermissionCheck` (#177) |
 | Agent Jobs | `msdb.dbo.sysjobs`, `sysjobhistory`, `sysjobactivity`, `syssessions`, `sysjobschedules`, `sysschedules`, `syscategories`; `sys.dm_server_services`, `sys.configurations` (`Agent XPs`); worked out by `Engine/AgentJobs` |
 | TempDB | `sys.dm_db_session_space_usage`, `tempdb.sys.database_files` (through `tempdb.sys.sp_executesql`, for `FILEPROPERTY`), `sys.dm_os_performance_counters` |
 | Memory | `sys.dm_exec_query_memory_grants`, `sys.dm_os_memory_clerks`, `sys.dm_os_sys_memory`, `sys.dm_os_process_memory` |

@@ -34,10 +34,25 @@ internal sealed class SettingsContext(
     Ask                       ask,
     Action<SettingsLocation>  open,
     Action<Guid>              openServer,
-    CollectorLink?            collectors = null)
+    CollectorLink?            collectors = null,
+    PermissionChecker?        checkPermissions = null,
+    IWatchStarter?            starter = null,
+    IClipboard?               clipboard = null)
 {
     /// <summary>The collector service (#172); null in tests that don't need it.</summary>
     public CollectorLink? Collectors { get; } = collectors;
+
+    /// <summary>
+    /// Reads a connection's permissions (#177): the first-run flow and a card's Check permissions.
+    /// Null in tests that don't need it: then there is no Check permissions.
+    /// </summary>
+    public PermissionChecker? CheckPermissions { get; } = checkPermissions;
+
+    /// <summary>Start monitoring, as everywhere else: it may ask whether the collector service should (#172).</summary>
+    public IWatchStarter Starter { get; } = starter ?? new DirectWatchStarter(monitoring);
+
+    /// <summary>Copy script; the app's clipboard unless a test gives its own.</summary>
+    public IClipboard Clipboard => clipboard ?? CompositionRoot.Get<IClipboard>();
 
     public ConnectionSettingsService Service    { get; } = service;
     public MonitoringManager         Monitoring { get; } = monitoring;

@@ -24,6 +24,9 @@ public sealed class LifetimeRepository(IWaitStatsRepository inner, Func<Cancella
     public Task<bool> SupportsOnlineIndexRebuildAsync(CancellationToken cancellationToken = default) =>
         Run(c => inner.SupportsOnlineIndexRebuildAsync(cancellationToken: c), cancellationToken);
 
+    public Task<Permissions.PermissionProbe> CheckPermissionsAsync(CancellationToken cancellationToken = default) =>
+        Run(c => inner.CheckPermissionsAsync(cancellationToken: c), cancellationToken);
+
     // ── Waits ─────────────────────────────────────────────────────────────
     public Task<IEnumerable<WaitStatCumulative>> GetCumulativeWaitsAsync(CancellationToken cancellationToken = default) =>
         Run(c => inner.GetCumulativeWaitsAsync(cancellationToken: c), cancellationToken);

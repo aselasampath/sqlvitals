@@ -31,6 +31,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Get alerts in a Teams channel](#get-alerts-in-a-teams-channel)
 - [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
 - [Keep personal data out of the history](#keep-personal-data-out-of-the-history)
+- [Find out which permissions a login is missing](#find-out-which-permissions-a-login-is-missing)
 - [Give a wide grid the whole screen](#give-a-wide-grid-the-whole-screen)
 - [Go straight to a screen, server or setting](#go-straight-to-a-screen-server-or-setting)
 
@@ -319,6 +320,15 @@ For an approver who asks what SqlVitals keeps on disk (from 0.77.0):
 2. Text saved before the change is still there: press **Clear stored query text…** in the same place, and confirm. The collector service on this PC, if there is one, clears its own too; on its PC, `SqlVitals.Collector clear-query-text`.
 3. **Activity log & diagnostics** shows a *Query text cleared* row, with who and when, for the record.
 4. For what the remaining files hold and who can read them, give the approver [Security and Privacy](Security-and-Privacy.md).
+
+## Find out which permissions a login is missing
+
+Before asking a DBA, or when a page says it lacks a permission (from 0.78.0):
+
+1. **⚙️ Settings → Connections**, then **Check permissions** on the connection's card. On a first launch, the *Check* step does the same.
+2. Read the list: each area is **✓ Granted**, **✗ Missing** or *Not needed*, with the pages and checks that need it. Server state is the one that matters most: without it nothing can be monitored.
+3. **Copy script** and send it to the DBA. It only grants reads, for the login as the server knows it.
+4. Once it's run, **Check again**. The pages pick the new permissions up the next time they read. See [Check permissions](Connections.md#check-permissions).
 
 ## Give a wide grid the whole screen
 

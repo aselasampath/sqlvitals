@@ -2,7 +2,7 @@
 
 **⚙️ Settings** holds everything you can configure. Changes apply straight away; no restart is needed.
 
-> **Where:** sidebar → **Settings**, at the foot (opens automatically on first launch); a server's **⋯ → Edit connection…** on All servers opens its page · **Since:** categories and a page per connection from 0.54.0 ([#131](https://github.com/aselasampath/sqlvitals/issues/131))
+> **Where:** sidebar → **Settings**, at the foot (opens automatically on first launch, from 0.78.0 on the [first-run steps](Getting-Started.md#1-connect-check-and-start)); a server's **⋯ → Edit connection…** on All servers opens its page · **Since:** categories and a page per connection from 0.54.0 ([#131](https://github.com/aselasampath/sqlvitals/issues/131))
 
 Settings has its own side menu, next to the app's sidebar, with a category per kind of setting. It opens on **Connections**, or on the category you last used since SqlVitals started.
 
@@ -32,9 +32,9 @@ A card per saved connection, by name as in the breadcrumb's server menu, two a r
 - the server / database;
 - tags for the sign-in type (*SQL login*, *Entra MFA*, *Windows auth*), the monitoring mode (*Monitored*, *Monitor in background*, *Started by you* or *Not monitored*) and *Default thresholds* or *Own thresholds*;
 - its state now: *Score 70 · Critical*, *Unreachable · can't connect*, *Waiting for the first sample* or *No score: not monitored*, coloured like the dot;
-- **Test**, which signs in with the saved details and shows the result on the card for half a minute; and **Edit**, which opens the connection's page.
+- **Check permissions** (from 0.78.0), which signs in and lists the permissions the login lacks, the pages each affects, and the GRANT script that adds them (see [Check permissions](Connections.md#check-permissions)); **Test**, which signs in with the saved details and shows the result on the card for half a minute; and **Edit**, which opens the connection's page.
 
-The active connection has the accent border. **+ New connection** at the top and the **+ Add a connection** card at the end open an empty connection page. With no connections, the category says so and offers **+ New connection**. Every field is explained in [Connections](Connections.md).
+The active connection has the accent border. **+ New connection** at the top and the **+ Add a connection** card at the end open an empty connection page. With no connections, the category says so and offers **+ New connection**; from 0.78.0, when SqlVitals starts with none, Settings opens on the [first-run steps](Getting-Started.md#1-connect-check-and-start) instead, until you skip them. Every field is explained in [Connections](Connections.md).
 
 ### A connection's page
 

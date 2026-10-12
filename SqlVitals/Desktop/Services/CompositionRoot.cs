@@ -90,6 +90,8 @@ public static class CompositionRoot
             .AddSingleton<IConfiguration>(_ => RepositoryFactory.ReadAppSettings())
             .AddSingleton<IRepositoryFactory, RepositoryFactory>()
             .AddSingleton(s => new ConnectionSettingsService(log: s.GetRequiredService<ILogger<ConnectionSettingsService>>()))
+            // The first-run and Settings permission check (#177).
+            .AddSingleton(s => PermissionCheckers.From(s.GetRequiredService<IRepositoryFactory>(), s.GetRequiredService<ConnectionSettingsService>()))
             .AddSingleton(s =>
             {
                 var log = s.GetRequiredService<ILogger<HistoryWriter>>();

@@ -72,5 +72,8 @@
             </Border>
             <ContentControl x:Name="CategoryHost" Focusable="False" />
         </DockPanel>
+
+        <!-- First run (#177): over the whole page while no connection is saved -->
+        <ContentControl x:Name="FlowHost" Grid.ColumnSpan="2" Focusable="False" Visibility="Collapsed" />
     </Grid>
 </Page>

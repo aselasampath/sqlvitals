@@ -258,11 +258,12 @@ public partial class MainWindow : Window
             if (!_isConnectionConfigured)
             {
                 // First run, or the active connection was removed: send the user to Settings
-                // instead of letting every page fail against an empty connection string.
-                await Reported(NavigateTo("Settings", store.Connections.Count == 0
-                    ? "Welcome to SqlVitals! Click + New connection to add your SQL Server, then Save & make active."
-                    : "No server is open. Open one from All servers, or add a new connection.",
-                    new SettingsLocation(SettingsCategory.Connections)), "open the page");
+                // instead of letting every page fail against an empty connection string. With
+                // nothing saved, the first-run flow: connect, check permissions, start (#177).
+                await Reported(store.Connections.Count == 0
+                    ? NavigateTo("Settings", settingsLocation: SettingsLocation.FirstRunFlow)
+                    : NavigateTo("Settings", "No server is open. Open one from All servers, or add a new connection.",
+                                 new SettingsLocation(SettingsCategory.Connections)), "open the page");
                 return;
             }
 

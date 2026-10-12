@@ -66,9 +66,11 @@ See the [feature map](docs/Home.md#feature-map) in the wiki for every screen.
 
    That covers almost every screen. Agent Jobs and Backups also read msdb, the Security Audit needs
    `VIEW ANY DEFINITION` to list logins and users, and the SP Trace's per-call mode needs one more grant:
-   see [Server Impact and Permissions](docs/Server-Impact-and-Permissions.md).
-3. On first launch SqlVitals opens **⚙️ Settings → Connections**. Click **+ New connection**, fill it in and save.
-   [Getting Started](docs/Getting-Started.md) walks through the first look.
+   see [Server Impact and Permissions](docs/Server-Impact-and-Permissions.md). Not sure what your login has?
+   SqlVitals checks it for you in the next step.
+3. On first launch SqlVitals walks you through three steps: **Connect** to your server, **Check** which permissions
+   the login lacks (with the GRANT script to send your DBA), and **Start** monitoring. [Getting Started](docs/Getting-Started.md)
+   walks through the first look.
 
 ## Safe on production servers
 

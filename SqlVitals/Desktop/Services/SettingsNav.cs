@@ -38,6 +38,14 @@ public sealed record SettingsLocation(
     ConnectionTab    Tab           = ConnectionTab.Connection,
     bool             NewConnection = false)
 {
+    /// <summary>
+    /// The first-run flow (#177) over Connections, when no connection is saved yet. Not part of the
+    /// text: Back to it, once a connection is saved, is Connections.
+    /// </summary>
+    public bool FirstRun { get; init; }
+
+    public static SettingsLocation FirstRunFlow { get; } = new(SettingsCategory.Connections) { FirstRun = true };
+
     public static SettingsLocation Connection(Guid id, ConnectionTab tab = ConnectionTab.Connection) =>
         new(SettingsCategory.Connections, id, tab);
 
