@@ -36,6 +36,7 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **dire
 │  Home/          ServerTile, TileOrder, ScoreTrend, BlockingNow, OutageTimeline, ThingsToCheck      │
 │  Settings/      ConnectionCard (a card in Settings → Connections), ThresholdsPreview               │
 │  History/       HistoryRecorder → HistoryWriter → IHistoryStore (SQLite)  IHistoryReader           │
+│                 QueryTextStorage + SqlLiterals: query text kept without literals (#175)            │
 │  Activity/      ActivityEntry (activity log rows), SettingsDiff (a save → rows, no secrets)        │
 │  Service/       CollectorSettings + CollectorSettingsFile: collector.json, DPAPI LocalMachine      │
 │  ChatNotifications/ ChatNotificationService (app and collector, #172), ChannelRouter →             │
@@ -194,7 +195,7 @@ Every Start button goes through `IWatchStarter` (`WatchStarter`). It asks `IDial
 
 ### 5a. The activity log
 
-Every start and stop of monitoring, app start and exit, settings change and history clear becomes an `ActivityEntry`, queued to the history writer as an `ActivityRecord` like samples and alerts, and stored in `activity_log`. Settings changes come from one place: every `ConnectionSettingsService` setter goes through `Update`, which snapshots the store before and after (`SettingsActivity`) and asks `SettingsDiff.Between` for the rows. Secrets are named in `SettingsDiff.SecretNames` and only logged as *changed*. `MonitoringManager.Log` adds the Windows user and PC name. See [Monitoring History Database](Monitoring-History-Database.md#activity_log).
+Every start and stop of monitoring, app start and exit, settings change and history clear becomes an `ActivityEntry`, queued to the history writer as an `ActivityRecord` like samples and alerts, and stored in `activity_log`. Settings changes come from one place: every `ConnectionSettingsService` setter goes through `Update`, which snapshots the store before and after (`SettingsActivity`) and asks `SettingsDiff.Between` for the rows. Secrets are named in `SettingsDiff.SecretNames` and only logged as *changed*. `MonitoringManager.Log` adds the Windows user and PC name. `HistoryStore` writes each row's old value, new value and detail through `Secrets.Redact` (#175), the masking that also guards the log files (`Secrets.ForLog`), message boxes (`WpfDialogService`), Settings status lines and Export for AI. See [Monitoring History Database](Monitoring-History-Database.md#activity_log).
 
 ### 6. Execution plans
 
@@ -483,5 +484,5 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | Microsoft.Extensions.DependencyInjection | 10.0.12 | Desktop | The composition root (#182, #166) |
 | Microsoft.Extensions.Logging | 10.0.12 | Desktop | `ILogger<T>` on the log file (#166) |
 | xunit | 2.9.3 | Tests | Unit tests |
-| Microsoft.SqlServer.TransactSql.ScriptDom | 180.117.0 | Engine.Tests | Parses every query (#111, #168) |
+| Microsoft.SqlServer.TransactSql.ScriptDom | 180.117.0 | Engine, Engine.Tests | Query text kept without literals (#175); the tests parse every query (#111, #168) |
 | Microsoft.CodeAnalysis.CSharp | 5.9.0 | Desktop.Tests | The MVVM guard tests read the app's sources (#181) |

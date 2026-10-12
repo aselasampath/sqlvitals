@@ -64,6 +64,8 @@ internal sealed class SettingsContext(
     public static void ShowStatus(TextBlock target, string message, bool? success)
     {
         target.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
+        // An error's text may echo a secret back (#175).
+        message = Redact(message);
         target.Text = success switch
         {
             true  => "✓  " + message,

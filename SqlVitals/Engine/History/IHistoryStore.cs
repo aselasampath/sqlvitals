@@ -28,6 +28,9 @@ public interface IHistoryStore : IDisposable
     /// <summary>Deletes all history, keeping the activity log.</summary>
     void Clear();
 
+    /// <summary>Deletes the text of every query (#175), keeping the rest of the history.</summary>
+    void ClearQueryTexts();
+
     /// <summary>Whether an error from <see cref="Write"/> means the store is damaged: it is then closed, moved aside and started again.</summary>
     bool IsDamaged(Exception failure);
 

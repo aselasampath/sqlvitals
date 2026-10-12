@@ -3,6 +3,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.History;
@@ -438,7 +439,8 @@ public sealed class HistoryStore(string path) : IHistoryStore
 
     private static void WriteActivity(SqliteConnection conn, SqliteTransaction tx, ActivityEntry e)
     {
-        var detail = e.Detail;
+        // A row says what happened, never a secret (#175): an error's text in the detail may echo one.
+        var detail = e.Detail is null ? null : Secrets.Redact(e.Detail);
 
         // Every run logs App started and, when it exits normally, App exited. A start after
         // another start means the run in between was killed, crashed or lost power.
@@ -465,7 +467,10 @@ public sealed class HistoryStore(string path) : IHistoryStore
                 timeMs       = ToEpochMs(e.TimeUtc),
                 e.Event,
                 connectionId = e.ConnectionId?.ToString("D"),
-                e.ConnectionName, e.Source, e.Setting, e.OldValue, e.NewValue, e.WindowsUser, e.Machine,
+                e.ConnectionName, e.Source, e.Setting,
+                OldValue = e.OldValue is null ? null : Secrets.Redact(e.OldValue),
+                NewValue = e.NewValue is null ? null : Secrets.Redact(e.NewValue),
+                e.WindowsUser, e.Machine,
                 detail,
             },
             tx);
@@ -570,6 +575,26 @@ public sealed class HistoryStore(string path) : IHistoryStore
             tx.Commit();
         }
 
+        Compact(conn);
+    }
+
+    /// <summary>
+    /// Deletes the text of every query, for every connection (#175); the numbers stay, by the
+    /// query's hash. The freed space is overwritten with zeros, so the text can't be read back
+    /// out of the file.
+    /// </summary>
+    public void ClearQueryTexts()
+    {
+        var conn = Connection;
+        conn.Execute("PRAGMA secure_delete = ON;");
+        try
+        {
+            conn.Execute("DELETE FROM query_texts;");
+        }
+        finally
+        {
+            conn.Execute("PRAGMA secure_delete = OFF;");
+        }
         Compact(conn);
     }
 

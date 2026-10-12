@@ -47,7 +47,7 @@ activity_log   (on its own: it copies the connection's name in)
 | `wait_deltas` | `snapshot_id`, `wait_type`, `waiting_tasks`, `wait_time_ms`, `signal_wait_time_ms` | Idle waits excluded |
 | `file_io_deltas` | `snapshot_id`, `database_name`, `file_id`, `file_name`, `file_type`, `reads`, `bytes_read`, `read_stall_ms`, `writes`, `bytes_written`, `write_stall_ms` | Stall ÷ count = average latency |
 | `query_deltas` | `snapshot_id`, `query_hash`, `executions`, `worker_time_us`, `elapsed_time_us`, `logical_reads`, `logical_writes` | Top 20 by CPU per snapshot |
-| `query_texts` | `connection_id`, `query_hash`, `database_name`, `query_text`, `last_seen_utc` | Stored **once** per hash per connection, cut to 4,000 characters |
+| `query_texts` | `connection_id`, `query_hash`, `database_name`, `query_text`, `last_seen_utc` | Stored **once** per hash per connection, cut to 4,000 characters, as *Store query text in history* says (from 0.77.0): without literals by default, in full, or no row at all when Off. See [Privacy](#privacy). |
 | `counter_values` | `snapshot_id`, `counter_name`, `value` | Per-second counters as rates over the interval; others as they stood. Zeros not stored. |
 | `alerts` | `alert_id` (PK, text), `connection_id`, `indicator`, `severity`, `started_utc`, `ended_utc`, `value`, `threshold`, `detail`, `end_reason` | One row per alert, updated in place as it changes. See [below](#alerts). |
 | `activity_log` | `event_id` (PK), `time_utc`, `event`, `connection_id`, `connection_name`, `source`, `setting`, `old_value`, `new_value`, `windows_user`, `machine`, `detail` | One row per event. **Never secrets.** Kept 365 days, and by **Clear history**. See [below](#activity_log). |
@@ -199,17 +199,17 @@ The table behind **⚙️ Settings → [Activity log & diagnostics](Settings.md#
 |---|---|
 | `event_id` | Row id, in the order written |
 | `time_utc` | When it happened: UTC epoch ms on this PC, like the other tables |
-| `event` | `App started`, `App exited`, `Monitoring started`, `Monitoring stopped`, `Setting changed`, `Connection added`, `Connection edited`, `Connection removed` or `History cleared` |
+| `event` | `App started`, `App exited`, `Monitoring started`, `Monitoring stopped`, `Setting changed`, `Connection added`, `Connection edited`, `Connection removed`, `History cleared` or `Query text cleared` (from 0.77.0) |
 | `connection_id` / `connection_name` | The connection it's about; NULL for app-wide events. The name is copied in, so the row still reads correctly after the connection is renamed or removed. |
 | `source` | Who or what caused it: `user: Live Metrics`, `user: sidebar` (from 0.57.0: the server header's ▶ / ■, or a server's screen opened from the sidebar), `user: server menu` (from 0.57.0, the breadcrumb's), `user: Overview` (from 0.59.0: Start or Pause on a server's Overview, or a page opened from it), `user: connection selector` (before 0.57.0), `user: tray menu`, `user: Settings` (or another page, e.g. `user: Backups`), `user: Back or Forward` (from 0.55.0, the active connection switched by going back to another server's screen), `user: quick switcher` (from 0.60.0, another server's screen opened with Ctrl+K), `automatic at startup`, `setting changed`, `connection edited`, `app exit` |
 | `setting` / `old_value` / `new_value` | For a settings change: which setting (or connection field) and its value before and after. For a secret both values are NULL and `detail` is `changed`. |
 | `windows_user` / `machine` | The Windows account (`DOMAIN\user`) and PC name, so a shared or copied file still says who did it |
 | `detail` | Anything else, in plain words, e.g. *The previous run didn't exit cleanly…* on the `App started` after a run that was killed |
 
-- **Never logged:** passwords, connection strings, a connection's *Additional parameters*, access tokens, webhook URLs. Settings changes are found by comparing the whole settings file before and after each save, in one place, against a fixed list of secret names.
+- **Never logged:** passwords, connection strings, a connection's *Additional parameters*, access tokens, webhook URLs. Settings changes are found by comparing the whole settings file before and after each save, in one place, against a fixed list of secret names. From 0.77.0 every row's `old_value`, `new_value` and `detail` also go through the same redaction as the log files as they're written, in case an error message in them echoes a secret back.
 - **A value that didn't change isn't logged.**
 - **Retention:** 365 days, separate from the history's; purged hourly with it.
-- **Clear history** keeps it and adds a `History cleared` row.
+- **Clear history** keeps it and adds a `History cleared` row; **Clear stored query text** adds a `Query text cleared` row.
 - **Written like everything else:** through the writer's queue, never blocking the app. A row that can't be saved (the file can't be opened or written, or the queue overflowed) goes to the app log instead.
 - A **damaged** `history.db` is renamed and a new one started, so the log starts again with it.
 
@@ -220,6 +220,7 @@ The table behind **⚙️ Settings → [Activity log & diagnostics](Settings.md#
 - **The first sample** of each session isn't stored: its rates are zero, with nothing to compare against. Its health score is: the health gauges don't need a previous sample.
 - **Retention:** older rows are purged **hourly**, and straight away when retention is shortened. `auto_vacuum = INCREMENTAL` plus `incremental_vacuum` and a WAL checkpoint shrink the file as it goes.
 - **Clear history** runs on the writer's own thread, including records still queued, so it's safe while monitoring continues and while another SqlVitals window uses the same file. It empties every table except `activity_log`.
+- **Clear stored query text** (from 0.77.0) runs the same way and empties only `query_texts`, with SQLite's `secure_delete` on, so the deleted text is overwritten with zeros rather than left in free pages, then shrinks the file and empties the WAL. Each recorder then reads the texts of its queries again as they show up, kept as the setting says.
 - **Settings:** `journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 5000`.
 - **Corruption:** a damaged file is renamed `history.corrupt-<timestamp>.db` and a new one is started.
 - **Versioning:** a newer SqlVitals upgrades an older file in place and keeps its data. An older SqlVitals finding a **newer** file turns history off rather than changing it.
@@ -231,7 +232,8 @@ The table behind **⚙️ Settings → [Activity log & diagnostics](Settings.md#
 |---|---|
 | `HistoryStore.cs` | Schema, writes, purge, corrupt-file recovery |
 | `HistoryWriter.cs` | Bounded queue + writer thread shared by all connections |
-| `HistoryRecorder.cs` | Per connection: queues samples and health scores, takes detail snapshots |
+| `HistoryRecorder.cs` | Per connection: queues samples and health scores, takes detail snapshots, keeps query text as `QueryTexts` says |
+| `QueryTextStorage.cs`, `SqlLiterals.cs` | The query text choices (#175); a statement without its literals, by ScriptDom's T-SQL lexer |
 | `HistoryDetailTracker.cs` | Cumulative totals → per-interval deltas |
 | `HistoryReader.cs` | Read-only: ranges for trend pages, averaged into buckets |
 | `HistoryRange.cs`, `HistoryGaps.cs` | Range choices and bucket sizes; where a line breaks |
@@ -242,4 +244,12 @@ The table behind **⚙️ Settings → [Activity log & diagnostics](Settings.md#
 
 ## Privacy
 
-`query_texts` can contain **literal values** from your queries and **isn't encrypted**. Treat the file like the app log: don't share it without checking, and delete it with **Settings → Monitoring & history → Clear history** if needed. See [Security and Privacy](Security-and-Privacy.md).
+The file **isn't encrypted**. From 0.77.0 (#175) **Settings → Monitoring & history → Store query text in history** sets what `query_texts` holds:
+
+| Choice | `query_text` of `SELECT * FROM dbo.Users WHERE Email = 'ann@example.com'` |
+|---|---|
+| **Without literals** (new installations) | `SELECT * FROM dbo.Users WHERE Email = ?` |
+| **Full** (installations from before 0.77.0, until their user chooses; asked once) | As above, with the email address |
+| **Off** | No row: the query's numbers in `query_deltas` are kept by `query_hash` alone |
+
+A change applies to text read from then on; rows already there stay until **Clear stored query text…**. Even without literals, treat the file like the app log: it still names servers, databases, tables and columns. See [Security and Privacy](Security-and-Privacy.md#query-text-in-the-history).

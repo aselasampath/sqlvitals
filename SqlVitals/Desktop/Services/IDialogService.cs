@@ -42,6 +42,12 @@ public interface IDialogService
     /// </summary>
     WatchAnswer? AskWhereToWatch(string serverName, bool serviceRunning);
 
+    /// <summary>
+    /// How the query text should be kept in the history (#175), asked once of an installation that
+    /// kept it in full before the choice existed. Null when closed without a choice.
+    /// </summary>
+    Engine.History.QueryTextStorage? AskQueryTextStorage();
+
     /// <summary>One Query Store query (#111): its text, a metric per interval per plan, and its plans.</summary>
     void ShowQueryStoreQuery(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status);
 }

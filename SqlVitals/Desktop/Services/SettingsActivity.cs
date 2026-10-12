@@ -1,6 +1,7 @@
 using System.Globalization;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Services;
@@ -13,6 +14,9 @@ namespace SqlVitals.Desktop.Services;
 /// </summary>
 internal static class SettingsActivity
 {
+    /// <summary>The query text setting's name (#175): a change of it applies to the collector service too.</summary>
+    public const string QueryTextSetting = "Store query text in history";
+
     public static SettingsSnapshot Snapshot(ConnectionStore store)
     {
         var culture = CultureInfo.InvariantCulture;
@@ -22,6 +26,7 @@ internal static class SettingsActivity
             new("Command timeout", $"{store.CommandTimeoutSeconds} s"),
             new("History snapshot interval", $"{store.HistoryIntervalMinutes} min"),
             new("History retention", $"{store.HistoryRetentionDays} days"),
+            new(QueryTextSetting, QueryTextStorages.Describe(store.QueryTextStorage)),
             new("Alert samples", store.AlertSamples.ToString(culture)),
             new("Keep running in the notification area", OnOff(store.KeepRunningInTray)),
             new("Query regression threshold", string.Format(culture, "{0:0.##}%", store.RegressionThresholdPct)),

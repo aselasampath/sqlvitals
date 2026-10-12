@@ -66,6 +66,7 @@ public sealed class HistoryWriterTests : IDisposable
             Written.Clear();
             events.Enqueue("cleared");
         }
+        public void ClearQueryTexts() => events.Enqueue("query texts cleared");
         public bool IsDamaged(Exception failure) => failure is InvalidDataException;
         public void MoveAside() => events.Enqueue("moved aside");
         public void Dispose() => events.Enqueue("closed");

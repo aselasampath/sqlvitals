@@ -29,6 +29,7 @@ public sealed class MonitoringManager : IDisposable
 
     // From Settings; applied to every recorder, including ones created later.
     private TimeSpan _detailInterval = TimeSpan.FromMinutes(HistorySettings.DefaultIntervalMinutes);
+    private QueryTextStorage _queryTexts = QueryTextStorages.Default;
 
     // Interval chosen on the Live Metrics page, kept when a session is stopped, or recreated
     // because its connection was edited.
@@ -239,6 +240,14 @@ public sealed class MonitoringManager : IDisposable
         _history.ClearAsync(Record(new ActivityEntry(DateTime.UtcNow, ActivityEvents.HistoryCleared, null, null, source)));
 
     /// <summary>
+    /// Deletes the text of every query from the history (#175), and logs that it did; the numbers
+    /// stay. Texts are read again as the queries show up, kept as the setting says. Fails with the
+    /// reason when it couldn't.
+    /// </summary>
+    public Task ClearQueryTextAsync(string source) =>
+        _history.ClearQueryTextsAsync(Record(new ActivityEntry(DateTime.UtcNow, ActivityEvents.QueryTextCleared, null, null, source)));
+
+    /// <summary>
     /// Adds a row to the activity log, with this Windows account and PC. Never blocks: it goes
     /// through the history writer's queue, and to the app log when it can't be saved.
     /// </summary>
@@ -260,17 +269,22 @@ public sealed class MonitoringManager : IDisposable
         (e.Detail is null || e.Setting is not null ? "" : $" · {e.Detail}");
 
     /// <summary>
-    /// Applies the history snapshot interval and retention to the writer and every running
-    /// session. A shorter retention deletes the older history straight away.
+    /// Applies the history snapshot interval, retention and query text storage (#175) to the
+    /// writer and every running session. A shorter retention deletes the older history straight
+    /// away; the query text setting applies to texts read from then on.
     /// </summary>
     public void ApplyHistorySettings(ConnectionStore store)
     {
         _detailInterval    = TimeSpan.FromMinutes(store.HistoryIntervalMinutes);
+        _queryTexts        = store.QueryTextStorage;
         _history.Retention = TimeSpan.FromDays(store.HistoryRetentionDays);
         foreach (var session in _sessions.Values)
         {
             if (session.History is { } recorder)
+            {
                 recorder.DetailInterval = _detailInterval;
+                recorder.QueryTexts     = _queryTexts;
+            }
             session.ChecksInterval = _detailInterval;
         }
     }
@@ -495,6 +509,7 @@ public sealed class MonitoringManager : IDisposable
             repo, _history, _log.Error)
         {
             DetailInterval = _detailInterval,
+            QueryTexts     = _queryTexts,
         };
         var session = new MonitoringSession(
             id, repo, RepositoryFactory.Fingerprint(conn, store.CommandTimeoutSeconds),

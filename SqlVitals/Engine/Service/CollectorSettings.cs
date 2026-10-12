@@ -210,6 +210,25 @@ public sealed class CollectorSettings
     /// <summary>Days of history kept; one of <see cref="HistorySettings.RetentionChoicesDays"/>.</summary>
     public int HistoryRetentionDays { get; set; } = HistorySettings.DefaultRetentionDays;
 
+    /// <summary>
+    /// How the query text is kept in the service's history (#175), as the file has it. Missing from
+    /// a file written before #175, which keeps <see cref="QueryTextStorage.Full"/> until
+    /// someone chooses; a new file starts with <see cref="QueryTextStorages.Default"/>. The app sets
+    /// it when it hands a server over, and when its own setting changes.
+    /// </summary>
+    public QueryTextStorage? QueryText { get; set; }
+
+    /// <summary>How the query text is kept: <see cref="QueryText"/>, or in full for a file from before #175.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public QueryTextStorage QueryTexts => QueryText ?? QueryTextStorage.Full;
+
+    /// <summary>
+    /// When someone last asked for the stored query text to be cleared (#175): with the app's
+    /// Clear stored query text, or the clear-query-text command. The service clears its history's
+    /// once for each request, and says so in its activity log.
+    /// </summary>
+    public DateTime? QueryTextClearRequestedUtc { get; set; }
+
     /// <summary>Samples in a row that start and end an alert; one of <see cref="AlertSettings.SampleChoices"/>.</summary>
     public int AlertSamples { get; set; } = AlertSettings.DefaultSamples;
 

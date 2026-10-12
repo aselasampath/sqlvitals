@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Text;
+using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Repositories;
@@ -73,7 +74,8 @@ public class ExportService(IWaitStatsRepository repo)
         }
 
         WriteFooter(sb);
-        await File.WriteAllTextAsync(filePath, sb.ToString(), Encoding.UTF8);
+        // Pasted into an AI chat: no password, token or webhook URL a query's text or a message carries (#175).
+        await File.WriteAllTextAsync(filePath, Secrets.Redact(sb.ToString()), Encoding.UTF8);
     }
 
     // ── Header / Footer ────────────────────────────────────────────────

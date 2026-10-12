@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json.Nodes;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
+using SqlVitals.Engine.History;
 
 namespace SqlVitals.Desktop.Tests;
 
@@ -195,6 +196,38 @@ public sealed class ConnectionSettingsServiceTests : IDisposable
     }
 
     // As a settings.dat written before #115: the same file without the new value.
+    [Fact]
+    public void QueryText_IsKeptWithoutLiterals_OnANewInstallation_WithNothingToAsk()
+    {
+        var store = Create().Load();
+
+        Assert.Equal((QueryTextStorage.WithoutLiterals, true), (store.QueryTextStorage, store.QueryTextChoiceAsked));
+    }
+
+    [Fact]
+    public void QueryText_FromBefore175_StaysFull_AndIsAskedOnce_EvenAfterOtherSaves()
+    {
+        Create().Upsert(Connection());
+        var json = JsonNode.Parse(File.ReadAllText(SettingsFile))!.AsObject();
+        Assert.True(json.Remove("QueryTextStorage"));
+        Assert.True(json.Remove("QueryTextChoiceAsked"));
+        File.WriteAllText(SettingsFile, json.ToJsonString());
+
+        Create().SetKeepRunningInTray(false);   // any save before the user is asked
+        var store = Create().Load();
+        Assert.Equal((QueryTextStorage.Full, false), (store.QueryTextStorage, store.QueryTextChoiceAsked));
+
+        var raised = new List<ActivityEntry>();
+        var service = Create();
+        service.Changed += raised.AddRange;
+        service.SetQueryTextStorage(QueryTextStorage.Off, ActivitySources.Settings);
+
+        store = Create().Load();
+        Assert.Equal((QueryTextStorage.Off, true), (store.QueryTextStorage, store.QueryTextChoiceAsked));
+        var row = Assert.Single(raised);
+        Assert.Equal((SettingsActivity.QueryTextSetting, "Full", "Off (hash only)"), (row.Setting, row.OldValue, row.NewValue));
+    }
+
     private void RemoveSetting()
     {
         var json = JsonNode.Parse(File.ReadAllText(SettingsFile))!.AsObject();

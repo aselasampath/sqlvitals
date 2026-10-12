@@ -378,6 +378,31 @@ public sealed class HistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void ClearQueryTexts_DeletesEveryText_KeepsTheNumbers_AndLeavesNoTraceInTheFile()
+    {
+        const string secret = "ann.secret@example.com";
+        using (var store = new HistoryStore(DbPath))
+        {
+            store.Open();
+            store.Write([Detail(T0, new QueryTextInfo("0xAB", "Sales", $"SELECT * FROM dbo.Users WHERE Email = '{secret}'"))]);
+            store.Purge(T0.AddYears(-1));   // into the file itself, out of the WAL
+
+            store.ClearQueryTexts();
+        }
+
+        using (var raw = Raw())
+        {
+            Assert.Equal(0L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM query_texts;"));
+            Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM query_deltas;"));
+            Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM detail_snapshots;"));
+        }
+        // Overwritten, not just unlinked: the bytes can't be read back out of the file.
+        SqliteConnection.ClearAllPools();
+        foreach (var file in new[] { DbPath, DbPath + "-wal" }.Where(File.Exists))
+            Assert.DoesNotContain(secret, System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(file)), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Clear_LeavesTheStoreReadyForNewRecords()
     {
         using var store = new HistoryStore(DbPath);

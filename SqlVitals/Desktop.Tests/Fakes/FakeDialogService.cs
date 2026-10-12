@@ -40,6 +40,15 @@ internal sealed class FakeDialogService : IDialogService
         return WatchAnswer;
     }
 
+    /// <summary>What <see cref="AskQueryTextStorage"/> answers; null is the window closed.</summary>
+    public Engine.History.QueryTextStorage? QueryTextAnswer { get; set; }
+
+    public Engine.History.QueryTextStorage? AskQueryTextStorage()
+    {
+        Shown.Add("AskQueryTextStorage");
+        return QueryTextAnswer;
+    }
+
     public void Warn(string message, string caption) => Shown.Add($"Warn: {caption}: {message}");
 
     public void Error(string message, string caption) => Shown.Add($"Error: {caption}: {message}");

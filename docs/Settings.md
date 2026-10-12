@@ -9,7 +9,7 @@ Settings has its own side menu, next to the app's sidebar, with a category per k
 | Group | Category | What you set | Saved |
 |---|---|---|---|
 | Servers | [Connections](#connections) (with how many) | Saved servers: how to reach them, their monitoring and alerts, their own thresholds | With the page's **Save** |
-| Monitoring | [Monitoring & history](#monitoring--history) | Start monitoring automatically, command timeout, snapshot interval, retention, clearing the history | As you change them |
+| Monitoring | [Monitoring & history](#monitoring--history) | Start monitoring automatically, command timeout, snapshot interval, retention, how query text is kept, clearing the history or its query text | As you change them |
 | Monitoring | [Health thresholds](#health-thresholds) | The default thresholds: when the health dot turns 🟠 or 🔴, and so what lowers the health score | With **Save** |
 | Notifications | [Alerts & chat](#alerts--chat) | How long a breach lasts before it's an alert, Windows notifications, Slack and Teams channels | As you change them (a channel with its own **Save channel**) |
 | Notifications | [Notification area](#notification-area) | Whether minimizing or closing the window keeps SqlVitals running | As you change it |
@@ -77,10 +77,13 @@ While you type, **Now** and **Points** grade the connection's latest sample on w
 | **Command timeout** | 30 s | The longest any single diagnostic query may run before it's cancelled, on **every** connection, monitoring included. Raise it if screens such as Index Health or Implicit Conversions time out on a very large server. Saved when you leave the box or press **Enter**; before 0.54.0 it was saved with a connection. It overrides `QuerySettings:CommandTimeoutSeconds` in `appsettings.json`. |
 | **Snapshot every** | 5 minutes (1, 5, 15, 30) | How often waits per type, file I/O, memory, top queries and Perfmon counters are saved. Shorter = more detail, more load on the server and more disk. Live Metrics samples are saved at their own interval regardless. |
 | **Keep history for** | 14 days (7, 14, 30, 90) | Older history is deleted automatically. **Shortening** it asks for confirmation, then deletes straight away. Use at least 14 days for week-over-week baselines. |
+| **Store query text in history** (from 0.77.0) | **Without literals** for a new installation; **Full** for one upgraded from before 0.77.0, which is asked once | How the busiest queries' text is saved with their numbers. **Without literals**: every value replaced with `?` (`WHERE Email = ?`), so names, emails or passwords in a statement aren't saved. **Full**: as SQL Server ran it. **Off**: no text, only each query's hash; CPU, reads and executions are saved either way. Applies to text read from then on, here and in the [collector service](Collector-Service.md) when it watches one of your servers; text already saved stays until **Clear stored query text…**. See [Security and Privacy](Security-and-Privacy.md#query-text-in-the-history). |
 
 Either way you can start and stop any connection with **▶ / ■** in the sidebar's server header, on All servers, on a server's Overview or **💓 Live charts**, or from the notification-area icon's menu, until SqlVitals exits. See [Starting and stopping monitoring](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring). **Alerts are only raised for connections being monitored.** The category also shows the **history file's size** on disk, updated while it's open.
 
 **Clear history…**, in its own card, deletes all history, alerts included, for **every** connection, after a confirmation. Monitoring carries on, and new history is saved from the next sample. This can't be undone. The [activity log](#activity-log) is **kept**, and records that history was cleared, when and by whom.
+
+**Clear stored query text…** (from 0.77.0), in the same card, deletes only the text of every saved query, for every connection, after a confirmation; the numbers stay, and the freed space in the file is overwritten. Text is saved again as **Store query text in history** says. When the collector service is installed on this PC it is asked to clear its own history's text too. The activity log records it as **Query text cleared**.
 
 See [History, Time Ranges and Baselines](History-Time-Ranges-and-Baselines.md) and the technical [Monitoring History Database](Monitoring-History-Database.md).
 
@@ -162,11 +165,12 @@ A record of what was done, kept in the history file (`history.db`, table `activi
 | **Setting changed** | Every setting on this page (and the ones saved on other pages: Backups RPO, File I/O, Processes, Query Store charts, Query Regressions), with the old and new value. The theme too. Not which sidebar groups you collapse or expand. |
 | **Connection added** / **edited** / **removed** | Edited: one row per field that changed, with its old and new value |
 | **History cleared** | **🗑 Clear history** |
+| **Query text cleared** | **Clear stored query text…** (from 0.77.0); the collector service's own row says which request it cleared for |
 | **Chat channel added** / **edited** / **removed** | From 0.52.0. The channel's name is in *Detail* (added, removed) or *Setting* (edited, e.g. *DBA team: On*). A new webhook URL only shows as *changed*. |
 
 Each row also has the **Windows user** and **PC name**, so a shared or copied history file still says who did it.
 
-- **Never logged:** passwords, connection strings (the connection's *Additional parameters* too), access tokens, webhook URLs or any other secret. For those the row only says *changed*.
+- **Never logged:** passwords, connection strings (the connection's *Additional parameters* too), access tokens, webhook URLs or any other secret. For those the row only says *changed*. From 0.77.0 every value and detail is also masked as it's written, in case an error message in it echoes one back.
 - A value that didn't change isn't logged: saving without changing anything writes nothing.
 - Logging never holds up the app or monitoring: rows are saved in the background with the rest of the history. If the file can't be written, the row goes to the [app log](#diagnostics) instead.
 - **Kept for 365 days**, whatever **Keep history for** says; older rows are deleted with the rest of the old history. A damaged history file is renamed and a new one started, and the log starts again with it.

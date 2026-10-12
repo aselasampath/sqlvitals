@@ -205,6 +205,42 @@ public sealed class CollectorLink : IDisposable
         }).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Gives the service the app's choice of how query text is kept (#175), when it watches one of
+    /// this app's servers and keeps it another way. A service without the app's servers keeps its own.
+    /// </summary>
+    public async Task ApplyQueryTextStorageAsync(Engine.History.QueryTextStorage storage, IReadOnlyCollection<Guid> appConnections)
+    {
+        await Task.Run(() =>
+        {
+            if (!Directory.Exists(_control.DataDirectory))
+                return;
+            var settings = _control.Read().Settings;
+            if (settings.QueryText == storage || !settings.Servers.Any(s => appConnections.Contains(s.Id)))
+                return;
+            settings.QueryText = storage;
+            _control.Save(settings);
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Asks the service on this PC, when there is one, to clear the query text in its history too
+    /// (#175): it owns that file, and does it within a settings check, or when it next starts.
+    /// False when it isn't installed, even with its folder left behind.
+    /// </summary>
+    public async Task<bool> RequestQueryTextClearAsync()
+    {
+        return await Task.Run(() =>
+        {
+            if (_control.State == CollectorServiceState.NotInstalled || !Directory.Exists(_control.DataDirectory))
+                return false;
+            var settings = _control.Read().Settings;
+            settings.QueryTextClearRequestedUtc = DateTime.UtcNow;
+            _control.Save(settings);
+            return true;
+        }).ConfigureAwait(false);
+    }
+
     /// <summary>Takes a connection back from the service: the app watches it again as its settings say.</summary>
     public async Task TakeBackAsync(Guid connectionId)
     {

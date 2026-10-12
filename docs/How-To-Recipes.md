@@ -30,6 +30,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Keep watching when my PC is off](#keep-watching-when-my-pc-is-off)
 - [Get alerts in a Teams channel](#get-alerts-in-a-teams-channel)
 - [Find out why there's a gap in the history](#find-out-why-theres-a-gap-in-the-history)
+- [Keep personal data out of the history](#keep-personal-data-out-of-the-history)
 - [Give a wide grid the whole screen](#give-a-wide-grid-the-whole-screen)
 - [Go straight to a screen, server or setting](#go-straight-to-a-screen-server-or-setting)
 
@@ -309,6 +310,15 @@ From then on, an alert that starts or turns critical is posted to the channel wi
 5. A *History cleared* row means the history before it was deleted on purpose.
 
 The same, as a query on the history file: [Monitoring History Database → Example queries](Monitoring-History-Database.md#example-queries).
+
+## Keep personal data out of the history
+
+For an approver who asks what SqlVitals keeps on disk (from 0.77.0):
+
+1. **⚙️ Settings → Monitoring & history → Store query text in history**: **Without literals** keeps each query's shape with its values replaced by `?`; **Off** keeps no text at all. CPU, reads and executions are kept either way.
+2. Text saved before the change is still there: press **Clear stored query text…** in the same place, and confirm. The collector service on this PC, if there is one, clears its own too; on its PC, `SqlVitals.Collector clear-query-text`.
+3. **Activity log & diagnostics** shows a *Query text cleared* row, with who and when, for the record.
+4. For what the remaining files hold and who can read them, give the approver [Security and Privacy](Security-and-Privacy.md).
 
 ## Give a wide grid the whole screen
 

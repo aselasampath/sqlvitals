@@ -124,8 +124,62 @@ public class HistoryRecorderTests
         var record = Assert.IsType<DetailRecord>(Assert.Single(_sink.Records));
         Assert.Equal(_time.GetUtcNow().UtcDateTime, record.CapturedUtc);
         Assert.Equal(new QueryDelta("0xA", 5, 3_000, 3_000, 0, 0), Assert.Single(record.Detail.TopQueries));
-        Assert.Equal("text of 0xA", Assert.Single(record.QueryTexts).QueryText);
+        Assert.Equal("SELECT * FROM dbo.Orders WHERE Code = ?", Assert.Single(record.QueryTexts).QueryText);
         Assert.Equal(new[] { "0xA" }, Assert.Single(_repo.TextCalls));
+    }
+
+    // What the fake server answers for a query's text: with a literal, which is personal data.
+    private static string Text(string hash) => $"SELECT * FROM dbo.Orders WHERE Code = '{hash}'";
+
+    // The baseline, then one snapshot of 0xA: its text, kept as the recorder's setting says.
+    private async Task<IReadOnlyList<QueryTextInfo>> TextsKeptAsync(QueryTextStorage storage)
+    {
+        var recorder = Create();
+        recorder.QueryTexts = storage;
+        foreach (var (minutes, execs) in new[] { (0, 10L), (5, 15L) })
+        {
+            _repo.Snapshots.Enqueue(Snap(ServerT0.AddMinutes(minutes), Query("0xA", execs, execs * 100)));
+            await recorder.CollectDetailIfDueAsync();
+            _time.Advance(DefaultInterval);
+        }
+        return Assert.IsType<DetailRecord>(Assert.Single(_sink.Records)).QueryTexts;
+    }
+
+    [Fact]
+    public void QueryTexts_AreKeptWithoutLiterals_UnlessSetOtherwise() =>
+        Assert.Equal(QueryTextStorage.WithoutLiterals, Create().QueryTexts);
+
+    [Fact]
+    public async Task QueryTexts_Full_KeepsTheTextAsTheServerHasIt() =>
+        Assert.Equal(Text("0xA"), Assert.Single(await TextsKeptAsync(QueryTextStorage.Full)).QueryText);
+
+    [Fact]
+    public async Task QueryTexts_Off_ReadsNoTextAtAll_ButKeepsTheNumbers()
+    {
+        Assert.Empty(await TextsKeptAsync(QueryTextStorage.Off));
+
+        Assert.Empty(_repo.TextCalls);
+        Assert.Single(((DetailRecord)_sink.Records[0]).Detail.TopQueries);
+    }
+
+    [Fact]
+    public async Task QueryTexts_ChangedWhileRunning_ApplyToTextsReadFromThenOn()
+    {
+        var recorder = Create();
+        recorder.QueryTexts = QueryTextStorage.Off;
+        foreach (var (minutes, hash) in new[] { (0, "0xA"), (5, "0xA"), (10, "0xB") })
+        {
+            if (minutes == 10)
+                recorder.QueryTexts = QueryTextStorage.Full;
+            _repo.Snapshots.Enqueue(Snap(ServerT0.AddMinutes(minutes), Query("0xA", 10 + minutes, minutes * 100 + 1), Query("0xB", 10 + minutes, minutes * 100)));
+            await recorder.CollectDetailIfDueAsync();
+            _time.Advance(DefaultInterval);
+        }
+
+        // Off read none, so on Full both are read: the text of 0xA wasn't kept before.
+        Assert.Empty(((DetailRecord)_sink.Records[0]).QueryTexts);
+        Assert.Equal(new[] { Text("0xA"), Text("0xB") },
+                     ((DetailRecord)_sink.Records[1]).QueryTexts.Select(t => t.QueryText).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -238,7 +292,7 @@ public class HistoryRecorderTests
         }
 
         Assert.Equal(2, _repo.TextCalls.Count);
-        Assert.Equal("text of 0xA", Assert.Single(((DetailRecord)_sink.Records[1]).QueryTexts).QueryText);
+        Assert.Equal("SELECT * FROM dbo.Orders WHERE Code = ?", Assert.Single(((DetailRecord)_sink.Records[1]).QueryTexts).QueryText);
     }
 
     private sealed class FakeRepository : IHistoryRepository
@@ -267,7 +321,7 @@ public class HistoryRecorderTests
             TextCalls.Add(queryHashes.ToArray());
             if (TextFailure is not null) throw TextFailure;
             Assert.Equal(HistoryRecorder.MaxQueryTextLength, maxLength);
-            return queryHashes.Select(h => new QueryTextInfo(h, "Sales", $"text of {h}")).ToList();
+            return queryHashes.Select(h => new QueryTextInfo(h, "Sales", Text(h))).ToList();
         }
     }
 

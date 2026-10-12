@@ -2,7 +2,7 @@
              x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             FontFamily="Segoe UI">
+             x:Name="Root" FontFamily="Segoe UI">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -80,6 +80,19 @@
                         </DockPanel>
                     </Border>
                     <Border Style="{StaticResource SettingRow}">
+                        <DockPanel>
+                            <ComboBox x:Name="CmbQueryText" DockPanel.Dock="Right" Width="160" VerticalAlignment="Center"
+                                      AutomationProperties.Name="Store query text in history" SelectionChanged="QueryText_Changed" />
+                            <StackPanel>
+                                <TextBlock Text="Store query text in history" Style="{StaticResource RowLabel}" />
+                                <TextBlock Style="{StaticResource RowHelp}"
+                                           Text="The text of the busiest queries is saved with their numbers, and the history file isn't encrypted. Without literals replaces every value with ?, so names, emails or passwords in a statement aren't saved. Off saves no text, only each query's hash; CPU, reads and executions are saved either way." />
+                                <TextBlock Style="{StaticResource RowHelp}" Margin="0,6,24,0"
+                                           Text="A change applies to text read from now on. Text already saved stays as it is until you press Clear stored query text below." />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingRow}">
                         <StackPanel>
                             <TextBlock x:Name="TxtHistorySize" Style="{StaticResource RowLabel}" FontWeight="Normal" FontSize="12" />
                             <TextBlock x:Name="TxtHistoryPath" Style="{StaticResource RowHelp}" />
@@ -103,6 +116,17 @@
                         </StackPanel>
                     </DockPanel>
                     <TextBlock x:Name="TxtClearStatus" Style="{StaticResource Status}" />
+                    <DockPanel Margin="0,16,0,0">
+                        <Button x:Name="BtnClearQueryText" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                Style="{StaticResource SecondaryButton}" BorderBrush="{DynamicResource Danger}" Foreground="{DynamicResource Danger}"
+                                Command="{Binding ClearQueryText, ElementName=Root}" Content="Clear stored query text…" />
+                        <StackPanel>
+                            <TextBlock Text="Clear stored query text" Style="{StaticResource RowLabel}" />
+                            <TextBlock Style="{StaticResource RowHelp}"
+                                       Text="Delete the text of every query saved in the history, for every connection, and in the collector service's history on this PC. The numbers are kept, and text is saved again as Store query text in history says. This cannot be undone." />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock x:Name="TxtClearQueryTextStatus" Style="{StaticResource Status}" />
                 </StackPanel>
             </Border>
         </StackPanel>

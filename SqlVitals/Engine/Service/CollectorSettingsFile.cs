@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.History;
 
 namespace SqlVitals.Engine.Service;
 
@@ -79,7 +80,7 @@ public static class CollectorSettingsFile
     public static CollectorSettingsRead Load(string path, ISecretProtector protector)
     {
         if (!File.Exists(path))
-            return new CollectorSettingsRead(new CollectorSettings(), []);
+            return new CollectorSettingsRead(new CollectorSettings { QueryText = QueryTextStorages.Default }, []);
 
         CollectorSettings settings;
         try
@@ -174,6 +175,8 @@ public static class CollectorSettingsFile
             CommandTimeoutSeconds  = settings.CommandTimeoutSeconds,
             HistoryIntervalMinutes = settings.HistoryIntervalMinutes,
             HistoryRetentionDays   = settings.HistoryRetentionDays,
+            QueryText              = settings.QueryText,
+            QueryTextClearRequestedUtc = settings.QueryTextClearRequestedUtc,
             AlertSamples           = settings.AlertSamples,
             HealthThresholds       = settings.HealthThresholds,
             BackupFullMaxAgeMinutes = settings.BackupFullMaxAgeMinutes,
