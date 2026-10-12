@@ -32,7 +32,7 @@ public sealed class QuickSwitcherTests
     [InlineData("tempdb", "TempDB", QuickSwitcher.Exact, 0, 6)]
     [InlineData("TEMP", "TempDB", QuickSwitcher.Prefix, 0, 4)]
     [InlineData("stats", "Stale Stats", QuickSwitcher.WordPrefix, 6, 5)]
-    [InlineData("conv", "Implicit Conv.", QuickSwitcher.WordPrefix, 9, 4)]
+    [InlineData("cache", "Plan Cache Health", QuickSwitcher.WordPrefix, 5, 5)]
     [InlineData("db", "TempDB", QuickSwitcher.Contains, 4, 2)]
     public void AName_MatchesWhole_AtItsStart_AtAWordsStart_OrAnywhere_WithoutRegardToCase(string query, string name, int score, int start, int length) =>
         Assert.Equal((score, start, length), QuickSwitcher.Match(query, name, words: null));
@@ -81,11 +81,10 @@ public sealed class QuickSwitcherTests
         Assert.Equal("TempDB", on.Items[0].Text);
         Assert.Equal((0, 4), (on.Items[0].MatchStart, on.Items[0].MatchLength));
 
-        // "waits": Active Waits and Top Waits by a word's start, in the menu's order, before Wait Trend by its group's name.
-        var waits = Section(Search("waits"), SwitcherGroup.OnServer).Items.Select(i => i.Text).ToList();
-        Assert.Equal(["Active Waits", "Top Waits"], waits.Take(2));
-        Assert.Contains("Wait Trend", waits);
-        Assert.True(waits.IndexOf("Wait Trend") > 1);
+        // "query": Query Store and Query Regressions by their start, in the menu's order, before
+        // pages whose tooltip says query.
+        var query = Section(Search("query"), SwitcherGroup.OnServer).Items.Select(i => i.Text).ToList();
+        Assert.Equal(["Query Store", "Query Regressions"], query.Take(2));
 
         // The whole name beats its start: "Overview" is Overview, then Live charts, in the Overview group.
         var overview = Section(Search("overview"), SwitcherGroup.OnServer).Items;
@@ -96,16 +95,31 @@ public sealed class QuickSwitcherTests
     [Fact]
     public void OnATie_TheRouteOpenedMostRecently_ComesFirst_ThenTheMenusOrder()
     {
-        // "waits" starts a word of both: Active Waits before Top Waits in the menu…
-        Assert.Equal("Active Waits", Section(Search("waits"), SwitcherGroup.OnServer).Items[0].Text);
+        // "query" starts both: Query Store before Query Regressions in the menu…
+        Assert.Equal("Query Store", Section(Search("query"), SwitcherGroup.OnServer).Items[0].Text);
 
-        // …unless Top Waits was opened more recently.
-        var recent = OnProd01(new Route("TopWaits", ConnectionId: Prod01.Id), new Route("ActiveWaits", ConnectionId: Prod01.Id));
-        Assert.Equal("Top Waits", Section(Search("waits", recent), SwitcherGroup.OnServer).Items[0].Text);
+        // …unless Query Regressions was opened more recently.
+        var recent = OnProd01(new Route("QueryRegressions", ConnectionId: Prod01.Id), new Route("QueryStore", ConnectionId: Prod01.Id));
+        Assert.Equal("Query Regressions", Section(Search("query", recent), SwitcherGroup.OnServer).Items[0].Text);
 
         // A better match still wins over a recent one.
-        var recentTop = OnProd01(new Route("TopWaits", ConnectionId: Prod01.Id));
-        Assert.Equal("Active Waits", First(Search("active", recentTop)).Text);
+        var recentStore = OnProd01(new Route("QueryStore", ConnectionId: Prod01.Id));
+        Assert.Equal("Query Regressions", First(Search("query regressions", recentStore)).Text);
+    }
+
+    [Theory]
+    [InlineData("waits", "Waits")]
+    [InlineData("active waits", "Processes")]
+    [InlineData("waiting", "Processes")]
+    [InlineData("top waits", "Waits")]
+    [InlineData("wait trend", "Waits")]
+    [InlineData("implicit", "Plan Cache Health")]
+    [InlineData("memory grants", "Memory")]
+    public void AMergedPagesName_FindsThePageItIsPartOfNow(string query, string page)
+    {
+        // #178: Active Waits, Top Waits, Wait Trend and Implicit Conv. are parts of other pages, and
+        // their names are in those pages' tooltips.
+        Assert.Equal(page, Section(Search(query), SwitcherGroup.OnServer).Items[0].Text);
     }
 
     [Fact]
@@ -234,7 +248,7 @@ public sealed class QuickSwitcherTests
     [Fact]
     public void NothingTyped_ShowsTheEightMostRecentRoutes_ButThePageOnScreen()
     {
-        var tags = new[] { "Processes", "TopWaits", "QueryStore", "TempDb", "Memory", "FileIo", "Backups", "AgentJobs", "IndexHealth", "StaleStats" };
+        var tags = new[] { "Processes", "Waits", "QueryStore", "TempDb", "Memory", "FileIo", "Backups", "AgentJobs", "IndexHealth", "StaleStats" };
         var recent = new[] { Workspace.Overview(Prod01.Id) }
             .Concat(tags.Select(t => new Route(t, ConnectionId: Prod01.Id)))
             .ToArray();

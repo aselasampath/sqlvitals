@@ -48,7 +48,9 @@ public sealed class UiServicesTests
     {
         var navigator = new ShellNavigator(() => null);
 
-        await navigator.GoToAsync("TopWaits");
+        await navigator.GoToAsync("Waits");
+        // A page merged into another (#178) opens that one.
+        await navigator.GoToAsync("ActiveWaits");
         await navigator.GoToAsync("QueryStore", new FocusFilter(FocusKind.Query, 42), "Query Regressions");
         await navigator.BackAsync();
         await navigator.ForwardAsync();
@@ -70,7 +72,7 @@ public sealed class UiServicesTests
     {
         var tags = new[] { "CPU", "I/O", "Memory", "Locks" }.Select(TopWaitsVerdict.CausePage).OfType<(string Tag, string Text)>().Select(p => p.Tag)
             .Concat(PerfmonVerdict.Limits.Select(l => l.Page))
-            .Concat(["Processes", "WaitTrend", "TopWaits", "QueryRegressions", "QueryStore"]);
+            .Concat(["Processes", "Waits", "QueryRegressions", "QueryStore"]);
 
         Assert.All(tags, tag => Assert.Contains(tag, PageCatalog.Types.Keys));
     }

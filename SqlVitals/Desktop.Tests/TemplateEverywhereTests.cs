@@ -41,7 +41,7 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     private static readonly DateTime Now = DateTime.Now;
 
-    // ── Memory Grants ────────────────────────────────────────────────────
+    // ── Memory (Memory Grants until #178) ────────────────────────────────
 
     private static MemorySnapshot Snapshot() =>
         new(32L * 1024 * 1024, 24L * 1024 * 1024, 28L * 1024 * 1024, 18L * 1024 * 1024, 2L * 1024 * 1024, 3L * 1024 * 1024, 0, 2, 6,
@@ -67,7 +67,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     public void Memory_OpensWithTheQueriesWaitingForMemory() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new MemoryGrantsPage(MemoryRepo(), settings);
+        var page = new MemoryPage(MemoryRepo(), settings);
         Hosted(page, page.RefreshAsync, "memory.png", () =>
         {
             AssertLaidOut(page.Shell, page.Tabs);
@@ -264,7 +264,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         Hosted(page, () => Task.CompletedTask, "perfmon.png", () => AssertLaidOut(page.Shell, page.PerfmonChart));
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "Memory Grants Pending is 3: queries wait for a memory grant"), (verdict.Level, verdict.Headline));
-        Assert.Equal("Memory Grants", Assert.Single(verdict.Actions).Text);
+        Assert.Equal("Memory", Assert.Single(verdict.Actions).Text);
 
         ((IPageContext)page).SetPaused(false);
         Assert.False(((IPageContext)page).IsPaused);
@@ -555,7 +555,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         };
         ICodeBehindPage page = tag switch
         {
-            "Memory"        => new MemoryGrantsPage(repo),
+            "Memory"        => new MemoryPage(repo),
             "TempDb"        => new TempDbPage(repo),
             "FileIo"        => new FileIoPage(repo, Settings()),
             "DbStorage"     => new DatabaseStoragePage(repo),
@@ -618,7 +618,7 @@ public sealed class TemplateEverywhereTests : IDisposable
             var settings = Settings();
             (string Key, Page Page, PageKind Kind)[] pages =
             [
-                ("Memory", new MemoryGrantsPage(repo, settings), PageKind.Live),
+                ("Memory", new MemoryPage(repo, settings), PageKind.Live),
                 ("TempDb", new TempDbPage(repo, settings), PageKind.Snapshot),
                 ("FileIo", new FileIoPage(repo, settings), PageKind.Live),
                 ("DbStorage", new DatabaseStoragePage(repo, settings), PageKind.Snapshot),

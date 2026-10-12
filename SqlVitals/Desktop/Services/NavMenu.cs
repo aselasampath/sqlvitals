@@ -47,9 +47,8 @@ public static class NavMenu
         new("Activity", "Activity now", "\uE9D9", "Who is connected, what is running, and who is blocking whom?",
         [
             new("Processes",      "\uE716", "Processes",
-                "Who is connected and what each session is running, with blocking chains drawn as trees from the head blocker, or as a grid grouped by login"),
-            new("ActiveWaits",    "\uE945", "Active Waits",
-                "Every request waiting right now, one row per session: what it is waiting on, for how long, and the session blocking it"),
+                "Who is connected and what each session is running, with blocking chains drawn as trees from the head blocker, " +
+                "as a grid grouped by login, or Waiting: the active waits, every request waiting right now and on what"),
             new("Deadlocks",      "\uE72E", "Deadlocks",
                 "Recent deadlocks from the system_health session: victim, participants, objects and statements"),
             new("AppConnections", "\uE703", "App Connections",
@@ -57,10 +56,9 @@ public static class NavMenu
         ]),
         new("Waits", "Waits", "\uE916", "What is the server waiting on, and how has that changed over time?",
         [
-            new("TopWaits",  "\uE8CB", "Top Waits",
-                "The wait types SQL Server has spent the most time on, ranked, with a bar chart of the top 15"),
-            new("WaitTrend", "\uE9D2", "Wait Trend",
-                "Wait types you pick, charted over time"),
+            new("Waits", "\uE8CB", "Waits",
+                "The wait trend of the wait types you pick, live or from the history, above the top waits: " +
+                "the wait types SQL Server spent the most time on, since it started or over the range picked"),
         ]),
         new("Queries", "Queries", "\uE9F5", "Which queries cost the most, which got slower, and why?",
         [
@@ -71,15 +69,14 @@ public static class NavMenu
             new("QueryRegressions", "\uE74B", "Query Regressions",
                 "Queries that got slower: average duration or CPU against a baseline period, with the plans before and after"),
             new("PlanCacheHealth",  "\uE81E", "Plan Cache Health",
-                "Plan problems in the cache: parameterisation failures, key lookups, bad cardinality estimates and skewed parallelism"),
-            new("ImplicitConv",     "\uE7BA", "Implicit Conv.",
-                "Cached plans with CONVERT_IMPLICIT, where a data type mismatch can turn an index seek into a scan"),
+                "Plan problems in the cache: parameterisation failures, key lookups, bad cardinality estimates, skewed parallelism, " +
+                "plan guides and implicit conversions (CONVERT_IMPLICIT), where a data type mismatch turns an index seek into a scan"),
             new("SpTrace",          "\uE7B3", "SP Trace",
                 "Stored-procedure calls as they happen: duration, CPU, I/O and who called them"),
         ]),
         new("Resources", "Resources", "\uEB05", "Is memory, TempDB, disk or storage the bottleneck?",
         [
-            new("Memory",    "\uE964", "Memory Grants",
+            new("Memory",    "\uE964", "Memory",
                 "Memory: buffer pool, plan cache and target memory, memory grants and pending grants (RESOURCE_SEMAPHORE), and memory clerks"),
             new("TempDb",    "\uEE94", "TempDB",
                 "TempDB space per file, the version store, and the sessions allocating the most"),
@@ -128,4 +125,39 @@ public static class NavMenu
 
     /// <summary>A page of the open server's, in the server part.</summary>
     public static bool IsServerPage(string tag) => GroupOf(tag) is not null;
+
+    /// <summary>
+    /// The tags of pages merged into others (#178), and the page each is part of now. Settings saved
+    /// before (the page open at exit), Back, links and notifications may still name them.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> Merged = new Dictionary<string, string>
+    {
+        ["ActiveWaits"]  = "Processes",         // its Waiting view
+        ["TopWaits"]     = "Waits",
+        ["WaitTrend"]    = "Waits",
+        ["ImplicitConv"] = "PlanCacheHealth",   // its Implicit Conversions tab
+    };
+
+    /// <summary>The page a tag opens now: itself, or the page it was merged into.</summary>
+    public static string Current(string tag) => Merged.GetValueOrDefault(tag, tag);
+
+    /// <summary>
+    /// A route to a page merged into another, to that page: Active Waits opens Processes on its
+    /// Waiting view (the focus says so), filtered to a session as before; Implicit Conversions,
+    /// Plan Cache Health on its tab. Any other route as it is.
+    /// </summary>
+    public static Route Current(Route route) => route.Tag switch
+    {
+        "ActiveWaits" => route with
+        {
+            Tag   = "Processes",
+            Focus = route.Focus is { Filter.Kind: FocusKind.Session } ? route.Focus : null,
+            View  = ProcessesView.Waiting.ToString(),
+        },
+        "ImplicitConv" => route with { Tag = "PlanCacheHealth", View = ImplicitConversionsView },
+        var tag        => Merged.TryGetValue(tag, out var now) ? route with { Tag = now } : route,
+    };
+
+    /// <summary>The <see cref="Route.View"/> that opens Plan Cache Health on its Implicit Conversions tab.</summary>
+    public const string ImplicitConversionsView = "ImplicitConversions";
 }

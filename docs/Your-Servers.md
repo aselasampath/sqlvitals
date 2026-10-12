@@ -92,8 +92,8 @@ Each check that lowers the score, the costliest first, with:
 |---|---|---|
 | Blocking | Blocking chain | 🔗 Processes |
 | CPU | Top CPU queries | 🔥 Resource Queries |
-| Page life expectancy | Memory | 🧠 Memory Grants |
-| Memory grants pending | Memory grants | 🧠 Memory Grants |
+| Page life expectancy | Memory | 🧠 Memory |
+| Memory grants pending | Memory grants | 🧠 Memory |
 | Log space used | Log space | 📦 DB Storage |
 | TempDB space used | TempDB | 🗄️ TempDB |
 | Disk free | Volumes | 💽 File I/O |

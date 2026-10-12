@@ -20,7 +20,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Compatibility level** | A database setting that decides which SQL Server version's query optimizer and T-SQL behaviour it gets: 160 for SQL Server 2022, 150 for 2019. An upgraded database keeps its old level until it's changed. |
 | **Connection** | A saved server and database in SqlVitals. |
 | **CONTROL SERVER** | A server permission that gives almost everything **sysadmin** does. The [Security Audit](Security-Audit.md) lists who holds it alongside the sysadmin members. |
-| **CONVERT_IMPLICIT** | SQL Server converting one data type to another in a comparison. It can prevent index seeks. |
+| **CONVERT_IMPLICIT** | SQL Server converting one data type to another in a comparison. It can prevent index seeks. The [Implicit Conversions tab](Query-Performance.md#implicit-conversions) of Plan Cache Health lists the cached plans that do it. |
 | **Cost threshold for parallelism** | The estimated query cost above which SQL Server considers a parallel plan. The default of 5 is widely considered too low; 50 is a common starting point. See [Configuration Checks](Configuration-Checks.md). |
 | **CXPACKET / CXCONSUMER** | Waits from parallel queries coordinating their threads |
 | **Deadlock** | Two or more sessions each holding a lock another needs, so none can go on. SQL Server rolls one back (the **victim**, error 1205) so the others can finish. See [Deadlocks](Deadlocks.md). |
@@ -96,8 +96,10 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **VIEW ANY DEFINITION** | A server permission to see the definitions of every login, user, role and object, but no data. The [Security Audit](Security-Audit.md) needs it to list sysadmin members and orphaned users. |
 | **VIEW SERVER STATE** | The permission needed to read server-level DMVs. On Azure SQL Database the equivalent is `VIEW DATABASE STATE`. |
 | **Volume** | A drive or mount point that holds database files (`D:\`, `/var/opt/mssql/`). From 0.76.0 the *Disk free* health check reads each one's free space every 5 minutes, and File I/O shows it. See [What is checked](Health-Dot-and-Background-Monitoring.md#what-is-checked). |
-| **Waiting tasks** | User tasks waiting on anything (a lock, I/O, memory, a CPU…) at the moment of a sample, from `sys.dm_os_waiting_tasks`. A headline number on a server's [Overview](Your-Servers.md#headline-numbers). |
 | **Wait / wait type** | A reason a task couldn't continue, and how long it waited. See [Wait Statistics](Wait-Statistics.md). |
 | **Wait category** | Query Store's grouping of wait types per query (SQL Server 2017+), e.g. *Lock* for `LCK_M_%` or *Buffer IO* for `PAGEIOLATCH_%`. See [Query Store → Waits](Query-Performance.md#waits). |
+| **Waiting tasks** | User tasks waiting on anything (a lock, I/O, memory, a CPU…) at the moment of a sample, from `sys.dm_os_waiting_tasks`. A headline number on a server's [Overview](Your-Servers.md#headline-numbers). |
+| **Waiting view** | The view of [Processes](Live-Monitoring.md#waiting-view) that lists every request waiting now, on what and for how long, and who blocks it. The Active Waits page until 0.79.0. |
+| **Waits (page)** | The trend of the wait types picked, live or over a past range, above the top waits for that range. Top Waits and Wait Trend until 0.79.0. See [Waits](Wait-Statistics.md#waits). |
 | **Webhook** | A URL that posts whatever is sent to it into one Slack or Microsoft Teams channel. Anyone who has it can post there, so SqlVitals stores it encrypted and never logs it. See [Chat Notifications](Chat-Notifications.md). |
 | **Weight (health check)** | How much a check counts in the health score, 0 to 100, set in Settings → Health thresholds from 0.75.0. Relative: the score is always out of 100. 0 leaves the check out of the score. A check's share of the 100 is its **worth**. |

@@ -15,13 +15,13 @@ public sealed class NavigationHistoryTests
     public void Back_ThenForward_ReturnsToEachPage()
     {
         var history = new NavigationHistory();
-        history.Visit(Page("TopWaits"));
+        history.Visit(Page("Waits"));
         history.Visit(Page("Processes"));
 
         var back = history.PeekBack(Any);
-        Assert.Equal(Page("TopWaits"), back);
+        Assert.Equal(Page("Waits"), back);
         history.CommitBack(back!, back!);
-        Assert.Equal(Page("TopWaits"), history.Current);
+        Assert.Equal(Page("Waits"), history.Current);
 
         var forward = history.PeekForward(Any);
         Assert.Equal(Page("Processes"), forward);
@@ -35,7 +35,7 @@ public sealed class NavigationHistoryTests
     {
         var history = new NavigationHistory();
         Assert.Null(history.PeekBack(Any));
-        history.Visit(Page("TopWaits"));
+        history.Visit(Page("Waits"));
         Assert.Null(history.PeekBack(Any));
         Assert.Null(history.PeekForward(Any));
     }
@@ -44,7 +44,7 @@ public sealed class NavigationHistoryTests
     public void AVisit_AfterGoingBack_DropsForward_AsInABrowser()
     {
         var history = new NavigationHistory();
-        history.Visit(Page("TopWaits"));
+        history.Visit(Page("Waits"));
         history.Visit(Page("Processes"));
         var back = history.PeekBack(Any)!;
         history.CommitBack(back, back);
@@ -52,7 +52,7 @@ public sealed class NavigationHistoryTests
         history.Visit(Page("Backups"));
 
         Assert.Null(history.PeekForward(Any));
-        Assert.Equal(Page("TopWaits"), history.PeekBack(Any));
+        Assert.Equal(Page("Waits"), history.PeekBack(Any));
     }
 
     [Fact]
@@ -60,12 +60,12 @@ public sealed class NavigationHistoryTests
     {
         // Settings on another category, or Alerts opened again from a notification.
         var history = new NavigationHistory();
-        history.Visit(Page("TopWaits"));
+        history.Visit(Page("Waits"));
         history.Visit(new Route("Settings"));
         history.Visit(new Route("Settings", Settings: new SettingsLocation(SettingsCategory.Appearance)));
 
         Assert.Equal(SettingsCategory.Appearance, history.Current!.Settings!.Category);
-        Assert.Equal(Page("TopWaits"), history.PeekBack(Any));
+        Assert.Equal(Page("Waits"), history.PeekBack(Any));
         var back = history.PeekBack(Any)!;
         history.CommitBack(back, back);
         Assert.Null(history.PeekBack(Any));
@@ -86,14 +86,14 @@ public sealed class NavigationHistoryTests
     {
         // ServerB was removed since its pages were visited.
         var history = new NavigationHistory();
-        history.Visit(Page("TopWaits", ServerA));
+        history.Visit(Page("Waits", ServerA));
         history.Visit(Page("Processes", ServerB));
         history.Visit(Page("Backups", ServerB));
         history.Visit(Page("Deadlocks", ServerA));
         static bool stillThere(Route r) => r.ConnectionId != ServerB;
 
         var back = history.PeekBack(stillThere);
-        Assert.Equal(Page("TopWaits", ServerA), back);
+        Assert.Equal(Page("Waits", ServerA), back);
         history.CommitBack(back!, back!);
 
         // The removed server's pages are gone from Back, even if it came back.
@@ -107,20 +107,20 @@ public sealed class NavigationHistoryTests
         // Back to a server whose password isn't saved opens Settings to ask for it.
         var history = new NavigationHistory();
         history.Visit(Page("Processes", ServerB));
-        history.Visit(Page("TopWaits", ServerA));
+        history.Visit(Page("Waits", ServerA));
 
         var back = history.PeekBack(Any)!;
         history.CommitBack(back, Page("LiveMetrics", ServerB));
 
         Assert.Equal(Page("LiveMetrics", ServerB), history.Current);
-        Assert.Equal(Page("TopWaits", ServerA), history.PeekForward(Any));
+        Assert.Equal(Page("Waits", ServerA), history.PeekForward(Any));
     }
 
     [Fact]
     public void ACommit_AfterTheHistoryChanged_IsAVisit()
     {
         var history = new NavigationHistory();
-        history.Visit(Page("TopWaits"));
+        history.Visit(Page("Waits"));
         history.Visit(Page("Processes"));
 
         history.CommitBack(Page("Backups"), Page("Backups"));

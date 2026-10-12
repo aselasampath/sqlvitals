@@ -5,7 +5,7 @@ Five screens show how the server's memory, TempDB, storage, configuration and co
 | Screen | Answers |
 |---|---|
 | [🗄️ TempDB](#tempdb) | How full is TempDB, and who is filling it? |
-| [🧠 Memory Grants](#memory-grants) | Where is memory going, and are queries waiting for it? |
+| [🧠 Memory](#memory) | Where is memory going, and are queries waiting for it? |
 | [📦 DB Storage](#db-storage) | How big are the databases and files, and how is the server configured? |
 | [🔌 App Connections](#app-connections) | Which applications are connected, and what load do they create? |
 | [⏱️ Perfmon](#perfmon) | Any SQL Server performance counter, charted |
@@ -34,9 +34,9 @@ A session with large **Internal KB** is usually one query sorting or hashing a l
 
 ---
 
-## Memory Grants
+## Memory
 
-> **Where:** sidebar → 🧠 Memory Grants · **Use it when:** you see `RESOURCE_SEMAPHORE` waits, or *memory grants pending* on the health dot
+> **Where:** sidebar → 🧠 Memory (called Memory Grants until 0.79.0, though it shows all of memory) · **Use it when:** you see `RESOURCE_SEMAPHORE` waits, or *memory grants pending* on the health dot
 
 **Cards** at the top: Physical Memory, SQL Server Memory, Target Memory, Buffer Pool, Plan Cache, Available Physical, Page File, **System Memory State** and Memory Model.
 
@@ -59,7 +59,7 @@ Under the cards, a **Trend** chart of SQL Server memory, its target, the buffer 
 
 **The verdict** (from 0.66.0) names the queries waiting for a memory grant, the longest first (*2 queries wait for a memory grant; session 77 the longest, for 41 s*), in red once one has waited 30 seconds, and how much it asked for. **Show the waiting grants** opens the Memory Grants tab with it selected. With nothing waiting it is red if Windows reports low physical memory, and otherwise says how SQL Server's memory is used (*SQL Server uses 24 GB of its 28 GB target; the buffer pool 18 GB, the plan cache 2 GB*), with **Memory clerks**. The cards and the trend fold to one line each. The verdict follows each trend reading. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
-![Memory Grants: the verdict names the queries waiting for memory, above the figures, the trend and the clerks](images/page-template/memory.png)
+![Memory: the verdict names the queries waiting for memory, above the figures, the trend and the clerks](images/page-template/memory.png)
 
 ---
 
@@ -121,7 +121,7 @@ Counters include batch requests, compilations, lock waits and timeouts, log flus
 | Screen | Source |
 |---|---|
 | TempDB | `sys.dm_db_session_space_usage` joined to `sys.dm_exec_sessions` / `_requests`; file sizes and space from `tempdb.sys.database_files`, and point-in-time TempDB performance counters (`TempDbRepository`) |
-| Memory Grants | `sys.dm_os_sys_info`, `sys.dm_os_sys_memory`, `sys.dm_os_process_memory`, `sys.dm_os_memory_clerks`, `sys.dm_exec_query_memory_grants`, memory manager counters |
+| Memory | `sys.dm_os_sys_info`, `sys.dm_os_sys_memory`, `sys.dm_os_process_memory`, `sys.dm_os_memory_clerks`, `sys.dm_exec_query_memory_grants`, memory manager counters |
 | DB Storage | `sys.master_files`, `sys.databases`, each database's `sys.database_files`, `sys.configurations`, `sys.partitions` + `sys.allocation_units` (top tables) |
 | App Connections | `sys.dm_exec_sessions` / `sys.dm_exec_requests` grouped by `program_name` |
 | Perfmon | `sys.dm_os_performance_counters` |

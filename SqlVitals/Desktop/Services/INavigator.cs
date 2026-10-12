@@ -18,7 +18,7 @@ public interface INavigator
     /// Opens another page of the same server with a filter (#145): a session on Processes, a query
     /// on Query Store. Its banner says where it came from.
     /// </summary>
-    /// <param name="fromPage">The page the link is on, as the banner names it: "Active Waits".</param>
+    /// <param name="fromPage">The page the link is on, as the banner names it: "Query Regressions".</param>
     Task GoToAsync(string tag, FocusFilter filter, string fromPage);
 
     /// <summary>

@@ -120,11 +120,12 @@ public sealed class FocusAndDensityTests : IDisposable
     public void EveryGrid_TakesTheDensity_AtOnce_AndKeepsOneTextBlockPerCell() => UiThread.Run(() =>
     {
         var resources = Application.Current.Resources;
-        var page = new ActiveWaitsPage(new FakeRepository
+        var page = new ProcessesPage(new FakeRepository
         {
+            GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
             GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>(
                 Enumerable.Range(0, 30).Select(i => Wait(60 + i, i % 2 == 0 ? "OrderService" : "ReportRunner")).ToList()),
-        });
+        }, Settings(), view: nameof(ProcessesView.Waiting));
         var window = new Window { Content = page, Width = 1100, Height = 700, Left = -20_000, Top = -20_000,
                                   WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false };
         window.Show();
@@ -138,7 +139,7 @@ public sealed class FocusAndDensityTests : IDisposable
 
             Assert.True(comfortable - compact >= 6, $"comfortable {comfortable}, compact {compact}");
             // The cells are as they were: one TextBlock each, the same automation.
-            var cell = UiThread.Find<DataGridCell>(page.ActiveGrid).First();
+            var cell = UiThread.Find<DataGridCell>(page.WaitingGrid).First();
             Assert.Single(UiThread.Find<TextBlock>(cell));
             Assert.Equal(GridDensityResources.CellPaddingOf(GridDensity.Compact), cell.Padding);
         }

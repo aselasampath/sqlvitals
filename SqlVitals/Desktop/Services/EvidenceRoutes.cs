@@ -19,10 +19,10 @@ public enum FocusKind
     /// <summary>DB Storage: the files of one database.</summary>
     Database,
 
-    /// <summary>Memory Grants: the grants still waiting for memory.</summary>
+    /// <summary>Memory: the grants still waiting for memory.</summary>
     PendingGrants,
 
-    /// <summary>Active Waits: one session, and the sessions it blocks.</summary>
+    /// <summary>Processes' Waiting view (#178): one session, and the sessions it blocks.</summary>
     Session,
 
     /// <summary>Query Store: one query.</summary>
@@ -135,10 +135,14 @@ public static class EvidenceRoutes
         return new Route(evidence.PageTag, ConnectionId: server, Focus: focus);
     }
 
-    /// <summary>A link from one page to another that carries its filter: a session, a query.</summary>
+    /// <summary>
+    /// A link from one page to another that carries its filter: a session, a query. A session on
+    /// Processes is shown on its Waiting view (#178), another place than the map it was linked from.
+    /// </summary>
     /// <param name="fromPage">The page the link is on, e.g. "Processes".</param>
     public static Route Link(string tag, Guid? server, FocusFilter filter, string fromPage) =>
-        new(tag, ConnectionId: server, Focus: new PageFocus(filter, new FocusOrigin(FocusSource.Page, Describe(filter), fromPage)));
+        new(tag, ConnectionId: server, Focus: new PageFocus(filter, new FocusOrigin(FocusSource.Page, Describe(filter), fromPage)),
+            View: tag == "Processes" && filter.Kind == FocusKind.Session ? nameof(ProcessesView.Waiting) : null);
 
     /// <summary>
     /// For a page that only shows the server now, opened for an alert that has ended: the page that

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -47,7 +48,11 @@ public sealed class WaitTypeItem : INotifyPropertyChanged
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
+/// <summary>
+/// Waits (#178): the trend of the wait types picked, live or over a past range, above the top
+/// waits for that range: since the server started while live. Wait Trend and Top Waits until #178.
+/// </summary>
+public partial class WaitsPage : Page, ICodeBehindPage, IPageContext
 {
     // Live, or History while a past range is picked; the range picker is in the top bar (#140).
     public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
@@ -104,18 +109,24 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     private string _baselineNote = "";
     private string _statusMain   = "";
 
-    // The page template's verdict (#149): the wait type that waits the most on the chart, and
-    // whether it is rising. Null until InitializeComponent has run.
-    internal WaitStatsTrendViewModel ViewModel { get; }
+    // The page template's verdict (#149, #178): the wait type that waits the most on the chart and
+    // whether it is rising, or the top waits' category. Null until InitializeComponent has run.
+    internal WaitsViewModel ViewModel { get; }
+
+    // ── The top waits (#178): the server's since it started, or the range's from the history ──
+    private IReadOnlyList<TopWaitType>? _liveTop;
+    private IReadOnlyList<TopWaitType>? _historyTop;
+    private IReadOnlyList<TopWaitType>? TopShown => _range.IsLive ? _liveTop : _historyTop;
+    private string? During => _range.IsLive ? null : $"over the {_range.Label.ToLowerInvariant()}";
 
     // ── constructor ───────────────────────────────────────────────────────────
     // The top bar: what this page read, what went wrong, and its kind or window (#166).
     private readonly IShellStatus _shell;
 
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    /// <param name="navigator">Where the verdict's Top Waits goes; the app's (#182) when null.</param>
-    public WaitStatsTrendPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null,
-                              INavigator? navigator = null, IShellStatus? shell = null)
+    /// <param name="navigator">Where the verdict's cause goes; the app's (#182) when null.</param>
+    public WaitsPage(IWaitStatsRepository repo, ConnectionHistory? history = null, ISectionFolds? folds = null,
+                     INavigator? navigator = null, IShellStatus? shell = null)
     {
         _shell   = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo    = repo;
@@ -126,7 +137,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
         _statusMain  = TxtStatus.Text;
 
-        ViewModel = new WaitStatsTrendViewModel(navigator ?? CompositionRoot.Get<INavigator>());
+        ViewModel = new WaitsViewModel(navigator ?? CompositionRoot.Get<INavigator>(), startTrend: StartReading, chartTopWaits: ChartTopWaits);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         // Not reading until Resume (▶) in the top bar.
@@ -142,12 +153,6 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     {
         if (ViewModel is null)
             return;
-        // Nothing read yet: nothing to judge, as on the pilots before their first read.
-        if (_allItems.Count == 0)
-        {
-            ViewModel.Verdict = null;
-            return;
-        }
         var windows = _range.IsLive ? _windows : _historyWindows;
         var series = _allItems.Where(i => i.IsChecked).Take(MaxSeries)
             .Select(i => new WaitTrendSeries(i.WaitType,
@@ -156,7 +161,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         var state = !_range.IsLive ? WaitTrendState.History : !IsPaused ? WaitTrendState.Live : WaitTrendState.NotStarted;
         var unit  = _metric == MetricType.WaitingTasks ? "tasks/s" : "ms/s";
         string? noData = _range.IsLive || _historyLoad is null ? null : _historyLoad.NoData(NotRecordedText);
-        ViewModel.Show(series, state, unit, Over(windows), noData);
+        ViewModel.Show(TopShown, During, series, state, unit, Over(windows), noData);
     }
 
     // "over the last 4 min", "over the last 24 hours".
@@ -172,13 +177,90 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     }
 
     // ── IRefreshable ──────────────────────────────────────────────────────────
-    // A past range is read again, so "last hour" moves up to now.
+    // A past range is read again, so "last hour" moves up to now. Live, the top waits are read
+    // with the waits: when the page opens and on Refresh, not on every tick of the trend.
     public async Task RefreshAsync()
     {
         if (_range.IsLive)
+        {
+            // Both at once; the trend reads even when the table can't, as Wait Trend did alone.
+            var top = LoadTopWaitsAsync();
             await LoadSnapshotAsync();
+            if (await top is { } failed)
+            {
+                ViewModel.ShowError("the wait statistics", failed);
+                ExceptionDispatchInfo.Throw(failed);
+            }
+        }
         else
+        {
             await LoadHistoryAsync();
+        }
+    }
+
+    // The trend's timer reads the trend only (#169).
+    public Task ReadTimedAsync() => _range.IsLive ? LoadSnapshotAsync() : LoadHistoryAsync();
+
+    // ── the top waits ────────────────────────────────────────────────────────
+    // What went wrong, for RefreshAsync to report once the trend has read; null when it was read.
+    private async Task<Exception?> LoadTopWaitsAsync()
+    {
+        try
+        {
+            _liveTop = (await _repo.GetTopWaitTypesAsync()).ToList();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // What was read before stays; nothing read yet says so.
+            ShowTopWaits();
+            return ex;
+        }
+        ShowTopWaits();
+        return null;
+    }
+
+    // The table and the top 15 chart, for the range on screen.
+    private void ShowTopWaits()
+    {
+        var data = TopShown ?? [];
+        WaitsGrid.ItemsSource = data;
+        TxtTopHeader.Text = _range.IsLive
+            ? "Top wait types since the server started"
+            : $"Top wait types {During}, from the monitoring history";
+
+        // Folded, the chart says it in one line (#149): "PAGEIOLATCH_SH 41.0 % · WRITELOG 12.3 %".
+        ChartSection.FoldedSummary = TopShown is null ? "Not read yet"
+            : data.Count == 0 ? "No waits worth noting"
+            : string.Join(" · ", data.Take(3).Select(w => string.Format(CultureInfo.CurrentCulture, "{0} {1:N1} %", w.WaitType, w.PctOfTotal)));
+
+        var top15 = data.Take(15).ToList();
+        TopChart.Series = new ISeries[]
+        {
+            new ColumnSeries<double>
+            {
+                Values      = top15.Select(w => w.WaitTimeSec).ToArray(),
+                Name        = "Wait Time (sec)",
+                Fill        = new SolidColorPaint(ChartTheme.Of("AccentColor")),
+                Stroke      = null,
+                MaxBarWidth = 30,
+                Padding     = 1,
+            }
+        };
+        TopChart.XAxes = new[] { new Axis
+        {
+            Labels          = top15.Select(w => w.WaitType).ToArray(),
+            LabelsPaint     = new SolidColorPaint(ChartTheme.MutedAxisColor),
+            SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
+            TextSize        = 9,
+            LabelsRotation  = 30,
+        }};
+        TopChart.YAxes = new[] { new Axis
+        {
+            LabelsPaint     = new SolidColorPaint(ChartTheme.MutedAxisColor),
+            SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
+            TextSize        = 11,
+        }};
+        UpdateVerdict();
     }
 
     // ── core data load ───────────────────────────────────────────────────────
@@ -276,13 +358,18 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         {
             _historyVersion++;
             _historyLoad = null;
+            _historyTop  = null;
             _historyWindows.Clear();
+            ShowTopWaits();
             ShowStatus("Live — press Resume (▶) in the top bar to trend");
             RebuildSeries();
             await LoadBaselineAsync();
             return;
         }
 
+        // The live table isn't the range's: empty until the range is read.
+        _historyTop = null;
+        ShowTopWaits();
         await ViewModel.ReportErrorsOf(LoadHistoryAsync());
     }
 
@@ -301,6 +388,8 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
 
             _historyLoad = load;
             _historyWindows.Clear();
+            _historyTop  = HistoryTopWaits.Over(load.Items, load.ToUtc.ToLocalTime());
+            ShowTopWaits();
 
             // Add waits the list lacks: it was opened on a past range before any live read, or the
             // range has waits the server no longer lists.
@@ -328,7 +417,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
                 return;
             ShowStatus($"Could not read the history: {ex.Message}");
             ViewModel.ShowError("the monitoring history", ex);
-            _shell.ReportError(this, "Wait Stats Trend history", ex, PageRead.Timed);
+            _shell.ReportError(this, "Waits history", ex, PageRead.Timed);
             return;
         }
 
@@ -404,7 +493,7 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
         {
             _baselineNote = $"Could not read the baseline: {ex.Message}";
             ShowStatus(_statusMain);
-            _shell.ReportError(this, "Wait Stats Trend baseline", ex, PageRead.Timed);
+            _shell.ReportError(this, "Waits baseline", ex, PageRead.Timed);
         }
     }
 
@@ -435,11 +524,8 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     // Top 20 by total wait time: over the range on screen, or since the server started when live.
     private void CheckTopWaits()
     {
-        IEnumerable<string> ranked = _historyLoad is { } load && !_range.IsLive
-            ? load.Items.SelectMany(b => b.Waits.Values)
-                  .GroupBy(w => w.WaitType)
-                  .OrderByDescending(g => g.Sum(w => w.WaitTimeMs))
-                  .Select(g => g.Key)
+        IEnumerable<string> ranked = !_range.IsLive && _historyTop is { } top
+            ? top.Select(w => w.WaitType)
             : _prevValues.OrderByDescending(kv => kv.Value.WaitTimeMs).Select(kv => kv.Key);
 
         var top20 = ranked.Take(20).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -606,7 +692,10 @@ public partial class WaitStatsTrendPage : Page, ICodeBehindPage, IPageContext
     }
 
     // ── event handlers ────────────────────────────────────────────────────────
-    private void BtnTopWaits_Click(object sender, RoutedEventArgs e)
+    private void BtnTopWaits_Click(object sender, RoutedEventArgs e) => ChartTopWaits();
+
+    // Top 20, the button or the verdict's action: the 20 that waited most, charted.
+    private void ChartTopWaits()
     {
         if (_range.IsLive ? !_initialized : _historyLoad is null) return;
 

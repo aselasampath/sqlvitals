@@ -233,7 +233,7 @@ public class RolloutVerdictsTests
 
         Assert.Equal((VerdictLevel.Warning, "Memory Grants Pending is 3: queries wait for a memory grant"), (verdict.Level, verdict.Headline));
         Assert.Equal("Also past its limit: Processes blocked at 2. Rising: Batch Requests/sec.", verdict.Why);
-        Assert.Equal([new VerdictAction(PerfmonVerdict.Cause, "Memory Grants")], verdict.Actions);
+        Assert.Equal([new VerdictAction(PerfmonVerdict.Cause, "Memory")], verdict.Actions);
         Assert.Equal("Memory", PerfmonVerdict.Breached(series)!.Page);
     }
 

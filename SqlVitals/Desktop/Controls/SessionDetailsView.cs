@@ -18,7 +18,7 @@ namespace SqlVitals.Desktop.Controls;
 public sealed class SessionDetailsView : StackPanel
 {
     private readonly Func<int, Task<SessionPlan>> _loadPlan;
-    private readonly Func<int, Task> _openActiveWaits;
+    private readonly Func<int, Task> _openWaits;
 
     private readonly Grid    _rows      = DrawerParts.Rows();
     private readonly TextBox _statement = DrawerParts.Code(maxHeight: 220);
@@ -36,11 +36,11 @@ public sealed class SessionDetailsView : StackPanel
     private int _planVersion;
 
     /// <param name="loadPlan">Reads a session's plan from the server.</param>
-    /// <param name="openActiveWaits">Opens Active Waits filtered to a session (#145).</param>
-    public SessionDetailsView(Func<int, Task<SessionPlan>> loadPlan, Func<int, Task> openActiveWaits)
+    /// <param name="openWaits">Opens Processes' Waiting view filtered to a session (#145, #178).</param>
+    public SessionDetailsView(Func<int, Task<SessionPlan>> loadPlan, Func<int, Task> openWaits)
     {
-        _loadPlan        = loadPlan;
-        _openActiveWaits = openActiveWaits;
+        _loadPlan  = loadPlan;
+        _openWaits = openWaits;
 
         Children.Add(_rows);
 
@@ -49,8 +49,8 @@ public sealed class SessionDetailsView : StackPanel
         Children.Add(_statement);
         var statementButtons = DrawerParts.Row(
             DrawerParts.Button("Copy SQL", () => ClipboardHelper.SetText(_statement.Text), "Copy the statement"),
-            DrawerParts.Button("Active waits →", () => _node is { } n ? _openActiveWaits(n.SessionId) : Task.CompletedTask,
-                   "Open Active Waits filtered to this session and the sessions it blocks"));
+            DrawerParts.Button("Its waits →", () => _node is { } n ? _openWaits(n.SessionId) : Task.CompletedTask,
+                   "Show the Waiting view filtered to this session and the sessions it blocks"));
         Children.Add(statementButtons);
 
         // The plan: read when asked, shown here, and in a window for a second monitor.

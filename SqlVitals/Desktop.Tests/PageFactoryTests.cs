@@ -119,9 +119,9 @@ public sealed class PageFactoryTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
-            GetTopWaitTypesAsync = () => Task.FromException<IEnumerable<TopWaitType>>(error),
+            GetStaleStatisticsAsync = () => Task.FromException<IEnumerable<StaleStatistic>>(error),
         };
-        var made = Factory().Create("TopWaits", Args("TopWaits", repo));
+        var made = Factory().Create("StaleStats", Args("StaleStats", repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 

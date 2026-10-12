@@ -18,12 +18,12 @@ public sealed class PageBarToolsTests
     private static Engine.Repositories.IWaitStatsRepository Repo() =>
         MonitoringManagerTests.Counting("prod", Calls);
 
-    public static TheoryData<string> TrendPages => new() { "LiveMetrics", "WaitTrend", "Perfmon" };
+    public static TheoryData<string> TrendPages => new() { "LiveMetrics", "Waits", "Perfmon" };
 
     private static Page Create(string tag) => tag switch
     {
         "LiveMetrics" => new LiveMetricsDashboardPage(Repo()),
-        "WaitTrend"   => new WaitStatsTrendPage(Repo(), null),
+        "Waits"       => new WaitsPage(Repo(), null),
         "Perfmon"     => new PerfmonPage(Repo(), null),
         _             => throw new ArgumentOutOfRangeException(nameof(tag)),
     };
@@ -34,7 +34,7 @@ public sealed class PageBarToolsTests
         var page    = Create(tag);
         var context = (IPageContext)page;
         Assert.Equal(PageKind.Live, context.Kind);
-        // Wait Trend and Perfmon pause with their own Start and Stop; Live Metrics pauses its charts
+        // Waits and Perfmon pause with their own Start and Stop; Live Metrics pauses its charts
         // while monitored, and isn't here.
         Assert.Equal(tag != "LiveMetrics", context.CanPause);
 

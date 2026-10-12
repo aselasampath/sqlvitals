@@ -27,10 +27,10 @@ public sealed class NavMenuTests : IDisposable
         Assert.Equal(
         [
             "Overview: Overview, Live charts",
-            "Activity now: Processes, Active Waits, Deadlocks, App Connections",
-            "Waits: Top Waits, Wait Trend",
-            "Queries: Resource Queries, Query Store, Query Regressions, Plan Cache Health, Implicit Conv., SP Trace",
-            "Resources: Memory Grants, TempDB, File I/O, DB Storage, Perfmon",
+            "Activity now: Processes, Deadlocks, App Connections",
+            "Waits: Waits",
+            "Queries: Resource Queries, Query Store, Query Regressions, Plan Cache Health, SP Trace",
+            "Resources: Memory, TempDB, File I/O, DB Storage, Perfmon",
             "Maintenance: Index Health, Stale Stats, Backups, Agent Jobs",
             "Configuration: Config Checks, Security Audit",
         ], layout);
@@ -51,11 +51,60 @@ public sealed class NavMenuTests : IDisposable
         Assert.Equal(
             new[]
             {
-                "Home", "Overview", "LiveMetrics", "Alerts", "TopWaits", "ActiveWaits", "Processes", "Deadlocks", "AgentJobs",
-                "Backups", "FileIo", "ConfigChecks", "SecurityAudit", "WaitTrend", "TempDb", "Memory", "QueryStore",
-                "QueryRegressions", "IndexHealth", "ResourceQueries", "ImplicitConv", "PlanCacheHealth", "StaleStats",
+                "Home", "Overview", "LiveMetrics", "Alerts", "Waits", "Processes", "Deadlocks", "AgentJobs",
+                "Backups", "FileIo", "ConfigChecks", "SecurityAudit", "TempDb", "Memory", "QueryStore",
+                "QueryRegressions", "IndexHealth", "ResourceQueries", "PlanCacheHealth", "StaleStats",
                 "DbStorage", "AppConnections", "Perfmon", "SpTrace", "Export", "Settings",
             }.Order(), tags.Order());
+    }
+
+    // ── Pages merged into others (#178) ──────────────────────────────────
+
+    [Theory]
+    [InlineData("ActiveWaits", "Processes")]
+    [InlineData("TopWaits", "Waits")]
+    [InlineData("WaitTrend", "Waits")]
+    [InlineData("ImplicitConv", "PlanCacheHealth")]
+    [InlineData("Memory", "Memory")]
+    [InlineData("Processes", "Processes")]
+    public void AMergedPagesTag_OpensThePageItIsPartOfNow(string old, string now)
+    {
+        Assert.Equal(now, NavMenu.Current(old));
+        Assert.Contains(now, NavMenu.AllPages.Select(p => p.Tag));
+        Assert.True(PageCatalog.Types.ContainsKey(now));
+    }
+
+    [Fact]
+    public void AMergedPagesRoute_KeepsItsServer_AndOpensOnThePartItWas()
+    {
+        var server = Guid.NewGuid();
+        var alert  = new PageFocus(new FocusFilter(FocusKind.BlockingChain), new FocusOrigin(FocusSource.Alert, "Blocking"));
+
+        Assert.Equal(new Route("Waits", server), NavMenu.Current(new Route("WaitTrend", server)));
+        Assert.Equal(new Route("Waits", server), NavMenu.Current(new Route("TopWaits", server)));
+        Assert.Equal(new Route("PlanCacheHealth", server, View: NavMenu.ImplicitConversionsView), NavMenu.Current(new Route("ImplicitConv", server)));
+        // Only a session's filter meant something on Active Waits.
+        Assert.Equal(new Route("Processes", server, View: "Waiting"), NavMenu.Current(new Route("ActiveWaits", server, Focus: alert)));
+        // A page that wasn't merged is as it was.
+        var processes = new Route("Processes", server, Focus: alert);
+        Assert.Same(processes, NavMenu.Current(processes));
+        Assert.All(NavMenu.Merged.Keys, tag => Assert.DoesNotContain(tag, NavMenu.AllPages.Select(p => p.Tag)));
+    }
+
+    [Theory]
+    [InlineData("ActiveWaits", "Processes")]
+    [InlineData("TopWaits", "Waits")]
+    [InlineData("WaitTrend", "Waits")]
+    [InlineData("ImplicitConv", "PlanCacheHealth")]
+    public void ALastPageSavedBeforeTheMerge_OpensThePageItIsPartOfNow(string old, string now)
+    {
+        Create().SetLastPage("Processes", Guid.NewGuid());
+        var file = Path.Combine(_dir, "settings.dat");
+        var json = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+        json["LastPage"] = old;
+        File.WriteAllText(file, json.ToJsonString());
+
+        Assert.Equal(now, Create().Load().LastPage);
     }
 
     [Fact]

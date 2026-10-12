@@ -15,7 +15,7 @@
                     CornerRadius="6" Padding="12,8" Margin="0,0,0,14">
                 <TextBlock TextWrapping="Wrap" Foreground="#94A3B8" FontFamily="Segoe UI" FontSize="11">
                     Diagnoses plan cache health: parameterization failures, Key/RID Lookups in hot plans,
-                    active cardinality misestimates and skewed parallelism, and frozen plan guides.
+                    active cardinality misestimates and skewed parallelism, frozen plan guides, and implicit conversions.
                     Live-query tabs (Cardinality, Parallelism) are empty when no queries are running with
                     execution statistics collection enabled (requires Query Profiling Infrastructure).
                 </TextBlock>
@@ -166,7 +166,7 @@
                                       HorizontalGridLinesBrush="{StaticResource Border}">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Session"          Binding="{Binding SessionId}"                                Width="70">
-                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Session ID of the actively executing query. Cross-reference with Active Waits to see current wait state."/></Style></DataGridTextColumn.HeaderStyle>
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Session ID of the actively executing query. Cross-reference with Processes' Waiting view to see current wait state."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                     <DataGridTextColumn Header="Node ID"          Binding="{Binding NodeId}"                                   Width="65">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query plan node (operator) ID where the misestimate was detected."/></Style></DataGridTextColumn.HeaderStyle>
@@ -283,6 +283,56 @@
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="True if the plan guide is registered but currently disabled. A disabled guide does not affect query execution."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                     <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"   Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Border>
+                </TabItem>
+
+                <!-- ── Tab 6: Implicit Conversions (the Implicit Conv. page until #178) ── -->
+                <TabItem x:Name="TabImplicitConversions" Header="Implicit Conversions">
+                    <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Style="{StaticResource SectionHeader}"
+                                       Text="Cached plans containing CONVERT_IMPLICIT — sorted by execution count" />
+                            <Border DockPanel.Dock="Top" Background="#1AFBBF24" BorderBrush="{DynamicResource Warning}" BorderThickness="1"
+                                    CornerRadius="4" Padding="10,6" Margin="0,4,0,10">
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource Warning}" FontSize="11">
+                                    Implicit conversions occur when SQL Server must cast one type to another at runtime.
+                                    A converted column can't be sought in its index, so they often force scans. Common causes: VARCHAR vs NVARCHAR mismatches,
+                                    INT vs DECIMAL comparisons, or application code sending incorrect parameter types.
+                                    Fix by aligning column types with parameter types in the application or query.
+                                </TextBlock>
+                            </Border>
+                            <!-- Why the tab is empty, when its read failed and the rest of the page didn't (#178) -->
+                            <TextBlock x:Name="TxtConvProblem" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Foreground="{DynamicResource Danger}" FontSize="12" Visibility="Collapsed" />
+                            <DataGrid x:Name="ConvGrid" IsReadOnly="True"
+                                      CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
+                                      SelectionMode="Extended" SelectionUnit="FullRow"
+                                      AutoGenerateColumns="False"
+                                      RowBackground="{StaticResource BgDeep}"
+                                      AlternatingRowBackground="{StaticResource BgSidebar}"
+                                      Foreground="{StaticResource TextPrimary}"
+                                      BorderBrush="{StaticResource Border}"
+                                      GridLinesVisibility="Horizontal"
+                                      HorizontalGridLinesBrush="{StaticResource Border}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"                Width="120">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database context of the cached plan."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Object"      Binding="{Binding ObjectName}"                  Width="160">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Stored procedure or function name if applicable. Blank = ad-hoc query."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Executions"  Binding="{Binding ExecutionCount, StringFormat=N0}" Width="100">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="How many times this plan was used (usecounts). Higher = more urgent to fix because every execution is affected by the implicit conversion."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Plan KB"     Binding="{Binding PlanSizeKB, StringFormat=N0}"  Width="90">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Size of the compiled plan in KB. Large plans may consume significant procedure cache memory."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"                    Width="*">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query text from the plan cache. Look for WHERE clauses comparing columns of different types or joining mismatched columns."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>

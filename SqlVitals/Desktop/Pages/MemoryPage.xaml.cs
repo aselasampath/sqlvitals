@@ -16,7 +16,7 @@ using SqlVitals.Desktop.ViewModels.Pages;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext, IFocusPage
+public partial class MemoryPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext, IFocusPage
 {
     // ── A memory grants alert's evidence (#145): the grants still waiting, until Show all ──
     private bool _pendingOnly;
@@ -90,20 +90,20 @@ public partial class MemoryGrantsPage : System.Windows.Controls.Page, ICodeBehin
     private readonly IWaitStatsRepository _repo;
 
     // The page template's verdict (#150): queries waiting for a memory grant, or how memory is used.
-    internal MemoryGrantsViewModel ViewModel { get; }
+    internal MemoryViewModel ViewModel { get; }
 
     // The top bar: what this page read, what went wrong, and its kind or window (#166).
     private readonly IShellStatus _shell;
 
     /// <param name="folds">Where the verdict's, the figures' and the trend's folds are remembered; none in some tests.</param>
-    public MemoryGrantsPage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
+    public MemoryPage(IWaitStatsRepository repo, ISectionFolds? folds = null, IShellStatus? shell = null)
     {
         _shell = shell ?? CompositionRoot.Get<IShellStatus>();
         _repo = repo;
         InitializeComponent();
         BuildInitialChart(); // create series (empty windows) on startup
 
-        ViewModel = new MemoryGrantsViewModel(showWaiting: ShowWaiting, showClerks: () => Tabs.SelectedItem = TabClerks);
+        ViewModel = new MemoryViewModel(showWaiting: ShowWaiting, showClerks: () => Tabs.SelectedItem = TabClerks);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         // Not trending until Resume (▶) in the top bar.

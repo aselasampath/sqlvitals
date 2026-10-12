@@ -121,8 +121,8 @@ public static class PermissionCheck
     /// <summary>The pages that read DMVs, by their sidebar titles: all of them need the server's state.</summary>
     public static readonly IReadOnlyList<string> ServerStatePages =
     [
-        "Overview", "Live charts", "Processes", "Active Waits", "Deadlocks", "App Connections", "Top Waits",
-        "Resource Queries", "Plan Cache Health", "Implicit Conv.", "SP Trace", "Memory Grants", "TempDB",
+        "Overview", "Live charts", "Processes", "Deadlocks", "App Connections", "Waits",
+        "Resource Queries", "Plan Cache Health", "SP Trace", "Memory", "TempDB",
         "File I/O", "DB Storage", "Perfmon", "Config Checks",
     ];
 

@@ -561,10 +561,11 @@ public class ConnectionSettingsService : ISectionFolds
         }
     }
 
-    // A page still in the sidebar. A server's summary, saved before 0.59.0, is its Overview now (#143).
+    // A page still in the sidebar. A server's summary, saved before 0.59.0, is its Overview now (#143);
+    // a page merged into another before 0.79.0, that page (#178).
     private static string? LastPageFrom(string? saved)
     {
-        var tag = saved == "ServerDetail" ? "Overview" : saved;
+        var tag = saved == "ServerDetail" ? "Overview" : saved is null ? null : NavMenu.Current(saved);
         return tag is not null && NavMenu.AllPages.Any(p => p.Tag == tag) ? tag : null;
     }
 
@@ -902,11 +903,14 @@ public enum WatchChoice
     Service,
 }
 
-/// <summary>How the Processes page shows its sessions (#116).</summary>
+/// <summary>How the Processes page shows its sessions (#116), or the requests waiting (#178).</summary>
 public enum ProcessesView
 {
     Map,
     Grid,
+
+    /// <summary>The active waits: every request waiting now and on what (the Active Waits page until #178).</summary>
+    Waiting,
 }
 
 public enum SqlAuthMode

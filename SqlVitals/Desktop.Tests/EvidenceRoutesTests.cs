@@ -162,10 +162,26 @@ public sealed class EvidenceRoutesTests
     [Fact]
     public void ALink_CarriesItsFilter_AndTheBannerNamesThePageItCameFrom()
     {
-        var route = EvidenceRoutes.Link("ActiveWaits", Server, new FocusFilter(FocusKind.Session, 87), "Processes");
+        var route = EvidenceRoutes.Link("QueryStore", Server, new FocusFilter(FocusKind.Query, 42), "Query Regressions");
 
-        Assert.Equal(("ActiveWaits", Server, 87L), (route.Tag, route.ConnectionId, route.Focus!.Filter.Id));
-        Assert.Equal(new FocusOrigin(FocusSource.Page, "session 87", "Processes"), route.Focus.Origin);
+        Assert.Equal(("QueryStore", Server, 42L, null), (route.Tag, route.ConnectionId, route.Focus!.Filter.Id, route.View));
+        Assert.Equal(new FocusOrigin(FocusSource.Page, "query 42", "Query Regressions"), route.Focus.Origin);
+    }
+
+    [Fact]
+    public void ASessionsLink_OpensProcessesWaitingView_AnotherPlace_SoBackReturnsToTheMap()
+    {
+        // #178: a session's waits are Processes' Waiting view, linked from the map of the same page.
+        var map  = new Route("Processes", Server, Focus: new PageFocus(new FocusFilter(FocusKind.BlockingChain), new FocusOrigin(FocusSource.Alert, "Blocking")));
+        var link = EvidenceRoutes.Link("Processes", Server, new FocusFilter(FocusKind.Session, 87), "Processes");
+        Assert.Equal(("Processes", "Waiting", 87L), (link.Tag, link.View, link.Focus!.Filter.Id));
+        Assert.False(map.IsSamePlace(link));
+
+        var history = new NavigationHistory();
+        history.Visit(map);
+        history.Visit(link);
+
+        Assert.Same(map, history.PeekBack(_ => true));
     }
 
     // ── Navigation ───────────────────────────────────────────────────────
@@ -267,7 +283,7 @@ public sealed class EvidenceRoutesTests
     public void TheBanner_ForACheck_OrALink()
     {
         var check = Banner(EvidenceRoutes.ForCheck(HealthIndicator.Blocking, Server, "Blocking 3.5 min (3 blocked)"));
-        var link  = Banner(EvidenceRoutes.Link("ActiveWaits", Server, new FocusFilter(FocusKind.Session, 87), "Processes"));
+        var link  = Banner(EvidenceRoutes.Link("Processes", Server, new FocusFilter(FocusKind.Session, 87), "Processes"));
 
         Assert.Equal(("Opened from health check", "Blocking 3.5 min (3 blocked)"), (check.Title, check.What));
         Assert.Equal(("Opened from Processes", "session 87"), (link.Title, link.What));

@@ -55,12 +55,12 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void LeavingAPage_CancelsWhatItsCodeBehindIsReading() => UiThread.Run(() =>
     {
-        var reading = new TaskCompletionSource<IEnumerable<TopWaitType>>();
-        var repo    = new FakeRepository { GetTopWaitTypesAsync = () => reading.Task };
-        var made    = Factory().Create("TopWaits", new PageArgs(new Route("TopWaits"), repo));
+        var reading = new TaskCompletionSource<IEnumerable<StaleStatistic>>();
+        var repo    = new FakeRepository { GetStaleStatisticsAsync = () => reading.Task };
+        var made    = Factory().Create("StaleStats", new PageArgs(new Route("StaleStats"), repo));
 
         var shown = made.ViewModel.OnNavigatedToAsync();
-        var token = repo.Tokens[nameof(FakeRepository.GetTopWaitTypesAsync)];
+        var token = repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)];
         Assert.False(token.IsCancellationRequested);
 
         made.ViewModel.OnNavigatedFrom();
@@ -75,16 +75,16 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
     {
-        var repo = new FakeRepository { GetTopWaitTypesAsync = () => Task.FromResult<IEnumerable<TopWaitType>>([]) };
-        var made = Factory().Create("TopWaits", new PageArgs(new Route("TopWaits"), repo));
+        var repo = new FakeRepository { GetStaleStatisticsAsync = () => Task.FromResult<IEnumerable<StaleStatistic>>([]) };
+        var made = Factory().Create("StaleStats", new PageArgs(new Route("StaleStats"), repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
-        var first = repo.Tokens[nameof(FakeRepository.GetTopWaitTypesAsync)];
+        var first = repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)];
         made.ViewModel.OnNavigatedFrom();
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 
         Assert.True(first.IsCancellationRequested);
-        Assert.False(repo.Tokens[nameof(FakeRepository.GetTopWaitTypesAsync)].IsCancellationRequested);
+        Assert.False(repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)].IsCancellationRequested);
     });
 
     [Fact]

@@ -4,7 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{DynamicResource BgDeep}" Title="Processes">
     <Page.Resources>
-        <!-- Segmented Map | Grid switch (#116), in the look of the time-range buttons -->
+        <!-- Segmented Map | Grid | Waiting switch (#116, #178), in the look of the time-range buttons -->
         <Style x:Key="ViewButton" TargetType="RadioButton">
             <Setter Property="GroupName"   Value="ProcessesView"/>
             <Setter Property="MinWidth"    Value="46"/>
@@ -36,7 +36,8 @@
             </Setter>
         </Style>
     </Page.Resources>
-    <!-- The page template (#146): the verdict on blocking first, then the map or the grid. -->
+    <!-- The page template (#146): the verdict on blocking first, then the map, the grid or the
+         requests waiting (#178). -->
     <controls:PageShell x:Name="Shell" Margin="16" Title="Processes" PageKey="Processes">
         <controls:PageShell.Actions>
         <StackPanel Orientation="Horizontal">
@@ -48,6 +49,8 @@
                                  Checked="View_Checked" ToolTip="Sessions as blocking chains"/>
                     <RadioButton x:Name="BtnGrid" Content="Grid" Style="{StaticResource ViewButton}"
                                  Checked="View_Checked" ToolTip="One row per session, grouped by login, to sort and compare"/>
+                    <RadioButton x:Name="BtnWaiting" Content="Waiting" Style="{StaticResource ViewButton}"
+                                 Checked="View_Checked" ToolTip="Every request waiting now: on what, for how long, and the session blocking it"/>
                 </StackPanel>
             </Border>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -84,7 +87,29 @@
         </StackPanel>
         </controls:PageShell.Actions>
 
-        <!-- Shared process map: zoom, search, legend, themed canvas, details panel; and the grid (#116) -->
-        <controls:ProcessMapControl x:Name="ProcessMap"/>
+        <Grid>
+            <!-- Shared process map: zoom, search, legend, themed canvas, details panel; and the grid (#116) -->
+            <controls:ProcessMapControl x:Name="ProcessMap"/>
+
+            <!-- Waiting (#178): every request waiting now, as the Active Waits page showed them -->
+            <Border x:Name="WaitingPanel" Style="{StaticResource KpiCard}" Visibility="Collapsed">
+                <DataGrid x:Name="WaitingGrid" AutomationProperties.Name="Requests waiting">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Session"     Binding="{Binding SessionId}"          Width="65" />
+                        <DataGridTextColumn Header="Blocking"    Binding="{Binding BlockingSessionId}"  Width="65" />
+                        <DataGridTextColumn Header="Wait Type"   Binding="{Binding WaitType}"           Width="180" />
+                        <DataGridTextColumn Header="Category"    Binding="{Binding WaitCategory}"       Width="100" />
+                        <DataGridTextColumn Header="Wait (sec)"  Binding="{Binding WaitTimeSec, StringFormat=N2}" Width="80" />
+                        <DataGridTextColumn Header="Severity"    Binding="{Binding WaitSeverity}"       Width="80" />
+                        <DataGridTextColumn Header="Status"      Binding="{Binding RequestStatus}"      Width="80" />
+                        <DataGridTextColumn Header="Command"     Binding="{Binding Command}"            Width="120" />
+                        <DataGridTextColumn Header="Login"       Binding="{Binding LoginName}"          Width="100" />
+                        <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"       Width="120" />
+                        <DataGridTextColumn Header="CPU (ms)"    Binding="{Binding CpuTimeMs}"          Width="80" />
+                        <DataGridTextColumn Header="Logical Reads" Binding="{Binding LogicalReads}"     Width="95" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+        </Grid>
     </controls:PageShell>
 </Page>

@@ -2,7 +2,7 @@
 
 SqlVitals keeps a **local history** of every server it monitors, so you can answer *"what happened at 2 AM?"* the next morning, even if the app wasn't on screen.
 
-> **Where:** the range picker in the [top bar](Getting-Started.md#live-snapshot-or-history) on a server's [Overview](Your-Servers.md#charts) (from 0.59.0, without the baseline), 💓 Live charts, 📈 Wait Trend and ⏱️ Perfmon (in each page's toolbar before 0.56.0) · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
+> **Where:** the range picker in the [top bar](Getting-Started.md#live-snapshot-or-history) on a server's [Overview](Your-Servers.md#charts) (from 0.59.0, without the baseline), 💓 Live charts, 📊 Waits (📈 Wait Trend before 0.79.0) and ⏱️ Perfmon (in each page's toolbar before 0.56.0) · **Needs:** a saved connection that was [monitored](Health-Dot-and-Background-Monitoring.md#starting-and-stopping-monitoring) at the time
 
 ## Look back in time
 
@@ -22,7 +22,7 @@ What each page shows for past ranges:
 |---|---|---|
 | **Live charts** | Every chart | One point per sample (10 s by default) on 1h |
 | **Overview** | Every chart, and the health score | The same; the health score is the lowest in each slice of time |
-| **Wait Trend** | Waits per type, any of the four metrics | One point per snapshot (5 min by default) |
+| **Waits** | Waits per type, any of the four metrics; the top waits table is ranked over the range | One point per snapshot (5 min by default) |
 | **Perfmon** | The counters you tick | One point per snapshot (recorded from version 0.30) |
 
 **Refresh** (or **F5**) re-reads the range, so *1h* moves up to "now".
@@ -35,7 +35,7 @@ From 0.56.0 the picker is in the top bar, beside the page's badge. On **Live** t
 
 - **Long ranges are averaged** so a chart has at most 600 points: about 10 s per point on 1h, 5 min on 24h and 30 min on 7d. The status line says how many points there are and how far apart.
 - **Gaps stay gaps.** When the app was closed or monitoring stopped, the line breaks instead of drawing a misleading straight line across.
-- **Live charts and the Overview keep collecting** while you look at a past range, so nothing goes unrecorded. **Wait Trend and Perfmon** stop their own live polling; press **Live**, then **Resume (▶)** in the top bar, to resume.
+- **Live charts and the Overview keep collecting** while you look at a past range, so nothing goes unrecorded. **Waits and Perfmon** stop their own live polling; press **Live**, then **Resume (▶)** in the top bar, to resume.
 
 ## Compare to a baseline
 
@@ -65,7 +65,7 @@ History is kept **14 days** by default (7, 14, 30 or 90 in Settings) and deleted
 - **Storage:** a SQLite file at `%LocalAppData%\SqlVitals\history.db`. Schema, tiers, retention and how to query it yourself are in [Monitoring History Database](Monitoring-History-Database.md).
 - **Reads** happen on a background thread through a separate, short-lived read-only connection to the file (`HistoryReader`), so they never block the UI or the writer.
 - **Bucketing** (`HistoryRange`) picks a bucket size so the range has at most 600 points and averages samples within each bucket. **Gaps** (`HistoryGaps`) are detected from the expected interval, and the chart gets a null point so the line breaks.
-- **Clocks:** Live Metrics plots past ranges on the **server's** clock, like its live samples (`server_time`). Wait Trend and Perfmon use **this PC's** clock (`captured_utc`) for both.
+- **Clocks:** Live Metrics plots past ranges on the **server's** clock, like its live samples (`server_time`). Waits and Perfmon use **this PC's** clock (`captured_utc`) for both.
 - **Baseline** (`HistoryBaseline`, `BaselineTracker` in `ConnectionHistory.cs`, drawn by `Helpers/BaselineSeries`): the current window is shifted back 7 days by wall-clock time, read with the chart's own bucket size, then shifted forward onto the current axis. Live, it's read with 30 minutes of margin on each side and re-read only when the live window runs past it.
-- **Wait Trend history** starts on the range's top waits if none of your selected types were recorded in it. The live list's default top 20 is mostly idle waits, which history doesn't store.
+- **Waits' trend history** starts on the range's top waits if none of your selected types were recorded in it. The live list's default top 20 is mostly idle waits, which history doesn't store.
 - The ad-hoc connection (no saved connection) isn't recorded, so the history choices are disabled for it.

@@ -83,8 +83,8 @@ Used space is read inside each database, so it's shown only for databases your l
 **Unused Indexes lists indexes I know are used.**
 Usage counters reset when SQL Server restarts (and on Azure SQL failovers). "Unused" means *since the last restart*. Don't drop an index without checking how long the server has been up.
 
-**Top Waits hasn't changed even though last night was terrible.**
-Top Waits accumulates since the last restart, so one night barely moves months of totals. Use **Wait Trend** with a **24h** or **Custom** range instead.
+**The top waits haven't changed even though last night was terrible.**
+Live, the top waits on **Waits** accumulate since the last restart, so one night barely moves months of totals. Pick a **24h** or **Custom** range in the top bar instead: the table then ranks that range's waits, from the monitoring history.
 
 **Some sidebar items are dimmed and marked N/A.**
 The connection is to an Azure SQL Database, which has no TempDB files, SQL Server Agent, msdb backup history or server-level security settings to show. Hover an item for the reason. See [Server Impact and Permissions → Compatibility](Server-Impact-and-Permissions.md#compatibility).
@@ -108,7 +108,7 @@ These *(live)* tabs only show queries running at that moment, and need lightweig
 When automatic refresh fails, SqlVitals shows the error in red in the top bar (at the foot of the sidebar before 0.56.0) instead of popping up a dialog every few seconds. Fix the cause (often connectivity), then press **↻ Refresh** or **F5**.
 
 **The top bar says Paused.**
-The page is live but isn't updating: you paused it, its auto-refresh isn't started (Processes, Memory Grants, Wait Trend, Perfmon start stopped), or the server isn't monitored. Press **▶ Resume**, the page's own **Start**, or start monitoring.
+The page is live but isn't updating: you paused it, its auto-refresh isn't started (Processes, Memory, Waits, Perfmon start stopped), or the server isn't monitored. Press **▶ Resume**, the page's own **Start**, or start monitoring.
 
 ## SP Trace
 

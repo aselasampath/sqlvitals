@@ -117,32 +117,127 @@ public sealed class EvidencePagesTests : IDisposable
         Assert.Null(focusPage.ShowAllText);
     });
 
-    // ── Active Waits: a session from Processes ───────────────────────────
+    // ── Processes' Waiting view (Active Waits until #178): a session's link ──
 
     private static ActiveWait Wait(int session, int blockedBy = 0) =>
         new(session, blockedBy, "LCK_M_X", 1_000, 1, null, null, "suspended", "SELECT", 0, 0, 0, 0, 0, 0, 1,
             "login", "host", "app", "db", "Lock", blockedBy != 0 ? 1 : 0, null, DateTime.Now, "Warning");
 
-    [Fact]
-    public void ActiveWaits_ShowsTheSession_AndTheSessionsItBlocks() => UiThread.Run(() =>
+    private ProcessesPage Waiting(Func<int>? counted = null, string? view = null) => new(new FakeRepository
     {
-        var page = new ActiveWaitsPage(new FakeRepository
+        GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>(Sessions),
+        GetActiveWaitsAsync = () =>
         {
-            GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>([Wait(87), Wait(112, blockedBy: 87), Wait(200)]),
-        });
+            counted?.Invoke();
+            return Task.FromResult<IEnumerable<ActiveWait>>([Wait(87), Wait(112, blockedBy: 87), Wait(200)]);
+        },
+    }, new ConnectionSettingsService(_dir), view: view);
+
+    [Fact]
+    public void Processes_ASessionsLink_OpensTheWaitingView_OnTheSession_AndTheSessionsItBlocks() => UiThread.Run(() =>
+    {
+        var page = Waiting();
         var focusPage = (IFocusPage)page;
 
         focusPage.ShowFocus(new PageFocus(new FocusFilter(FocusKind.Session, 87), new FocusOrigin(FocusSource.Page, "session 87", "Processes")));
+        Assert.Equal(ProcessesView.Waiting, page.View);
         UiThread.Wait(page.RefreshAsync());
 
-        Assert.Equal([87, 112], page.ActiveGrid.Items.Cast<ActiveWait>().Select(w => w.SessionId));
+        Assert.Equal([87, 112], page.WaitingGrid.Items.Cast<ActiveWait>().Select(w => w.SessionId));
         Assert.Equal("showing session 87 and the sessions it blocks only", focusPage.FocusNote);
         Assert.Equal("Show all 3 waiting tasks", focusPage.ShowAllText);
 
         focusPage.ClearFocus();
 
-        Assert.Equal(3, page.ActiveGrid.Items.Count);
+        Assert.Equal(3, page.WaitingGrid.Items.Count);
+        Assert.Null(focusPage.ShowAllText);
+        // A link doesn't change the view Processes opens on.
+        Assert.Equal(ProcessesView.Map, new ConnectionSettingsService(_dir).Load().ProcessesView);
     });
+
+    [Fact]
+    public void Processes_TheWaitingView_ReadsTheWaits_AndJudgesThem_TheMapNeither() => UiThread.Run(() =>
+    {
+        var reads = 0;
+        var page  = Waiting(() => ++reads, view: nameof(ProcessesView.Waiting));
+        Assert.Equal(ProcessesView.Waiting, page.View);
+        Assert.Equal(Visibility.Visible, page.WaitingPanel.Visibility);
+        Assert.Equal(Visibility.Collapsed, page.ProcessMap.Visibility);
+
+        UiThread.Wait(page.RefreshAsync());
+        Assert.Equal(1, reads);
+        Assert.StartsWith("Session 112 is blocked by session 87", page.ViewModel.Verdict!.Headline);
+
+        // The map: the sessions' verdict, from what was read, and no more waits read.
+        page.BtnMap.IsChecked = true;
+        Assert.Equal((ProcessesView.Map, Visibility.Collapsed, Visibility.Visible), (page.View, page.WaitingPanel.Visibility, page.ProcessMap.Visibility));
+        Assert.StartsWith("2 head blockers are blocking", page.ViewModel.Verdict!.Headline);
+        UiThread.Wait(page.RefreshAsync());
+        Assert.Equal(1, reads);
+    });
+
+    [Fact]
+    public void Processes_ABlockingChain_IsShownOnTheMap_WhenWaitingWasLastChosen() => UiThread.Run(() =>
+    {
+        new ConnectionSettingsService(_dir).SetProcessesView(ProcessesView.Waiting, groupByLogin: true);
+        var page = Waiting();
+        Assert.Equal(ProcessesView.Waiting, page.View);
+
+        ((IFocusPage)page).ShowFocus(Focus(new FocusFilter(FocusKind.BlockingChain)));
+        UiThread.Wait(page.RefreshAsync());
+
+        Assert.Equal((ProcessesView.Map, Visibility.Visible), (page.View, page.ProcessMap.Visibility));
+        Assert.Equal("showing the blocking chain of session 87 only", ((IFocusPage)page).FocusNote);
+        // The view Processes opens on is still the one chosen.
+        Assert.Equal(ProcessesView.Waiting, new ConnectionSettingsService(_dir).Load().ProcessesView);
+    });
+
+    [Fact]
+    public void Processes_ASessionsFilter_IsOnlyDescribedOnTheWaitingView_AndShowAllClearsIt() => UiThread.Run(() =>
+    {
+        var page = Waiting();
+        var focusPage = (IFocusPage)page;
+        focusPage.ShowFocus(new PageFocus(new FocusFilter(FocusKind.Session, 87), new FocusOrigin(FocusSource.Page, "session 87", "Processes")));
+        UiThread.Wait(page.RefreshAsync());
+
+        // The map shows every session: the banner says nothing of session 87, but Show all still clears it.
+        page.BtnMap.IsChecked = true;
+        Assert.Null(focusPage.FocusNote);
+        Assert.Equal("Show all", focusPage.ShowAllText);
+
+        focusPage.ClearFocus();
+        Assert.Null(focusPage.ShowAllText);
+        page.BtnWaiting.IsChecked = true;
+        UiThread.Wait(page.RefreshAsync());
+        Assert.Equal(3, page.WaitingGrid.Items.Count);
+    });
+
+    [Fact]
+    public void Processes_ShowTheChainOnTheMap_KeepsTheViewProcessesOpensOn() => UiThread.Run(() =>
+    {
+        new ConnectionSettingsService(_dir).SetProcessesView(ProcessesView.Grid, groupByLogin: true);
+        var page = Waiting(view: nameof(ProcessesView.Waiting));
+
+        TemplateRolloutTests.Hosted(page, page.RefreshAsync, null, () =>
+        {
+            TemplateRolloutTests.Press(page.Shell.VerdictView, 0);   // Show the chain on the map
+            Assert.Equal(ProcessesView.Map, page.View);
+            Assert.Equal(87, page.ProcessMap.SelectedSession);
+        });
+
+        Assert.Equal(ProcessesView.Grid, new ConnectionSettingsService(_dir).Load().ProcessesView);
+    });
+
+    [Fact]
+    public void Processes_AnOldActiveWaitsRoute_OpensTheWaitingView()
+    {
+        // #178: a route to the Active Waits page, saved or from Back, opens Processes on Waiting.
+        var server = Guid.NewGuid();
+        var focus  = new PageFocus(new FocusFilter(FocusKind.Session, 87), new FocusOrigin(FocusSource.Page, "session 87", "Processes"));
+
+        Assert.Equal(new Route("Processes", server, View: "Waiting", Focus: focus), NavMenu.Current(new Route("ActiveWaits", server, Focus: focus)));
+        Assert.Equal(new Route("Processes", server, View: "Waiting"), NavMenu.Current(new Route("ActiveWaits", server)));
+    }
 
     // ── The banner, and Home's Investigate ───────────────────────────────
 

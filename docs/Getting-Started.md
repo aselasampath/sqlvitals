@@ -74,10 +74,10 @@ A server's groups (from 0.48.0; from 0.57.0 Alerts is in the global part; from 0
 | Group | Screens | The question it answers |
 |---|---|---|
 | **Overview** | Overview, Live charts | Is the server healthy, and if not, why? |
-| **Activity now** | Processes, Active Waits, Deadlocks, App Connections | Who is connected, what is running, and who is blocking whom? |
-| **Waits** | Top Waits, Wait Trend | What is the server waiting on, and how has that changed over time? |
-| **Queries** | Resource Queries, Query Store, Query Regressions, Plan Cache Health, Implicit Conv., SP Trace | Which queries cost the most, which got slower, and why? |
-| **Resources** | Memory Grants, TempDB, File I/O, DB Storage, Perfmon | Is memory, TempDB, disk or storage the bottleneck? |
+| **Activity now** | Processes (with its Waiting view), Deadlocks, App Connections | Who is connected, what is running, and who is blocking whom? |
+| **Waits** | Waits | What is the server waiting on, and how has that changed over time? |
+| **Queries** | Resource Queries, Query Store, Query Regressions, Plan Cache Health (with Implicit Conversions), SP Trace | Which queries cost the most, which got slower, and why? |
+| **Resources** | Memory, TempDB, File I/O, DB Storage, Perfmon | Is memory, TempDB, disk or storage the bottleneck? |
 | **Maintenance** | Index Health, Stale Stats, Backups, Agent Jobs | Are indexes, statistics, backups and jobs looked after? |
 | **Configuration** | Config Checks, Security Audit | Is the server set up correctly and securely? |
 
@@ -175,10 +175,10 @@ Every screen says how its data relates to time, so you never act on old data wit
 
 | Badge | The screen | Examples | Beside it |
 |---|---|---|---|
-| **Live** | Updates on its own | A server's Overview, Live charts, Processes, Memory Grants, File I/O, Wait Trend, Perfmon, Home, Alerts | *every 5 s · As of 14:02:36*, and **⏸ Pause** |
+| **Live** | Updates on its own | A server's Overview, Live charts, Processes, Memory, File I/O, Waits, Perfmon, Home, Alerts | *every 5 s · As of 14:02:36*, and **⏸ Pause** |
 | **Paused** | A live screen that isn't updating right now: paused, auto-refresh not started, or the server not monitored | Processes before you press Start | The time of the last update, and **▶ Resume** |
-| **Snapshot** | Was read once, when you opened it or last pressed Refresh | Top Waits, Index Health, Backups, Config Checks, Security Audit | *Taken 14:01:10 · 2 min ago*, amber after 15 minutes |
-| **History** | Shows a time window | Query Store, Query Regressions, and the Overview, Live charts, Wait Trend and Perfmon on a past range | The window, *compared with* where it compares, and *Data to 11:55* |
+| **Snapshot** | Was read once, when you opened it or last pressed Refresh | Plan Cache Health, Index Health, Backups, Config Checks, Security Audit | *Taken 14:01:10 · 2 min ago*, amber after 15 minutes |
+| **History** | Shows a time window | Query Store, Query Regressions, and the Overview, Live charts, Waits and Perfmon on a past range | The window, *compared with* where it compares, and *Data to 11:55* |
 
 ![A snapshot taken 15 minutes ago, its age in amber](images/top-bar/snapshot-old.png)
 
@@ -189,7 +189,7 @@ A screen reader reads the badge and its time out in words, *"Snapshot, taken at 
 A good first tour, in order:
 
 1. **The server's Overview**: is it OK, and if not, why? Watch the score, the headline numbers and the charts for a minute. If you turned **Start monitoring now** off, or skipped the first steps, it says the server isn't monitored: nothing is collected from a server until you ask, so press **Start monitoring**. **💓 Live charts** has the charts full size.
-2. **📊 Top Waits**: what SQL Server has spent most of its time waiting on since it last started. This is the single best clue to *why* a server is slow. See [Wait Statistics](Wait-Statistics.md).
+2. **📊 Waits**: what SQL Server has spent most of its time waiting on since it last started, in the table under the trend. This is the single best clue to *why* a server is slow. See [Wait Statistics](Wait-Statistics.md).
 3. **🔥 Resource Queries**: the queries using the most CPU and I/O.
 4. **🔍 Index Health**: missing and unused indexes.
 

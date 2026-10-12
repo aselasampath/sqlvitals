@@ -18,7 +18,7 @@ internal static class Sizes
 }
 
 /// <summary>
-/// Memory Grants' verdict (#150): queries waiting for a memory grant, Windows short of memory, or
+/// Memory's verdict (#150): queries waiting for a memory grant, Windows short of memory, or
 /// how SQL Server's memory is used when neither.
 /// </summary>
 public static class MemoryVerdict
@@ -258,11 +258,11 @@ public static class PerfmonVerdict
     /// <summary>The counters with a well-known limit; any other is only charted.</summary>
     public static readonly IReadOnlyList<Limit> Limits =
     [
-        new("Memory Grants Pending", 0, "queries wait for a memory grant", "Memory", "Memory Grants"),
+        new("Memory Grants Pending", 0, "queries wait for a memory grant", "Memory", "Memory"),
         new("Processes blocked", 0, "sessions are blocked", "Processes", "Processes"),
         new("Number of Deadlocks/sec", 0, "deadlocks are happening", "Deadlocks", "Deadlocks"),
-        new("Free list stalls/sec", 2, "requests wait for a free buffer page: memory pressure", "Memory", "Memory Grants"),
-        new("Lazy writes/sec", 20, "the lazy writer flushes pages to free buffers: memory pressure", "Memory", "Memory Grants"),
+        new("Free list stalls/sec", 2, "requests wait for a free buffer page: memory pressure", "Memory", "Memory"),
+        new("Lazy writes/sec", 20, "the lazy writer flushes pages to free buffers: memory pressure", "Memory", "Memory"),
     ];
 
     /// <summary>The limit a verdict's <see cref="Cause"/> opens the page of; null when none is past.</summary>

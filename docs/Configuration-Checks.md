@@ -64,7 +64,7 @@ The processors are the ones **SQL Server can use**: its visible online scheduler
 
 | What you see | Usually means | Try |
 |---|---|---|
-| **MAXDOP** and **Cost threshold** both warn, with `CXPACKET` / `CXCONSUMER` high in [Top Waits](Wait-Statistics.md) | The install defaults (0 and 5): small queries go parallel and big ones take every processor | Set both, then watch the waits for a day. Raise the cost threshold further if small queries still go parallel |
+| **MAXDOP** and **Cost threshold** both warn, with `CXPACKET` / `CXCONSUMER` high in [Waits](Wait-Statistics.md#waits) | The install defaults (0 and 5): small queries go parallel and big ones take every processor | Set both, then watch the waits for a day. Raise the cost threshold further if small queries still go parallel |
 | **MAXDOP 1** passes, but reports and index rebuilds are slow | Nothing runs in parallel. Some applications (SharePoint) require it | Leave it if the application requires it; otherwise set the recommended value and a cost threshold of 50 |
 | **Max server memory** not set, and the server pages or Windows feels slow | SQL Server took nearly all the memory | Set it. The change takes effect straight away; SQL Server gives memory back gradually |
 | **Max server memory** passes, but other software runs on the server | The recommendation only leaves room for Windows | Take off what SSIS, SSAS, SSRS, another instance or an application needs |
