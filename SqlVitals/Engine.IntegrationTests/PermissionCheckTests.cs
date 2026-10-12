@@ -40,10 +40,17 @@ public class PermissionCheckTests(SqlServerFixture server)
             var before = PermissionCheck.Evaluate(await new ServerRepository(bare).CheckPermissionsAsync());
             Assert.Equal(login, before.Probe.Login);
             Assert.True(before.Probe.LoginIsOwn);
-            // Agent's tables count on Express too: the check judges them not needed there.
             Assert.Contains(PermissionArea.ServerState, before.Missing.Select(r => r.Area));
-            Assert.Contains(PermissionArea.BackupHistory, before.Missing.Select(r => r.Area));
             Assert.Contains(PermissionArea.Definitions, before.Missing.Select(r => r.Area));
+
+            // What it says of each msdb table is what reading it as the login does.
+            foreach (var table in PermissionCheck.BackupTables.Concat(PermissionCheck.JobTables))
+            {
+                var reads = await CanReadAsync(bare.ConnectionString, $"SELECT TOP (0) * FROM msdb.dbo.{table};");
+                Assert.True(reads == before.Probe.MsdbReadable.Contains(table),
+                            $"msdb.dbo.{table}: reading it {(reads ? "worked" : "failed")}, the check says " +
+                            $"{(before.Probe.MsdbReadable.Contains(table) ? "readable" : "not readable")}. {Describe(before)}");
+            }
 
             // What a DBA would paste into SSMS, run as the sysadmin.
             await ExecuteAsync(admin, before.GrantScript!);
@@ -64,6 +71,19 @@ public class PermissionCheckTests(SqlServerFixture server)
 
     private static string Describe(PermissionReport report) =>
         string.Join("; ", report.Results.Select(r => $"{r.Area}={r.State} {string.Join(",", r.MissingTables)}"));
+
+    private static async Task<bool> CanReadAsync(string connectionString, string sql)
+    {
+        try
+        {
+            await ExecuteAsync(connectionString, sql);
+            return true;
+        }
+        catch (SqlException)
+        {
+            return false;
+        }
+    }
 
     private static async Task ExecuteAsync(string connectionString, string sql)
     {
