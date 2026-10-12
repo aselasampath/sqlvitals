@@ -51,6 +51,8 @@ public static class ActivityEvents
     public const string ConnectionEdited   = "Connection edited";
     public const string ConnectionRemoved  = "Connection removed";
     public const string HistoryCleared     = "History cleared";
+    /// <summary>Clear stored query text (#175): the text of every query deleted, the rest of the history kept.</summary>
+    public const string QueryTextCleared   = "Query text cleared";
     public const string ChatChannelAdded   = "Chat channel added";
     public const string ChatChannelEdited  = "Chat channel edited";
     public const string ChatChannelRemoved = "Chat channel removed";
@@ -59,7 +61,7 @@ public static class ActivityEvents
     public static IReadOnlyList<string> All { get; } =
     [
         AppStarted, AppExited, MonitoringStarted, MonitoringStopped,
-        SettingChanged, ConnectionAdded, ConnectionEdited, ConnectionRemoved, HistoryCleared,
+        SettingChanged, ConnectionAdded, ConnectionEdited, ConnectionRemoved, HistoryCleared, QueryTextCleared,
         ChatChannelAdded, ChatChannelEdited, ChatChannelRemoved,
     ];
 

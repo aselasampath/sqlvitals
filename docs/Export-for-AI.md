@@ -43,7 +43,7 @@ Numbers and dates in the file are written the same way on every PC (`1,234.5`, `
 
 ## Before you share a report
 
-> ⚠️ The report can contain **query text**, which may include **literal values from your data** (names, IDs, amounts), as well as database, table, login and host names. Read it before pasting it into an external service, and follow your organisation's data policy. Remove anything sensitive, or leave out the query groups.
+> ⚠️ The report can contain **query text**, which may include **literal values from your data** (names, IDs, amounts), as well as database, table, login and host names. Read it before pasting it into an external service, and follow your organisation's data policy. Remove anything sensitive, or leave out the query groups. From 0.77.0 passwords (`Password=`, `PASSWORD = '…'`), access and bearer tokens and webhook URLs are masked in the report as it's written, but literal values aren't: the query text is as the server has it.
 
 ---
 

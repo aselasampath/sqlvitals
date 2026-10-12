@@ -142,6 +142,16 @@ public class ConnectionSettingsService : ISectionFolds
         store.HistoryRetentionDays   = HistorySettings.NormalizeRetention(retentionDays);
     });
 
+    /// <summary>
+    /// Saves how the query text is kept in the history (#175), and that the choice has been put to
+    /// the user, so an installation from before #175 isn't asked again.
+    /// </summary>
+    public void SetQueryTextStorage(QueryTextStorage storage, string source) => Update(source, store =>
+    {
+        store.QueryTextStorage     = storage;
+        store.QueryTextChoiceAsked = true;
+    });
+
     /// <summary>Saves when the Query Regressions page flags a query (see <see cref="RegressionCriteria"/>).</summary>
     public void SetRegressionSettings(RegressionCriteria criteria) => Update(ActivitySources.Page("Query Regressions"), store =>
     {
@@ -351,10 +361,10 @@ public class ConnectionSettingsService : ISectionFolds
     }
 
     /// <summary>
-    /// Masks password values in a message before it is shown, in case a driver or parser
-    /// error echoes part of a connection string back.
+    /// Masks passwords, access and bearer tokens and webhook URLs in a message before it is
+    /// shown (#175), in case a driver, parser or web service echoes one back.
     /// </summary>
-    public static string RedactSecrets(string message) => Secrets.MaskPasswords(message);
+    public static string RedactSecrets(string message) => Secrets.Redact(message);
 
     // ── File I/O ──────────────────────────────────────────────────────────────
     // Every setter loads, changes one thing and saves the whole store. So a read that fails must
@@ -420,6 +430,10 @@ public class ConnectionSettingsService : ISectionFolds
                 WatchChoice             = Enum.TryParse<WatchChoice>(raw.WatchChoice, ignoreCase: true, out var choice) && Enum.IsDefined(choice)
                                               ? choice : WatchChoice.Ask,
                 CollectorHistoryPath    = raw.CollectorHistoryPath?.Trim() ?? string.Empty,
+                // Missing from files written before #175: those kept the query text in full, and
+                // keep doing so until their user chooses, which they're asked once.
+                QueryTextStorage        = QueryTextStorages.TryParse(raw.QueryTextStorage, out var storage) ? storage : QueryTextStorage.Full,
+                QueryTextChoiceAsked    = raw.QueryTextChoiceAsked ?? false,
             };
 
             var migrated = false;
@@ -623,6 +637,8 @@ public class ConnectionSettingsService : ISectionFolds
             DrawerWidth             = store.DrawerWidth,
             WatchChoice             = store.WatchChoice == WatchChoice.Ask ? null : store.WatchChoice.ToString(),
             CollectorHistoryPath    = string.IsNullOrWhiteSpace(store.CollectorHistoryPath) ? null : store.CollectorHistoryPath,
+            QueryTextStorage        = store.QueryTextStorage.ToString(),
+            QueryTextChoiceAsked    = store.QueryTextChoiceAsked,
         };
 
         // Written beside it and swapped in, so a crash or full disk mid-write can't leave half a file.
@@ -693,6 +709,10 @@ public class ConnectionSettingsService : ISectionFolds
         public double? DrawerWidth               { get; set; }
         public string? WatchChoice               { get; set; }
         public string? CollectorHistoryPath      { get; set; }
+
+        // Null in files written before #175, so missing can be told apart (see ReadFile).
+        public string? QueryTextStorage          { get; set; }
+        public bool?   QueryTextChoiceAsked      { get; set; }
 
         // Legacy single-connection formats: read on load, never written.
         public string? EncryptedConnection       { get; set; }
@@ -842,6 +862,18 @@ public class ConnectionStore
     /// The servers it watches are read from it, and this PC doesn't collect them.
     /// </summary>
     public string CollectorHistoryPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How the top queries' text is kept in the history (#175): without literals for a new
+    /// installation; one from before #175 keeps it in full until its user chooses.
+    /// </summary>
+    public QueryTextStorage QueryTextStorage { get; set; } = QueryTextStorages.Default;
+
+    /// <summary>
+    /// The choice of <see cref="QueryTextStorage"/> was put to the user, or there was nothing to
+    /// ask: false only for an installation from before #175, until its user has seen it once.
+    /// </summary>
+    public bool QueryTextChoiceAsked { get; set; } = true;
 
     /// <summary>The key a folded section is saved under: "Backups/verdict".</summary>
     public static string FoldKey(string page, string section) => $"{page}/{section}";

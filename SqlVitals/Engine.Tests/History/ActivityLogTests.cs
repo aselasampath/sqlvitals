@@ -105,6 +105,46 @@ public sealed class ActivityLogTests : IDisposable
     }
 
     [Fact]
+    public void ARow_NeverKeepsASecret_ItsTextEchoed()
+    {
+        using (var store = OpenStore())
+            store.Write(
+            [
+                new ActivityRecord(Entry(ActivityEvents.SettingChanged, T0) with
+                {
+                    Setting = "Collector history from another PC", OldValue = "Password=old pass;", NewValue = "Pwd=new;",
+                    Detail  = "Posting to https://hooks.slack.com/services/T1/B2/abc failed",
+                }),
+            ]);
+
+        var row = Assert.Single(ReadAll());
+
+        Assert.Equal(("Password=*****;", "Pwd=*****;"), (row.OldValue, row.NewValue));
+        Assert.Equal("Posting to [webhook URL removed] failed", row.Detail);
+    }
+
+    [Fact]
+    public async Task ClearQueryTexts_ThroughTheWriter_KeepsTheRestAndLogsIt()
+    {
+        using (var writer = CreateWriter())
+        {
+            // Recent: older than the retention is purged.
+            writer.Enqueue(Detail(DateTime.UtcNow, new Models.QueryTextInfo("0xAB", "Sales", "SELECT 1")));
+            var clears = writer.ClearCount;
+
+            await writer.ClearQueryTextsAsync(new ActivityRecord(Entry(ActivityEvents.QueryTextCleared, T0.AddMinutes(1))));
+
+            Assert.Equal(clears + 1, writer.ClearCount);
+        }
+
+        Assert.Equal(ActivityEvents.QueryTextCleared, Assert.Single(ReadAll()).Event);
+        using var raw = Raw();
+        Assert.Equal(0L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM query_texts;"));
+        Assert.Equal(1L, raw.ExecuteScalar<long>("SELECT COUNT(*) FROM detail_snapshots;"));
+        Assert.Empty(_errors);
+    }
+
+    [Fact]
     public void ReadActivity_FiltersByConnectionEventAndTime()
     {
         var other = Guid.NewGuid();

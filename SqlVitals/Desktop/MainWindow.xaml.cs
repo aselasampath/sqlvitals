@@ -7,6 +7,7 @@ using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
@@ -213,6 +214,13 @@ public partial class MainWindow : Window
             if (rows.Any(r => r.Setting?.StartsWith("Backup RPO", StringComparison.Ordinal) == true))
                 _ = Reported(_collectors.ApplyBackupRpoAsync(saved.BackupRpo, saved.Connections.Select(c => c.Id).ToList()),
                              "give the collector service the backup RPO");
+            // How query text is kept (#175): from the next texts read, here and in the service.
+            if (rows.Any(r => r.Setting == SettingsActivity.QueryTextSetting))
+            {
+                Monitoring.ApplyHistorySettings(saved);
+                _ = Reported(_collectors.ApplyQueryTextStorageAsync(saved.QueryTextStorage, saved.Connections.Select(c => c.Id).ToList()),
+                             "give the collector service the query text setting");
+            }
         };
 
         Chat.Apply(store);
@@ -239,6 +247,11 @@ public partial class MainWindow : Window
         // "Stopped watching" and "watching again" (#170); before the first Sync, which starts some.
         Monitoring.WatchingChanged     += Chat.OnWatchingChanged;
         SyncConnections(store, ActivitySources.AutomaticAtStartup);
+
+        // An installation from before #175 kept query text in full: its user chooses once, when
+        // the window is first on screen (not while it starts in the tray).
+        if (!store.QueryTextChoiceAsked)
+            ContentRendered += AskQueryTextStorageOnce;
 
         Loaded += async (_, _) =>
         {
@@ -704,6 +717,21 @@ public partial class MainWindow : Window
             _restoreState = WindowState;
         else if (KeepRunningInTray)
             HideToTray();
+    }
+
+    private void AskQueryTextStorageOnce(object? sender, EventArgs e)
+    {
+        ContentRendered -= AskQueryTextStorageOnce;
+        try
+        {
+            // Closed without a choice keeps it as it was: in full. Either way it isn't asked again.
+            var choice = _dialogs.AskQueryTextStorage() ?? QueryTextStorage.Full;
+            SettingsService.SetQueryTextStorage(choice, ActivitySources.Settings);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Could not save how query text is kept", ex);
+        }
     }
 
     // Monitoring, history and alerts carry on; only the window goes. Windows it owns (a plan or

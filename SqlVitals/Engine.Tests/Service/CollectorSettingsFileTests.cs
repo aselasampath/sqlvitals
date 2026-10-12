@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Data.SqlClient;
 using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Service;
 
 namespace SqlVitals.Engine.Tests.Service;
@@ -75,6 +76,30 @@ public sealed class CollectorSettingsFileTests : IDisposable
         var channel = Assert.Single(loaded.ChatChannels);
         Assert.Equal((Webhook, Ping, 6, false), (channel.WebhookUrl, channel.HeartbeatPingUrl, channel.HeartbeatHours, channel.AllConnections));
         Assert.Equal([saved.Servers[0].Id], channel.ConnectionIds);
+    }
+
+    [Fact]
+    public void QueryText_IsWithoutLiteralsForANewFile_FullForOneFromBefore175_AndSavedAsChosen()
+    {
+        // No file yet: a new installation.
+        var fresh = CollectorSettingsFile.Load(FilePath, new Reverser()).Settings;
+        Assert.Equal(QueryTextStorage.WithoutLiterals, fresh.QueryTexts);
+
+        // A file from 0.73–0.76 has no queryText: it kept the text in full, and still does.
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(FilePath, "{ \"sampleSeconds\": 15, \"servers\": [] }");
+        var old = CollectorSettingsFile.Load(FilePath, new Reverser()).Settings;
+        Assert.Null(old.QueryText);
+        Assert.Equal(QueryTextStorage.Full, old.QueryTexts);
+
+        var asked = new DateTime(2026, 10, 12, 8, 0, 0, DateTimeKind.Utc);
+        old.QueryText = QueryTextStorage.Off;
+        old.QueryTextClearRequestedUtc = asked;
+        CollectorSettingsFile.Save(FilePath, old, new Reverser());
+
+        var read = CollectorSettingsFile.Load(FilePath, new Reverser()).Settings;
+        Assert.Equal((QueryTextStorage.Off, (DateTime?)asked), (read.QueryTexts, read.QueryTextClearRequestedUtc));
+        Assert.Contains("\"queryText\": \"Off\"", File.ReadAllText(FilePath), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -717,6 +717,64 @@ public sealed class SettingsPageTests : IDisposable
         Assert.Equal(90, _settings.Load().CommandTimeoutSeconds);
     });
 
+    [Fact]
+    public void QueryText_SavesAndApplies_AndClearAsksFirst_ThenClearsHereAndInTheService() => UiThread.Run(() =>
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "collector"));
+        _control = new Fakes.FakeCollectorControl(Path.Combine(_dir, "collector")) { State = CollectorServiceState.Running };
+        var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
+        var monitoring = Assert.IsType<MonitoringCategory>(page.Shown);
+        Assert.Equal("Without literals", ((ComboBoxItem)monitoring.CmbQueryText.SelectedItem).Content);
+        Assert.Same(monitoring.ClearQueryText, monitoring.BtnClearQueryText.Command);
+
+        monitoring.CmbQueryText.SelectedItem = monitoring.CmbQueryText.Items.OfType<ComboBoxItem>()
+                                                         .Single(i => (QueryTextStorage)i.Tag == QueryTextStorage.Off);
+
+        Assert.Equal(QueryTextStorage.Off, _settings!.Load().QueryTextStorage);
+        Assert.Equal(QueryTextStorage.Off, _monitoring!.Get(_hot.Id)!.History!.QueryTexts);
+        Assert.StartsWith("✓  Saved: no query text is kept from now on", monitoring.TxtHistoryStatus.Text);
+
+        // No: nothing is cleared, nothing asked of the service.
+        _answer = MessageBoxResult.No;
+        monitoring.ClearQueryText.Execute(null);
+        Assert.Contains(_asked, a => a.Text.StartsWith("Delete the text of every query", StringComparison.Ordinal));
+        Assert.Null(_control.Saved().QueryTextClearRequestedUtc);
+
+        _answer = MessageBoxResult.Yes;
+        UiThread.Wait(monitoring.ClearQueryTextAsync());
+
+        Assert.NotNull(_control.Saved().QueryTextClearRequestedUtc);
+        Assert.StartsWith("✓  Query text cleared. The collector service clears its own", monitoring.TxtClearQueryTextStatus.Text);
+        Assert.Contains(ActivityEvents.QueryTextCleared,
+                        new HistoryReader(Path.Combine(_dir, "history.db")).ReadActivity(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddHours(1))
+                                                                           .Select(a => a.Entry.Event));
+    });
+
+    [Fact]
+    public void ClearQueryText_DoesntAskAServiceThatIsntInstalled_ThoughItsFolderIsLeft() => UiThread.Run(() =>
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "collector"));
+        _control = new Fakes.FakeCollectorControl(Path.Combine(_dir, "collector"));   // not installed
+        var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
+        var monitoring = Assert.IsType<MonitoringCategory>(page.Shown);
+        _answer = MessageBoxResult.Yes;
+
+        UiThread.Wait(monitoring.ClearQueryTextAsync());
+
+        Assert.Equal("✓  Query text cleared.", monitoring.TxtClearQueryTextStatus.Text);
+        Assert.False(File.Exists(Engine.Service.CollectorPaths.SettingsFile(Path.Combine(_dir, "collector"))));
+    });
+
+    [Fact]
+    public void AStatusLine_NeverShowsASecret() => UiThread.Run(() =>
+    {
+        var line = new TextBlock();
+
+        SettingsContext.ShowStatus(line, "Could not post to https://hooks.slack.com/services/T1/B2/abc (Password=x;)", success: false);
+
+        Assert.Equal("✗  Could not post to [webhook URL removed] (Password=*****;)", line.Text);
+    });
+
     private SettingsContext TestContext() =>
         new(_settings!, _monitoring!, _chat!, Apply, (_, _, _, _) => _answer, _ => { }, _ => { });
 

@@ -119,9 +119,17 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
     /// and <paramref name="logged"/>, when given, is added to it once the rest is gone. Completes
     /// once the file has been emptied; fails with the reason when it couldn't be.
     /// </summary>
-    public Task ClearAsync(ActivityRecord? logged)
+    public Task ClearAsync(ActivityRecord? logged) => Queue(new ClearCommand(logged, queryTextsOnly: false));
+
+    /// <summary>
+    /// Deletes the text of every query (#175), including texts queued before the call; the rest of
+    /// the history stays. Recorders then read the texts again, as their setting says. Logs
+    /// <paramref name="logged"/>, when given, once they're gone. Fails with the reason when it couldn't.
+    /// </summary>
+    public Task ClearQueryTextsAsync(ActivityRecord? logged) => Queue(new ClearCommand(logged, queryTextsOnly: true));
+
+    private Task Queue(ClearCommand command)
     {
-        var command = new ClearCommand(logged);
         if (!_queue.Writer.TryWrite(command))
             return Task.FromException(new InvalidOperationException("Monitoring history has stopped."));
         return command.Done.Task;
@@ -311,7 +319,10 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
                 OpenStore();
             }
 
-            _store!.Clear();
+            if (command.QueryTextsOnly)
+                _store!.ClearQueryTexts();
+            else
+                _store!.Clear();
             Interlocked.Increment(ref _clearCount);
             if (command.Logged is { } logged)
                 WriteBatch([logged]);
@@ -324,7 +335,8 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
             else if (ex is not InvalidOperationException)
                 Reset(quarantine: false);   // reopened on the next batch
 
-            _reporter.Report($"Could not clear the monitoring history in {Path}.", ex);
+            _reporter.Report(command.QueryTextsOnly ? $"Could not clear the stored query text in {Path}."
+                                                     : $"Could not clear the monitoring history in {Path}.", ex);
             if (command.Logged is { } logged)
                 NotSaved(logged);
             command.Done.TrySetException(ex);
@@ -439,9 +451,12 @@ public sealed class HistoryWriter : IHistorySink, IDisposable
         public static readonly EndAlertsCommand Instance = new();
     }
 
-    private sealed class ClearCommand(ActivityRecord? logged) : Command
+    private sealed class ClearCommand(ActivityRecord? logged, bool queryTextsOnly) : Command
     {
         public ActivityRecord? Logged { get; } = logged;
+
+        /// <summary>Only the query texts (#175), not all the history.</summary>
+        public bool QueryTextsOnly { get; } = queryTextsOnly;
 
         public TaskCompletionSource Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

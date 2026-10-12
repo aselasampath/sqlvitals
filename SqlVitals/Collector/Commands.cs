@@ -39,8 +39,11 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
                                   [--alert-samples 1|2|3|5|10] [--command-timeout <s>]
                                   [--share-copy-minutes <5-1440>|0] [--share-copy-folder <folder>]
                                   [--backup-rpo-full <age, e.g. 7d>] [--backup-rpo-log <age, e.g. 1h>]
+                                  [--query-text full|without-literals|off]
                                   A share copy of the history, for SqlVitals on other PCs to read over a share. The
-                                  backup RPO is what the backups check counts databases against.
+                                  backup RPO is what the backups check counts databases against. --query-text: how the
+                                  top queries' text is kept in the history; text already kept stays until clear-query-text.
+          clear-query-text        Deletes the query text kept in the history; the numbers stay.
           test                    Reads each server once and posts a test message to each channel.
           install                 As an administrator: install the Windows service. [--account <name>] [--password-stdin] [--start]
           uninstall               As an administrator: remove it. Its settings and history stay unless --delete-data.
@@ -73,6 +76,7 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
                 "add-channel"    => AddChannel(line),
                 "remove-channel" => RemoveChannel(line),
                 "set"            => Set(line),
+                "clear-query-text" => ClearQueryText(),
                 "test"           => await TestAsync().ConfigureAwait(false),
                 "install"        => Install(line),
                 "uninstall"      => new ServiceSetup(windows, console.Out).Uninstall(dataDirectory, line.Flag("delete-data")),
@@ -127,6 +131,7 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
                     $"history kept {settings.HistoryRetentionDays} days · alerts after {settings.AlertSamples} samples · " +
                     $"query timeout {settings.CommandTimeoutSeconds} s");
         o.WriteLine($"Backups checked against {settings.BackupRpo.Describe()}.");
+        o.WriteLine($"Query text kept: {Engine.History.QueryTextStorages.Describe(settings.QueryTexts)}.");
         o.WriteLine(settings.ShareCopyMinutes == 0
             ? "No share copy of the history."
             : $"Share copy every {settings.ShareCopyMinutes} min: {settings.ShareCopyPath(dataDirectory)}");
@@ -341,11 +346,27 @@ internal sealed class Commands(ICommandConsole console, string dataDirectory, bo
             settings.BackupRpo = rpo!;
             changed.Add($"backups checked against {rpo!.Describe()}");
         }
+        if (line.Option("query-text") is { } queryText)
+        {
+            settings.QueryText = Engine.History.QueryTextStorages.TryParse(queryText, out var storage)
+                ? storage : throw new UsageException("--query-text must be full, without-literals or off.");
+            changed.Add($"query text kept: {Engine.History.QueryTextStorages.Describe(storage).ToLowerInvariant()}");
+        }
         if (changed.Count == 0)
             throw new UsageException("Nothing to set. See: SqlVitals.Collector help");
 
         Save(settings);
         Saved($"Set {string.Join(", ", changed)}.");
+        return 0;
+    }
+
+    // Asks the service to clear (#175): it owns the history file, and logs that it did.
+    private int ClearQueryText()
+    {
+        var settings = Read().Settings;
+        settings.QueryTextClearRequestedUtc = DateTime.UtcNow;
+        Save(settings);
+        Saved("Asked the service to delete the query text kept in its history; the numbers stay.");
         return 0;
     }
 

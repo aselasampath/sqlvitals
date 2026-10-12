@@ -5,10 +5,10 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 ## At a glance
 
 - **No telemetry, no cloud.** SqlVitals makes no network connections except to the SQL Servers you configure.
-- **Credentials are encrypted** with Windows DPAPI, per Windows user.
+- **Credentials are encrypted** with Windows DPAPI, per Windows user. That keeps them from other Windows users and off copies of the file; it doesn't keep them from other programs running as you. See [What DPAPI protects](#what-dpapi-protects-and-what-it-doesnt).
 - **Passwords are optional on disk.** Untick *Remember password* and they stay in memory for the session only.
-- **Logs are scrubbed** of passwords and connection strings.
-- **History is local and unencrypted.** It can include query text. See below.
+- **Secrets are scrubbed from everything that leaves the app**: passwords, access and bearer tokens, and webhook URLs are masked in the log files, the activity log, error messages and Export for AI reports. See [Secrets in messages, logs and reports](#secrets-in-messages-logs-and-reports).
+- **History is local and unencrypted.** From 0.77.0 it keeps query text **without literals** by default, or none at all if you choose. See [Query text in the history](#query-text-in-the-history).
 - **The activity log never holds a secret.** It records who changed what, but for a password or connection string only that it changed.
 
 ## What is stored, and where
@@ -16,9 +16,9 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 | Data | Location | Protection | Contains |
 |---|---|---|---|
 | Saved connections and settings | `%AppData%\SqlVitals\settings.dat` | **DPAPI** (current user) | Server, database, auth type, login, password (only if *Remember password*), thresholds, preferences |
-| Monitoring history | `%LocalAppData%\SqlVitals\history.db` | Windows file permissions (your profile) | Metrics, waits, file I/O, and **query text** (up to 4,000 characters per query hash) |
+| Monitoring history | `%LocalAppData%\SqlVitals\history.db` | Windows file permissions (your profile) | Metrics, waits, file I/O, and the busiest queries' **text** (up to 4,000 characters per query hash), kept as *Store query text in history* says: **without literals** by default from 0.77.0 |
 | Activity log | The same `history.db`, table `activity_log` | Windows file permissions | When monitoring started and stopped, app starts and exits, settings and connection changes with their old and new values, **your Windows user name and PC name**; 365-day retention |
-| Diagnostic logs | `%AppData%\SqlVitals\logs\SqlVitals-yyyyMMdd.log` | Windows file permissions | Errors and warnings; **passwords and connection strings removed**; 14-day retention |
+| Diagnostic logs | `%AppData%\SqlVitals\logs\SqlVitals-yyyyMMdd.log` | Windows file permissions | Errors and warnings; **passwords, tokens, webhook URLs and connection strings removed**; 14-day retention |
 | Exported reports / CSVs / scripts | Wherever you save them | Your responsibility | Whatever you exported |
 | Setup log | `%TEMP%\SqlVitals-Setup-*.log` | — | Install steps and paths only |
 | [Collector service](Collector-Service.md) settings (optional, from 0.73.0) | `%ProgramData%\SqlVitals\Collector\collector.json` | Folder locked to SYSTEM, Administrators, the service's account and the installing user; secrets **DPAPI** (*LocalMachine*) | Servers, logins, SQL passwords (protected), chat channels with their webhook and ping URLs (protected), sampling settings |
@@ -32,6 +32,21 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 - The *Additional parameters* field rejects `Password` and `User ID`, so a secret can't be stored outside the encrypted fields.
 - **Entra MFA** uses the interactive Microsoft sign-in, through Windows' account manager (WAM) from 0.67.0. SqlVitals never sees your Microsoft password.
 - **Windows Authentication** stores no secret.
+
+### What DPAPI protects, and what it doesn't
+
+`settings.dat` holds the connections (with any remembered password) and the chat channels (with their webhook URLs) encrypted by DPAPI in **CurrentUser** scope, with no extra secret of SqlVitals' own. The key is your Windows account's, unlocked by your Windows sign-in.
+
+| Who | Can they read the passwords and webhook URLs in `settings.dat`? |
+|---|---|
+| Another Windows user on the same PC | **No.** Their DPAPI key isn't yours. |
+| Anyone with a copy of the file: a backup, a synced folder, a support zip, another PC | **No.** It only decrypts as your account, signed in. |
+| **Any program running as you**, while you're signed in | **Yes.** DPAPI decrypts for any process of your account, without asking. A script, a tool or malware running as you can read them, just as SqlVitals does. |
+| An administrator of the PC | Not directly. But an administrator can run programs as you while you're signed in, and **domain administrators** can recover DPAPI keys with the domain's backup key. |
+
+So DPAPI protects against other users and lost copies, not against software you run. That's the usual limit for a desktop tool, and why SqlVitals recommends **Windows authentication** (no password stored) or a low-privilege login with only `VIEW SERVER STATE`, and *Remember password* off on shared or unmanaged PCs. What isn't in `settings.dat` (the history, the activity log, the log files) isn't encrypted at all: only Windows file permissions on your profile protect it, and any program running as you, or an administrator, can read it.
+
+The [collector service](#collector-service) uses DPAPI's **LocalMachine** scope instead, with the limits described there.
 
 ## Collector service
 
@@ -59,13 +74,30 @@ From 0.46.0 SqlVitals keeps an [activity log](Settings.md#activity-log): when mo
 - **What it never records:** passwords, connection strings (including a connection's *Additional parameters*), access tokens, webhook URLs or any other secret. For those the row only says *changed*. Changes are worked out by comparing the settings file before and after each save against a fixed list of secret names, in one place (`SettingsDiff`), and tests check that no secret reaches the table.
 - **Not a security audit trail.** It's a local file your Windows account can edit or delete. It is kept for 365 days, survives **Clear history**, and starts again if the history file is damaged and replaced.
 
-## Query text and sensitive data
+## Query text in the history
 
-Query text captured from the server (in history, exports and copied grids) may contain **literal values**: customer names, IDs, amounts. Before sharing:
+Every snapshot saves the numbers of the busiest queries (CPU, reads, executions) by their **query hash**, and the text of each query once. A query's text can hold **literal values**: customer names, email addresses, amounts, and sometimes a password in dynamic SQL (`CREATE LOGIN … WITH PASSWORD = '…'`). From 0.77.0 (#175), **Settings → Monitoring & history → Store query text in history** decides what is kept:
 
-- **Export for AI reports**: read them before pasting into an external service.
-- **`history.db`**: don't send it to others without checking. **Settings → Monitoring & history → Clear history** deletes the history, but keeps the activity log (with your Windows user and PC names); delete the file itself to remove that too, with SqlVitals closed.
-- **Logs** are safe to attach to bug reports as far as credentials go, but may include server and database names.
+| Choice | What `history.db` keeps |
+|---|---|
+| **Without literals** (default for a new installation) | The statement with every string, number, money and binary value replaced by `?`, found by the T-SQL lexer (ScriptDom): `WHERE Email = 'ann@example.com' AND Id IN (1, 2)` is kept as `WHERE Email = ? AND Id IN (?, ?)`. Names of tables, columns and variables, and comments, are kept; text in "double quotes" goes too, since with `QUOTED_IDENTIFIER OFF` it is a string. The statement inside `EXEC('…')` and `sp_executesql N'…'` is kept the same way, its own values replaced; any other string is a value. Text cut off at 4,000 characters inside a string loses all of that string. |
+| **Full** | The text exactly as SQL Server has it, as every version before 0.77.0 kept it. |
+| **Off** | No text at all, only the hash. The numbers are kept; pages that show history show those queries without text. |
+
+- **An installation from before 0.77.0 keeps Full** until you choose: SqlVitals asks once, the first time its window opens after the upgrade. Closing the question keeps Full.
+- **Changing the setting doesn't touch what's already saved.** Text read from then on is kept the new way. To remove what's there, press **Clear stored query text…** in the same place: it deletes the text of every query, for every connection, and overwrites the freed space in the file so the text can't be read back out of it. The numbers stay, text is read again as the setting says, and the activity log records the clear. When the [collector service](Collector-Service.md) is installed on this PC, it is asked to clear its own history's text too, within a few seconds (or with `SqlVitals.Collector clear-query-text`).
+- **The collector service** keeps its own setting: the app passes its choice on when it hands a server over and whenever you change it, and `SqlVitals.Collector set --query-text full|without-literals|off` sets it by hand. A service set up before 0.77.0 keeps Full until then.
+- **Not covered:** the pages read query text live from the server and show it in full, and **Export for AI** writes it as the server has it (with secrets masked, below). Read an export before pasting it into an external service. **Clear history** deletes the history but keeps the activity log (with your Windows user and PC names); delete the file itself, with SqlVitals closed, to remove that too.
+
+## Secrets in messages, logs and reports
+
+A driver, a parser or a web service can echo a secret back in an error message. From 0.77.0 (#175) one shared redaction is applied wherever text leaves SqlVitals: the **log files**, the **activity log** (old value, new value and detail), **error messages** (every message box, the top bar's errors and the Settings status lines) and **Export for AI** reports. It masks:
+
+- `Password=`, `Pwd=` and `Access Token=` values in connection strings, and `PASSWORD = '…'` in SQL: `Password=*****`.
+- **Bearer tokens** (`Authorization: Bearer …`), OAuth token fields (`access_token`, `refresh_token`, `id_token`) and JSON web tokens anywhere in the text.
+- **Webhook URLs** of Slack, Teams, Power Automate and Logic Apps: `[webhook URL removed]`.
+
+The log files also replace whole connection strings with `[connection string removed]`. The collector service uses the same code. **Logs** are then safe to attach to bug reports as far as credentials go, but may include server and database names.
 
 ## Installer
 

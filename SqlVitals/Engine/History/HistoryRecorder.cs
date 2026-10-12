@@ -35,6 +35,7 @@ public sealed class HistoryRecorder
     private readonly HashSet<string>      _textsSaved = new();
 
     private long            _detailIntervalTicks = TimeSpan.FromMinutes(HistorySettings.DefaultIntervalMinutes).Ticks;
+    private int             _queryTexts = (int)QueryTextStorages.Default;
     private DateTimeOffset? _lastDetail;
     private int             _detailInFlight;
     private int             _clearCountSeen;
@@ -64,6 +65,16 @@ public sealed class HistoryRecorder
                 throw new ArgumentOutOfRangeException(nameof(value), value, "The detail interval must be positive.");
             Interlocked.Exchange(ref _detailIntervalTicks, value.Ticks);
         }
+    }
+
+    /// <summary>
+    /// How the text of the queries is kept (#175): in full, without literals, or not at all. A
+    /// change applies to the texts read from then on; those already saved stay as they are.
+    /// </summary>
+    public QueryTextStorage QueryTexts
+    {
+        get => (QueryTextStorage)Volatile.Read(ref _queryTexts);
+        set => Volatile.Write(ref _queryTexts, (int)value);
     }
 
     /// <summary>Queues a live sample, stamped with this PC's UTC clock.</summary>
@@ -168,13 +179,19 @@ public sealed class HistoryRecorder
             _clearCountSeen = clearCount;
         }
 
+        // Off, no text is read at all; the numbers are kept by the query's hash.
         IReadOnlyList<QueryTextInfo> texts = Array.Empty<QueryTextInfo>();
-        var missing = detail.TopQueries.Select(q => q.QueryHash).Where(h => !_textsSaved.Contains(h)).ToList();
+        var storage = QueryTexts;
+        var missing = storage == QueryTextStorage.Off
+            ? []
+            : detail.TopQueries.Select(q => q.QueryHash).Where(h => !_textsSaved.Contains(h)).ToList();
         if (missing.Count > 0)
         {
             try
             {
-                texts = await _repository.GetQueryTextsAsync(missing, MaxQueryTextLength, cancellationToken).ConfigureAwait(false);
+                texts = QueryTextStorages.Apply(
+                    await _repository.GetQueryTextsAsync(missing, MaxQueryTextLength, cancellationToken).ConfigureAwait(false),
+                    storage);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {

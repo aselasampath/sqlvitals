@@ -1,5 +1,7 @@
 using System.Windows;
 using SqlVitals.Desktop.Windows;
+using SqlVitals.Engine.Errors;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.QueryStore;
 using SqlVitals.Engine.Repositories;
@@ -78,11 +80,45 @@ internal sealed class WpfDialogService : IDialogService
         return null;
     }
 
+    // Three worded choices, the recommended one first; the window closed keeps it as it was.
+    public QueryTextStorage? AskQueryTextStorage()
+    {
+        var without = new System.Windows.Forms.TaskDialogCommandLinkButton("Without literals (recommended)",
+            "Keeps each query's shape with its values replaced by ?, so names, emails or passwords " +
+            "in a WHERE clause aren't saved.");
+        var full = new System.Windows.Forms.TaskDialogCommandLinkButton("Full, as now",
+            "Keeps each query exactly as SQL Server ran it, values and all.");
+        var off = new System.Windows.Forms.TaskDialogCommandLinkButton("Off",
+            "Keeps no text, only each query's hash. CPU, reads and executions are kept either way.");
+        var page = new System.Windows.Forms.TaskDialogPage
+        {
+            Caption     = "Monitoring history",
+            Heading     = "How should query text be kept in the history?",
+            Text        = "SqlVitals saves the text of the busiest queries in its history file, which isn't encrypted. " +
+                          "Text already saved stays until you press Clear stored query text in Settings → Monitoring & history, " +
+                          "where you can also change this later.",
+            Buttons     = { without, full, off },
+            Icon        = System.Windows.Forms.TaskDialogIcon.Information,
+            AllowCancel = true,
+        };
+        var owner  = OwnerWindow() is { } window ? new System.Windows.Interop.WindowInteropHelper(window).Handle : IntPtr.Zero;
+        var picked = owner == IntPtr.Zero ? System.Windows.Forms.TaskDialog.ShowDialog(page)
+                                          : System.Windows.Forms.TaskDialog.ShowDialog(owner, page);
+        return picked == without ? QueryTextStorage.WithoutLiterals
+             : picked == full    ? QueryTextStorage.Full
+             : picked == off     ? QueryTextStorage.Off
+             : null;
+    }
+
+    // Every message box goes through here: an error's text may echo a secret back (#175).
     private static MessageBoxResult Show(string message, string caption, MessageBoxButton buttons, MessageBoxImage icon,
-                                         MessageBoxResult defaultResult = MessageBoxResult.None) =>
-        OwnerWindow() is { } owner
+                                         MessageBoxResult defaultResult = MessageBoxResult.None)
+    {
+        message = Secrets.Redact(message);
+        return OwnerWindow() is { } owner
             ? MessageBox.Show(owner, message, caption, buttons, icon, defaultResult)
             : MessageBox.Show(message, caption, buttons, icon, defaultResult);
+    }
 
     /// <summary>
     /// The window the user is in: the active one, else the main window while it is shown. Null

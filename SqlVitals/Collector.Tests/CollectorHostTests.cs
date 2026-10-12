@@ -155,6 +155,61 @@ public sealed class CollectorHostTests : IDisposable
     }
 
     [Fact]
+    public async Task ClearQueryText_IsDoneOncePerRequest_EvenAcrossARestart()
+    {
+        var a = Server("Sales-Prod");
+        var settings = Settings([a]);
+        settings.QueryTextClearRequestedUtc = DateTime.UtcNow.AddMinutes(-1);
+        Save(settings);
+        int Cleared() => Activity().Count(e => e.Event == ActivityEvents.QueryTextCleared);
+
+        using (var host = Host())
+        {
+            await host.StartAsync();
+            await WaitUntil(() => Cleared() == 1, "the query text cleared");
+            await host.CheckSettingsNowAsync();
+            await host.StopAsync();
+        }
+        using (var host = Host())
+        {
+            // The same request after a restart: already done, by the activity log.
+            await host.StartAsync();
+            await host.StopAsync();
+        }
+        Assert.Equal(1, Cleared());
+        var row = Activity().Single(e => e.Event == ActivityEvents.QueryTextCleared);
+        Assert.Equal((ActivitySources.CollectorSettings, CollectorHost.ClearedFor(settings.QueryTextClearRequestedUtc.Value)), (row.Source, row.Detail));
+
+        // A new request is done again.
+        using (var host = Host())
+        {
+            await host.StartAsync();
+            settings.QueryTextClearRequestedUtc = DateTime.UtcNow;
+            Save(settings);
+            await host.CheckSettingsNowAsync();
+            await WaitUntil(() => Cleared() == 2, "the query text cleared again");
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task ARequestOlderThanTheActivityLog_IsntDoneAgain()
+    {
+        // Its row would have been purged by now: clearing again would only delete newer text.
+        var settings = Settings([Server("Sales-Prod")]);
+        settings.QueryTextClearRequestedUtc = DateTime.UtcNow - ActivityLog.Retention - TimeSpan.FromDays(1);
+        Save(settings);
+
+        using (var host = Host())
+        {
+            await host.StartAsync();
+            await host.StopAsync();
+        }
+
+        Assert.DoesNotContain(Activity(), e => e.Event == ActivityEvents.QueryTextCleared);
+    }
+
+    [Fact]
     public async Task AnEditedServer_IsRestarted_WithoutTellingTheChannelsItStopped()
     {
         var a = Server("Sales-Prod");

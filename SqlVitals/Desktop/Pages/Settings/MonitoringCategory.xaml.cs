@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.History;
@@ -11,7 +12,8 @@ namespace SqlVitals.Desktop.Pages.Settings;
 
 /// <summary>
 /// Settings → Monitoring &amp; history (#131): Start monitoring automatically, Command timeout,
-/// the history's snapshot interval and retention, and Clear history. Each saves as it changes.
+/// the history's snapshot interval and retention, how query text is kept (#175), and Clear history
+/// and Clear stored query text. Each saves as it changes.
 /// </summary>
 internal partial class MonitoringCategory : UserControl, ISettingsCategory
 {
@@ -28,10 +30,13 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
     private int  _savedIntervalMinutes;
     private int  _savedRetentionDays;
     private int  _savedTimeout;
+    private QueryTextStorage _savedQueryText;
 
     public MonitoringCategory(SettingsContext context)
     {
         _context = context;
+        // Before InitializeComponent: the button binds to it, and it raises no change.
+        ClearQueryText = new RelayCommand(() => _ = ClearQueryTextAsync());
         InitializeComponent();
         TxtSubtitle.Text = SettingsNav.Info(SettingsCategory.Monitoring).Subtitle;
 
@@ -154,6 +159,10 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
                 CmbHistoryRetention.Items.Add(new ComboBoxItem { Content = $"{days} days", Tag = days });
 
             ShowHistorySettings(store.HistoryIntervalMinutes, store.HistoryRetentionDays);
+
+            foreach (var storage in QueryTextStorages.All)
+                CmbQueryText.Items.Add(new ComboBoxItem { Content = QueryTextStorages.Describe(storage), Tag = storage });
+            ShowQueryText(store.QueryTextStorage);
         }
         finally
         {
@@ -231,6 +240,87 @@ internal partial class MonitoringCategory : UserControl, ISettingsCategory
                 _isLoadingHistorySettings = false;
             }
         });
+
+    private void ShowQueryText(QueryTextStorage storage)
+    {
+        _savedQueryText = storage;
+        CmbQueryText.SelectedItem = CmbQueryText.Items.OfType<ComboBoxItem>().First(i => (QueryTextStorage)i.Tag == storage);
+    }
+
+    // From the texts read next, here and in the collector service when it watches one of these
+    // servers (MainWindow passes it on); what's already saved stays until Clear stored query text.
+    private void QueryText_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingHistorySettings || CmbQueryText.SelectedItem is not ComboBoxItem { Tag: QueryTextStorage storage }
+            || storage == _savedQueryText)
+            return;
+
+        try
+        {
+            _context.Service.SetQueryTextStorage(storage, ActivitySources.Settings);
+            _context.Monitoring.ApplyHistorySettings(_context.Service.Load());
+            _savedQueryText = storage;
+            SettingsContext.ShowStatus(TxtHistoryStatus, storage switch
+            {
+                QueryTextStorage.Full            => "Saved: query text read from now on is kept in full.",
+                QueryTextStorage.WithoutLiterals => "Saved: query text read from now on is kept with its values replaced by ?.",
+                _                                => "Saved: no query text is kept from now on, only each query's hash.",
+            } + " Text already saved stays until you clear it.", success: true);
+        }
+        catch (Exception ex)
+        {
+            SettingsContext.ShowStatus(TxtHistoryStatus, $"Could not save how query text is kept: {ex.Message}", success: false);
+            Dispatcher.BeginInvoke(() =>
+            {
+                _isLoadingHistorySettings = true;
+                try { ShowQueryText(_savedQueryText); }
+                finally { _isLoadingHistorySettings = false; }
+            });
+        }
+    }
+
+    /// <summary>Clear stored query text… (#175): bound by the button, as the MVVM rule asks of a new one.</summary>
+    public ICommand ClearQueryText { get; }
+
+    internal async Task ClearQueryTextAsync()
+    {
+        var confirm = _context.Ask(
+            "Delete the text of every query saved in the monitoring history, for every connection?\n\n" +
+            "CPU, reads and executions are kept, by each query's hash, and monitoring carries on: text is saved again as " +
+            "Store query text in history says. The collector service on this PC clears its history's too. " +
+            "The activity log records it. This cannot be undone.",
+            "Clear Stored Query Text", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        BtnClearQueryText.IsEnabled = false;
+        SettingsContext.ShowStatus(TxtClearQueryTextStatus, "Clearing query text…", success: null);
+        try
+        {
+            await _context.Monitoring.ClearQueryTextAsync(ActivitySources.Settings);
+            var service = false;
+            string? serviceFailed = null;
+            if (_context.Collectors is { } collectors)
+            {
+                try { service = await collectors.RequestQueryTextClearAsync(); }
+                catch (Exception ex) { serviceFailed = ex.Message; }
+            }
+            SettingsContext.ShowStatus(TxtClearQueryTextStatus,
+                serviceFailed is not null ? $"Query text cleared here, but the collector service couldn't be asked to clear its own: {serviceFailed}"
+                : service                 ? "Query text cleared. The collector service clears its own within a few seconds, or when it next starts."
+                :                           "Query text cleared.",
+                success: serviceFailed is null);
+        }
+        catch (Exception ex)
+        {
+            SettingsContext.ShowStatus(TxtClearQueryTextStatus, $"Could not clear the query text: {ex.Message}", success: false);
+        }
+        finally
+        {
+            BtnClearQueryText.IsEnabled = true;
+            UpdateHistorySize();
+        }
+    }
 
     private async void BtnClearHistory_Click(object sender, RoutedEventArgs e)
     {

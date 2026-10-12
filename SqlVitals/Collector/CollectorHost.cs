@@ -58,6 +58,8 @@ public sealed class CollectorHost : IDisposable
     private string?                  _sharePath;
     private int                      _copying;
     private bool                     _shareFailing;
+    private DateTime?                _queryTextsClearedFor;
+    private DateTime?                _queryTextsClearAsked;
 
     // One watched server: its settings as started, and its collector.
     private sealed class Watched(CollectorServer server, ServerCollector collector, HistoryRecorder recorder, string fingerprint)
@@ -176,8 +178,14 @@ public sealed class CollectorHost : IDisposable
     // servers and channels are applied again. A file that can't be read keeps what runs now.
     private void CheckSettings()
     {
-        if (!_started || _stopped || Stamp() == _fileStamp)
+        if (!_started || _stopped)
             return;
+        if (Stamp() == _fileStamp)
+        {
+            // Unchanged; a clear that failed is tried again (#175).
+            ClearQueryTextsIfAsked();
+            return;
+        }
         try
         {
             Apply(LoadSettings(), ActivitySources.CollectorSettings);
@@ -271,7 +279,10 @@ public sealed class CollectorHost : IDisposable
             watched.Collector.ChecksInterval  = detail;
             watched.Collector.BackupRpo       = settings.BackupRpo;
             watched.Recorder.DetailInterval   = detail;
+            watched.Recorder.QueryTexts       = settings.QueryTexts;
         }
+        _queryTextsClearAsked = settings.QueryTextClearRequestedUtc;
+        ClearQueryTextsIfAsked();
 
         // The alert ends of the servers that stopped, before the message saying they stopped.
         Drain();
@@ -379,8 +390,9 @@ public sealed class CollectorHost : IDisposable
             repositories.History, _history!, (message, ex) => _log.Error(message, ex), _time)
         {
             DetailInterval = TimeSpan.FromMinutes(settings.HistoryIntervalMinutes),
+            QueryTexts     = settings.QueryTexts,
         };
-        var collector = new ServerCollector(id, repositories.Live, settings.SampleSeconds, recorder, _time, Secrets.MaskPasswords,
+        var collector = new ServerCollector(id, repositories.Live, settings.SampleSeconds, recorder, _time, Secrets.Redact,
                                             repositories.Checks)
         {
             Thresholds     = settings.ThresholdsFor(server),
@@ -448,14 +460,61 @@ public sealed class CollectorHost : IDisposable
     }
 
     // Through the history's queue; never blocks. The service's account and this PC say who did it.
-    private void Log(ActivityEntry entry) =>
-        _history!.Enqueue(new ActivityRecord(entry with
+    private void Log(ActivityEntry entry) => _history!.Enqueue(Record(entry));
+
+    private static ActivityRecord Record(ActivityEntry entry) =>
+        new(entry with
         {
             WindowsUser = string.IsNullOrEmpty(Environment.UserDomainName)
                 ? Environment.UserName
                 : $@"{Environment.UserDomainName}\{Environment.UserName}",
             Machine = Environment.MachineName,
-        }));
+        });
+
+    /// <summary>What the activity log's row says of the request it cleared for, so it is done once.</summary>
+    internal static string ClearedFor(DateTime requestedUtc) =>
+        $"Asked for at {requestedUtc.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture)}.";
+
+    // Clears the stored query text once for each request in the settings (#175): the app's Clear
+    // stored query text, or the clear-query-text command. A request already done has its row in
+    // the activity log, so a restart, or the next settings check, doesn't clear again. One older
+    // than the activity log keeps its rows was done long ago (or its row went with a damaged file):
+    // clearing again would only delete the text kept since.
+    private void ClearQueryTextsIfAsked()
+    {
+        if (_queryTextsClearAsked is not { } asked || asked == _queryTextsClearedFor)
+            return;
+        _queryTextsClearedFor = asked;
+
+        var said = ClearedFor(asked);
+        var now  = _time.GetUtcNow().UtcDateTime;
+        if (asked < now - ActivityLog.Retention)
+            return;
+        try
+        {
+            // Rows are stamped when the clear is done: after the request, on this PC's clock.
+            var from = (asked < now ? asked : now).AddDays(-1);
+            if (_reader!.ReadActivity(from, now.AddDays(1), evt: ActivityEvents.QueryTextCleared).Any(r => r.Entry.Detail == said))
+                return;
+        }
+        catch (Exception ex)
+        {
+            // Unreadable, clear anyway: twice is better than never.
+            _log.Error("Collector: couldn't read the activity log to see whether the query text was cleared", ex);
+        }
+
+        _log.Info("Collector: clearing the stored query text, as asked");
+        var record = Record(new ActivityEntry(now, ActivityEvents.QueryTextCleared, null, null,
+                                              ActivitySources.CollectorSettings, Detail: said));
+        // The writer logs why it failed; the next settings check tries again.
+        _history!.ClearQueryTextsAsync(record).ContinueWith(
+            t =>
+            {
+                _ = t.Exception;   // observed: the writer has reported it
+                _serial.Post(_ => _queryTextsClearedFor = null, null);
+            },
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+    }
 
     public void Dispose() => _serial.Dispose();
 }

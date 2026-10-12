@@ -139,6 +139,7 @@ public static class SettingsNav
         ["Command timeout"]                       = SettingPlace.In(SettingsCategory.Monitoring),
         ["History snapshot interval"]             = SettingPlace.In(SettingsCategory.Monitoring),
         ["History retention"]                     = SettingPlace.In(SettingsCategory.Monitoring),
+        [SettingsActivity.QueryTextSetting]       = SettingPlace.In(SettingsCategory.Monitoring),
         ["Health threshold"]                      = SettingPlace.In(SettingsCategory.Thresholds),
         ["Health weight"]                         = SettingPlace.In(SettingsCategory.Thresholds),
         ["Alert samples"]                         = SettingPlace.In(SettingsCategory.Alerts),

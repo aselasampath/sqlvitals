@@ -59,6 +59,8 @@ public static class CollectorHandover
         service.Servers.Add(server);
         // The service has one RPO for every server, as the app does (#174): the app's.
         service.BackupRpo = app.BackupRpo;
+        // And keeps the query text as the app does (#175).
+        service.QueryText = app.QueryTextStorage;
 
         foreach (var channel in app.ChatChannels.Where(c => c.Enabled && c.Includes(connection.Id)))
         {

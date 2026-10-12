@@ -1,5 +1,6 @@
 using System.Security.Principal;
 using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Engine.History;
 using SqlVitals.Engine.Service;
 
 namespace SqlVitals.Collector.Tests;
@@ -219,6 +220,25 @@ public sealed class CommandsTests : IDisposable
         var (bad, badConsole) = await Run("set --backup-rpo-full 0");
         Assert.Equal(2, bad);
         Assert.Contains("full backup age", badConsole.Text);
+    }
+
+    [Fact]
+    public async Task Set_HowQueryTextIsKept_AndClearQueryText_AsksTheService()
+    {
+        Assert.Contains("Query text kept: Without literals.", (await Run("list")).Console.Text);
+
+        var (code, console) = await Run("set --query-text off");
+        Assert.Equal(0, code);
+        Assert.Equal(QueryTextStorage.Off, Saved().QueryTexts);
+        Assert.Contains("query text kept: off (hash only)", console.Text);
+        Assert.Equal(2, (await Run("set --query-text hashes")).Code);
+
+        Assert.Null(Saved().QueryTextClearRequestedUtc);
+        var before = DateTime.UtcNow;
+        var (cleared, clearConsole) = await Run("clear-query-text");
+        Assert.Equal(0, cleared);
+        Assert.InRange(Saved().QueryTextClearRequestedUtc!.Value, before, DateTime.UtcNow);
+        Assert.Contains("delete the query text kept in its history", clearConsole.Text);
     }
 
     [Fact]
