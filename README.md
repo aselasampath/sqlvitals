@@ -133,7 +133,9 @@ dotnet test
 dotnet run --project SqlVitals\Desktop
 ```
 
-The installer, CI, releases and how to add a screen are in
+`dotnet test` runs the unit tests, and the app's pages built on their view models and rendered off screen in both
+themes. The tests against a real SQL Server are skipped unless `SQLVITALS_TEST_SERVER` is set; CI runs them against
+SQL Server 2017 to 2025. The installer, CI, releases and how to add a screen are in
 [Building and Contributing](docs/Building-and-Contributing.md).
 
 ## Contributing
