@@ -1,5 +1,6 @@
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Verdicts;
@@ -45,7 +46,7 @@ public sealed class TempDbViewModelTests
         Assert.Equal(["Read Load"], shell.Reports);
         Assert.Equal([88, 91], model.Sessions.Select(s => s.SessionId));
         Assert.Equal(2, model.Files.Count);
-        Assert.Equal([TempDbViewModel.CounterTone.Danger, TempDbViewModel.CounterTone.Warning, TempDbViewModel.CounterTone.Accent],
+        Assert.Equal([KpiCard.Tones.Danger, KpiCard.Tones.Warning, KpiCard.Tones.Accent],
                      model.Counters.Select(c => c.Tone));
         Assert.Equal(("12,288", "Version Store Size (KB)"), (model.Counters[0].Value, model.Counters[0].Label));
         Assert.Equal("Version Store Size (KB) 12,288 · Free Space in tempdb (KB) 900,000 · Active Temp Tables 42", model.CountersSummary);

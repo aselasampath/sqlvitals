@@ -200,8 +200,8 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void DbStorage_OpensWithTheFileNearItsLimit() => UiThread.Run(() =>
     {
-        var page = new DatabaseStoragePage(StorageRepo(), Settings());
-        Hosted(page, page.RefreshAsync, "db-storage.png", () => AssertLaidOut(page.Shell, page.Tabs));
+        var page = new DatabaseStoragePage(new DatabaseStorageViewModel(StorageRepo()), Settings());
+        Hosted(page, page.ViewModel.RefreshAsync, "db-storage.png", () => AssertLaidOut(page.Shell, page.Tabs));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "1 file is near its maximum size; SalesDb · SalesDb_log at 94 %"), (verdict.Level, verdict.Headline));
@@ -209,7 +209,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         page.Tabs.SelectedItem = page.TabTables;
         Press(page.Shell.VerdictView, 0);
         Assert.Same(page.TabFiles, page.Tabs.SelectedItem);
-        Assert.Equal("SalesDb_log", ((DatabaseFileVm)page.GridFiles.SelectedItem).LogicalFileName);
+        Assert.Equal("SalesDb_log", ((DatabaseStorageViewModel.FileRow)page.GridFiles.SelectedItem).LogicalFileName);
         Assert.Equal("434.84 GB in all · data 404.34 GB · log 30.50 GB · TempDB 8.00 GB · MAXDOP 8 · cost threshold 50", page.SizesSection.FoldedSummary);
         Assert.Equal([15, 6, 6, 10], new[] { page.GridFiles, page.GridTempDb, page.GridConfig, page.GridTables }.Select(g => g.Columns.Count));
     });
@@ -218,17 +218,17 @@ public sealed class TemplateEverywhereTests : IDisposable
     public void DbStorage_OpenedAgain_GetsItsTabBack() => UiThread.Run(() =>
     {
         ViewState state = null!;
-        var first = new DatabaseStoragePage(StorageRepo());
-        Hosted(first, first.RefreshAsync, null, () =>
+        var first = new DatabaseStoragePage(new DatabaseStorageViewModel(StorageRepo()));
+        Hosted(first, first.ViewModel.RefreshAsync, null, () =>
         {
             first.Tabs.SelectedItem = first.TabConfig;
             state = ViewState.Capture(first);
         });
 
-        var again = new DatabaseStoragePage(StorageRepo());
+        var again = new DatabaseStoragePage(new DatabaseStorageViewModel(StorageRepo()));
         Hosted(again, async () =>
         {
-            await again.RefreshAsync();
+            await again.ViewModel.RefreshAsync();
             state.Restore(again);
             // The state is put back at ContextIdle: wait for the dispatcher to get there, not a
             // fixed time, which a busy test run can outlast.
@@ -533,8 +533,8 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     // ── A page that can't read says so in its verdict ────────────────────
 
-    // TempDB and Stale Stats read in their view models (#184): TempDbViewModelTests and StaleStatisticsViewModelTests.
-    public static TheoryData<string> Unreadable => new() { "Memory", "FileIo", "DbStorage", "Perfmon", "IndexHealth",
+    // TempDB and Stale Stats read in their view models (#184), DB Storage too (#185): their own view model tests.
+    public static TheoryData<string> Unreadable => new() { "Memory", "FileIo", "Perfmon", "IndexHealth",
                                                            "AgentJobs", "ConfigChecks", "SecurityAudit" };
 
     [Theory, MemberData(nameof(Unreadable))]
@@ -546,7 +546,6 @@ public sealed class TemplateEverywhereTests : IDisposable
             GetMemorySnapshotAsync      = () => Task.FromException<MemorySnapshot>(error),
             GetMemoryGrantsAsync        = () => Task.FromException<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>(error),
             ReadFileIoAsync             = () => Task.FromException<FileIoReading>(error),
-            GetDatabaseStorageAsync     = () => Task.FromException<(IEnumerable<ServerConfigParam>, IEnumerable<DatabaseFile>, IEnumerable<TempDbFileSummary>, IEnumerable<TableStorage>)>(error),
             GetPerfmonCountersAsync     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
             GetIndexHealthAsync         = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
             GetAgentJobsAsync           = () => Task.FromException<AgentJobList>(error),
@@ -557,7 +556,6 @@ public sealed class TemplateEverywhereTests : IDisposable
         {
             "Memory"        => new MemoryPage(repo),
             "FileIo"        => new FileIoPage(repo, Settings()),
-            "DbStorage"     => new DatabaseStoragePage(repo),
             "Perfmon"       => new PerfmonPage(repo),
             "IndexHealth"   => new IndexHealthPage(repo),
             "AgentJobs"     => new AgentJobsPage(repo),
@@ -619,7 +617,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 ("Memory", new MemoryPage(repo, settings), PageKind.Live),
                 ("TempDb", new TempDbPage(new TempDbViewModel(repo), settings), PageKind.Snapshot),
                 ("FileIo", new FileIoPage(repo, settings), PageKind.Live),
-                ("DbStorage", new DatabaseStoragePage(repo, settings), PageKind.Snapshot),
+                ("DbStorage", new DatabaseStoragePage(new DatabaseStorageViewModel(repo), settings), PageKind.Snapshot),
                 ("Perfmon", new PerfmonPage(repo, null, settings), PageKind.Live),
                 ("IndexHealth", new IndexHealthPage(repo, settings), PageKind.Snapshot),
                 ("StaleStats", new StaleStatisticsPage(new StaleStatisticsViewModel(repo, new FakeDialogService()), settings), PageKind.Snapshot),

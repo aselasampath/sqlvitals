@@ -13,5 +13,5 @@ SELECT
 FROM sys.dm_exec_sessions s
 LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
 WHERE s.is_user_process = 1
-GROUP BY s.program_name
+GROUP BY ISNULL(s.program_name, '')
 ORDER BY COUNT(*) DESC

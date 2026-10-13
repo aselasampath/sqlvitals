@@ -138,5 +138,7 @@ public class WorkloadTests(SqlServerFixture server)
         var applications = (await _repo.GetApplicationConnectionsAsync()).ToList();
 
         Assert.Contains(applications, a => a.ApplicationName == "SqlVitals integration tests" && a.CurrentConnections >= 2);
+        // One row per name shown: sessions with no program name and an empty one are both "" (#185).
+        Assert.Equal(applications.Count, applications.Select(a => a.ApplicationName).Distinct().Count());
     }
 }

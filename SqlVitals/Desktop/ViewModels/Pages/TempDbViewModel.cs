@@ -11,18 +11,13 @@ namespace SqlVitals.Desktop.ViewModels.Pages;
 /// </summary>
 public sealed partial class TempDbViewModel(ITempDbRepository repo) : PageViewModel
 {
-    /// <summary>How a counter's card is coloured: a version store in use, or little room left.</summary>
-    public enum CounterTone { Accent, Warning, Danger }
-
-    /// <summary>One counter's card: "12,288" over "Version Store Size (KB)", and what it means.</summary>
-    public sealed record CounterCard(string Label, string Value, CounterTone Tone, string Tip);
-
     /// <summary>The files, for the used vs free chart; empty until read.</summary>
     [ObservableProperty]
     private IReadOnlyList<TempDbFile> _files = [];
 
+    /// <summary>One card a counter: "12,288" over "Version Store Size (KB)", red for a version store in use, amber for little room left.</summary>
     [ObservableProperty]
-    private IReadOnlyList<CounterCard> _counters = [];
+    private IReadOnlyList<KpiCard> _counters = [];
 
     /// <summary>Folded, the counters say it in one line (#150).</summary>
     [ObservableProperty]
@@ -65,12 +60,12 @@ public sealed partial class TempDbViewModel(ITempDbRepository repo) : PageViewMo
         SelectedSession = Sessions.FirstOrDefault(s => s.SessionId == selected);
     }
 
-    private static CounterCard Card(TempDbCounter c)
+    private static KpiCard Card(TempDbCounter c)
     {
         double value = c.CounterValue;
-        var tone = c.CounterName.Contains("Version") && value > 0 ? CounterTone.Danger
-                 : c.CounterName.Contains("Free") && value < 1_000_000 ? CounterTone.Warning // < ~1 GB free (counter is in KB)
-                 : CounterTone.Accent;
+        var tone = c.CounterName.Contains("Version") && value > 0 ? KpiCard.Tones.Danger
+                 : c.CounterName.Contains("Free") && value < 1_000_000 ? KpiCard.Tones.Warning // < ~1 GB free (counter is in KB)
+                 : KpiCard.Tones.Accent;
         var tip = c.CounterName switch
         {
             var n when n.Contains("Version Store Size")          => "Size (KB) of the version store in TempDB used by snapshot/RCSI isolation. Rapid growth indicates long-running read-committed snapshot transactions that keep row versions alive. The Performance Counters page charts how fast versions are generated and cleaned up.",
@@ -80,7 +75,7 @@ public sealed partial class TempDbViewModel(ITempDbRepository repo) : PageViewMo
             var n when n.Contains("Temp Tables For Destruction") => "Temporary tables waiting for the cleanup thread to drop them. A number that keeps climbing means cleanup can't keep up.",
             _                                                     => $"TempDB performance counter from sys.dm_os_performance_counters: {c.CounterName}."
         };
-        return new CounterCard(c.CounterName, $"{value:N0}", tone, tip);
+        return new KpiCard(c.CounterName, $"{value:N0}", tone, tip);
     }
 
     protected override void ShowLoadError(Exception exception) => ShowError("TempDB", exception);

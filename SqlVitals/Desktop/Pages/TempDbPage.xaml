@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
-      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels.Pages"
+      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
       Background="{StaticResource BgDeep}" Title="TempDB Pressure">
     <!-- The page template (#150): the verdict on who holds TempDB and the room left first; the
          counters and the file chart fold to one line; then the sessions. Bound to TempDbViewModel (#184). -->
@@ -15,7 +15,7 @@
                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:TempDbViewModel+CounterCard}">
+                        <DataTemplate DataType="{x:Type vm:KpiCard}">
                             <Border Style="{StaticResource KpiCard}" Margin="0,0,10,10" Width="200">
                                 <Border.ToolTip>
                                     <ToolTip>
@@ -26,21 +26,7 @@
                                     </ToolTip>
                                 </Border.ToolTip>
                                 <StackPanel>
-                                    <TextBlock Text="{Binding Value}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource KpiValue}">
-                                                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Tone}" Value="Warning">
-                                                        <Setter Property="Foreground" Value="{DynamicResource Warning}" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Tone}" Value="Danger">
-                                                        <Setter Property="Foreground" Value="{DynamicResource Danger}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <TextBlock Text="{Binding Value}" Style="{StaticResource KpiToneValue}" />
                                     <TextBlock Text="{Binding Label}" Style="{StaticResource KpiLabel}" />
                                 </StackPanel>
                             </Border>

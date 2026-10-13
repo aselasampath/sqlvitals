@@ -3,23 +3,46 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
       Background="{StaticResource BgDeep}" Title="Application Connections">
     <!-- The page template (#149): the verdict first, the counts and the chart folding to one line
-         each, then every application. -->
+         each, then every application. Bound to ApplicationConnectionsViewModel (#185). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Application Connections" PageKey="AppConnections">
         <controls:PageShell.Sections>
-            <controls:FoldSection x:Name="SummarySection" Key="summary" Header="Counts">
+            <controls:FoldSection x:Name="SummarySection" Key="summary" Header="Counts" FoldedSummary="{Binding CountsSummary}">
                 <StackPanel>
-                    <TextBlock x:Name="TxtSummary" Text="" Foreground="{StaticResource TextMuted}"
+                    <TextBlock x:Name="TxtSummary" Text="{Binding Summary}" Foreground="{StaticResource TextMuted}"
                                FontSize="12" Margin="0,0,0,10" />
 
                     <!-- KPI cards -->
-                    <WrapPanel x:Name="KpiPanel" />
+                    <ItemsControl x:Name="KpiPanel" ItemsSource="{Binding Counts}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:KpiCard}">
+                                <Border Style="{StaticResource KpiCard}" Margin="0,0,10,10" Width="200">
+                                    <Border.ToolTip>
+                                        <ToolTip>
+                                            <StackPanel MaxWidth="340">
+                                                <TextBlock Text="{Binding Label}" FontWeight="Bold" TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                <TextBlock Text="{Binding Tip}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </ToolTip>
+                                    </Border.ToolTip>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Value}" Style="{StaticResource KpiToneValue}" />
+                                        <TextBlock Text="{Binding Label}" Style="{StaticResource KpiLabel}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </controls:FoldSection>
 
             <!-- Connections bar chart -->
-            <controls:FoldSection x:Name="ChartSection" Key="chart" Header="Connections by application">
+            <controls:FoldSection x:Name="ChartSection" Key="chart" Header="Connections by application" FoldedSummary="{Binding ChartSummary}">
                 <Border Style="{StaticResource KpiCard}" Margin="0">
                     <lvc:CartesianChart x:Name="ConnectionsChart" Height="220"
                                         TooltipPosition="Top" LegendPosition="Hidden" />
@@ -31,7 +54,7 @@
             <Border Style="{StaticResource KpiCard}">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Connections by Application" Style="{StaticResource SectionHeader}" />
-                    <DataGrid x:Name="ConnectionsGrid">
+                    <DataGrid x:Name="ConnectionsGrid" ItemsSource="{Binding Applications}" SelectedItem="{Binding SelectedApplication}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Application" Binding="{Binding ApplicationName}" Width="280" />
                             <DataGridTextColumn Header="Connections" Binding="{Binding CurrentConnections, StringFormat=N0}" Width="95">
