@@ -124,7 +124,7 @@ Not after you stop it. It's dropped on Stop, when you leave the page, and when t
 No. It only reads diagnostic views. The one exception is SP Trace's temporary event session. Generated scripts are never run. See [Server Impact and Permissions](Server-Impact-and-Permissions.md).
 
 **Does it send my data anywhere?**
-No. There's no telemetry. Everything stays on your PC. See [Security and Privacy](Security-and-Privacy.md).
+No telemetry. History stays on the PC that collects it: yours, or the collector service's. What leaves it is only what you set up: chat alerts and heartbeats to your Slack or Teams channels, a share copy of the collector's history if you turn it on, and an Export for AI report if you paste it somewhere. See [Security and Privacy](Security-and-Privacy.md).
 
 **The dark theme resets when I restart.**
 Known limitation: the theme choice isn't saved yet.
