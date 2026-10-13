@@ -1,3 +1,4 @@
+using System.IO;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Desktop.ViewModels;
@@ -26,15 +27,20 @@ public sealed class VerdictNavigationTests
     {
         // #178: the Waiting view is part of Processes, so the chain is on the same page.
         var shown = new List<string>();
-        var model = new ProcessesViewModel(goToSession: id => shown.Add($"session {id}"), chainsOnly: () => shown.Add("chains"),
-                                           chainOnMap: id => shown.Add($"chain of {id}"));
+        var dir   = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
+        var repo  = new FakeRepository();
+        var model = new ProcessesViewModel(repo, repo, new ConnectionSettingsService(dir), _navigator, nameof(ProcessesView.Waiting));
+        model.GoToSession += id => shown.Add($"session {id}");
+        model.ChainsOnly  += () => shown.Add("chains");
 
         await Press(model, ActiveWaitsVerdict.Processes, id: 87);
+        Assert.Equal(ProcessesView.Map, model.View);
         await Press(model, ProcessesVerdict.GoToHead, id: 51);
         await Press(model, ProcessesVerdict.ChainsOnly);
 
-        Assert.Equal(["chain of 87", "session 51", "chains"], shown);
+        Assert.Equal(["chains", "session 87", "session 51", "chains"], shown);
         Assert.Empty(_navigator.Moves);
+        try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
     }
 
     [Fact]

@@ -35,13 +35,13 @@ public sealed class MergedPagesTests : IDisposable
     public void ProcessesWaiting_Renders(string theme) => UiThread.Run(() =>
     {
         using var themed = Themed(theme);
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
             GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>([Wait(112, 87, 252_000), Wait(115, 87, 31_000)]),
         }, Settings(), view: nameof(ProcessesView.Waiting));
 
-        TemplateRolloutTests.Hosted(page, page.RefreshAsync, $"processes-waiting-{theme}.png", () =>
+        TemplateRolloutTests.Hosted(page, page.ViewModel.RefreshAsync, $"processes-waiting-{theme}.png", () =>
         {
             TemplateRolloutTests.AssertLaidOut(page.Shell, page.WaitingGrid);
             Assert.Equal(Visibility.Collapsed, page.ProcessMap.Visibility);

@@ -150,7 +150,7 @@ public sealed class PageTemplateTests : IDisposable
     [Fact]
     public void Processes_OpensWithTheVerdictOnBlocking() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>(
             [
@@ -158,7 +158,7 @@ public sealed class PageTemplateTests : IDisposable
                 Node(5), Node(6), Node(7),
             ]),
         }, Settings());
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Render(page, "processes.png");
 
         var verdict = page.Shell.VerdictView;
@@ -176,12 +176,13 @@ public sealed class PageTemplateTests : IDisposable
     [Fact]
     public void Processes_ThatCantRead_SaysSoInTheVerdict() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync = () => Task.FromException<IEnumerable<ProcessNode>>(new InvalidOperationException("Timeout expired.")),
         }, Settings());
 
-        Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
+        // The view model reports it, to the top bar and in the verdict, rather than throwing (#186).
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal("Couldn't read the sessions", page.Shell.Verdict!.Headline);
         Assert.Equal("Error: Timeout expired. Refresh to try again.", page.Shell.Verdict.Why);

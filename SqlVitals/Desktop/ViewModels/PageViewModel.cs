@@ -238,6 +238,12 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         await ReadAsync(read);
     }
 
+    /// <summary>
+    /// What the page shows of its rows, or its kind or pause, changed (<see cref="Pages.IPageContext"/>,
+    /// <see cref="Pages.IFocusPage"/>): the top bar and the focus banner follow (#186).
+    /// </summary>
+    protected void ReportContextChanged() => _shell?.ReportContextChanged(this);
+
     /// <summary>Pauses or resumes the timed refresh; resuming waits a whole interval again.</summary>
     public void SetPaused(bool paused)
     {

@@ -44,7 +44,7 @@ public sealed class EvidencePagesTests : IDisposable
     [Fact]
     public void Processes_ShowsTheChainWaitingLongest_UntilShowAll() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>(Sessions),
         }, new ConnectionSettingsService(_dir));
@@ -52,7 +52,7 @@ public sealed class EvidencePagesTests : IDisposable
 
         focusPage.ShowFocus(Focus(new FocusFilter(FocusKind.BlockingChain)));
         Assert.Null(focusPage.FocusNote);   // nothing read yet
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal("showing the blocking chain of session 87 only", focusPage.FocusNote);
         Assert.Equal("Show all 7 sessions", focusPage.ShowAllText);
@@ -68,13 +68,13 @@ public sealed class EvidencePagesTests : IDisposable
     [Fact]
     public void Processes_WithNothingBlocked_SaysSo() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>([Node(5), Node(6)]),
         }, new ConnectionSettingsService(_dir));
 
         ((IFocusPage)page).ShowFocus(Focus(new FocusFilter(FocusKind.BlockingChain)));
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal("nothing is blocked now", ((IFocusPage)page).FocusNote);
         Assert.Empty(Shown(page));
@@ -95,7 +95,7 @@ public sealed class EvidencePagesTests : IDisposable
     {
         // The server's clock is this PC's.
         var now  = DateTime.Now;
-        var page = new ResourceQueriesPage(new FakeRepository
+        var page = Wave2Pages.ResourceQueries(new FakeRepository
         {
             GetResourceIntensiveQueriesAsync = _ => Task.FromResult<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(
                     ([], [Query("old", now.AddHours(-2), 900), Query("during", now.AddMinutes(-5), 500)], [])),
@@ -104,7 +104,7 @@ public sealed class EvidencePagesTests : IDisposable
         var since     = DateTime.UtcNow.AddMinutes(-20);
 
         focusPage.ShowFocus(Focus(new FocusFilter(FocusKind.TopCpu), since));
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Same(page.TabCpu, page.Tabs.SelectedItem);
         Assert.Equal(["during"], page.CpuGrid.Items.Cast<ResourceIntensiveQuery>().Select(q => q.QueryText));
@@ -123,7 +123,7 @@ public sealed class EvidencePagesTests : IDisposable
         new(session, blockedBy, "LCK_M_X", 1_000, 1, null, null, "suspended", "SELECT", 0, 0, 0, 0, 0, 0, 1,
             "login", "host", "app", "db", "Lock", blockedBy != 0 ? 1 : 0, null, DateTime.Now, "Warning");
 
-    private ProcessesPage Waiting(Func<int>? counted = null, string? view = null) => new(new FakeRepository
+    private ProcessesPage Waiting(Func<int>? counted = null, string? view = null) => Wave2Pages.Processes(new FakeRepository
     {
         GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>(Sessions),
         GetActiveWaitsAsync = () =>
@@ -141,7 +141,7 @@ public sealed class EvidencePagesTests : IDisposable
 
         focusPage.ShowFocus(new PageFocus(new FocusFilter(FocusKind.Session, 87), new FocusOrigin(FocusSource.Page, "session 87", "Processes")));
         Assert.Equal(ProcessesView.Waiting, page.View);
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal([87, 112], page.WaitingGrid.Items.Cast<ActiveWait>().Select(w => w.SessionId));
         Assert.Equal("showing session 87 and the sessions it blocks only", focusPage.FocusNote);
@@ -164,7 +164,7 @@ public sealed class EvidencePagesTests : IDisposable
         Assert.Equal(Visibility.Visible, page.WaitingPanel.Visibility);
         Assert.Equal(Visibility.Collapsed, page.ProcessMap.Visibility);
 
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Equal(1, reads);
         Assert.StartsWith("Session 112 is blocked by session 87", page.ViewModel.Verdict!.Headline);
 
@@ -172,7 +172,7 @@ public sealed class EvidencePagesTests : IDisposable
         page.BtnMap.IsChecked = true;
         Assert.Equal((ProcessesView.Map, Visibility.Collapsed, Visibility.Visible), (page.View, page.WaitingPanel.Visibility, page.ProcessMap.Visibility));
         Assert.StartsWith("2 head blockers are blocking", page.ViewModel.Verdict!.Headline);
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Equal(1, reads);
     });
 
@@ -184,7 +184,7 @@ public sealed class EvidencePagesTests : IDisposable
         Assert.Equal(ProcessesView.Waiting, page.View);
 
         ((IFocusPage)page).ShowFocus(Focus(new FocusFilter(FocusKind.BlockingChain)));
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal((ProcessesView.Map, Visibility.Visible), (page.View, page.ProcessMap.Visibility));
         Assert.Equal("showing the blocking chain of session 87 only", ((IFocusPage)page).FocusNote);
@@ -198,7 +198,7 @@ public sealed class EvidencePagesTests : IDisposable
         var page = Waiting();
         var focusPage = (IFocusPage)page;
         focusPage.ShowFocus(new PageFocus(new FocusFilter(FocusKind.Session, 87), new FocusOrigin(FocusSource.Page, "session 87", "Processes")));
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         // The map shows every session: the banner says nothing of session 87, but Show all still clears it.
         page.BtnMap.IsChecked = true;
@@ -208,7 +208,7 @@ public sealed class EvidencePagesTests : IDisposable
         focusPage.ClearFocus();
         Assert.Null(focusPage.ShowAllText);
         page.BtnWaiting.IsChecked = true;
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Equal(3, page.WaitingGrid.Items.Count);
     });
 
@@ -218,7 +218,7 @@ public sealed class EvidencePagesTests : IDisposable
         new ConnectionSettingsService(_dir).SetProcessesView(ProcessesView.Grid, groupByLogin: true);
         var page = Waiting(view: nameof(ProcessesView.Waiting));
 
-        TemplateRolloutTests.Hosted(page, page.RefreshAsync, null, () =>
+        TemplateRolloutTests.Hosted(page, page.ViewModel.RefreshAsync, null, () =>
         {
             TemplateRolloutTests.Press(page.Shell.VerdictView, 0);   // Show the chain on the map
             Assert.Equal(ProcessesView.Map, page.View);

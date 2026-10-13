@@ -62,7 +62,14 @@ internal sealed class FakeDialogService : IDialogService
         Shown.Add($"Script: {script.Heading} ({(modal ? "modal" : "modeless")})");
     }
 
-    public void ShowQueryPlan(string? planXml, string? queryText, string? title = null) => Shown.Add($"Plan: {title ?? "(untitled)"}");
+    /// <summary>Each plan's XML shown, in order.</summary>
+    public List<string?> Plans { get; } = [];
+
+    public void ShowQueryPlan(string? planXml, string? queryText, string? title = null)
+    {
+        Plans.Add(planXml);
+        Shown.Add($"Plan: {title ?? "(untitled)"}");
+    }
 
     public void ShowQueryStoreQuery(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status) =>
         Shown.Add($"Query Store query {queryId}");

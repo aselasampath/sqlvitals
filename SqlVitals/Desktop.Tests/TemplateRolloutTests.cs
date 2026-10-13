@@ -75,6 +75,13 @@ public sealed class TemplateRolloutTests : IDisposable
         encoder.Save(file);
     }
 
+    /// <summary>
+    /// A click as the mouse makes it: its Click handlers and its bound command (#186). Raising
+    /// ClickEvent alone runs the handlers only.
+    /// </summary>
+    internal static void Click(ButtonBase button) =>
+        typeof(ButtonBase).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(button, null);
+
     internal static void Press(VerdictView verdict, int index) =>
         verdict.ActionButtons[index].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
@@ -118,12 +125,12 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void Processes_Waiting_OpensWithTheBlockedRequests() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
             GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>(Waits),
         }, Settings(), view: nameof(ProcessesView.Waiting));
-        Hosted(page, page.RefreshAsync, "processes-waiting.png", () => AssertLaidOut(page.Shell, page.WaitingGrid));
+        Hosted(page, page.ViewModel.RefreshAsync, "processes-waiting.png", () => AssertLaidOut(page.Shell, page.WaitingGrid));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal(VerdictLevel.Critical, verdict.Level);
@@ -417,11 +424,11 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void ResourceQueries_OpensWithTheCostliestQuery_AndShowsItInTheDrawer() => UiThread.Run(() =>
     {
-        var page   = new ResourceQueriesPage(QueriesRepo(), folds: Settings());
+        var page   = Wave2Pages.ResourceQueries(QueriesRepo(), folds: Settings());
         var source = (IDetailsSource)page;
         var opened = new List<bool>();
         source.DetailsChanged += opened.Add;
-        Hosted(page, page.RefreshAsync, "resource-queries.png", () =>
+        Hosted(page, page.ViewModel.RefreshAsync, "resource-queries.png", () =>
         {
             AssertLaidOut(page.Shell, page.Tabs);
 
@@ -673,9 +680,9 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── A page that can't read says so in its verdict ────────────────────
 
-    // App Connections and Plan Cache Health read in their view models (#185): their own view model tests.
-    public static TheoryData<string> Unreadable => new() { "Processes", "Deadlocks", "Waits", "ResourceQueries",
-                                                           "QueryRegressions", "SpTrace" };
+    // App Connections and Plan Cache Health read in their view models (#185), Processes and Resource
+    // Queries too (#186): their own view model tests.
+    public static TheoryData<string> Unreadable => new() { "Deadlocks", "Waits", "QueryRegressions", "SpTrace" };
 
     [Theory, MemberData(nameof(Unreadable))]
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
@@ -683,22 +690,16 @@ public sealed class TemplateRolloutTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
-            GetProcessesAsync                 = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
-            GetActiveWaitsAsync               = () => Task.FromException<IEnumerable<ActiveWait>>(error),
             GetDeadlockHistoryAsync           = () => Task.FromException<DeadlockHistory>(error),
             GetTopWaitTypesAsync              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
             GetCumulativeWaitsAsync           = () => Task.FromException<IEnumerable<WaitStatCumulative>>(error),
-            GetResourceIntensiveQueriesAsync  = _ => Task.FromException<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(error),
             GetQueryStoreRegressionStatsAsync = _ => Task.FromException<QueryStoreRegressionStats>(error),
             PollProcedureStatsAsync           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
         };
         ICodeBehindPage page = tag switch
         {
-            // The sessions read, the Waiting view's waits not.
-            "Processes"        => new ProcessesPage(repo, Settings(), view: nameof(ProcessesView.Waiting)),
             "Deadlocks"        => new DeadlocksPage(repo),
             "Waits"            => new WaitsPage(repo),
-            "ResourceQueries"  => new ResourceQueriesPage(repo),
             "QueryRegressions" => new QueryRegressionsPage(repo, null, Settings()),
             _                  => new SpTracePage(repo),
         };
@@ -721,11 +722,11 @@ public sealed class TemplateRolloutTests : IDisposable
             var repo = new FakeRepository();
             (string Key, Page Page, PageKind Kind)[] pages =
             [
-                ("Processes", new ProcessesPage(repo, Settings()), PageKind.Live),
+                ("Processes", Wave2Pages.Processes(repo, Settings()), PageKind.Live),
                 ("Deadlocks", new DeadlocksPage(repo, Settings()), PageKind.Snapshot),
                 ("AppConnections", new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(repo), Settings()), PageKind.Snapshot),
                 ("Waits", new WaitsPage(repo, null, Settings()), PageKind.Live),
-                ("ResourceQueries", new ResourceQueriesPage(repo, null, Settings()), PageKind.Snapshot),
+                ("ResourceQueries", Wave2Pages.ResourceQueries(repo, null, Settings()), PageKind.Snapshot),
                 ("QueryRegressions", new QueryRegressionsPage(repo, null, Settings()), PageKind.History),
                 ("PlanCacheHealth", new PlanCacheHealthPage(new PlanCacheHealthViewModel(repo, repo), Settings()), PageKind.Snapshot),
                 ("SpTrace", new SpTracePage(repo, Settings()), PageKind.Live),
@@ -746,18 +747,18 @@ public sealed class TemplateRolloutTests : IDisposable
     {
         ResourceQueriesPage first = null!, again = null!;
         ViewState state = null!;
-        first = new ResourceQueriesPage(QueriesRepo());
-        Hosted(first, first.RefreshAsync, null, () =>
+        first = Wave2Pages.ResourceQueries(QueriesRepo());
+        Hosted(first, first.ViewModel.RefreshAsync, null, () =>
         {
             first.Tabs.SelectedItem = first.TabCpu;
             first.CpuGrid.SelectedItem = first.CpuGrid.Items[2];
             state = ViewState.Capture(first);
         });
 
-        again = new ResourceQueriesPage(QueriesRepo());
+        again = Wave2Pages.ResourceQueries(QueriesRepo());
         Hosted(again, async () =>
         {
-            await again.RefreshAsync();
+            await again.ViewModel.RefreshAsync();
             state.Restore(again);
             // The state is put back at ContextIdle: wait for the dispatcher to get there, not a
             // fixed time, which a busy test run can outlast.

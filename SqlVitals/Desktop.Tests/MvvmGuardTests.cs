@@ -20,8 +20,6 @@ public sealed class MvvmGuardTests
     /// <summary>Page code that reads through a repository itself.</summary>
     private static readonly string[] RepositoryReferencesAllowed =
     [
-        "Pages/AgentJobsPage.xaml.cs",
-        "Pages/ConfigChecksPage.xaml.cs",
         "Pages/DeadlocksPage.xaml.cs",
         "Pages/FileIoPage.xaml.cs",
         "Pages/IndexHealthPage.xaml.cs",
@@ -29,11 +27,8 @@ public sealed class MvvmGuardTests
         "Pages/MemoryPage.xaml.cs",
         "Pages/OverviewPage.xaml.cs",
         "Pages/PerfmonPage.xaml.cs",
-        "Pages/ProcessesPage.xaml.cs",
         "Pages/QueryRegressionsPage.xaml.cs",
         "Pages/QueryStorePage.xaml.cs",
-        "Pages/ResourceQueriesPage.xaml.cs",
-        "Pages/SecurityAuditPage.xaml.cs",
         "Pages/SpTracePage.xaml.cs",
         "Pages/WaitsPage.xaml.cs",
     ];
@@ -41,10 +36,7 @@ public sealed class MvvmGuardTests
     /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
     private static readonly Dictionary<string, int> ClicksAllowed = new()
     {
-        ["Pages/AgentJobsPage.xaml"]                     = 1,
-        ["Pages/ConfigChecksPage.xaml"]                  = 2,
         ["Pages/DeadlocksPage.xaml"]                     = 4,
-        ["Pages/ExportPage.xaml"]                        = 4,
         ["Pages/FileIoPage.xaml"]                        = 2,
         ["Pages/HomePage.xaml"]                          = 4,
         ["Pages/IndexHealthPage.xaml"]                   = 4,
@@ -53,8 +45,6 @@ public sealed class MvvmGuardTests
         ["Pages/PerfmonPage.xaml"]                       = 2,
         ["Pages/QueryRegressionsPage.xaml"]              = 3,
         ["Pages/QueryStorePage.xaml"]                    = 7,
-        ["Pages/ResourceQueriesPage.xaml"]               = 6,
-        ["Pages/SecurityAuditPage.xaml"]                 = 2,
         ["Pages/Settings/ActivityCategory.xaml"]         = 1,
         ["Pages/Settings/AlertsCategory.xaml"]           = 8,
         ["Pages/Settings/AppearanceCategory.xaml"]       = 1,
@@ -71,11 +61,8 @@ public sealed class MvvmGuardTests
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
     private static readonly string[] CodeBehindPagesAllowed =
     [
-        "AgentJobsPage",
         "AlertsPage",
-        "ConfigChecksPage",
         "DeadlocksPage",
-        "ExportPage",
         "FileIoPage",
         "HomePage",
         "IndexHealthPage",
@@ -83,11 +70,8 @@ public sealed class MvvmGuardTests
         "MemoryPage",
         "OverviewPage",
         "PerfmonPage",
-        "ProcessesPage",
         "QueryRegressionsPage",
         "QueryStorePage",
-        "ResourceQueriesPage",
-        "SecurityAuditPage",
         "SpTracePage",
         "WaitsPage",
     ];

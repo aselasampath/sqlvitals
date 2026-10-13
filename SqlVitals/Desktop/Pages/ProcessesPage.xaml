@@ -4,6 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{DynamicResource BgDeep}" Title="Processes">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <!-- Segmented Map | Grid | Waiting switch (#116, #178), in the look of the time-range buttons -->
         <Style x:Key="ViewButton" TargetType="RadioButton">
             <Setter Property="GroupName"   Value="ProcessesView"/>
@@ -37,7 +38,7 @@
         </Style>
     </Page.Resources>
     <!-- The page template (#146): the verdict on blocking first, then the map, the grid or the
-         requests waiting (#178). -->
+         requests waiting (#178). Bound to ProcessesViewModel (#186). -->
     <controls:PageShell x:Name="Shell" Margin="16" Title="Processes" PageKey="Processes">
         <controls:PageShell.Actions>
         <StackPanel Orientation="Horizontal">
@@ -45,12 +46,12 @@
                     Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
                     BorderThickness="1" CornerRadius="4" Padding="2">
                 <StackPanel Orientation="Horizontal">
-                    <RadioButton x:Name="BtnMap"  Content="Map"  Style="{StaticResource ViewButton}" IsChecked="True"
-                                 Checked="View_Checked" ToolTip="Sessions as blocking chains"/>
-                    <RadioButton x:Name="BtnGrid" Content="Grid" Style="{StaticResource ViewButton}"
-                                 Checked="View_Checked" ToolTip="One row per session, grouped by login, to sort and compare"/>
-                    <RadioButton x:Name="BtnWaiting" Content="Waiting" Style="{StaticResource ViewButton}"
-                                 Checked="View_Checked" ToolTip="Every request waiting now: on what, for how long, and the session blocking it"/>
+                    <RadioButton x:Name="BtnMap"  Content="Map"  Style="{StaticResource ViewButton}" IsChecked="{Binding IsMap}"
+                                 ToolTip="Sessions as blocking chains"/>
+                    <RadioButton x:Name="BtnGrid" Content="Grid" Style="{StaticResource ViewButton}" IsChecked="{Binding IsGrid}"
+                                 ToolTip="One row per session, grouped by login, to sort and compare"/>
+                    <RadioButton x:Name="BtnWaiting" Content="Waiting" Style="{StaticResource ViewButton}" IsChecked="{Binding IsWaiting}"
+                                 ToolTip="Every request waiting now: on what, for how long, and the session blocking it"/>
                 </StackPanel>
             </Border>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -61,25 +62,25 @@
                 <ComboBox x:Name="CmbInterval" Width="80" Height="26"
                           Background="{DynamicResource BgCard}" Foreground="{DynamicResource TextPrimary}"
                           BorderBrush="{DynamicResource Border}" FontFamily="Segoe UI" FontSize="12"
-                          SelectionChanged="CmbInterval_SelectionChanged">
+                          ItemsSource="{Binding Intervals}" DisplayMemberPath="Text"
+                          SelectedValuePath="Seconds" SelectedValue="{Binding IntervalSeconds}">
                     <ComboBox.ItemContainerStyle>
                         <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                     </ComboBox.ItemContainerStyle>
                 </ComboBox>
 
                 <!-- Toggle button -->
-                <ToggleButton x:Name="BtnAutoRefresh" Content="Start" Width="58" Height="26"
+                <ToggleButton x:Name="BtnAutoRefresh" Content="{Binding AutoRefreshText}" IsChecked="{Binding AutoRefresh}" Width="58" Height="26"
                               Margin="6,0,0,0" Padding="6,0"
                               Background="#1A22C55E" BorderBrush="{DynamicResource Success}"
                               Foreground="{DynamicResource Success}"
-                              FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
-                              Checked="BtnAutoRefresh_Checked" Unchecked="BtnAutoRefresh_Unchecked"/>
+                              FontFamily="Segoe UI" FontSize="11" Cursor="Hand"/>
 
                 <!-- Countdown indicator -->
                 <Border Margin="8,0,0,0" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Border}"
                         BorderThickness="1" CornerRadius="3" Padding="6,0" Height="26"
                         VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtCountdown" Text="--" Foreground="{DynamicResource TextMuted}"
+                    <TextBlock x:Name="TxtCountdown" Text="{Binding Countdown}" Foreground="{DynamicResource TextMuted}"
                                VerticalAlignment="Center" FontFamily="Segoe UI Mono" FontSize="11"
                                MinWidth="28" TextAlignment="Center"/>
                 </Border>
@@ -89,11 +90,12 @@
 
         <Grid>
             <!-- Shared process map: zoom, search, legend, themed canvas, details panel; and the grid (#116) -->
-            <controls:ProcessMapControl x:Name="ProcessMap"/>
+            <controls:ProcessMapControl x:Name="ProcessMap" Sessions="{Binding SessionsRead}"
+                                        Visibility="{Binding ShowsMap, Converter={StaticResource Visible}}"/>
 
             <!-- Waiting (#178): every request waiting now, as the Active Waits page showed them -->
-            <Border x:Name="WaitingPanel" Style="{StaticResource KpiCard}" Visibility="Collapsed">
-                <DataGrid x:Name="WaitingGrid" AutomationProperties.Name="Requests waiting">
+            <Border x:Name="WaitingPanel" Style="{StaticResource KpiCard}" Visibility="{Binding IsWaiting, Converter={StaticResource Visible}}">
+                <DataGrid x:Name="WaitingGrid" ItemsSource="{Binding Waits}" AutomationProperties.Name="Requests waiting">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Session"     Binding="{Binding SessionId}"          Width="65" />
                         <DataGridTextColumn Header="Blocking"    Binding="{Binding BlockingSessionId}"  Width="65" />

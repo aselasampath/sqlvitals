@@ -4,6 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Security Audit">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -68,17 +69,18 @@
     </Page.Resources>
 
     <!-- The page template (#150): the verdict on the risks found, the highest first, then every
-         finding. The selected finding's risk and its fix script are in the drawer. -->
+         finding. The selected finding's risk and its fix script are in the drawer. Bound to
+         SecurityAuditViewModel (#186). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Security Audit" PageKey="SecurityAudit">
         <controls:PageShell.Actions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Button x:Name="BtnReload" Content="↻ Audit again" Style="{StaticResource RefreshButton}" Padding="12,4"
                         ToolTip="Read the logins, databases and users from the server again and audit them."
-                        Click="BtnReload_Click"/>
+                        Command="{Binding RefreshCommand}"/>
                 <Button x:Name="BtnScript" Content="📝 Script the risks" Style="{StaticResource SecondaryButton}" Padding="12,4"
-                        Margin="8,0,0,0" IsEnabled="False"
+                        Margin="8,0,0,0"
                         ToolTip="One T-SQL script with the change for every risk, to review and run yourself. SqlVitals never runs it."
-                        Click="BtnScript_Click"/>
+                        Command="{Binding ScriptCommand}"/>
             </StackPanel>
         </controls:PageShell.Actions>
 
@@ -88,19 +90,19 @@
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <controls:GridFilterBox x:Name="FindingsFilter" DockPanel.Dock="Right" Target="{Binding ElementName=FindingsGrid}"/>
                     <ComboBox x:Name="CmbFilter" DockPanel.Dock="Right" Width="200" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
-                              SelectionChanged="CmbFilter_SelectionChanged" ToolTip="Which results to list"/>
-                    <TextBlock x:Name="TxtCount" Text="Findings" Style="{StaticResource SectionHeader}"
+                              ItemsSource="{Binding FilterNames}" SelectedIndex="{Binding FilterIndex}" ToolTip="Which results to list"/>
+                    <TextBlock x:Name="TxtCount" Text="{Binding CountText}" Style="{StaticResource SectionHeader}"
                                Margin="0" VerticalAlignment="Center"/>
                 </DockPanel>
                 <!-- When it was read, and anything that left items out -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
                     <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12"
-                               TextWrapping="Wrap" Visibility="Collapsed"/>
+                               TextWrapping="Wrap" Text="{Binding Problem}" Visibility="{Binding ShowsProblem, Converter={StaticResource Visible}}"/>
                     <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,4,0,0"
-                               TextWrapping="Wrap"/>
+                               TextWrapping="Wrap" Text="{Binding ReadNote}"/>
                 </StackPanel>
                 <Grid>
-                    <DataGrid x:Name="FindingsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                    <DataGrid x:Name="FindingsGrid" ItemsSource="{Binding Findings}" SelectedItem="{Binding SelectedFinding}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
                               SelectionMode="Single" RowStyle="{StaticResource FindingRow}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="96" SortMemberPath="Status" ElementStyle="{StaticResource StatusText}">
@@ -118,7 +120,8 @@
                     <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
                                Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,40,0,0"
                                HorizontalAlignment="Center" VerticalAlignment="Top"
-                               IsHitTestVisible="False" Visibility="Collapsed"/>
+                               IsHitTestVisible="False" Text="{Binding NoDataText}"
+                               Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}"/>
                 </Grid>
             </DockPanel>
         </Border>

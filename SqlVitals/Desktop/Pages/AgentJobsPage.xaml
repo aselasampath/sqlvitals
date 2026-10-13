@@ -4,6 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="SQL Agent Jobs">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -98,28 +99,28 @@
 
     <!-- The page template (#150): the verdict on failed and long-running jobs first; where they
          were read from folds to one line; then every job, and the selected job's runs and steps. The
-         job's details and the step's full message are in the drawer. -->
+         job's details and the step's full message are in the drawer. Bound to AgentJobsViewModel (#186). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="SQL Agent Jobs" PageKey="AgentJobs">
         <controls:PageShell.Actions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Button x:Name="BtnReload" Content="↻ Read again" Style="{StaticResource RefreshButton}" Padding="12,4"
                         ToolTip="Read the jobs from msdb again."
-                        Click="BtnReload_Click"/>
+                        Command="{Binding RefreshCommand}"/>
                 <CheckBox x:Name="ChkAutoRefresh" Content="Every 30 s" Foreground="{DynamicResource TextPrimary}" Cursor="Hand"
                           VerticalAlignment="Center" Margin="14,0,0,0" FontFamily="Segoe UI" FontSize="12"
                           ToolTip="Read the jobs again every 30 seconds while this page is open, to watch running jobs."
-                          Checked="ChkAutoRefresh_Changed" Unchecked="ChkAutoRefresh_Changed"/>
+                          IsChecked="{Binding AutoRefresh}"/>
             </StackPanel>
         </controls:PageShell.Actions>
 
         <controls:PageShell.Sections>
             <!-- Agent's state, the times, and anything that makes the list less than it seems -->
-            <controls:FoldSection x:Name="SourceSection" Key="source" Header="SQL Server Agent">
+            <controls:FoldSection x:Name="SourceSection" Key="source" Header="SQL Server Agent" FoldedSummary="{Binding SourceSummary}">
                 <StackPanel>
                     <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,0,0,6"
-                               TextWrapping="Wrap" Visibility="Collapsed"/>
+                               TextWrapping="Wrap" Text="{Binding Problem}" Visibility="{Binding ShowsProblem, Converter={StaticResource Visible}}"/>
                     <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12"
-                               TextWrapping="Wrap"/>
+                               TextWrapping="Wrap" Text="{Binding ReadNote}"/>
                 </StackPanel>
             </controls:FoldSection>
         </controls:PageShell.Sections>
@@ -137,13 +138,13 @@
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <controls:GridFilterBox x:Name="JobsFilter" DockPanel.Dock="Right" Target="{Binding ElementName=JobsGrid}"/>
                         <ComboBox x:Name="CmbFilter" DockPanel.Dock="Right" Width="250" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
-                                  SelectionChanged="CmbFilter_SelectionChanged" ToolTip="Which jobs to list"/>
-                        <TextBlock x:Name="TxtCount" Text="Jobs" Style="{StaticResource SectionHeader}"
+                                  ItemsSource="{Binding FilterNames}" SelectedIndex="{Binding FilterIndex}" ToolTip="Which jobs to list"/>
+                        <TextBlock x:Name="TxtCount" Text="{Binding CountText}" Style="{StaticResource SectionHeader}"
                                    Margin="0" VerticalAlignment="Center"/>
                     </DockPanel>
                     <Grid>
-                        <DataGrid x:Name="JobsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  SelectionMode="Single" SelectionChanged="JobsGrid_SelectionChanged">
+                        <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  SelectionMode="Single">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="108" SortMemberPath="Status" ElementStyle="{StaticResource StatusText}">
                                     <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Running long: running now for more than a minute past its average successful run. Failed: its last run failed. Sorted with these first."/></Style></DataGridTextColumn.HeaderStyle>
@@ -177,7 +178,8 @@
                         <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
                                    Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,40,0,0"
                                    HorizontalAlignment="Center" VerticalAlignment="Top"
-                                   IsHitTestVisible="False" Visibility="Collapsed"/>
+                                   IsHitTestVisible="False" Text="{Binding NoDataText}"
+                                   Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}"/>
                     </Grid>
                 </DockPanel>
             </Border>
@@ -187,7 +189,7 @@
 
             <!-- ── The selected job's runs and their steps; its details and the step's message in the drawer ── -->
             <Border Grid.Row="2" Style="{StaticResource KpiCard}">
-                <Grid x:Name="DetailPanel" IsEnabled="False">
+                <Grid x:Name="DetailPanel" IsEnabled="{Binding HasJob}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -197,17 +199,17 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                        <TextBlock x:Name="TxtDetailHeader" Text="Select a job above to see its runs."
+                        <TextBlock x:Name="TxtDetailHeader" Text="{Binding DetailHeader}"
                                    Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"
                                    TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="TxtDetailSub" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,3,0,0"
-                                   TextWrapping="Wrap" Visibility="Collapsed"/>
+                                   TextWrapping="Wrap" Text="{Binding RunsProblem}" Visibility="{Binding ShowsRunsProblem, Converter={StaticResource Visible}}"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="1" x:Name="TxtRunsLabel" Text="Runs msdb keeps, newest first"
+                    <TextBlock Grid.Row="1" x:Name="TxtRunsLabel" Text="{Binding RunsLabel}"
                                Foreground="{StaticResource TextMuted}" FontSize="11" Margin="0,0,0,4"/>
-                    <DataGrid x:Name="RunsGrid" Grid.Row="2" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                              SelectionMode="Single" SelectionChanged="RunsGrid_SelectionChanged">
+                    <DataGrid x:Name="RunsGrid" Grid.Row="2" ItemsSource="{Binding Runs}" SelectedItem="{Binding SelectedRun}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                              SelectionMode="Single">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Started" Binding="{Binding Start, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="150"/>
                             <DataGridTextColumn Header="Outcome" Binding="{Binding OutcomeText}" Width="90" ElementStyle="{StaticResource RunOutcome}"/>
@@ -220,8 +222,8 @@
 
                     <TextBlock Grid.Row="3" Text="Steps of the selected run; the selected step's full message is in the drawer"
                                Foreground="{StaticResource TextMuted}" FontSize="11" Margin="0,8,0,4"/>
-                    <DataGrid x:Name="StepsGrid" Grid.Row="4" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                              SelectionMode="Single" SelectionChanged="StepsGrid_SelectionChanged">
+                    <DataGrid x:Name="StepsGrid" Grid.Row="4" ItemsSource="{Binding Steps}" SelectedItem="{Binding SelectedStep}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                              SelectionMode="Single">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Step" Binding="{Binding StepId}" Width="44" ElementStyle="{StaticResource Number}"/>
                             <DataGridTextColumn Header="Name" Binding="{Binding StepName}" Width="170" ElementStyle="{StaticResource SingleLineText}"/>

@@ -265,8 +265,8 @@ public sealed class PageRefreshTests : IDisposable
                 return gate?.Task ?? Task.FromResult(new AgentJobList([], AgentServiceState.Running, null, null));
             },
         };
-        var page  = new AgentJobsPage(repo, shell: _shell);
-        var model = Connect(page, page.ViewModel, "AgentJobs");
+        var page  = Wave2Pages.AgentJobs(repo);
+        var model = Connected(page.ViewModel, "AgentJobs");
 
         UiThread.Wait(model.OnNavigatedToAsync());
         Assert.Equal(1, reads);
@@ -321,8 +321,8 @@ public sealed class PageRefreshTests : IDisposable
         var reads = 0;
         var repo  = new FakeRepository { GetProcessesAsync = () => { reads++; return Task.FromResult<IEnumerable<ProcessNode>>([]); } };
         Directory.CreateDirectory(_dir);
-        var page    = new ProcessesPage(repo, new ConnectionSettingsService(_dir), new FakeNavigator(), _shell);
-        var model   = Connect(page, page.ViewModel, "Processes");
+        var page    = Wave2Pages.Processes(repo, new ConnectionSettingsService(_dir));
+        var model   = Connected(page.ViewModel, "Processes");
         var context = (IPageContext)page;
         var every   = context.LiveInterval!.Value;
 
@@ -356,6 +356,13 @@ public sealed class PageRefreshTests : IDisposable
     private T Connect<T>(ICodeBehindPage page, T model, string tag) where T : CodeBehindViewModel
     {
         model.LoadThrough(page);
+        model.Connect(tag, _shell, new RefreshScheduler(_time, _ui));
+        return model;
+    }
+
+    // A page on its view model (#186), as the page factory makes it, on this test's clock.
+    private T Connected<T>(T model, string tag) where T : PageViewModel
+    {
         model.Connect(tag, _shell, new RefreshScheduler(_time, _ui));
         return model;
     }

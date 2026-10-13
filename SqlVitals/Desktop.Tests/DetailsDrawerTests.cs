@@ -180,11 +180,11 @@ public sealed class DetailsDrawerTests : IDisposable
     [Fact]
     public void Processes_WithNothingSelected_SaysWhatToSelect_AndAClickOpensTheSession() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(Sessions(Node(87, status: "sleeping", openTran: 1), Node(112, 87, 245_000), Node(5)), Settings());
+        var page = Wave2Pages.Processes(Sessions(Node(87, status: "sleeping", openTran: 1), Node(112, 87, 245_000), Node(5)), Settings());
         var source = (IDetailsSource)page;
         var raised = new List<bool>();
         source.DetailsChanged += raised.Add;
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Null(source.Details.Body);
         Assert.Equal("Select a session on the map or in the grid to see its details.", source.Details.Hint);
@@ -203,7 +203,7 @@ public sealed class DetailsDrawerTests : IDisposable
         Assert.Contains("KILL 87;", view.Script);
 
         // A refresh keeps the same view, and so the script; selecting by the keyboard doesn't open.
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Same(view, source.Details.Body);
         Assert.Equal([true, false], raised);
         Assert.Contains("KILL 87;", view.Script);
@@ -213,11 +213,11 @@ public sealed class DetailsDrawerTests : IDisposable
     public void Processes_ASessionThatHasGone_SaysSo() => UiThread.Run(() =>
     {
         var nodes = new List<ProcessNode> { Node(87), Node(5) };
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>(nodes),
         }, Settings());
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         page.ProcessMap.ShowSession(87);
 
         page.ProcessMap.UpdateNodes([Node(5)]);
@@ -230,8 +230,8 @@ public sealed class DetailsDrawerTests : IDisposable
     [Fact]
     public void Processes_TheSessionsPlan_IsReadWhenAsked() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(Sessions(Node(87)), Settings());
-        UiThread.Wait(page.RefreshAsync());
+        var page = Wave2Pages.Processes(Sessions(Node(87)), Settings());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         page.ProcessMap.ShowSession(87);
         var view = (SessionDetailsView)((IDetailsSource)page).Details.Body!;
 
@@ -280,7 +280,7 @@ public sealed class DetailsDrawerTests : IDisposable
     [Fact]
     public void ThePinnedDrawer_BesideProcesses_Renders() => UiThread.Run(() =>
     {
-        var page = new ProcessesPage(Sessions(Node(87, status: "sleeping", openTran: 1), Node(112, 87, 252_000), Node(115, 87, 231_000),
+        var page = Wave2Pages.Processes(Sessions(Node(87, status: "sleeping", openTran: 1), Node(112, 87, 252_000), Node(115, 87, 231_000),
                                               Node(130, 112, 40_000), Node(5), Node(6)), Settings());
         var frame = new Frame { NavigationUIVisibility = System.Windows.Navigation.NavigationUIVisibility.Hidden };
         var host  = new DrawerHost { Page = frame, Layout = new DrawerLayout(pinned: true, 380) };
@@ -292,7 +292,7 @@ public sealed class DetailsDrawerTests : IDisposable
         {
             frame.Navigate(page);
             UiThread.Wait(Task.Delay(100));
-            UiThread.Wait(page.RefreshAsync());
+            UiThread.Wait(page.ViewModel.RefreshAsync());
             page.ProcessMap.ShowSession(87);
             var source = (IDetailsSource)page;
             host.Show(source.Details);
