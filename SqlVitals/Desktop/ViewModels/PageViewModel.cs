@@ -144,7 +144,14 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         _soon = null;
         StartViewTicks();
         Reschedule();
+        OnLeaving();
     }
+
+    /// <summary>
+    /// The page was left: a read of the page's own that isn't <see cref="LoadAsync(CancellationToken)"/>
+    /// (the history of the row selected) is cancelled here.
+    /// </summary>
+    protected virtual void OnLeaving() { }
 
     /// <inheritdoc cref="RefreshCommand"/>
     [ReportsItsErrors]

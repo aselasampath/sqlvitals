@@ -9,6 +9,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.AgentJobs;
 using SqlVitals.Engine.Alerts;
@@ -105,7 +106,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void TempDb_OpensWithWhoHoldsItAndTheRoomLeft() => UiThread.Run(() =>
     {
-        var page = new TempDbPage(new FakeRepository
+        var page = new TempDbPage(new TempDbViewModel(new FakeRepository
         {
             GetTempDbPressureAsync = () => Task.FromResult<(IEnumerable<TempDbFile>, IEnumerable<TempDbSession>, IEnumerable<TempDbCounter>)>((
                 [new("tempdev", "ROWS", @"T:\tempdb.mdf", 8_192, 2_100, 6_092, 25.6, "64 MB", Now),
@@ -114,8 +115,8 @@ public sealed class TemplateEverywhereTests : IDisposable
                 [new(88, 20_480, 0, 870_400, 0, 890_880, "etl", "APP-ETL01", "Loader", "PAGELATCH_UP", "running", 4_000, "SalesDb", "INSERT #stage SELECT …", Now, "Critical"),
                  new(91, 4_096, 0, 0, 0, 4_096, "app", "APP-WEB03", "OrderService", null, "sleeping", 10, "SalesDb", null, Now, "Info")],
                 [new("Version Store Size (KB)", 12_288, Now), new("Free Space in tempdb (KB)", 12_500_000, Now), new("Active Temp Tables", 42, Now)])),
-        }, Settings());
-        Hosted(page, page.RefreshAsync, "tempdb.png", () => AssertLaidOut(page.Shell, page.SessionsGrid, minDetail: 150));
+        }), Settings());
+        Hosted(page, page.ViewModel.RefreshAsync, "tempdb.png", () => AssertLaidOut(page.Shell, page.SessionsGrid, minDetail: 150));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "Session 88 holds 870 MB of TempDB"), (verdict.Level, verdict.Headline));
@@ -322,13 +323,13 @@ public sealed class TemplateEverywhereTests : IDisposable
         static StaleStatistic Stat(string table, string name, long rows, long changes, int days) =>
             new("dbo", table, name, Now.AddDays(-days), days, rows, rows / 4, 25, changes, false, name.StartsWith("_WA", StringComparison.Ordinal), false, "SalesDb", Now);
         var settings = Settings();
-        var page = new StaleStatisticsPage(new FakeRepository
+        var page = new StaleStatisticsPage(new StaleStatisticsViewModel(new FakeRepository
         {
             GetStaleStatisticsAsync = () => Task.FromResult<IEnumerable<StaleStatistic>>(
                 [Stat("Orders", "IX_Orders_Date", 48_000_000, 2_100_000, 9), Stat("OrderLines", "_WA_Sys_00000003_2A4B4B5E", 900_000, 410_000, 31),
                  Stat("Customers", "PK_Customers", 1_200_000, 12_000, 4)]),
-        }, settings);
-        Hosted(page, page.RefreshAsync, "stale-stats.png", () => AssertLaidOut(page.Shell, page.StatsGrid));
+        }, new FakeDialogService()), settings);
+        Hosted(page, page.ViewModel.RefreshAsync, "stale-stats.png", () => AssertLaidOut(page.Shell, page.StatsGrid));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "1 statistic has 20 % or more of its table changed; the most, SalesDb.dbo.OrderLines (_WA_Sys_00000003_2A4B4B5E)"),
@@ -532,7 +533,8 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     // ── A page that can't read says so in its verdict ────────────────────
 
-    public static TheoryData<string> Unreadable => new() { "Memory", "TempDb", "FileIo", "DbStorage", "Perfmon", "IndexHealth", "StaleStats",
+    // TempDB and Stale Stats read in their view models (#184): TempDbViewModelTests and StaleStatisticsViewModelTests.
+    public static TheoryData<string> Unreadable => new() { "Memory", "FileIo", "DbStorage", "Perfmon", "IndexHealth",
                                                            "AgentJobs", "ConfigChecks", "SecurityAudit" };
 
     [Theory, MemberData(nameof(Unreadable))]
@@ -543,12 +545,10 @@ public sealed class TemplateEverywhereTests : IDisposable
         {
             GetMemorySnapshotAsync      = () => Task.FromException<MemorySnapshot>(error),
             GetMemoryGrantsAsync        = () => Task.FromException<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>(error),
-            GetTempDbPressureAsync      = () => Task.FromException<(IEnumerable<TempDbFile>, IEnumerable<TempDbSession>, IEnumerable<TempDbCounter>)>(error),
             ReadFileIoAsync             = () => Task.FromException<FileIoReading>(error),
             GetDatabaseStorageAsync     = () => Task.FromException<(IEnumerable<ServerConfigParam>, IEnumerable<DatabaseFile>, IEnumerable<TempDbFileSummary>, IEnumerable<TableStorage>)>(error),
             GetPerfmonCountersAsync     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
             GetIndexHealthAsync         = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
-            GetStaleStatisticsAsync     = () => Task.FromException<IEnumerable<StaleStatistic>>(error),
             GetAgentJobsAsync           = () => Task.FromException<AgentJobList>(error),
             GetConfigurationChecksAsync = () => Task.FromException<ConfigCheckList>(error),
             GetSecurityAuditAsync       = () => Task.FromException<SecurityFindingList>(error),
@@ -556,12 +556,10 @@ public sealed class TemplateEverywhereTests : IDisposable
         ICodeBehindPage page = tag switch
         {
             "Memory"        => new MemoryPage(repo),
-            "TempDb"        => new TempDbPage(repo),
             "FileIo"        => new FileIoPage(repo, Settings()),
             "DbStorage"     => new DatabaseStoragePage(repo),
             "Perfmon"       => new PerfmonPage(repo),
             "IndexHealth"   => new IndexHealthPage(repo),
-            "StaleStats"    => new StaleStatisticsPage(repo),
             "AgentJobs"     => new AgentJobsPage(repo),
             "ConfigChecks"  => new ConfigChecksPage(repo, "PROD-SQL01"),
             _               => new SecurityAuditPage(repo, "PROD-SQL01"),
@@ -619,12 +617,12 @@ public sealed class TemplateEverywhereTests : IDisposable
             (string Key, Page Page, PageKind Kind)[] pages =
             [
                 ("Memory", new MemoryPage(repo, settings), PageKind.Live),
-                ("TempDb", new TempDbPage(repo, settings), PageKind.Snapshot),
+                ("TempDb", new TempDbPage(new TempDbViewModel(repo), settings), PageKind.Snapshot),
                 ("FileIo", new FileIoPage(repo, settings), PageKind.Live),
                 ("DbStorage", new DatabaseStoragePage(repo, settings), PageKind.Snapshot),
                 ("Perfmon", new PerfmonPage(repo, null, settings), PageKind.Live),
                 ("IndexHealth", new IndexHealthPage(repo, settings), PageKind.Snapshot),
-                ("StaleStats", new StaleStatisticsPage(repo, settings), PageKind.Snapshot),
+                ("StaleStats", new StaleStatisticsPage(new StaleStatisticsViewModel(repo, new FakeDialogService()), settings), PageKind.Snapshot),
                 ("AgentJobs", new AgentJobsPage(repo, settings), PageKind.Snapshot),
                 ("ConfigChecks", new ConfigChecksPage(repo, "PROD-SQL01", settings), PageKind.Snapshot),
                 ("SecurityAudit", new SecurityAuditPage(repo, "PROD-SQL01", settings), PageKind.Snapshot),

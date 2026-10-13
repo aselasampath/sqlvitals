@@ -2,6 +2,7 @@ using System.Windows.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Repositories;
 
@@ -29,18 +30,18 @@ public static class PageRegistrations
             .AddPage("Processes",        (s, a) => new ProcessesPage(a.Repo, Settings(s), Navigator(s), Shell(s), a.Route.View), p => p.ViewModel)
             .AddPage("Deadlocks",        (s, a) => new DeadlocksPage(a.Repo, Settings(s)), p => p.ViewModel)
             .AddPage("AgentJobs",        (s, a) => new AgentJobsPage(a.Repo, Settings(s), Shell(s)), p => p.ViewModel)
-            .AddPage("Backups",          (s, a) => new BackupsPage(a.Repo, Settings(s)), p => p.ViewModel)
+            .AddPage("Backups",          (s, a) => new BackupsPage(new BackupsViewModel(a.Repo, Settings(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("FileIo",           (s, a) => new FileIoPage(a.Repo, Settings(s), Shell(s)), p => p.ViewModel)
             .AddPage("ConfigChecks",     (s, a) => new ConfigChecksPage(a.Repo, a.ConnectionName, Settings(s)), p => p.ViewModel)
             .AddPage("SecurityAudit",    (s, a) => new SecurityAuditPage(a.Repo, a.ConnectionName, Settings(s)), p => p.ViewModel)
-            .AddPage("TempDb",           (s, a) => new TempDbPage(a.Repo, Settings(s)), p => p.ViewModel)
+            .AddPage("TempDb",           (s, a) => new TempDbPage(new TempDbViewModel(a.Repo), Settings(s)), p => p.ViewModel)
             .AddPage("Memory",           (s, a) => new MemoryPage(a.Repo, Settings(s), Shell(s)), p => p.ViewModel)
             .AddPage("QueryStore",       (s, a) => new QueryStorePage(a.Repo, Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
             .AddPage("QueryRegressions", (s, a) => new QueryRegressionsPage(a.Repo, History(s, a), Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
             .AddPage("IndexHealth",      (s, a) => new IndexHealthPage(a.Repo, Settings(s)), p => p.ViewModel)
             .AddPage("ResourceQueries",  (s, a) => new ResourceQueriesPage(a.Repo, a.ServerOffset, Settings(s), Shell(s)), p => p.ViewModel)
             .AddPage("PlanCacheHealth",  (s, a) => new PlanCacheHealthPage(a.Repo, Settings(s), a.Route.View), p => p.ViewModel)
-            .AddPage("StaleStats",       (s, a) => new StaleStatisticsPage(a.Repo, Settings(s)), p => p.ViewModel)
+            .AddPage("StaleStats",       (s, a) => new StaleStatisticsPage(new StaleStatisticsViewModel(a.Repo, Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("DbStorage",        (s, a) => new DatabaseStoragePage(a.Repo, Settings(s), Shell(s)), p => p.ViewModel)
             .AddPage("AppConnections",   (s, a) => new ApplicationConnectionsPage(a.Repo, Settings(s)), p => p.ViewModel)
             .AddPage("Perfmon",          (s, a) => new PerfmonPage(a.Repo, History(s, a), Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
@@ -56,6 +57,8 @@ public static class PageRegistrations
     private static MonitoringManager Monitoring(IServiceProvider s) => s.GetRequiredService<MonitoringManager>();
     private static INavigator Navigator(IServiceProvider s) => s.GetRequiredService<INavigator>();
     private static IShellStatus Shell(IServiceProvider s) => s.GetRequiredService<IShellStatus>();
+    private static IDialogService Dialogs(IServiceProvider s) => s.GetRequiredService<IDialogService>();
+    private static TimeProvider Time(IServiceProvider s) => s.GetRequiredService<TimeProvider>();
 
     // The open connection's history of samples, on pages that chart it.
     private static ConnectionHistory? History(IServiceProvider s, PageArgs a) => Monitoring(s).HistoryFor(a.ConnectionId);

@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.Backups;
@@ -200,12 +201,12 @@ public sealed class PageTemplateTests : IDisposable
                                   Ago(now, TimeSpan.FromDays(1)), null, null),
         };
         var settings = Settings();
-        var page = new BackupsPage(new FakeRepository
+        var page = new BackupsPage(new BackupsViewModel(new FakeRepository
         {
             GetBackupStatusAsync  = _ => Task.FromResult(BackupList.From(rows, now, BackupRpo.Default)),
             GetBackupHistoryAsync = (_, _) => Task.FromResult<IReadOnlyList<BackupHistoryEntry>>([]),
-        }, settings);
-        UiThread.Wait(page.RefreshAsync());
+        }, settings), settings);
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Render(page, "backups.png");
 
         Assert.Equal("Sales is past your RPO: log overdue", page.Shell.Verdict!.Headline);

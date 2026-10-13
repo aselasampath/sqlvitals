@@ -28,7 +28,7 @@ Everything is read from `msdb.dbo.backupset`, where SQL Server records each back
    | **Full size** | The size of the last full backup, compressed if it was |
    | **Warnings** | Every problem found, in a sentence |
 
-6. **Select a database** to see its backups below, newest first (up to 500): type, duration, size, compressed size, whether it was taken **WITH CHECKSUM**, the recovery model at the time, who took it, and where it was written. Above them: the newest point it can be restored to, and where the last full backup went.
+6. **Select a database** to see its backups below, newest first (up to 500): type, duration, size, compressed size, whether it was taken **WITH CHECKSUM**, the recovery model at the time, who took it, and where it was written. Above them: the newest point it can be restored to, and where the last full backup went. From 0.79.1 the history keeps its sort when you select another database.
 
 The grids have the usual filter box and right-click menu (copy, export to CSV). See [Working with Grids](Working-with-Grids.md).
 

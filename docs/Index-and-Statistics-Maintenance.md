@@ -84,7 +84,7 @@ Change them and press **↻ Refresh** (or **Enter**). Only this tab reloads, and
 
 **Statistics** tell SQL Server's optimizer how data is distributed. When lots of rows change, they go out of date and the optimizer makes poor choices. This screen lists statistics with pending modifications, most-modified first.
 
-**The verdict** (from 0.66.0) names the statistics with 20 % or more of their table's rows changed since they were updated, the largest share first (*1 statistic has 20 % or more of its table changed; the most, SalesDb.dbo.OrderLines (…)*), in amber, with how many rows changed and when it was last updated. With none that stale, it names the most changed one anyway. **Show it** selects it, so **Generate UPDATE STATISTICS Script** scripts just that one. What statistics are for folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
+**The verdict** (from 0.66.0) names the statistics with 20 % or more of their table's rows changed since they were updated, the largest share first (*1 statistic has 20 % or more of its table changed; the most, SalesDb.dbo.OrderLines (…)*), in amber, with how many rows changed and when it was last updated. With none that stale, it names the most changed one anyway. **Show it** selects it, so **Generate UPDATE STATISTICS Script** scripts just that one. From 0.79.1 a refresh keeps the statistic selected and the grid's sort. What statistics are for folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
 ![Stale Stats: the verdict names the most changed statistic, above the statistics](images/page-template/stale-stats.png)
 

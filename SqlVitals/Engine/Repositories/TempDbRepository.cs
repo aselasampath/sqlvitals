@@ -33,7 +33,7 @@ public class TempDbRepository(SqlTarget target, ServerCapabilitiesCache? capabil
                 (long)r.InternalObjAllocKB, (long)r.InternalObjDeallocKB, net,
                 (string?)r.LoginName, (string?)r.HostName, (string?)r.ProgramName,
                 (string?)r.WaitType, (string?)r.RequestStatus, (long)r.CpuTimeMs,
-                (string?)r.DatabaseName, (string?)r.QueryText, (DateTime)r.CaptureTime, sev);
+                (string?)r.DatabaseName, (string?)r.QueryText, (DateTime)r.CaptureTime, sev, (long)r.WaitTimeMs);
         });
 
         var counters = (await Q(conn, CountersSql, cancellationToken)).Select(r =>

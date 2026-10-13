@@ -4,7 +4,8 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Stale Statistics">
     <!-- The page template (#150): the verdict on the most changed statistic first, why statistics
-         matter folding to one line, then the statistics with the script to update them. -->
+         matter folding to one line, then the statistics with the script to update them. Bound to
+         StaleStatisticsViewModel (#184). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Stale Statistics" PageKey="StaleStats">
         <controls:PageShell.Sections>
             <controls:FoldSection x:Name="AboutSection" Key="about" Header="Why they matter"
@@ -31,16 +32,17 @@
                     <RadioButton x:Name="RbDefaultSampling" GroupName="Sampling" Content="Default" IsChecked="True"
                                  VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource TextPrimary}"
                                  ToolTip="No WITH clause: SQL Server chooses the sample size (or uses a persisted sample percent). Fast, but skewed data can still get a poor histogram." />
-                    <RadioButton x:Name="RbFullScan" GroupName="Sampling" Content="FULLSCAN"
+                    <RadioButton x:Name="RbFullScan" GroupName="Sampling" Content="FULLSCAN" IsChecked="{Binding FullScan}"
                                  VerticalAlignment="Center" Margin="0,0,15,0" Foreground="{StaticResource TextPrimary}"
                                  ToolTip="WITH FULLSCAN: reads every row for the most accurate histogram. Heavy I/O on large tables — run it off-peak." />
-                    <Button x:Name="BtnUpdateStatsScript" Content="Generate UPDATE STATISTICS Script"
+                    <Button x:Name="BtnUpdateStatsScript" Content="{Binding ScriptText}"
                             Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
-                            IsEnabled="False" Click="BtnUpdateStatsScript_Click"
+                            Command="{Binding GenerateScriptCommand}" CommandParameter="{Binding Items, ElementName=StatsGrid}"
                             ToolTip="Generate a T-SQL UPDATE STATISTICS script for the selected rows (or all of them if none are selected). The script is shown for review — nothing is executed." />
                 </WrapPanel>
 
                 <DataGrid x:Name="StatsGrid" CanUserAddRows="False"
+                          ItemsSource="{Binding Statistics}" SelectedItem="{Binding SelectedStatistic}"
                           IsReadOnly="True" AutoGenerateColumns="False"
                           SelectionMode="Extended" SelectionUnit="FullRow"
                           SelectionChanged="StatsGrid_SelectionChanged"

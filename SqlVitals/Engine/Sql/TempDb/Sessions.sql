@@ -9,6 +9,7 @@ SELECT TOP 20 su.session_id AS SessionId,
     s.program_name AS ProgramName,
     r.wait_type AS WaitType, r.status AS RequestStatus,
     ISNULL(r.cpu_time,0) AS CpuTimeMs,
+    ISNULL(r.wait_time,0) AS WaitTimeMs,
     DB_NAME(r.database_id) AS DatabaseName,
     SUBSTRING(REPLACE(REPLACE(ISNULL(qt.text,''),CHAR(13),' '),CHAR(10),' '),1,500) AS QueryText,
     GETDATE() AS CaptureTime

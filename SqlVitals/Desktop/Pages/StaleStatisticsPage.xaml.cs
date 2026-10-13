@@ -1,102 +1,64 @@
-using System.Windows;
+using System.ComponentModel;
 using System.Windows.Controls;
-using SqlVitals.Engine.Models;
-using SqlVitals.Engine.Repositories;
-using SqlVitals.Engine.Scripting;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Engine.Verdicts;
+using SqlVitals.Engine.Models;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class StaleStatisticsPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext
+/// <summary>
+/// Stale Statistics, bound to <see cref="StaleStatisticsViewModel"/> (#184): the code-behind keeps
+/// the grid's rows selected and the view model's in step, which a grid can't bind, and scrolls the
+/// one the verdict shows into view.
+/// </summary>
+public partial class StaleStatisticsPage : Page, IPageContext
 {
     // Read once, and again on Refresh, from the connection's database (#140).
     public PageKind Kind => PageKind.Snapshot;
     public bool UsesDatabase => true;
 
-    private readonly IWaitStatsRepository _repo;
-
-    // The page template's verdict (#150): the statistic with the most of its table changed.
     internal StaleStatisticsViewModel ViewModel { get; }
 
     /// <param name="folds">Where the verdict's and the explanation's folds are remembered; none in some tests.</param>
-    public StaleStatisticsPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public StaleStatisticsPage(StaleStatisticsViewModel viewModel, ISectionFolds? folds = null)
     {
-        _repo = repo;
+        ViewModel   = viewModel;
+        DataContext = viewModel;
         InitializeComponent();
 
-        ViewModel = new StaleStatisticsViewModel(showWorst: ShowWorst);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
+        ViewModel.ShowRow += StatsGrid.ScrollIntoView;
+        ViewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
 
-    public async System.Threading.Tasks.Task RefreshAsync()
+    // While the grid is made to match the view model, its changes aren't the user's.
+    private bool _matching;
+
+    private void StatsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        List<StaleStatistic> stats;
+        if (!_matching)
+            ViewModel.SelectedStatistics = StatsGrid.SelectedItems.OfType<StaleStatistic>().ToList();
+    }
+
+    // The view model kept the rows selected across a refresh: the grid selects them all again.
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(StaleStatisticsViewModel.SelectedStatistics) || _matching)
+            return;
+        var wanted = ViewModel.SelectedStatistics;
+        if (wanted.Count == StatsGrid.SelectedItems.Count && wanted.All(StatsGrid.SelectedItems.Contains))
+            return;
+        _matching = true;
         try
         {
-            stats = (await _repo.GetStaleStatisticsAsync()).ToList();
+            StatsGrid.SelectedItems.Clear();
+            foreach (var row in wanted)
+                StatsGrid.SelectedItems.Add(row);
         }
-        catch (Exception ex)
+        finally
         {
-            ViewModel.ShowError("the statistics", ex);
-            throw;
+            _matching = false;
         }
-        ViewModel.Show(stats);
-        _stats = stats;
-        StatsGrid.ItemsSource = stats;
-        UpdateScriptButton();
-    }
-
-    // What the verdict judged, so Show it selects the statistic it names.
-    private IReadOnlyList<StaleStatistic> _stats = [];
-
-    // The verdict's Show it: the most changed statistic, selected and in view.
-    private void ShowWorst()
-    {
-        if (StaleStatsVerdict.Worst(_stats) is not { } worst)
-            return;
-        StatsGrid.SelectedItem = worst;
-        StatsGrid.ScrollIntoView(worst);
-    }
-
-    private void StatsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateScriptButton();
-
-    private void UpdateScriptButton()
-    {
-        int selected = StatsGrid.SelectedItems.Count;
-        int total    = StatsGrid.Items.Count;
-
-        BtnUpdateStatsScript.IsEnabled = total > 0;
-        BtnUpdateStatsScript.Content = selected > 0
-            ? $"Generate UPDATE STATISTICS Script ({selected} selected)"
-            : "Generate UPDATE STATISTICS Script (all)";
-    }
-
-    private void BtnUpdateStatsScript_Click(object sender, RoutedEventArgs e)
-    {
-        // Selected rows if the user picked some, otherwise everything in the grid —
-        // in the grid's current sort order so the script reads like what's on screen.
-        var selected = StatsGrid.SelectedItems.OfType<StaleStatistic>().ToHashSet();
-        var statistics = StatsGrid.Items.OfType<StaleStatistic>()
-            .Where(s => selected.Count == 0 || selected.Contains(s))
-            .ToList();
-        if (statistics.Count == 0) return;
-
-        var sampling = RbFullScan.IsChecked == true ? StatisticsSampling.FullScan : StatisticsSampling.Default;
-        var summary  = UpdateStatisticsScript.Summarize(statistics);
-        var notice =
-            $"Review before running. {summary.Statistics:N0} statistic(s) on {summary.Tables:N0} table(s) will be updated " +
-            (sampling == StatisticsSampling.FullScan
-                ? $"WITH FULLSCAN, reading about {summary.RowsInTables:N0} rows — run it off-peak."
-                : "with default sampling.") +
-            " Plans that use them recompile on their next run. SqlVitals does not run this script.";
-
-        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
-            "Update Statistics",
-            notice,
-            UpdateStatisticsScript.Build(statistics, sampling, DateTime.Now),
-            $"UpdateStatistics_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
     }
 }

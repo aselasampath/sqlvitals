@@ -31,7 +31,8 @@ public record TempDbSession(
     string? QueryText,
     DateTime CaptureTime,
     // Derived
-    string  Severity              // Critical / Warning / Info
+    string  Severity,             // Critical / Warning / Info
+    long    WaitTimeMs = 0        // how long its request has waited on WaitType; 0 when idle
 );
 
 /// <summary>Server-level TempDB performance counter.</summary>

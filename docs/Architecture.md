@@ -64,7 +64,7 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server DMVs **dire
 | `SqlVitals.Engine` | `net10.0` (class library) | Models, repositories, history, regressions, scripting, filtering, export. No version of its own: it ships inside the app. |
 | `SqlVitals.Engine.Tests` | `net10.0` | xUnit tests for Engine |
 | `SqlVitals.Engine.IntegrationTests` | `net10.0` | Every repository method run against a real SQL Server (#46), skipped without `SQLVITALS_TEST_SERVER`; CI runs it against SQL Server 2017–2025 on Linux. See [Building and Contributing](Building-and-Contributing.md#against-a-real-sql-server) |
-| `SqlVitals.Desktop.Tests` | `net10.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls; every page test's repository is `Fakes/FakeRepository`, a typed fake of `IWaitStatsRepository`, #168), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)), the services view models ask for and the verdict actions that open pages (`UiServicesTests`, `VerdictNavigationTests`, with the fakes in `Fakes/`) |
+| `SqlVitals.Desktop.Tests` | `net10.0-windows` | xUnit tests for the app's services: settings file, monitoring (with a repository that counts calls; every page test's repository is `Fakes/FakeRepository`, a typed fake of `IWaitStatsRepository`, #168), the sidebar and the top bar, laid out off screen in both themes (the top bar's states are also rendered to PNGs under `%TEMP%\SqlVitalsTests\top-bar`), the window's layout with the sidebar pinned, collapsed and hidden (`WorkspaceShellTests`, rendered at 1320 × 820 under `%TEMP%\SqlVitalsTests\sidebar-states`), the quick switcher (`QuickSwitcherOverlayTests`, under `%TEMP%\SqlVitalsTests\quick-switcher`), every page on the template with its verdict, folds and drawer (`TemplateRolloutTests`, `TemplateEverywhereTests`, rendered under `%TEMP%\SqlVitalsTests\page-template-rollout`), Home, a server's details and Settings as whole pages on one STA thread with the light theme (`UiThread`), the MVVM rules over the app's sources (`MvvmGuardTests`, with Roslyn; see [MVVM](#mvvm)), the view models of the pages that read through them, on their own with no STA thread (`TempDbViewModelTests`, `StaleStatisticsViewModelTests`, `BackupsViewModelTests`), and those pages rendered in both themes, failing on any binding error (`PilotPagesTests`, `BindingErrors`), the services view models ask for and the verdict actions that open pages (`UiServicesTests`, `VerdictNavigationTests`, with the fakes in `Fakes/`) |
 | `SqlVitals.Collector` | `net10.0-windows` (console + Windows service) | The optional [collector service](Collector-Service.md) (#172): Engine's monitoring with no window, its own `collector.json` and `history.db`, its command line and install. Its version is read from Desktop's `<Version>`. Shipped as its own zip; Setup doesn't install it. |
 | `SqlVitals.Collector.Tests` | `net10.0-windows` | xUnit tests for the host (real collectors on fake servers and a fake webhook, the history read back with the app's `HistoryReader`), the commands, install's sc.exe steps and the data folder's permissions |
 | `SqlVitals.Installer` | `net472` (WPF) | The Setup wizard. .NET Framework so it runs on a clean Windows. |
@@ -341,7 +341,7 @@ Pages are moving from code-behind to view models one at a time (epic #180). Ever
 - **Every page refreshes, pauses and reports errors one way:** through `PageViewModel` ([The page lifecycle](#the-page-lifecycle)). It is the shared refresh helper: it owns the timer, one read at a time, cancellation on leave, pause, and reporting to `IShellStatus`. A page that hasn't moved yet reaches the same helper from its code-behind (`CodeBehindViewModel.ReadEvery`).
 - **No page makes its own `DispatcherTimer`** to read, count down or tick a label: its view model's clock does (`IRefreshScheduler`). A guard test checks it, with no allowlist.
 - **An `async void` event handler catches what it awaits** and reports it: a page's through `ViewModel.ReportErrorsOf`, the window's through its `Reported`, the rest through `HandlerErrors.Reported`. A guard test checks it too.
-- **Order:** #183 built the lifecycle, #169 moved every page's timer and *Read again* onto it, and the waves of #180 (#184–#191) move each page's reading into its view model.
+- **Order:** #183 built the lifecycle, #169 moved every page's timer and *Read again* onto it, and the waves of #180 (#184–#191) move each page's reading into its view model. The pilot (#184) moved TempDB, Stale Stats and Backups, and settled the recipe below: [Adding a page](#adding-a-page), [Grids](#grids) and [Testing a page](#testing-a-page).
 
 ### Naming and place
 
@@ -351,7 +351,7 @@ Pages are moving from code-behind to view models one at a time (epic #180). Ever
 | `Pages/Settings/AlertsCategory.xaml` | `ViewModels/Settings/AlertsCategoryViewModel.cs` |
 
 - Each view model has its own file, named after the type. Namespaces follow the folders: `SqlVitals.Desktop.ViewModels.Pages` and `SqlVitals.Desktop.ViewModels.Settings`.
-- A type that a page's view model owns, such as a row, goes in the same folder, and its name starts with the page's: `BackupsRowViewModel.cs`.
+- A type that a page's view model owns, such as a row, goes in the same folder, and its name starts with the page's: `BackupsRowViewModel.cs`. A small record only it uses, such as a card or a part of a line, can be nested in it instead (`TempDbViewModel.CounterCard`, `BackupsViewModel.SummaryPart`); XAML names it `vm:TempDbViewModel+CounterCard`.
 - Shared bases stay in `ViewModels/`: `PageViewModel`, which holds the verdict and its actions (#146) and the page lifecycle (#183), and `CodeBehindViewModel`, the base of a page whose code-behind still reads. Every page has a view model derived from one of them.
 
 ### What a view model may use
@@ -407,6 +407,7 @@ Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wp
 | `LoadAsync(CancellationToken)` | Abstract: reads what the page shows. The token is cancelled when the page is left |
 | `OnNavigatedToAsync()` | The window calls it once the page is on screen: it loads, then the timed refresh starts |
 | `OnNavigatedFrom()` | The page was left, or its connection switched: the read is cancelled and the timer stops |
+| `OnLeaving()` | Virtual, called by `OnNavigatedFrom`: cancels a read of the page's own that isn't `LoadAsync`, such as Backups' history of the database selected (#184) |
 | `LoadAsync(PageRead, CancellationToken)` | Virtual: reads knowing why. `LoadAsync(CancellationToken)` unless a page's timed read is narrower than its Refresh |
 | `RefreshCommand`, `RefreshAsync()` | Reads again. While a read runs, it waits for that one instead of starting another (`CanExecute` is false meanwhile) |
 | `RereadAsync()` | What the page reads changed (a filter, a range, an RPO): reads again after the read in progress, which had the old choice (#169) |
@@ -426,10 +427,10 @@ Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wp
 
 ### Adding a page
 
-1. **The view:** `Pages/XPage.xaml` and its code-behind, which implements `IPageContext` (what the top bar says about it) and holds only the view: `internal XViewModel ViewModel { get; }`, set from its constructor.
-2. **The view model:** `ViewModels/Pages/XViewModel.cs`, derived from `PageViewModel`. It overrides `LoadAsync`, sets `RefreshInterval` if the page updates on its own, and takes its services in its constructor.
+1. **The view:** `Pages/XPage.xaml` and its code-behind, which implements `IPageContext` (what the top bar says about it) and holds only the view. Its constructor takes the view model, keeps it as `internal XViewModel ViewModel { get; }`, sets it as its `DataContext` *before* `InitializeComponent` (so every binding finds it as it is made), then calls `ViewModel.Attach(Shell)`. The XAML binds to it: text, lists, selections and `Command=`.
+2. **The view model:** `ViewModels/Pages/XViewModel.cs`, derived from `PageViewModel`. It takes the narrowest repository interface it reads (`ITempDbRepository`, `IIndexRepository`, `IBackupRepository`) and its services in its constructor, overrides `LoadAsync` (the token goes to every repository call) and `ShowLoadError` (to say what it couldn't read: *Couldn't read the statistics*), and sets `RefreshInterval` if the page updates on its own. A clock it shows (*Read at 09:30*) or stamps (a script's file name) is a `TimeProvider`, so a test can fix it.
 3. **The catalog:** the tag in `Services/PageCatalog` (tag → view type) and in `Services/NavMenu` (its sidebar button).
-4. **The registration:** a line in `Services/PageRegistrations.AddPages`: `.AddPage("X", (s, a) => new XPage(...), page => page.ViewModel)`, its services from the container (`Settings(s)`, `Shell(s)`, `Navigator(s)`…) and the connection from the `PageArgs` (`a.Repo`). The factory makes the view model the page's `DataContext` and connects it to `IShellStatus` and `IRefreshScheduler`. `MainWindow` has no `switch` of pages; it only wires the links of Home, the Overview and Settings that lead back to the window.
+4. **The registration:** a line in `Services/PageRegistrations.AddPages`: `.AddPage("X", (s, a) => new XPage(new XViewModel(a.Repo, …), …), page => page.ViewModel)`, its services from the container (`Settings(s)`, `Shell(s)`, `Navigator(s)`, `Dialogs(s)`, `Time(s)`…) and the connection from the `PageArgs` (`a.Repo`, which the factory has bound to the page's lifetime). The factory makes the view model the page's `DataContext` and connects it to `IShellStatus` and `IRefreshScheduler`. `MainWindow` has no `switch` of pages; it only wires the links of Home, the Overview and Settings that lead back to the window.
 
 `PageCatalogTests`, `PageFactoryTests`, `NavMenuTests` and the guard tests fail for a page missing from any of these.
 
@@ -437,18 +438,28 @@ Small interfaces in `Services/` (#182), with WPF implementations in `Services/Wp
 
 - A button binds `Command="{Binding SaveCommand}"` to a `[RelayCommand]` method. An async method (`Task SaveAsync()`) gets an `IAsyncRelayCommand`, which disables the button while it runs.
 - `Click=` is only for view-only actions such as focus, scrolling or opening a popup. A page's XAML may not gain a `Click=`.
+- **A key that runs a command** is a `KeyBinding` in the control's `InputBindings` (Enter in Backups' RPO boxes runs `ApplyCommand`); a text box it reads binds with `UpdateSourceTrigger=PropertyChanged`, so the command sees what was just typed.
+- **A command that needs what the view shows** takes it as its parameter: Stale Stats' script button passes `CommandParameter="{Binding Items, ElementName=StatsGrid}"`, the rows in the grid's sort order, as a plain `IEnumerable`.
+- **Read again** is `RefreshCommand`, disabled while the page reads. A command that reads again because an input changed (Backups' *Apply* and Enter in its boxes) calls `RereadAsync` and stays enabled (`AllowConcurrentExecutions = true`): pressed while the page reads, it reads again after, with what was typed by then.
 - `async void` is only for event handlers. Anywhere else, use a command or a method that returns a `Task`, so that the caller can await it and see what it throws.
 - An `async void` handler catches what it awaits (#169): in a `try` with `catch (Exception …)`, or by awaiting a method marked `[ReportsItsErrors]`, which reports its own: `ViewModel.RefreshAsync()`, `RereadAsync()` and `ReportErrorsOf(…)` on a page, `Reported(…, what)` in the window, `.Reported(what)` elsewhere (logged, and shown in a message box). Otherwise its failure reaches the app's last-resort handler, which can only say "An unexpected error occurred".
 
 ### Grids
 
-- A grid binds `ItemsSource` to an `IReadOnlyList<T>` property, and the view model replaces the list on each refresh. A grid that only appends rows uses a range collection.
-- The view model owns the selection. It keeps the key of the selected row and selects the row with that key again after a refresh. `DataGridRefresh` doesn't do this.
-- The view owns the sort and the filter (`GridFilterBox`). Replacing a bound list makes a new collection view, which drops both. `DataGridRefresh` keeps them for a grid whose rows are set from code-behind, and the pilot (#184) settles how a bound grid keeps them.
+- **A grid binds `ItemsSource` to a `ViewModels/GridRows<T>`** that the view model keeps for the page's life and refills on each read with `Replace(rows)`: one reset, not an event per row (#184). The grid stays bound to the same collection, so its collection view, and with it the user's sort and filter (`GridFilterBox`), survive the refresh. A new list would make a new view, which drops both. A list nobody sorts, such as cards or the parts of a line, is a plain `IReadOnlyList<T>` property the view model replaces.
+- **The view model owns the selection:** `SelectedItem` binds two way to a property of the view model. Before a refill it notes the selected row's key (a session's id; a statistic's database, schema, table and name; a database's name), and after it selects the new row with that key. The grid pushes null while the rows are replaced; Backups ignores it while it refills, so the history below doesn't flicker.
+- **A multi-select grid** forwards `SelectedItems`, which can't be bound, from its `SelectionChanged` to the view model (`StaleStatisticsViewModel.SelectedStatistics`); `SelectedItem` is still the one kept across a refresh.
+- **A row the view model shows** (a verdict's *Show it*) is selected by the view model, which then raises `ShowRow`; the code-behind scrolls it into view.
+- `DataGridRefresh` keeps the sort and the filter for a grid whose rows are still set from code-behind. `ViewState` (#139) waits until a grid is filled before it puts back its sort and selected row. A bound `GridRows` is there, empty, before the page reads, so it says itself when the view model has filled it (`IGridRows.IsFilled`), even with no rows.
 
 ### What stays in code-behind
 
-Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the process map, the plan view) and chart glue (LiveCharts events, tooltips, theme colours). Code-behind may forward to the view model, for example a key press that runs a command. It doesn't read data or decide what to show.
+Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the process map, the plan view) and chart glue (LiveCharts events, tooltips, theme colours). Code-behind may forward to the view model, for example a key press that runs a command, or a grid's `SelectedItems`. It doesn't read data or decide what to show. TempDB's code-behind is now its file chart, drawn from `ViewModel.Files` when it changes in the theme's colours, and scrolling the session the verdict shows into view; Backups' is its constructor.
+
+### Testing a page
+
+- **The view model, on its own:** a plain `[Fact]`, no STA thread, no page. It takes a `Fakes/FakeRepository`, and the test calls `Connect(tag, FakeShellStatus, scheduler)` to see what is reported, then `OnNavigatedToAsync`, `RefreshAsync` and `OnNavigatedFrom` as the window would. Each page tests: loaded, empty, an error reported once with the verdict saying what couldn't be read, the read cancelled on leave with nothing said (`FakeRepository.Tokens`), and the selection kept across a refresh. A clock is a `FakeTimeProvider`.
+- **The page, whole:** on the `UiThread`, in both themes (`MergedPagesTests.Themed`), hosted off screen (`TemplateRolloutTests.Hosted`) and rendered to a PNG, inside `using var errors = BindingErrors.Watch()` and ending with `errors.AssertNone()`. WPF writes a broken binding only to a debugger's output, so without it a path the view model doesn't have just shows nothing; the pilot's watcher found TempDB's *Wait ms* column bound to a property `TempDbSession` never had.
 
 ### The guard tests
 
@@ -457,13 +468,13 @@ Focus, keyboard handling, scrolling a row into view, drag, custom drawing (the p
 | Rule | Where | Today's offenders (allowlist) |
 |---|---|---|
 | A view model doesn't refer to `System.Windows.Controls`, `MessageBox`, `MainWindow`, `Application` or a `Dispatcher` | `ViewModels/**` | `ViewReferencesAllowed`: none |
-| Page code doesn't use a repository | `Pages/**/*.cs` | `RepositoryReferencesAllowed`: 25 pages |
+| Page code doesn't use a repository | `Pages/**/*.cs` | `RepositoryReferencesAllowed`: 19 pages |
 | Only the shell refers to `MainWindow`: pages report to `IShellStatus` and open pages through `INavigator` (#166) | `Pages/**`, `Controls/**`, `Windows/**`, `Helpers/**` | none |
-| A page's XAML gains no `Click=` (comments aren't counted) | `Pages/**/*.xaml` | `ClicksAllowed`: 98 in 27 files |
+| A page's XAML gains no `Click=` (comments aren't counted) | `Pages/**/*.xaml` | `ClicksAllowed`: 95 in 25 files |
 | No page makes its own `DispatcherTimer` (#169) | `Pages/**/*.cs` | none |
 | `async void` only in event handlers | all of `Desktop/` | none (since #169) |
 | An `async void` handler catches what it awaits, or awaits a `[ReportsItsErrors]` method (#169) | all of `Desktop/` | none |
-| A page reads through its view model, not in its code-behind (`ICodeBehindPage`) | the pages | `CodeBehindPagesAllowed`: 28 pages |
+| A page reads through its view model, not in its code-behind (`ICodeBehindPage`) | the pages | `CodeBehindPagesAllowed`: 22 pages (TempDB, Stale Stats and Backups left it in #184) |
 | One file per view model, named after its page | `ViewModels/**` | none |
 
 - A failure names the file and line, for example `Desktop/Pages/ProcessesPage.xaml.cs:43: async void OpenWaits isn't an event handler`.
