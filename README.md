@@ -26,8 +26,10 @@
 
 **SqlVitals** is a free, open-source Windows desktop app that shows what your SQL Server or Azure SQL database is
 doing right now, and what it was doing while you weren't watching. It reads the server's own dynamic management
-views directly: no agent on the server, no monitoring database to look after, no web service in between. Add a
-connection, and waits, blocking, slow queries and index problems are on screen in seconds.
+views directly: nothing to install on the database server, no monitoring database to look after, no web service in
+between. Add a connection, and waits, blocking, slow queries and index problems are on screen in seconds. To keep
+watching while your PC is off, an optional [collector service](docs/Collector-Service.md) does the same from any
+always-on Windows machine.
 
 Built for DBAs and developers who need a clear answer to *"why is the database slow?"* without setting up a
 monitoring platform first.
@@ -74,11 +76,14 @@ See the [feature map](docs/Home.md#feature-map) in the wiki for every screen.
 
 ## Safe on production servers
 
-- **Read-only.** SqlVitals never changes a server. The scripts it writes are for you to review and run.
+- **Read-only.** SqlVitals reads diagnostic views and never runs the scripts it writes: you review and run them. The
+  one exception is SP Trace, which creates a temporary Extended Events session while you trace and drops it when you
+  stop.
 - **Light.** Reads use `READ UNCOMMITTED` with a timeout. Nothing is monitored until you start it; then it runs one
-  light query per server every 10 seconds and a snapshot every 5 minutes. Heavy screens run only when you open them.
-- **Private.** Saved connections are encrypted with Windows DPAPI, and history stays on your PC. See
-  [Security and Privacy](docs/Security-and-Privacy.md).
+  light query per server every 10 seconds (15 for the collector service) and a snapshot every 5 minutes. Heavy screens run only when you open them.
+- **Private.** No telemetry. Saved connections are encrypted with Windows DPAPI, and history is a local file on the
+  PC that collects it: yours, or the collector service's. Only what you set up leaves it: chat alerts and heartbeats
+  to your Slack or Teams channels. See [Security and Privacy](docs/Security-and-Privacy.md).
 
 ## How it compares
 

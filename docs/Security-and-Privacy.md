@@ -4,7 +4,7 @@ What SqlVitals stores, where, how it's protected, and what leaves your PC.
 
 ## At a glance
 
-- **No telemetry, no cloud.** SqlVitals makes no network connections except to the SQL Servers you configure.
+- **No telemetry, no cloud service of its own.** SqlVitals connects to the SQL Servers you configure and, only when you set them up, to your [chat channels](Chat-Notifications.md)' Slack or Teams webhooks and heartbeat ping URLs, and to Microsoft's sign-in for an Entra MFA connection. The [collector service](#collector-service) does the same from its own PC.
 - **Credentials are encrypted** with Windows DPAPI, per Windows user. That keeps them from other Windows users and off copies of the file; it doesn't keep them from other programs running as you. See [What DPAPI protects](#what-dpapi-protects-and-what-it-doesnt).
 - **Passwords are optional on disk.** Untick *Remember password* and they stay in memory for the session only.
 - **Secrets are scrubbed from everything that leaves the app**: passwords, access and bearer tokens, and webhook URLs are masked in the log files, the activity log, error messages and Export for AI reports. See [Secrets in messages, logs and reports](#secrets-in-messages-logs-and-reports).
