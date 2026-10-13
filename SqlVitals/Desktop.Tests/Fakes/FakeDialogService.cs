@@ -53,7 +53,14 @@ internal sealed class FakeDialogService : IDialogService
 
     public void Error(string message, string caption) => Shown.Add($"Error: {caption}: {message}");
 
-    public void ShowSqlScript(SqlScript script, bool modal) => Shown.Add($"Script: {script.Heading} ({(modal ? "modal" : "modeless")})");
+    /// <summary>Each SQL script shown, as it was shown.</summary>
+    public List<SqlScript> Scripts { get; } = [];
+
+    public void ShowSqlScript(SqlScript script, bool modal)
+    {
+        Scripts.Add(script);
+        Shown.Add($"Script: {script.Heading} ({(modal ? "modal" : "modeless")})");
+    }
 
     public void ShowQueryPlan(string? planXml, string? queryText, string? title = null) => Shown.Add($"Plan: {title ?? "(untitled)"}");
 

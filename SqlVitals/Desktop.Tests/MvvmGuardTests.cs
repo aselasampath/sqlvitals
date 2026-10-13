@@ -22,7 +22,6 @@ public sealed class MvvmGuardTests
     [
         "Pages/AgentJobsPage.xaml.cs",
         "Pages/ApplicationConnectionsPage.xaml.cs",
-        "Pages/BackupsPage.xaml.cs",
         "Pages/ConfigChecksPage.xaml.cs",
         "Pages/DatabaseStoragePage.xaml.cs",
         "Pages/DeadlocksPage.xaml.cs",
@@ -39,8 +38,6 @@ public sealed class MvvmGuardTests
         "Pages/ResourceQueriesPage.xaml.cs",
         "Pages/SecurityAuditPage.xaml.cs",
         "Pages/SpTracePage.xaml.cs",
-        "Pages/StaleStatisticsPage.xaml.cs",
-        "Pages/TempDbPage.xaml.cs",
         "Pages/WaitsPage.xaml.cs",
     ];
 
@@ -48,7 +45,6 @@ public sealed class MvvmGuardTests
     private static readonly Dictionary<string, int> ClicksAllowed = new()
     {
         ["Pages/AgentJobsPage.xaml"]                     = 1,
-        ["Pages/BackupsPage.xaml"]                       = 2,
         ["Pages/ConfigChecksPage.xaml"]                  = 2,
         ["Pages/DeadlocksPage.xaml"]                     = 4,
         ["Pages/ExportPage.xaml"]                        = 4,
@@ -72,7 +68,6 @@ public sealed class MvvmGuardTests
         ["Pages/Settings/ThresholdsCategory.xaml"]       = 3,
         ["Pages/SettingsPage.xaml"]                      = 1,
         ["Pages/SpTracePage.xaml"]                       = 2,
-        ["Pages/StaleStatisticsPage.xaml"]               = 1,
         ["Pages/WaitsPage.xaml"]                         = 2,
     };
 
@@ -82,7 +77,6 @@ public sealed class MvvmGuardTests
         "AgentJobsPage",
         "AlertsPage",
         "ApplicationConnectionsPage",
-        "BackupsPage",
         "ConfigChecksPage",
         "DatabaseStoragePage",
         "DeadlocksPage",
@@ -101,8 +95,6 @@ public sealed class MvvmGuardTests
         "ResourceQueriesPage",
         "SecurityAuditPage",
         "SpTracePage",
-        "StaleStatisticsPage",
-        "TempDbPage",
         "WaitsPage",
     ];
 

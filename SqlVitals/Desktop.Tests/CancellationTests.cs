@@ -33,6 +33,8 @@ public sealed class CancellationTests : IDisposable
             .AddSingleton<INavigator>(new FakeNavigator())
             .AddSingleton<IShellStatus>(_shell)
             .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
+            .AddSingleton<IDialogService>(new FakeDialogService())
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)
             .AddSingleton(new OverviewVisits(settings))
@@ -55,12 +57,12 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void LeavingAPage_CancelsWhatItsCodeBehindIsReading() => UiThread.Run(() =>
     {
-        var reading = new TaskCompletionSource<IEnumerable<StaleStatistic>>();
-        var repo    = new FakeRepository { GetStaleStatisticsAsync = () => reading.Task };
-        var made    = Factory().Create("StaleStats", new PageArgs(new Route("StaleStats"), repo));
+        var reading = new TaskCompletionSource<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>();
+        var repo    = new FakeRepository { GetIndexHealthAsync = () => reading.Task };
+        var made    = Factory().Create("IndexHealth", new PageArgs(new Route("IndexHealth"), repo));
 
         var shown = made.ViewModel.OnNavigatedToAsync();
-        var token = repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)];
+        var token = repo.Tokens[nameof(FakeRepository.GetIndexHealthAsync)];
         Assert.False(token.IsCancellationRequested);
 
         made.ViewModel.OnNavigatedFrom();
@@ -73,18 +75,40 @@ public sealed class CancellationTests : IDisposable
     });
 
     [Fact]
+    public void LeavingAPage_CancelsWhatItsViewModelIsReading() => UiThread.Run(() =>
+    {
+        var reading = new TaskCompletionSource<IEnumerable<StaleStatistic>>();
+        var repo    = new FakeRepository { GetStaleStatisticsAsync = () => reading.Task };
+        var made    = Factory().Create("StaleStats", new PageArgs(new Route("StaleStats"), repo));
+
+        var shown = made.ViewModel.OnNavigatedToAsync();
+        var token = repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)];
+        Assert.False(token.IsCancellationRequested);
+
+        made.ViewModel.OnNavigatedFrom();
+
+        // Its own token, linked to the page's lifetime (#184): either cancels the query.
+        Assert.True(token.IsCancellationRequested);
+        reading.SetCanceled(token);
+        UiThread.Wait(shown);
+        Assert.Empty(_shell.Reports);
+        Assert.Null(made.ViewModel.Verdict);
+    });
+
+    [Fact]
     public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
     {
-        var repo = new FakeRepository { GetStaleStatisticsAsync = () => Task.FromResult<IEnumerable<StaleStatistic>>([]) };
-        var made = Factory().Create("StaleStats", new PageArgs(new Route("StaleStats"), repo));
+        // A page whose code-behind reads gets the page's lifetime as its token (#184's pages pass their own, linked to it).
+        var repo = new FakeRepository { GetIndexHealthAsync = () => Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(([], [])) };
+        var made = Factory().Create("IndexHealth", new PageArgs(new Route("IndexHealth"), repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
-        var first = repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)];
+        var first = repo.Tokens[nameof(FakeRepository.GetIndexHealthAsync)];
         made.ViewModel.OnNavigatedFrom();
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 
         Assert.True(first.IsCancellationRequested);
-        Assert.False(repo.Tokens[nameof(FakeRepository.GetStaleStatisticsAsync)].IsCancellationRequested);
+        Assert.False(repo.Tokens[nameof(FakeRepository.GetIndexHealthAsync)].IsCancellationRequested);
     });
 
     [Fact]
@@ -212,7 +236,7 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void AMissingPermission_IsExplained_WithTheGrantThatFixesIt()
     {
-        var model = new TempDbViewModel(() => { });
+        var model = new TempDbViewModel(new FakeRepository());
         var error = Failed(SqlFailure.Classify(300, "VIEW SERVER STATE permission was denied on object 'server', database 'master'."));
 
         model.ShowError("the TempDB figures", error);
@@ -229,7 +253,7 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void ACancelledRead_LeavesTheVerdictAlone()
     {
-        var model = new TempDbViewModel(() => { });
+        var model = new TempDbViewModel(new FakeRepository());
         var before = model.Verdict;
 
         model.ShowError("the TempDB figures", new OperationCanceledException());

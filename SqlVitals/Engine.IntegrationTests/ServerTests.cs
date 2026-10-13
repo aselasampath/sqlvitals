@@ -104,7 +104,10 @@ public class ServerTests(SqlServerFixture server)
         var (files, sessions, counters) = await _repo.GetTempDbPressureAsync();
 
         Assert.NotEmpty(files.ToList());
-        Assert.Contains(sessions.ToList(), s => s.SessionId == server.BlockerSessionId);
+        var blocker = Assert.Single(sessions, s => s.SessionId == server.BlockerSessionId);
+        // Idle between batches, holding its locks: no request, so nothing it waits on (#184).
+        Assert.Equal((null, 0L), (blocker.WaitType, blocker.WaitTimeMs));
+        Assert.All(sessions, s => Assert.True(s.WaitTimeMs >= 0));
         Assert.NotEmpty(counters.ToList());
     }
 }

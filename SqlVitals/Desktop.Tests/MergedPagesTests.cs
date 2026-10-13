@@ -93,7 +93,7 @@ public sealed class MergedPagesTests : IDisposable
     private static Color Colour(string key) => ((SolidColorBrush)Application.Current.Resources[key]).Color;
 
     // The app's theme swapped for one test, and put back after it.
-    private static IDisposable Themed(string theme)
+    internal static IDisposable Themed(string theme)
     {
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         var before = dictionaries.ToList();

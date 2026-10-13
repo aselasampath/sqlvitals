@@ -3,15 +3,52 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels.Pages"
       Background="{StaticResource BgDeep}" Title="TempDB Pressure">
     <!-- The page template (#150): the verdict on who holds TempDB and the room left first; the
-         counters and the file chart fold to one line; then the sessions. -->
+         counters and the file chart fold to one line; then the sessions. Bound to TempDbViewModel (#184). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="TempDB Pressure" PageKey="TempDb">
         <controls:PageShell.Sections>
-            <controls:FoldSection x:Name="CountersSection" Key="counters" Header="Counters">
-                <WrapPanel x:Name="CounterGrid" />
+            <controls:FoldSection x:Name="CountersSection" Key="counters" Header="Counters" FoldedSummary="{Binding CountersSummary}">
+                <ItemsControl x:Name="CounterGrid" ItemsSource="{Binding Counters}" Focusable="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:TempDbViewModel+CounterCard}">
+                            <Border Style="{StaticResource KpiCard}" Margin="0,0,10,10" Width="200">
+                                <Border.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel MaxWidth="340">
+                                            <TextBlock Text="{Binding Label}" FontWeight="Bold" TextWrapping="Wrap" Margin="0,0,0,4" />
+                                            <TextBlock Text="{Binding Tip}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Border.ToolTip>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Value}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource KpiValue}">
+                                                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Tone}" Value="Warning">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Warning}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Tone}" Value="Danger">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Label}" Style="{StaticResource KpiLabel}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </controls:FoldSection>
-            <controls:FoldSection x:Name="FilesSection" Key="files" Header="File space — used vs free (MB)">
+            <controls:FoldSection x:Name="FilesSection" Key="files" Header="File space — used vs free (MB)" FoldedSummary="{Binding FilesSummary}">
                 <Border Style="{StaticResource KpiCard}" Margin="0">
                     <lvc:CartesianChart x:Name="FileChart" Height="200"
                                         TooltipPosition="Top" LegendPosition="Right" />
@@ -22,7 +59,7 @@
         <Border Style="{StaticResource KpiCard}">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Top Sessions by TempDB Allocation" Style="{StaticResource SectionHeader}" />
-                <DataGrid x:Name="SessionsGrid">
+                <DataGrid x:Name="SessionsGrid" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Session ID"     Binding="{Binding SessionId}"                    Width="80" />
                         <DataGridTextColumn Header="Login"          Binding="{Binding LoginName}"                   Width="130" />

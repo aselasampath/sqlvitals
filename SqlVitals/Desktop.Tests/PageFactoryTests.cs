@@ -36,6 +36,8 @@ public sealed class PageFactoryTests : IDisposable
             .AddSingleton<INavigator>(new FakeNavigator())
             .AddSingleton<IShellStatus>(_shell)
             .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
+            .AddSingleton<IDialogService>(new FakeDialogService())
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)
             .AddSingleton(new OverviewVisits(settings))
@@ -119,9 +121,9 @@ public sealed class PageFactoryTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
-            GetStaleStatisticsAsync = () => Task.FromException<IEnumerable<StaleStatistic>>(error),
+            GetIndexHealthAsync = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
         };
-        var made = Factory().Create("StaleStats", Args("StaleStats", repo));
+        var made = Factory().Create("IndexHealth", Args("IndexHealth", repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 

@@ -47,7 +47,7 @@ public sealed class ViewState
                 case TabControl tabs when tabs.SelectedIndex >= 0:
                     state._tabs[key] = tabs.SelectedIndex;
                     break;
-                case DataGrid grid when grid.ItemsSource is not null:
+                case DataGrid grid when Filled(grid):
                     state._grids[key] = new GridState(grid.Items.SortDescriptions.ToList(),
                                                       grid.SelectedItem is { } item ? RowKey(grid, item) : null,
                                                       Offset(ScrollViewerIn(grid)));
@@ -58,7 +58,7 @@ public sealed class ViewState
                 case GridFilterBox filter when filter.Text.Length > 0:
                     state._filters[key] = filter.Text;
                     break;
-                case GridFilterBox { Target.ItemsSource: null } when previous?._filters.TryGetValue(key, out var text) == true:
+                case GridFilterBox { Target: { } target } when !Filled(target) && previous?._filters.TryGetValue(key, out var text) == true:
                     state._filters[key] = text;
                     break;
                 case ScrollViewer scroll when scroll.VerticalOffset > 0 || scroll.HorizontalOffset > 0:
@@ -131,11 +131,20 @@ public sealed class ViewState
         return elements;
     }
 
+    // A grid got its rows: set from code, or its view model's bound collection (#184) filled once,
+    // even with none. The bound collection is there, empty, before the page reads.
+    private static bool Filled(DataGrid grid) => grid.ItemsSource switch
+    {
+        null                      => false,
+        ViewModels.IGridRows rows => rows.IsFilled,
+        _                         => true,
+    };
+
     // Once the grid has rows, and after the code that set them has finished: DataGridRefresh puts
     // its own sort back straight after setting the rows, which would undo one applied in between.
     private static void WhenFilled(DataGrid grid, Action apply)
     {
-        if (grid.ItemsSource is not null)
+        if (Filled(grid))
         {
             grid.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, Safely(apply));
             return;
@@ -146,7 +155,7 @@ public sealed class ViewState
         var items = (INotifyCollectionChanged)grid.Items;
         void OnChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (grid.ItemsSource is null)
+            if (!Filled(grid))
                 return;
             items.CollectionChanged -= OnChanged;
             grid.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, Safely(apply));

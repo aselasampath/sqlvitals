@@ -18,7 +18,7 @@ Five screens show how the server's memory, TempDB, storage, configuration and co
 
 - **Cards:** the version store's size (red once it holds anything), free space in TempDB, transactions open in TempDB, active temp tables, and temp tables waiting to be dropped. How fast versions are generated and cleaned up is charted on [Perfmon](#perfmon), which shows per-second counters as rates.
 - **TempDB File Space: Used vs Free (MB)**: a chart per TempDB file, at its size now.
-- **Top Sessions by TempDB Allocation**: who is using TempDB now. **Net KB** is the total. **User Obj KB** covers temp tables and table variables. **Internal KB** covers sorts, hashes and spools, usually from big queries. Also shown: wait type, wait ms and status.
+- **Top Sessions by TempDB Allocation**: who is using TempDB now. **Net KB** is the total. **User Obj KB** covers temp tables and table variables. **Internal KB** covers sorts, hashes and spools, usually from big queries. Also shown: wait type, wait ms and status. **Wait ms**, how long the session's request has waited on its wait type, is filled from 0.79.1; before, the column stayed empty. Refresh keeps the session you selected selected, and the grid's sort.
 
 | Severity | Net allocation |
 |---|---|
