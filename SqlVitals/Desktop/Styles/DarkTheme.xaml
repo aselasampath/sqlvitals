@@ -322,6 +322,25 @@
         <Setter Property="Margin"      Value="0,2,0,0" />
     </Style>
 
+    <!-- A KpiCard's value (#185), in the theme brush its Tone names -->
+    <Style x:Key="KpiToneValue" TargetType="TextBlock" BasedOn="{StaticResource KpiValue}">
+        <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tone}" Value="Info">
+                <Setter Property="Foreground" Value="{DynamicResource Info}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="Success">
+                <Setter Property="Foreground" Value="{DynamicResource Success}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="Warning">
+                <Setter Property="Foreground" Value="{DynamicResource Warning}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="Danger">
+                <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- ── Refresh button ─────────────────────────────────────────── -->
     <Style x:Key="RefreshButton" TargetType="Button">
         <Setter Property="Background"       Value="{StaticResource Accent}" />

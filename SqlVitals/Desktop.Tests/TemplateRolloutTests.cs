@@ -11,6 +11,7 @@ using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Models;
@@ -203,15 +204,15 @@ public sealed class TemplateRolloutTests : IDisposable
     public void AppConnections_OpensWithWhoHoldsThem_AndItsCountsAndChartFold() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new ApplicationConnectionsPage(new FakeRepository { GetApplicationConnectionsAsync = () => Task.FromResult<IEnumerable<ApplicationConnection>>(
+        var page = new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(new FakeRepository { GetApplicationConnectionsAsync = () => Task.FromResult<IEnumerable<ApplicationConnection>>(
         [
             App("OrderService", 120, 6, 1_840_000), App("BillingService", 64, 2, 912_000), App("Reporting (SSRS)", 22, 1, 2_310_000),
             App("Microsoft SQL Server Management Studio", 4, 1, 12_000), App("SQLAgent - TSQL JobStep", 3, 0, 4_000),
-        ]) }, settings);
-        Hosted(page, page.RefreshAsync, "app-connections.png", () => AssertLaidOut(page.Shell, page.ConnectionsGrid, minDetail: 150));
+        ]) }), settings);
+        Hosted(page, page.ViewModel.RefreshAsync, "app-connections.png", () => AssertLaidOut(page.Shell, page.ConnectionsGrid, minDetail: 150));
 
         Assert.Equal("5 applications hold 213 connections; OrderService the most, 120", page.Shell.Verdict!.Headline);
-        Assert.Equal(4, page.KpiPanel.Children.Count);
+        Assert.Equal(4, page.KpiPanel.Items.Count);
         Assert.Equal(10, page.ConnectionsGrid.Columns.Count);
 
         page.SummarySection.Toggle.IsChecked = false;
@@ -506,7 +507,7 @@ public sealed class TemplateRolloutTests : IDisposable
     public void PlanCacheHealth_OpensWithTheWorstCheck_AndTheSummaryFolds() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new PlanCacheHealthPage(new FakeRepository
+        var repo = new FakeRepository
         {
             GetPlanCacheHealthAsync = () => Task.FromResult<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
                                                                                        IEnumerable<CardinalityMisestimate>, IEnumerable<SkewedParallelQuery>, IEnumerable<PlanGuide>)>((
@@ -516,8 +517,9 @@ public sealed class TemplateRolloutTests : IDisposable
                 [new("Key Lookup", 81_200, 9_410_000, 115.9, "SalesDb", "usp_GetOrderHistory", "SELECT o.OrderId, o.Placed FROM dbo.Orders o WHERE CustomerId = @c")],
                 [], [], [])),
             GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(Conversions),
-        }, settings);
-        Hosted(page, page.RefreshAsync, "plan-cache-health.png", () =>
+        };
+        var page = new PlanCacheHealthPage(new PlanCacheHealthViewModel(repo, repo), settings);
+        Hosted(page, page.ViewModel.RefreshAsync, "plan-cache-health.png", () =>
         {
             AssertLaidOut(page.Shell, page.Tabs);
             page.Tabs.SelectedIndex = 3;
@@ -526,7 +528,7 @@ public sealed class TemplateRolloutTests : IDisposable
         });
 
         Assert.Equal((VerdictLevel.Warning, "4 queries have more than 5 cached plans each"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
-        Assert.Equal(5, page.KpiStrip.Children.Count);
+        Assert.Equal(5, page.KpiStrip.Items.Count);
         page.SummarySection.Toggle.IsChecked = false;
         Assert.Equal($"Plan cache OK · {18_420:N0} plans · 4 multi-plan queries · 0 plan guides · WARNING", page.SummarySection.FoldedSummary);
         Assert.Equal(["summary"], settings.Folded("PlanCacheHealth"));
@@ -553,8 +555,8 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void PlanCacheHealth_ImplicitConversions_HowManyConvert_TheMostUsedShownOnItsTab() => UiThread.Run(() =>
     {
-        var page = new PlanCacheHealthPage(ConvertingRepo(), Settings());
-        Hosted(page, page.RefreshAsync, null, () =>
+        var page = PlanCache(ConvertingRepo());
+        Hosted(page, page.ViewModel.RefreshAsync, null, () =>
         {
             Press(page.Shell.VerdictView, 0);   // Show it
             Assert.Same(page.TabImplicitConversions, page.Tabs.SelectedItem);
@@ -578,12 +580,12 @@ public sealed class TemplateRolloutTests : IDisposable
         // A plan XML search can time out on a very large cache: the checks read are still shown.
         var repo = ConvertingRepo();
         repo.GetImplicitConversionsAsync = () => Task.FromException<IEnumerable<ImplicitConversion>>(new InvalidOperationException("Timeout expired."));
-        var page = new PlanCacheHealthPage(repo, Settings());
+        var page = PlanCache(repo);
 
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal((VerdictLevel.Ok, "The plan cache looks healthy"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
-        Assert.Equal(5, page.KpiStrip.Children.Count);
+        Assert.Equal(5, page.KpiStrip.Items.Count);
         Assert.Equal(Visibility.Visible, page.TxtConvProblem.Visibility);
         Assert.StartsWith("Couldn't read the implicit conversions: ", page.TxtConvProblem.Text);
         Assert.Contains("Timeout expired.", page.TxtConvProblem.Text);
@@ -591,7 +593,7 @@ public sealed class TemplateRolloutTests : IDisposable
 
         // Read again, and read: the note goes.
         repo.GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(Conversions);
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Equal(Visibility.Collapsed, page.TxtConvProblem.Visibility);
         Assert.Equal(3, page.ConvGrid.Items.Count);
     });
@@ -602,10 +604,13 @@ public sealed class TemplateRolloutTests : IDisposable
         var route = NavMenu.Current(new Route("ImplicitConv", Guid.NewGuid()));
         Assert.Equal(("PlanCacheHealth", NavMenu.ImplicitConversionsView), (route.Tag, route.View));
 
-        var page = new PlanCacheHealthPage(ConvertingRepo(), Settings(), route.View);
+        var page = PlanCache(ConvertingRepo(), route.View);
         Assert.Same(page.TabImplicitConversions, page.Tabs.SelectedItem);
-        Assert.NotSame(page.TabImplicitConversions, new PlanCacheHealthPage(ConvertingRepo(), Settings()).Tabs.SelectedItem);
+        Assert.NotSame(page.TabImplicitConversions, PlanCache(ConvertingRepo()).Tabs.SelectedItem);
     });
+
+    private PlanCacheHealthPage PlanCache(FakeRepository repo, string? view = null) =>
+        new(new PlanCacheHealthViewModel(repo, repo, view), Settings());
 
     // ── SP Trace ─────────────────────────────────────────────────────────
 
@@ -668,8 +673,9 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── A page that can't read says so in its verdict ────────────────────
 
-    public static TheoryData<string> Unreadable => new() { "Processes", "Deadlocks", "AppConnections", "Waits", "ResourceQueries",
-                                                           "QueryRegressions", "PlanCacheHealth", "SpTrace" };
+    // App Connections and Plan Cache Health read in their view models (#185): their own view model tests.
+    public static TheoryData<string> Unreadable => new() { "Processes", "Deadlocks", "Waits", "ResourceQueries",
+                                                           "QueryRegressions", "SpTrace" };
 
     [Theory, MemberData(nameof(Unreadable))]
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
@@ -680,14 +686,10 @@ public sealed class TemplateRolloutTests : IDisposable
             GetProcessesAsync                 = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
             GetActiveWaitsAsync               = () => Task.FromException<IEnumerable<ActiveWait>>(error),
             GetDeadlockHistoryAsync           = () => Task.FromException<DeadlockHistory>(error),
-            GetApplicationConnectionsAsync    = () => Task.FromException<IEnumerable<ApplicationConnection>>(error),
             GetTopWaitTypesAsync              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
             GetCumulativeWaitsAsync           = () => Task.FromException<IEnumerable<WaitStatCumulative>>(error),
             GetResourceIntensiveQueriesAsync  = _ => Task.FromException<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(error),
             GetQueryStoreRegressionStatsAsync = _ => Task.FromException<QueryStoreRegressionStats>(error),
-            GetPlanCacheHealthAsync           = () => Task.FromException<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
-                                                                                    IEnumerable<CardinalityMisestimate>, IEnumerable<SkewedParallelQuery>, IEnumerable<PlanGuide>)>(error),
-            GetImplicitConversionsAsync       = () => Task.FromException<IEnumerable<ImplicitConversion>>(error),
             PollProcedureStatsAsync           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
         };
         ICodeBehindPage page = tag switch
@@ -695,11 +697,9 @@ public sealed class TemplateRolloutTests : IDisposable
             // The sessions read, the Waiting view's waits not.
             "Processes"        => new ProcessesPage(repo, Settings(), view: nameof(ProcessesView.Waiting)),
             "Deadlocks"        => new DeadlocksPage(repo),
-            "AppConnections"   => new ApplicationConnectionsPage(repo),
             "Waits"            => new WaitsPage(repo),
             "ResourceQueries"  => new ResourceQueriesPage(repo),
             "QueryRegressions" => new QueryRegressionsPage(repo, null, Settings()),
-            "PlanCacheHealth"  => new PlanCacheHealthPage(repo),
             _                  => new SpTracePage(repo),
         };
 
@@ -723,11 +723,11 @@ public sealed class TemplateRolloutTests : IDisposable
             [
                 ("Processes", new ProcessesPage(repo, Settings()), PageKind.Live),
                 ("Deadlocks", new DeadlocksPage(repo, Settings()), PageKind.Snapshot),
-                ("AppConnections", new ApplicationConnectionsPage(repo, Settings()), PageKind.Snapshot),
+                ("AppConnections", new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(repo), Settings()), PageKind.Snapshot),
                 ("Waits", new WaitsPage(repo, null, Settings()), PageKind.Live),
                 ("ResourceQueries", new ResourceQueriesPage(repo, null, Settings()), PageKind.Snapshot),
                 ("QueryRegressions", new QueryRegressionsPage(repo, null, Settings()), PageKind.History),
-                ("PlanCacheHealth", new PlanCacheHealthPage(repo, Settings()), PageKind.Snapshot),
+                ("PlanCacheHealth", new PlanCacheHealthPage(new PlanCacheHealthViewModel(repo, repo), Settings()), PageKind.Snapshot),
                 ("SpTrace", new SpTracePage(repo, Settings()), PageKind.Live),
             ];
             foreach (var (key, page, kind) in pages)

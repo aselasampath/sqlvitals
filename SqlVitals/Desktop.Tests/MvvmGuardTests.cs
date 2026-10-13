@@ -21,9 +21,7 @@ public sealed class MvvmGuardTests
     private static readonly string[] RepositoryReferencesAllowed =
     [
         "Pages/AgentJobsPage.xaml.cs",
-        "Pages/ApplicationConnectionsPage.xaml.cs",
         "Pages/ConfigChecksPage.xaml.cs",
-        "Pages/DatabaseStoragePage.xaml.cs",
         "Pages/DeadlocksPage.xaml.cs",
         "Pages/FileIoPage.xaml.cs",
         "Pages/IndexHealthPage.xaml.cs",
@@ -31,7 +29,6 @@ public sealed class MvvmGuardTests
         "Pages/MemoryPage.xaml.cs",
         "Pages/OverviewPage.xaml.cs",
         "Pages/PerfmonPage.xaml.cs",
-        "Pages/PlanCacheHealthPage.xaml.cs",
         "Pages/ProcessesPage.xaml.cs",
         "Pages/QueryRegressionsPage.xaml.cs",
         "Pages/QueryStorePage.xaml.cs",
@@ -76,9 +73,7 @@ public sealed class MvvmGuardTests
     [
         "AgentJobsPage",
         "AlertsPage",
-        "ApplicationConnectionsPage",
         "ConfigChecksPage",
-        "DatabaseStoragePage",
         "DeadlocksPage",
         "ExportPage",
         "FileIoPage",
@@ -88,7 +83,6 @@ public sealed class MvvmGuardTests
         "MemoryPage",
         "OverviewPage",
         "PerfmonPage",
-        "PlanCacheHealthPage",
         "ProcessesPage",
         "QueryRegressionsPage",
         "QueryStorePage",

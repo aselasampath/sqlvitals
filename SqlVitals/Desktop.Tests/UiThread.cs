@@ -45,15 +45,29 @@ internal static class UiThread
     public static void Run(Action test)
     {
         Exception? error = null;
-        Dispatcher.Value.Invoke(() =>
+        // Already on the UI thread, inside a test: run it there, as Invoke would, not wait for the gate it holds.
+        if (Dispatcher.Value.CheckAccess())
         {
-            Application.Current.MainWindow = null;
-            try { test(); }
-            catch (Exception ex) { error = ex; }
-        });
+            test();
+            return;
+        }
+        // One at a time indeed: without the gate, a test of another class queued meanwhile runs
+        // inside this one wherever it lets the dispatcher run (Wait), on this thread, and what it
+        // does, such as the binding errors it causes, is seen as this test's (#185).
+        lock (Gate)
+        {
+            Dispatcher.Value.Invoke(() =>
+            {
+                Application.Current.MainWindow = null;
+                try { test(); }
+                catch (Exception ex) { error = ex; }
+            });
+        }
         if (error is not null)
             ExceptionDispatchInfo.Capture(error).Throw();
     }
+
+    private static readonly object Gate = new();
 
     /// <summary>Lets the dispatcher run until the task finishes, so its awaits on this thread can.</summary>
     public static void Wait(Task task)

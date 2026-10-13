@@ -2,12 +2,16 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
       Background="{StaticResource BgDeep}" Title="Plan Cache Health">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+    </Page.Resources>
     <!-- The page template (#149): the verdict first, the summary cards folding to one line, then the
-         checks on their tabs. -->
+         checks on their tabs. Bound to PlanCacheHealthViewModel (#185). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Plan Cache Health" PageKey="PlanCacheHealth">
         <controls:PageShell.Sections>
-        <controls:FoldSection x:Name="SummarySection" Key="summary" Header="Summary">
+        <controls:FoldSection x:Name="SummarySection" Key="summary" Header="Summary" FoldedSummary="{Binding FoldedSummary}">
         <StackPanel>
 
             <!-- Explanatory banner -->
@@ -21,10 +25,10 @@
                 </TextBlock>
             </Border>
 
-            <!-- Cache-erased alert banner (hidden by default) -->
+            <!-- Cache-erased alert banner -->
             <Border x:Name="BannerCacheErased"
                     Background="#1AEF4444" BorderBrush="#EF4444" BorderThickness="1"
-                    CornerRadius="6" Padding="12,8" Margin="0,0,0,14" Visibility="Collapsed">
+                    CornerRadius="6" Padding="12,8" Margin="0,0,0,14" Visibility="{Binding CacheErased, Converter={StaticResource Visible}}">
                 <TextBlock x:Name="TxtCacheErasedMsg" TextWrapping="Wrap"
                            Foreground="#EF4444" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold">
                     ⚠  Plan cache was erased recently (DBCC FREEPROCCACHE or server restart).
@@ -33,13 +37,35 @@
             </Border>
 
             <!-- KPI strip -->
-            <WrapPanel x:Name="KpiStrip" />
+            <ItemsControl x:Name="KpiStrip" ItemsSource="{Binding Summary}" Focusable="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:KpiCard}">
+                        <Border Style="{StaticResource KpiCard}" Margin="0,0,10,10" Width="180">
+                            <Border.ToolTip>
+                                <ToolTip>
+                                    <StackPanel MaxWidth="340">
+                                        <TextBlock Text="{Binding Label}" FontWeight="Bold" TextWrapping="Wrap" Margin="0,0,0,4" />
+                                        <TextBlock Text="{Binding Tip}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </ToolTip>
+                            </Border.ToolTip>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Value}" Style="{StaticResource KpiToneValue}" />
+                                <TextBlock Text="{Binding Label}" Style="{StaticResource KpiLabel}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
         </StackPanel>
         </controls:FoldSection>
         </controls:PageShell.Sections>
 
             <!-- Tab control -->
-            <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}"
+            <TabControl x:Name="Tabs" SelectedIndex="{Binding SelectedTab}" Background="{StaticResource BgDeep}"
                         BorderBrush="{StaticResource Border}"
                         Foreground="{StaticResource TextPrimary}">
 
@@ -58,7 +84,7 @@
                                     Fix: use sp_executesql with parameters, or enable Optimize for Ad-hoc Workloads.
                                 </TextBlock>
                             </Border>
-                            <DataGrid x:Name="MultiPlanGrid" IsReadOnly="True"
+                            <DataGrid x:Name="MultiPlanGrid" ItemsSource="{Binding MultiPlanQueries}" IsReadOnly="True"
                                       CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
                                       SelectionMode="Extended" SelectionUnit="FullRow"
                                       AutoGenerateColumns="False"
@@ -105,7 +131,7 @@
                                     to make it covering, or create a proper covering index.
                                 </TextBlock>
                             </Border>
-                            <DataGrid x:Name="KeyLookupGrid" IsReadOnly="True"
+                            <DataGrid x:Name="KeyLookupGrid" ItemsSource="{Binding KeyLookups}" IsReadOnly="True"
                                       CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
                                       SelectionMode="Extended" SelectionUnit="FullRow"
                                       AutoGenerateColumns="False"
@@ -154,7 +180,7 @@
                                     or serial plans.  Fix: update statistics, use RECOMPILE, or add filtered stats.
                                 </TextBlock>
                             </Border>
-                            <DataGrid x:Name="CardinalityGrid" IsReadOnly="True"
+                            <DataGrid x:Name="CardinalityGrid" ItemsSource="{Binding Misestimates}" IsReadOnly="True"
                                       CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
                                       SelectionMode="Extended" SelectionUnit="FullRow"
                                       AutoGenerateColumns="False"
@@ -206,7 +232,7 @@
                                     partitioning, or hash-join bucket imbalance.
                                 </TextBlock>
                             </Border>
-                            <DataGrid x:Name="SkewGrid" IsReadOnly="True"
+                            <DataGrid x:Name="SkewGrid" ItemsSource="{Binding SkewedQueries}" IsReadOnly="True"
                                       CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
                                       SelectionMode="Extended" SelectionUnit="FullRow"
                                       AutoGenerateColumns="False"
@@ -258,7 +284,7 @@
                                     forced plan remains optimal on the current hardware/data volume.
                                 </TextBlock>
                             </Border>
-                            <DataGrid x:Name="PlanGuidesGrid" IsReadOnly="True"
+                            <DataGrid x:Name="PlanGuidesGrid" ItemsSource="{Binding PlanGuides}" IsReadOnly="True"
                                       CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
                                       SelectionMode="Extended" SelectionUnit="FullRow"
                                       AutoGenerateColumns="False"
@@ -306,8 +332,9 @@
                             </Border>
                             <!-- Why the tab is empty, when its read failed and the rest of the page didn't (#178) -->
                             <TextBlock x:Name="TxtConvProblem" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
-                                       Foreground="{DynamicResource Danger}" FontSize="12" Visibility="Collapsed" />
-                            <DataGrid x:Name="ConvGrid" IsReadOnly="True"
+                                       Text="{Binding ConversionsProblem}" Visibility="{Binding ShowsConversionsProblem, Converter={StaticResource Visible}}"
+                                       Foreground="{DynamicResource Danger}" FontSize="12" />
+                            <DataGrid x:Name="ConvGrid" ItemsSource="{Binding Conversions}" SelectedItem="{Binding SelectedConversion}" IsReadOnly="True"
                                       CanUserAddRows="False" ClipboardCopyMode="IncludeHeader"
                                       SelectionMode="Extended" SelectionUnit="FullRow"
                                       AutoGenerateColumns="False"

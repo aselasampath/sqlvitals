@@ -10,7 +10,8 @@ namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
 /// The pages that took in others (#178), rendered in both themes: Processes with its Waiting view,
-/// Waits (Top Waits and Wait Trend), Plan Cache Health with Implicit Conversions. To look at:
+/// Waits (Top Waits and Wait Trend). Plan Cache Health with Implicit Conversions is in
+/// <see cref="Wave1PagesTests"/>, bound to its view model (#185). To look at:
 /// %TEMP%\SqlVitalsTests\page-template-rollout\&lt;page&gt;-&lt;theme&gt;.png.
 /// </summary>
 public sealed class MergedPagesTests : IDisposable
@@ -66,27 +67,6 @@ public sealed class MergedPagesTests : IDisposable
             TemplateRolloutTests.AssertLaidOut(page.Shell, page.TrendChart, minDetail: 180);
             TemplateRolloutTests.AssertLaidOut(page.Shell, page.WaitsGrid, minDetail: 150);
             Assert.Equal(2, page.WaitsGrid.Items.Count);
-        });
-    });
-
-    [Theory, MemberData(nameof(Themes))]
-    public void PlanCacheHealthImplicitConversions_Renders(string theme) => UiThread.Run(() =>
-    {
-        using var themed = Themed(theme);
-        var page = new PlanCacheHealthPage(new FakeRepository
-        {
-            GetPlanCacheHealthAsync = () => Task.FromResult<(PlanCacheHealthSummary, IEnumerable<MultiPlanQuery>, IEnumerable<KeyLookupQuery>,
-                                                              IEnumerable<CardinalityMisestimate>, IEnumerable<SkewedParallelQuery>, IEnumerable<PlanGuide>)>((
-                new PlanCacheHealthSummary(false, 0, 18_420, 0, 0, "OK"), [], [], [], [], [])),
-            GetImplicitConversionsAsync = () => Task.FromResult<IEnumerable<ImplicitConversion>>(
-                [new("SalesDb", "usp_FindCustomer", 48_120, 96, "SELECT CustomerId FROM dbo.Customers WHERE Email = @email", Now)]),
-        }, Settings(), NavMenu.ImplicitConversionsView);
-
-        TemplateRolloutTests.Hosted(page, page.RefreshAsync, $"plan-cache-implicit-conversions-{theme}.png", () =>
-        {
-            Assert.Same(page.TabImplicitConversions, page.Tabs.SelectedItem);
-            TemplateRolloutTests.AssertLaidOut(page.Shell, page.ConvGrid, minDetail: 150);
-            Assert.Single(page.ConvGrid.Items);
         });
     });
 

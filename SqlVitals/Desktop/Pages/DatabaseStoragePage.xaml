@@ -4,16 +4,17 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Database Storage">
     <!-- The page template (#150): the verdict on files near their limit first, the sizes folding to
-         one line, then the files, TempDB, server configuration and tables on tabs the Navigator keeps. -->
+         one line, then the files, TempDB, server configuration and tables on tabs the Navigator keeps.
+         Bound to DatabaseStorageViewModel (#185). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Database Storage &amp; Configuration" PageKey="DbStorage">
         <controls:PageShell.Sections>
-            <controls:FoldSection x:Name="SizesSection" Key="sizes" Header="Sizes">
+            <controls:FoldSection x:Name="SizesSection" Key="sizes" Header="Sizes" FoldedSummary="{Binding SizesSummary}">
                 <WrapPanel>
                     <Border Style="{StaticResource KpiCard}" Width="160" Margin="0,0,10,10">
                         <StackPanel>
                             <TextBlock Text="Total DB Size" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="11" />
-                            <TextBlock x:Name="KpiTotalSize" Text="—"
+                            <TextBlock x:Name="KpiTotalSize" Text="{Binding TotalSize}"
                                        Foreground="{StaticResource TextPrimary}"
                                        FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
                             <TextBlock Text="All ONLINE databases" Foreground="{StaticResource TextMuted}"
@@ -24,7 +25,7 @@
                         <StackPanel>
                             <TextBlock Text="Data Files" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="11" />
-                            <TextBlock x:Name="KpiDataSize" Text="—"
+                            <TextBlock x:Name="KpiDataSize" Text="{Binding DataSize}"
                                        Foreground="{StaticResource TextPrimary}"
                                        FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
                             <TextBlock Text="ROWS type files" Foreground="{StaticResource TextMuted}"
@@ -35,7 +36,7 @@
                         <StackPanel>
                             <TextBlock Text="Log Files" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="11" />
-                            <TextBlock x:Name="KpiLogSize" Text="—"
+                            <TextBlock x:Name="KpiLogSize" Text="{Binding LogSize}"
                                        Foreground="{StaticResource TextPrimary}"
                                        FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
                             <TextBlock Text="LOG type files" Foreground="{StaticResource TextMuted}"
@@ -46,7 +47,7 @@
                         <StackPanel>
                             <TextBlock Text="TempDB Size" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="11" />
-                            <TextBlock x:Name="KpiTempDbSize" Text="—"
+                            <TextBlock x:Name="KpiTempDbSize" Text="{Binding TempDbSize}"
                                        Foreground="{StaticResource TextPrimary}"
                                        FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
                             <TextBlock Text="All tempdb files" Foreground="{StaticResource TextMuted}"
@@ -57,7 +58,7 @@
                         <StackPanel>
                             <TextBlock Text="Max DOP" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="11" />
-                            <TextBlock x:Name="KpiMaxDop" Text="—"
+                            <TextBlock x:Name="KpiMaxDop" Text="{Binding MaxDop}"
                                        Foreground="{StaticResource TextPrimary}"
                                        FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
                             <TextBlock Text="max degree of parallelism" Foreground="{StaticResource TextMuted}"
@@ -68,7 +69,7 @@
                         <StackPanel>
                             <TextBlock Text="Cost Threshold" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="11" />
-                            <TextBlock x:Name="KpiCostThreshold" Text="—"
+                            <TextBlock x:Name="KpiCostThreshold" Text="{Binding CostThreshold}"
                                        Foreground="{StaticResource TextPrimary}"
                                        FontFamily="Segoe UI" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
                             <TextBlock Text="cost threshold for parallelism" Foreground="{StaticResource TextMuted}"
@@ -79,7 +80,7 @@
             </controls:FoldSection>
         </controls:PageShell.Sections>
 
-        <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}"
+        <TabControl x:Name="Tabs" SelectedIndex="{Binding SelectedTab}" Background="{StaticResource BgDeep}"
                     BorderBrush="{StaticResource Border}"
                     Foreground="{StaticResource TextPrimary}">
             <TabItem x:Name="TabFiles" Header="Database Files">
@@ -88,7 +89,7 @@
                         <TextBlock DockPanel.Dock="Top" Text="All ONLINE database files (data + log)"
                                    Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
                                    FontSize="11" Margin="0,0,0,8" />
-                        <DataGrid x:Name="GridFiles" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid x:Name="GridFiles" ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"     Width="140" />
                                 <DataGridTextColumn Header="State"       Binding="{Binding State}"            Width="70"  />
@@ -116,7 +117,7 @@
                         <TextBlock DockPanel.Dock="Top" Text="TempDB data and log files"
                                    Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
                                    FontSize="11" Margin="0,0,0,8" />
-                        <DataGrid x:Name="GridTempDb" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid x:Name="GridTempDb" ItemsSource="{Binding TempDbFiles}" AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="File Name"  Binding="{Binding FileName}"  Width="180" />
                                 <DataGridTextColumn Header="Type"       Binding="{Binding FileType}"  Width="80"  />
@@ -135,7 +136,7 @@
                         <TextBlock DockPanel.Dock="Top" Text="Key server configuration parameters (sp_configure)"
                                    Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
                                    FontSize="11" Margin="0,0,0,8" />
-                        <DataGrid x:Name="GridConfig" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid x:Name="GridConfig" ItemsSource="{Binding Config}" AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Parameter"     Binding="{Binding ParameterName}" Width="260" />
                                 <DataGridTextColumn Header="Current Value" Binding="{Binding CurrentValue}"  Width="110" />
@@ -154,7 +155,7 @@
                         <TextBlock DockPanel.Dock="Top" Text="Top 20 tables by total storage size (current database context)"
                                    Foreground="{StaticResource TextMuted}" FontFamily="Segoe UI"
                                    FontSize="11" Margin="0,0,0,8" />
-                        <DataGrid x:Name="GridTables" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid x:Name="GridTables" ItemsSource="{Binding Tables}" AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Schema"       Binding="{Binding SchemaName}"   Width="90"  />
                                 <DataGridTextColumn Header="Table"        Binding="{Binding TableName}"    Width="200" />

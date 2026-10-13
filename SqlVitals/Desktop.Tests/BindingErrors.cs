@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Windows.Threading;
 
 namespace SqlVitals.Desktop.Tests;
 
@@ -19,6 +20,12 @@ internal sealed class BindingErrors : TraceListener
 
     private BindingErrors()
     {
+        // Every page test shares one thread: what an earlier test left queued on it (a layout, a
+        // state put back at idle) would otherwise run as this one lets the dispatcher run, and its
+        // errors would count as this test's (#185). Let it run first.
+        if (Dispatcher.FromThread(Thread.CurrentThread) is not null)
+            UiThread.Wait(IdleAsync());
+
         // Refresh turns WPF's tracing on without a debugger; it resets the level, so set it after.
         PresentationTraceSources.Refresh();
         var source = PresentationTraceSources.DataBindingSource;
@@ -26,6 +33,8 @@ internal sealed class BindingErrors : TraceListener
         source.Switch.Level = SourceLevels.Warning;
         source.Listeners.Add(this);
     }
+
+    private static async Task IdleAsync() => await Dispatcher.Yield(DispatcherPriority.SystemIdle);
 
     /// <summary>Starts keeping the binding errors of this thread, until disposed.</summary>
     public static BindingErrors Watch() => new();
