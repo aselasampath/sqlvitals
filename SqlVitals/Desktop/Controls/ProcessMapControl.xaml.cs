@@ -146,9 +146,31 @@ namespace SqlVitals.Desktop.Controls
             UpdateStateChips([]);
         }
 
-        public void UpdateNodes(IEnumerable<ProcessNode> nodes)
+        /// <summary>
+        /// The snapshot to draw, bound from the page's view model (#186), already classified
+        /// (<see cref="BlockingChains.Classify"/>): each new one is drawn as <see cref="UpdateNodes"/>
+        /// draws it. Null draws nothing.
+        /// </summary>
+        public IReadOnlyList<ProcessNode>? Sessions
         {
-            _allNodes    = BlockingChains.Classify(nodes);
+            get => (IReadOnlyList<ProcessNode>?)GetValue(SessionsProperty);
+            set => SetValue(SessionsProperty, value);
+        }
+
+        public static readonly DependencyProperty SessionsProperty =
+            DependencyProperty.Register(nameof(Sessions), typeof(IReadOnlyList<ProcessNode>), typeof(ProcessMapControl),
+                new PropertyMetadata(null, (d, e) =>
+                {
+                    if (e.NewValue is IReadOnlyList<ProcessNode> nodes)
+                        ((ProcessMapControl)d).Draw(nodes);
+                }));
+
+        public void UpdateNodes(IEnumerable<ProcessNode> nodes) => Draw(BlockingChains.Classify(nodes));
+
+        // A snapshot classified into chains.
+        private void Draw(IReadOnlyList<ProcessNode> classified)
+        {
+            _allNodes    = classified;
             _chains      = BlockingChains.Find(_allNodes);
             _hasSnapshot = true;
             if (_chainFocus)

@@ -15,7 +15,7 @@ Everything is read from `msdb`, where Agent keeps its jobs and their history. Sq
 
    ![Agent Jobs: the verdict names the failed and long-running jobs, above the jobs and the selected job's runs](images/page-template/agent-jobs.png)
 
-3. The list beside the **Jobs** title narrows it: *Needs attention: failed or running long*, *Running now*, *Last run failed* or *Enabled jobs*. **↻ Read again**, beside the page title (or **Refresh** in the top bar, **F5**), reads msdb again. Tick **Every 30 s** to watch a long job while the page is open.
+3. The list beside the **Jobs** title narrows it: *Needs attention: failed or running long*, *Running now*, *Last run failed* or *Enabled jobs*. **↻ Read again**, beside the page title (or **Refresh** in the top bar, **F5**), reads msdb again. Tick **Every 30 s** to watch a long job while the page is open. From 0.79.3 a refresh keeps the job, the run and the step you selected, and the runs stay on screen while they are read again.
 4. Each row is one job:
 
    | Column | Meaning |

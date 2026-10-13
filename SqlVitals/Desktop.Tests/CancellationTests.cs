@@ -34,6 +34,7 @@ public sealed class CancellationTests : IDisposable
             .AddSingleton<IShellStatus>(_shell)
             .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
             .AddSingleton<IDialogService>(new FakeDialogService())
+            .AddSingleton<IFileDialogs>(new FakeFileDialogs())
             .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)

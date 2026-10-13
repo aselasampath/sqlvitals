@@ -3,9 +3,13 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Export for AI Analysis">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+    </Page.Resources>
 
     <!-- The page template (#150): the verdict on what an export will write, or what the last one
-         did, first; what the report is folds to one line; then the sections and where to save it. -->
+         did, first; what the report is folds to one line; then the sections and where to save it.
+         Bound to ExportViewModel (#186). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Export for AI Analysis" PageKey="Export">
         <controls:PageShell.Sections>
             <controls:FoldSection x:Name="AboutSection" Key="about" Header="What it writes"
@@ -52,14 +56,14 @@
                                         Background="#227C3AED" Foreground="{StaticResource AccentLight}"
                                         BorderThickness="1" BorderBrush="#447C3AED"
                                         FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
-                                        Click="BtnSelectAll_Click" />
+                                        Command="{Binding SelectAllCommand}" />
                                 <Button x:Name="BtnSelectNone" Content="Select None"
                                         Margin="6,0,0,0" Padding="10,4"
                                         Background="Transparent" Foreground="{StaticResource TextMuted}"
                                         BorderThickness="1" BorderBrush="{StaticResource Border}"
                                         FontFamily="Segoe UI" FontSize="11" Cursor="Hand"
-                                        Click="BtnSelectNone_Click" />
-                                <TextBlock x:Name="TxtCheckedCount"
+                                        Command="{Binding SelectNoneCommand}" />
+                                <TextBlock x:Name="TxtCheckedCount" Text="{Binding CheckedCountText}"
                                            Foreground="{StaticResource TextMuted}"
                                            FontFamily="Segoe UI" FontSize="11"
                                            VerticalAlignment="Center" Margin="16,0,0,0" />
@@ -68,14 +72,13 @@
 
                         <!-- Scrollable list of checkboxes -->
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6,6">
-                            <ItemsControl x:Name="GroupList">
+                            <ItemsControl x:Name="GroupList" ItemsSource="{Binding Sections}" IsEnabled="{Binding IsIdle}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <CheckBox Margin="8,5" Padding="8,0"
                                                   IsChecked="{Binding IsChecked, Mode=TwoWay}"
                                                   Foreground="{StaticResource TextPrimary}"
                                                   FontFamily="Segoe UI" FontSize="12"
-                                                  Checked="CheckBox_Changed" Unchecked="CheckBox_Changed"
                                                   Cursor="Hand">
                                             <StackPanel Orientation="Vertical">
                                                 <TextBlock Text="{Binding Name}"
@@ -112,7 +115,8 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="TxtFilePath"
-                                         Grid.Column="0"
+                                         Grid.Column="0" IsEnabled="{Binding IsIdle}"
+                                         Text="{Binding FilePath, UpdateSourceTrigger=PropertyChanged}"
                                          Background="#22FFFFFF" Foreground="{StaticResource TextPrimary}"
                                          BorderBrush="{StaticResource Border}" BorderThickness="1"
                                          FontFamily="Segoe UI" FontSize="11" Padding="8,6"
@@ -122,7 +126,7 @@
                                         Background="#227C3AED" Foreground="{StaticResource AccentLight}"
                                         BorderThickness="1" BorderBrush="#447C3AED"
                                         FontFamily="Segoe UI" FontSize="14" Cursor="Hand"
-                                        Click="BtnBrowse_Click" />
+                                        Command="{Binding BrowseCommand}" />
                             </Grid>
 
                             <TextBlock Text="Filename" Foreground="{StaticResource TextMuted}"
@@ -131,12 +135,12 @@
                                      Background="#22FFFFFF" Foreground="{StaticResource TextPrimary}"
                                      BorderBrush="{StaticResource Border}" BorderThickness="1"
                                      FontFamily="Segoe UI" FontSize="11" Padding="8,6"
-                                     VerticalContentAlignment="Center"
-                                     Text="SqlVitals_Report.txt" />
+                                     VerticalContentAlignment="Center" IsEnabled="{Binding IsIdle}"
+                                     Text="{Binding FileName, UpdateSourceTrigger=PropertyChanged}" />
 
                             <TextBlock Text="Full path preview:" Foreground="{StaticResource TextMuted}"
                                        FontFamily="Segoe UI" FontSize="10" Margin="0,10,0,2" />
-                            <TextBlock x:Name="TxtFullPath"
+                            <TextBlock x:Name="TxtFullPath" Text="{Binding FullPathText}"
                                        Foreground="{StaticResource AccentLight}"
                                        FontFamily="Segoe UI" FontSize="10"
                                        TextWrapping="Wrap" />
@@ -148,7 +152,7 @@
                             Height="46" FontFamily="Segoe UI" FontSize="14" FontWeight="SemiBold"
                             Background="{StaticResource Accent}" Foreground="White"
                             BorderThickness="0" Cursor="Hand"
-                            Click="BtnExport_Click">
+                            Command="{Binding ExportCommand}">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="{StaticResource Accent}" />
@@ -184,7 +188,7 @@
 
                     <!-- Open file after export -->
                     <CheckBox x:Name="ChkOpenAfter" Content="Open file after export"
-                              IsChecked="True" Margin="0,10,0,0" Padding="6,0"
+                              IsChecked="{Binding OpenAfter}" Margin="0,10,0,0" Padding="6,0"
                               Foreground="{StaticResource TextMuted}"
                               FontFamily="Segoe UI" FontSize="11" Cursor="Hand" />
 
@@ -193,14 +197,14 @@
 
             <!-- Progress bar -->
             <ProgressBar x:Name="ExportProgress" Grid.Row="1"
-                         Height="4" Minimum="0" Maximum="100" Value="0"
+                         Height="4" Minimum="0" Maximum="100" Value="{Binding Progress}" IsIndeterminate="{Binding IsExporting}"
                          Foreground="{StaticResource Accent}"
                          Background="{StaticResource Border}"
                          BorderThickness="0" Margin="0,12,0,4"
-                         Visibility="Collapsed" />
+                         Visibility="{Binding ShowsProgress, Converter={StaticResource Visible}}" />
 
             <!-- Status text -->
-            <TextBlock x:Name="TxtExportStatus" Grid.Row="2"
+            <TextBlock x:Name="TxtExportStatus" Grid.Row="2" Text="{Binding ExportStatus}"
                        Foreground="{StaticResource TextMuted}"
                        FontFamily="Segoe UI" FontSize="11"
                        HorizontalAlignment="Center" />

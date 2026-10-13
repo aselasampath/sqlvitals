@@ -31,7 +31,9 @@ public sealed class PageShell : Decorator
             new PropertyMetadata(null, (d, e) => ((PageShell)d).VerdictView.Show((PageVerdict?)e.NewValue)));
 
     private readonly TextBlock   _title   = new() { Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, FontSize = 20 };
-    private readonly ContentPresenter _actions = new() { VerticalAlignment = VerticalAlignment.Center };
+    // A ContentControl, not a ContentPresenter: the page's buttons are its logical children from the
+    // start, so they bind to the page's view model before the page is first laid out (#186).
+    private readonly ContentControl _actions = new() { VerticalAlignment = VerticalAlignment.Center, Focusable = false, IsTabStop = false };
     private readonly StackPanel  _sections = new();
     private readonly Border      _detail  = new();
     private ISectionFolds? _folds;

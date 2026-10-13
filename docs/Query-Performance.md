@@ -30,11 +30,11 @@ The most expensive queries currently in the **plan cache**, on three tabs:
 
 ### How to use it
 
-1. Pick a **Row Limit** (how many queries to load) beside the title.
+1. Pick a **Row Limit** (how many queries to load) beside the title. If reading them again fails, the top bar and the verdict say so (from 0.79.3; a message box before).
 2. Choose a tab. Click a column header to sort, for example by **Avg CPU µs** to find queries that are expensive *per run*.
-3. **View Plan** opens the query's execution plan. See [Execution plans](#execution-plans). From 0.65.0 a click on a row also opens it in the [details drawer](Working-with-Grids.md#details-beside-the-grid): its figures with their units, its text with **Copy**, and its plan, drawn there by **Show the plan** or in a window by **Open in window**.
+3. **View Plan** opens the query's execution plan. See [Execution plans](#execution-plans). From 0.65.0 a click on a row also opens it in the [details drawer](Working-with-Grids.md#details-beside-the-grid): its figures with their units, its text with **Copy**, and its plan, drawn there by **Show the plan** or in a window by **Open in window**. From 0.79.3 a plan still being read when you leave the page is dropped rather than opened over the next page, and the other rows' **View Plan** buttons stay usable meanwhile.
 4. Type in **Filter rows…** to find a table, procedure or piece of text. See [Working with Grids](Working-with-Grids.md).
-5. **⎘ Copy All** copies every row shown, with headers, in the current order.
+5. **⎘ Copy All** copies every row shown, with headers, in the current order. From 0.79.3 it copies the values as the grid shows them (*41,210*, *2026-10-13 16:57*), like **Copy with headers**, and leaves out the View Plan column. A refresh keeps the row you selected on each tab.
 
 ### Reading it
 

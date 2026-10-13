@@ -120,7 +120,7 @@ public sealed class FocusAndDensityTests : IDisposable
     public void EveryGrid_TakesTheDensity_AtOnce_AndKeepsOneTextBlockPerCell() => UiThread.Run(() =>
     {
         var resources = Application.Current.Resources;
-        var page = new ProcessesPage(new FakeRepository
+        var page = Wave2Pages.Processes(new FakeRepository
         {
             GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>([]),
             GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>(
@@ -131,7 +131,7 @@ public sealed class FocusAndDensityTests : IDisposable
         window.Show();
         try
         {
-            UiThread.Wait(page.RefreshAsync());
+            UiThread.Wait(page.ViewModel.RefreshAsync());
             var comfortable = RowHeight(page, window, "comfortable.png");
 
             GridDensityResources.Apply(resources, GridDensity.Compact);

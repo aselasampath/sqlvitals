@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Export;
 
@@ -67,6 +68,39 @@ public static class DataGridExport
         var columns = ExportColumns(grid);
         ClipboardHelper.SetText(DelimitedText.ToTsv(
             includeHeaders ? Headers(columns) : null, Rows(items, columns)));
+    }
+
+    /// <summary>
+    /// A page's Copy All button (#186): every row the grid shows, filtered and in its order, with
+    /// headers, whatever is selected. The grid is the command's parameter, so the button needs no
+    /// Click handler and its page's view model knows nothing of it.
+    /// </summary>
+    public static ICommand CopyAll { get; } = new GridCommand(grid =>
+    {
+        try
+        {
+            var columns = ExportColumns(grid);
+            ClipboardHelper.SetText(DelimitedText.ToTsv(Headers(columns), Rows(DataItems(grid).ToList(), columns)));
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Copy All failed", ex);
+            CompositionRoot.Get<IDialogService>().Warn($"Failed to copy data:\n{ex.Message}", "Copy Failed");
+        }
+    });
+
+    // A command whose parameter is a grid; nothing without one.
+    private sealed class GridCommand(Action<DataGrid> execute) : ICommand
+    {
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+
+        public bool CanExecute(object? parameter) => parameter is DataGrid;
+
+        public void Execute(object? parameter)
+        {
+            if (parameter is DataGrid grid)
+                execute(grid);
+        }
     }
 
     /// <summary>Exports every row in the grid's current sort order, whatever is selected, asking where.</summary>

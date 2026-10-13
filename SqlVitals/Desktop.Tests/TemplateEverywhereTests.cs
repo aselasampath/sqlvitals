@@ -364,12 +364,12 @@ public sealed class TemplateEverywhereTests : IDisposable
         var runReads = 0;
         IReadOnlyList<JobRun> runs = [new(Now.AddHours(-6), JobOutcome.Failed, TimeSpan.FromMinutes(6), "The job failed.",
                                           [Step(1, "Check space", JobOutcome.Succeeded, "Done."), Step(2, "Backup", JobOutcome.Failed, "BACKUP DATABASE is terminating abnormally: disk full.")])];
-        var page = new AgentJobsPage(new FakeRepository
+        var page = Wave2Pages.AgentJobs(new FakeRepository
         {
             GetAgentJobsAsync = () => Task.FromResult(new AgentJobList(jobs, AgentServiceState.Running, Now, null)),
             GetAgentJobRunsAsync = (_, _) => ++runReads <= 3 ? Task.FromResult(runs) : new TaskCompletionSource<IReadOnlyList<JobRun>>().Task,
         }, Settings());
-        Hosted(page, async () => { await page.RefreshAsync(); await Task.Delay(50); }, "agent-jobs.png", () => AssertLaidOut(page.Shell, page.JobsGrid, minDetail: 100));
+        Hosted(page, async () => { await page.ViewModel.RefreshAsync(); await Task.Delay(50); }, "agent-jobs.png", () => AssertLaidOut(page.Shell, page.JobsGrid, minDetail: 100));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal(VerdictLevel.Critical, verdict.Level);
@@ -390,7 +390,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         runReads = 3;
         page.JobsGrid.SelectedItem = page.JobsGrid.Items.OfType<AgentJob>().Single(j => j.Name == "Purge history");
         Assert.Equal("Purge history", page.Details.Title);
-        Assert.Null(page.RunsGrid.ItemsSource);
+        Assert.Empty(page.RunsGrid.Items);
         Assert.False(page.DetailsView.TextShown);
 
         Press(page.Shell.VerdictView, 1);
@@ -405,7 +405,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void ConfigChecks_OpensWithTheRiskiestFailingCheck() => UiThread.Run(() =>
     {
-        var page = new ConfigChecksPage(new FakeRepository
+        var page = Wave2Pages.ConfigChecks(new FakeRepository
         {
             GetConfigurationChecksAsync = () => Task.FromResult(new ConfigCheckList(ConfigCheckList.Sort(
             [
@@ -417,7 +417,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 new(ConfigCheckKind.AutoShrink, "All 12 databases", ConfigCheckStatus.Pass, "OFF", "OFF", "Fine."),
             ]), null)),
         }, "PROD-SQL01", Settings());
-        Hosted(page, page.RefreshAsync, "config-checks.png", () => AssertLaidOut(page.Shell, page.ChecksGrid));
+        Hosted(page, page.ViewModel.RefreshAsync, "config-checks.png", () => AssertLaidOut(page.Shell, page.ChecksGrid));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "2 of 4 checks fail; the riskiest: Max server memory (Server)"), (verdict.Level, verdict.Headline));
@@ -441,7 +441,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void SecurityAudit_OpensWithTheHighestRisk() => UiThread.Run(() =>
     {
-        var page = new SecurityAuditPage(new FakeRepository
+        var page = Wave2Pages.SecurityAudit(new FakeRepository
         {
             GetSecurityAuditAsync = () => Task.FromResult(new SecurityFindingList(SecurityFindingList.Sort(
             [
@@ -453,7 +453,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 new(SecurityCheckKind.OrphanedUser, "HrDb", "old_app", SecurityFindingStatus.Review, "SQL user · no login", "Nobody can log in as it."),
             ]), null)),
         }, "PROD-SQL01", Settings());
-        Hosted(page, page.RefreshAsync, "security-audit.png", () => AssertLaidOut(page.Shell, page.FindingsGrid));
+        Hosted(page, page.ViewModel.RefreshAsync, "security-audit.png", () => AssertLaidOut(page.Shell, page.FindingsGrid));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "2 risks found; the highest: sa login (SQL login · enabled)"), (verdict.Level, verdict.Headline));
@@ -516,7 +516,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     [Fact]
     public void Export_SaysWhatItWillWrite_AndWhatIsMissing() => UiThread.Run(() =>
     {
-        var page = new ExportPage(new ExportService(new FakeRepository()), Settings());
+        var page = Wave2Pages.Export(new FakeRepository(), Settings());
         page.TxtFilePath.Text = @"C:\Reports";
         Hosted(page, () => Task.CompletedTask, "export.png", () => AssertLaidOut(page.Shell, page.GroupList, minDetail: 150));
 
@@ -524,18 +524,18 @@ public sealed class TemplateEverywhereTests : IDisposable
         Assert.Equal((VerdictLevel.Info, $"Ready to export {count} of {count} sections"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
         Assert.Equal(@"To C:\Reports\SqlVitals_Report.txt: plain UTF-8 text with labelled sections and tables, read from the open server now.", page.Shell.Verdict.Why);
 
-        page.BtnSelectNone.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Click(page.BtnSelectNone);
         Assert.Equal("Nothing to export: no section is selected", page.Shell.Verdict!.Headline);
-        page.BtnSelectAll.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Click(page.BtnSelectAll);
         page.TxtFileName.Text = "";
         Assert.Equal("Choose where to save the report", page.Shell.Verdict!.Headline);
     });
 
     // ── A page that can't read says so in its verdict ────────────────────
 
-    // TempDB and Stale Stats read in their view models (#184), DB Storage too (#185): their own view model tests.
-    public static TheoryData<string> Unreadable => new() { "Memory", "FileIo", "Perfmon", "IndexHealth",
-                                                           "AgentJobs", "ConfigChecks", "SecurityAudit" };
+    // TempDB and Stale Stats read in their view models (#184), DB Storage too (#185), Agent Jobs, Config
+    // Checks and Security Audit too (#186): their own view model tests.
+    public static TheoryData<string> Unreadable => new() { "Memory", "FileIo", "Perfmon", "IndexHealth" };
 
     [Theory, MemberData(nameof(Unreadable))]
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
@@ -548,19 +548,13 @@ public sealed class TemplateEverywhereTests : IDisposable
             ReadFileIoAsync             = () => Task.FromException<FileIoReading>(error),
             GetPerfmonCountersAsync     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
             GetIndexHealthAsync         = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
-            GetAgentJobsAsync           = () => Task.FromException<AgentJobList>(error),
-            GetConfigurationChecksAsync = () => Task.FromException<ConfigCheckList>(error),
-            GetSecurityAuditAsync       = () => Task.FromException<SecurityFindingList>(error),
         };
         ICodeBehindPage page = tag switch
         {
             "Memory"        => new MemoryPage(repo),
             "FileIo"        => new FileIoPage(repo, Settings()),
             "Perfmon"       => new PerfmonPage(repo),
-            "IndexHealth"   => new IndexHealthPage(repo),
-            "AgentJobs"     => new AgentJobsPage(repo),
-            "ConfigChecks"  => new ConfigChecksPage(repo, "PROD-SQL01"),
-            _               => new SecurityAuditPage(repo, "PROD-SQL01"),
+            _               => new IndexHealthPage(repo),
         };
 
         Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
@@ -621,10 +615,10 @@ public sealed class TemplateEverywhereTests : IDisposable
                 ("Perfmon", new PerfmonPage(repo, null, settings), PageKind.Live),
                 ("IndexHealth", new IndexHealthPage(repo, settings), PageKind.Snapshot),
                 ("StaleStats", new StaleStatisticsPage(new StaleStatisticsViewModel(repo, new FakeDialogService()), settings), PageKind.Snapshot),
-                ("AgentJobs", new AgentJobsPage(repo, settings), PageKind.Snapshot),
-                ("ConfigChecks", new ConfigChecksPage(repo, "PROD-SQL01", settings), PageKind.Snapshot),
-                ("SecurityAudit", new SecurityAuditPage(repo, "PROD-SQL01", settings), PageKind.Snapshot),
-                ("Export", new ExportPage(new ExportService(repo), settings), PageKind.None),
+                ("AgentJobs", Wave2Pages.AgentJobs(repo, settings), PageKind.Snapshot),
+                ("ConfigChecks", Wave2Pages.ConfigChecks(repo, "PROD-SQL01", settings), PageKind.Snapshot),
+                ("SecurityAudit", Wave2Pages.SecurityAudit(repo, "PROD-SQL01", settings), PageKind.Snapshot),
+                ("Export", Wave2Pages.Export(repo, settings), PageKind.None),
             ];
             foreach (var (key, page, kind) in pages)
             {
