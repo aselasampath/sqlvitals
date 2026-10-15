@@ -6,23 +6,7 @@
 
 SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server's DMVs **directly**. There is no web server or HTTP hop: the app references the Engine library and calls it in-process.
 
-```text
-┌─ SqlVitals.Desktop (WPF) ────────────────────────┐  ┌─ SqlVitals.Collector (optional) ─────────────────┐
-│ MainWindow: sidebar, top bar, pages              │  │ A Windows service that monitors servers          │
-│ Pages (XAML) ⇄ view models (ViewModels/Pages)    │  │ with no window open                              │
-│ MonitoringManager: health dot, score, alerts     │  │                                                  │
-└──────────────────────────────────────────────────┘  └──────────────────────────────────────────────────┘
-                                            │                                  │
-                                            │ project reference                │
-┌─ SqlVitals.Engine (class library) ────────▼──────────────────────────────────▼─────────────────────────┐
-│ Repositories: one per area, SQL in Sql/<Area>/*.sql                                                    │
-│ Monitoring: samples, health rules, score, alerts                                                       │
-│ Verdicts · History (SQLite) · Chat notifications · Execution plans · Export                            │
-└───────────────┬───────────────────────────────────────────────────────────┬────────────────────────────┘
-                │ Dapper + Microsoft.Data.SqlClient                         │ Microsoft.Data.Sqlite
-                ▼                                                           ▼
-        SQL Server / Azure SQL                                        history.db (%LocalAppData%\SqlVitals)
-```
+![Desktop and the Collector service use the Engine library, which reads SQL Server, writes history.db and posts to Slack or Teams](images/architecture/big-picture.png)
 
 ## Projects
 
@@ -36,18 +20,7 @@ SqlVitals is a **WPF desktop app (.NET 10)** that queries SQL Server's DMVs **di
 
 ## The window
 
-```text
-┌─ MainWindow ─────────────────────────────────────────────────────────────────┐
-│ Sidebar    │ Top bar: ← →, breadcrumb, Live / Snapshot / History, ⏸, F5      │
-│ (pinned,   │ ┌ Page ──────────────────────────────┐ ┌ Details drawer ───┐    │
-│ collapsed  │ │ PageShell: title · actions         │ │ the selected row  │    │
-│ or hidden) │ │   verdict                          │ │ (floating or      │    │
-│            │ │   folding sections: charts, cards  │ │  pinned)          │    │
-│            │ │   detail: grids, tabs              │ │                   │    │
-│            │ └────────────────────────────────────┘ └───────────────────┘    │
-│ Quick switcher (Ctrl+K) over it all                                          │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+![The main window: sidebar, top bar, the page on PageShell (verdict, folding sections, detail) and the details drawer](images/architecture/window.png)
 
 - **Opening a page:** every route goes through `MainWindow.OpenAsync(route)`. `Services/PageFactory` builds the page fresh with its view model; Back and Forward come from `NavigationHistory`, and `Helpers/ViewState` puts back the tab, sort, filter, selection and scroll.
 - **The top bar** shows what the page reports through `IPageContext` (its kind, interval, pause) and `IShellStatus` (read times, errors).
@@ -107,6 +80,8 @@ Pages with nothing to show there are listed in `MainWindow.PagesAzureSqlLacks` a
 ## MVVM
 
 Each page is a XAML view with a view model that reads its data, decides what it shows and owns its refresh. `MvvmGuardTests` checks the rules below.
+
+![A page's view binds to its view model, which alone calls a repository, which runs its SQL on the server](images/architecture/page-reads.png)
 
 - **View:** `Pages/XPage.xaml` + code-behind with view code only: focus, keyboard, scrolling, the details drawer, drawing charts in theme colours.
 - **View model:** `ViewModels/Pages/XViewModel.cs`, derived from `PageViewModel` (CommunityToolkit.Mvvm). It may use Engine, the service interfaces in `Services/`, and LiveChartsCore types, but not WPF controls, `MessageBox`, `Application` or a `Dispatcher`.
