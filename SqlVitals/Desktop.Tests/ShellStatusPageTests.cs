@@ -34,10 +34,9 @@ public sealed class ShellStatusPageTests : IDisposable
             UiThread.Wait(Task.Delay(10));
     }
 
-    // The page as the page factory makes it: its view model reads through it and reports to the fake.
+    // The page as the page factory makes it: its view model reports to the fake.
     private DeadlocksPage Connected(DeadlocksPage page)
     {
-        page.ViewModel.LoadThrough(page);
         page.ViewModel.Connect("Deadlocks", _shell, new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
         return page;
     }
@@ -47,10 +46,10 @@ public sealed class ShellStatusPageTests : IDisposable
     {
         Assert.Null(Application.Current.MainWindow);
         var reads = 0;
-        var page  = Connected(new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => { reads++; return Task.FromResult(NoDeadlocks); } },
-                                                Settings()));
+        var page  = Connected(Wave3Pages.Deadlocks(new FakeRepository { GetDeadlockHistoryAsync = () => { reads++; return Task.FromResult(NoDeadlocks); } },
+                                                   Settings()));
 
-        page.BtnReload.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        TemplateRolloutTests.Click(page.BtnReload);
         Until(() => _shell.Reports.Count > 0);
 
         Assert.Equal(1, reads);
@@ -62,12 +61,12 @@ public sealed class ShellStatusPageTests : IDisposable
     public void ReadAgain_ThatFails_IsReportedOnce_AsARefresh() => UiThread.Run(() =>
     {
         var failed = 0;
-        var page   = Connected(new DeadlocksPage(new FakeRepository
+        var page   = Connected(Wave3Pages.Deadlocks(new FakeRepository
         {
             GetDeadlockHistoryAsync = () => { failed++; return Task.FromException<DeadlockHistory>(new InvalidOperationException("Timeout expired.")); },
         }, Settings()));
 
-        page.BtnReload.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        TemplateRolloutTests.Click(page.BtnReload);
         Until(() => _shell.Reports.Count > 0);
 
         Assert.Equal(1, failed);

@@ -44,18 +44,18 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     // ── Memory (Memory Grants until #178) ────────────────────────────────
 
-    private static MemorySnapshot Snapshot() =>
+    internal static MemorySnapshot Snapshot() =>
         new(32L * 1024 * 1024, 24L * 1024 * 1024, 28L * 1024 * 1024, 18L * 1024 * 1024, 2L * 1024 * 1024, 3L * 1024 * 1024, 0, 2, 6,
             5L * 1024 * 1024, 40L * 1024 * 1024, 30L * 1024 * 1024, "Available physical memory is high", "CONVENTIONAL", Now);
 
-    private static MemoryGrant Grant(int spid, bool pending, int waitMs, long requestedKb, long grantedKb) =>
+    internal static MemoryGrant Grant(int spid, bool pending, int waitMs, long requestedKb, long grantedKb) =>
         new(spid, 0, 1, 4, Now, pending ? null : Now, waitMs, requestedKb, grantedKb, grantedKb / 2, grantedKb / 2, pending ? null : 50, requestedKb, 1024,
             null, null, false, waitMs, "svc_reports", "APP-RPT01", "ReportServer", "SalesDb", "suspended", pending ? "RESOURCE_SEMAPHORE" : null,
             "SELECT * FROM dbo.Orders ORDER BY Total", Now, pending, pending ? "Critical" : "Info");
 
-    private static MemoryClerk Clerk(string name, long mb) => new("MEMORYCLERK_" + name, name, mb * 1024, mb, 5, Now);
+    internal static MemoryClerk Clerk(string name, long mb) => new("MEMORYCLERK_" + name, name, mb * 1024, mb, 5, Now);
 
-    private static IWaitStatsRepository MemoryRepo() => new FakeRepository
+    internal static IWaitStatsRepository MemoryRepo() => new FakeRepository
     {
         GetMemorySnapshotAsync = () => Task.FromResult(Snapshot()),
         GetMemoryGrantsAsync = () => Task.FromResult<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>((
@@ -68,8 +68,8 @@ public sealed class TemplateEverywhereTests : IDisposable
     public void Memory_OpensWithTheQueriesWaitingForMemory() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new MemoryPage(MemoryRepo(), settings);
-        Hosted(page, page.RefreshAsync, "memory.png", () =>
+        var page = Wave3Pages.Memory(MemoryRepo(), settings);
+        Hosted(page, page.ViewModel.RefreshAsync, "memory.png", () =>
         {
             AssertLaidOut(page.Shell, page.Tabs);
             Assert.True(page.ClerksGrid.ActualHeight > 150, $"clerks grid {page.ClerksGrid.ActualHeight}");
@@ -129,11 +129,11 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     // ── File I/O ─────────────────────────────────────────────────────────
 
-    private static FileIoCounters Io(int db, string name, int fileId, string type, long reads, long readStall, long writes, long writeStall, string volume) =>
+    internal static FileIoCounters Io(int db, string name, int fileId, string type, long reads, long readStall, long writes, long writeStall, string volume) =>
         new(db, name, fileId, $"{name}{(type == "LOG" ? "_log" : "")}", type, $@"{volume}MSSQL\{name}{(type == "LOG" ? ".ldf" : ".mdf")}", volume,
             reads, reads * 65_536, readStall, writes, writes * 8_192, writeStall, 40L << 30);
 
-    private static FileIoReading Reading(int second, params FileIoCounters[] files) => new(Now.AddSeconds(second), Now.AddDays(-3), files);
+    internal static FileIoReading Reading(int second, params FileIoCounters[] files) => new(Now.AddSeconds(second), Now.AddDays(-3), files);
 
     [Fact]
     public void FileIo_OpensWithTheFilesSlowerThanYourThreshold() => UiThread.Run(() =>
@@ -147,12 +147,11 @@ public sealed class TemplateEverywhereTests : IDisposable
         ]);
         var repo = new FakeRepository { ReadFileIoAsync = () => Task.FromResult(readings.Count > 1 ? readings.Dequeue() : readings.Peek()) };
         var settings = Settings();
-        var page = new FileIoPage(repo, settings);
+        var page = Wave3Pages.FileIo(repo, settings);
         Hosted(page, async () =>
         {
-            await page.RefreshAsync();
-            await Task.Delay(100);   // shown once the page is laid out
-            await page.RefreshAsync();
+            await page.ViewModel.RefreshAsync();
+            await page.ViewModel.RefreshAsync();
         }, "file-io.png", () => AssertLaidOut(page.Shell, page.FilesGrid, minDetail: 150));
 
         var verdict = page.Shell.Verdict!;
@@ -275,14 +274,14 @@ public sealed class TemplateEverywhereTests : IDisposable
 
     // ── Index Health ─────────────────────────────────────────────────────
 
-    private static MissingIndex Missing(string table, double impact, string severity, long seeks) =>
+    internal static MissingIndex Missing(string table, double impact, string severity, long seeks) =>
         new("SalesDb", "dbo", table, "[CustomerId], [Status]", "[OrderDate]", "[Total]", 12, seeks, 40, Now, null, 3.2, 87.5, impact, severity,
             $"CREATE NONCLUSTERED INDEX [IX_{table}_CustomerId_Status] ON [dbo].[{table}] ([CustomerId], [Status], [OrderDate]) INCLUDE ([Total]);", Now);
 
     [Fact]
     public void IndexHealth_OpensWithTheMostValuableMissingIndex() => UiThread.Run(() =>
     {
-        var page = new IndexHealthPage(new FakeRepository
+        var page = Wave3Pages.IndexHealth(new FakeRepository
         {
             GetIndexHealthAsync = () => Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>((
                 [Missing("OrderLines", 54_000, "WARNING", 3_100), Missing("Orders", 310_000, "CRITICAL", 18_400), Missing("Notes", 900, "INFO", 12)],
@@ -293,7 +292,7 @@ public sealed class TemplateEverywhereTests : IDisposable
             GetIndexFragmentationAsync = (_, _) => Task.FromResult<IEnumerable<IndexFragmentation>>(
                 [new("dbo", "Orders", "IX_Orders_Date", "NONCLUSTERED INDEX", 41.5, 120_000, 71.2, 48_000_000, "SalesDb", "Rebuild", Now)]),
         }, Settings());
-        Hosted(page, page.RefreshAsync, "index-health.png", () => AssertLaidOut(page.Shell, page.Tabs));
+        Hosted(page, page.ViewModel.RefreshAsync, "index-health.png", () => AssertLaidOut(page.Shell, page.Tabs));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal((VerdictLevel.Warning, "3 missing indexes suggested, 1 critical; the most valuable on SalesDb.dbo.Orders"), (verdict.Level, verdict.Headline));
@@ -490,8 +489,8 @@ public sealed class TemplateEverywhereTests : IDisposable
         MonitoringManagerTests.WaitForServerChecks(_monitoring.Get(hot.Id)!);
 
         var navigator = new FakeNavigator();
-        var page = new AlertsPage(_monitoring, settings, navigator: navigator);
-        Hosted(page, page.RefreshAsync, "alerts.png", () => AssertLaidOut(page.Shell, page.AlertsGrid));
+        var page = Wave3Pages.Alerts(_monitoring, settings, navigator: navigator);
+        Hosted(page, page.ViewModel.RefreshAsync, "alerts.png", () => AssertLaidOut(page.Shell, page.AlertsGrid));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal(VerdictLevel.Critical, verdict.Level);
@@ -534,8 +533,9 @@ public sealed class TemplateEverywhereTests : IDisposable
     // ── A page that can't read says so in its verdict ────────────────────
 
     // TempDB and Stale Stats read in their view models (#184), DB Storage too (#185), Agent Jobs, Config
-    // Checks and Security Audit too (#186): their own view model tests.
-    public static TheoryData<string> Unreadable => new() { "Memory", "FileIo", "Perfmon", "IndexHealth" };
+    // Checks and Security Audit too (#186), Memory, File I/O and Index Health too (#187): their own view
+    // model tests.
+    public static TheoryData<string> Unreadable => new() { "Perfmon" };
 
     [Theory, MemberData(nameof(Unreadable))]
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
@@ -543,18 +543,11 @@ public sealed class TemplateEverywhereTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
-            GetMemorySnapshotAsync      = () => Task.FromException<MemorySnapshot>(error),
-            GetMemoryGrantsAsync        = () => Task.FromException<(IEnumerable<MemoryGrant>, IEnumerable<MemoryClerk>, IEnumerable<MemoryCounter>)>(error),
-            ReadFileIoAsync             = () => Task.FromException<FileIoReading>(error),
             GetPerfmonCountersAsync     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
-            GetIndexHealthAsync         = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
         };
         ICodeBehindPage page = tag switch
         {
-            "Memory"        => new MemoryPage(repo),
-            "FileIo"        => new FileIoPage(repo, Settings()),
-            "Perfmon"       => new PerfmonPage(repo),
-            _               => new IndexHealthPage(repo),
+            _               => new PerfmonPage(repo),
         };
 
         Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
@@ -608,12 +601,12 @@ public sealed class TemplateEverywhereTests : IDisposable
             var settings = Settings();
             (string Key, Page Page, PageKind Kind)[] pages =
             [
-                ("Memory", new MemoryPage(repo, settings), PageKind.Live),
+                ("Memory", Wave3Pages.Memory(repo, settings), PageKind.Live),
                 ("TempDb", new TempDbPage(new TempDbViewModel(repo), settings), PageKind.Snapshot),
-                ("FileIo", new FileIoPage(repo, settings), PageKind.Live),
+                ("FileIo", Wave3Pages.FileIo(repo, settings), PageKind.Live),
                 ("DbStorage", new DatabaseStoragePage(new DatabaseStorageViewModel(repo), settings), PageKind.Snapshot),
                 ("Perfmon", new PerfmonPage(repo, null, settings), PageKind.Live),
-                ("IndexHealth", new IndexHealthPage(repo, settings), PageKind.Snapshot),
+                ("IndexHealth", Wave3Pages.IndexHealth(repo, settings), PageKind.Snapshot),
                 ("StaleStats", new StaleStatisticsPage(new StaleStatisticsViewModel(repo, new FakeDialogService()), settings), PageKind.Snapshot),
                 ("AgentJobs", Wave2Pages.AgentJobs(repo, settings), PageKind.Snapshot),
                 ("ConfigChecks", Wave2Pages.ConfigChecks(repo, "PROD-SQL01", settings), PageKind.Snapshot),

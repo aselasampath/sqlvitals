@@ -25,9 +25,9 @@ public sealed class ViewStateTests
     {
         var repo = IndexRepository.Create();
 
-        var first = new IndexHealthPage(repo);
+        var first = Wave3Pages.IndexHealth(repo);
         UiThread.Layout(first, 1200, 900);
-        UiThread.Wait(first.RefreshAsync());
+        UiThread.Wait(first.ViewModel.RefreshAsync());
         Idle();
 
         var missing = Grid(first, "MissingGrid");
@@ -39,9 +39,9 @@ public sealed class ViewStateTests
 
         // A new read: the numbers moved, and the rows came back as Orders, Customers.
         IndexRepository.Bump();
-        var again = new IndexHealthPage(repo);
+        var again = Wave3Pages.IndexHealth(repo);
         UiThread.Layout(again, 1200, 900);
-        UiThread.Wait(again.RefreshAsync());
+        UiThread.Wait(again.ViewModel.RefreshAsync());
         state.Restore(again);
         Idle();
 

@@ -3,10 +3,30 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Index Health">
+    <Page.Resources>
+        <!-- The fragmentation's status: red when it couldn't be read, or the criteria can't be used. -->
+        <Style x:Key="FragmentationStatus" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding FragmentationFailed}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="OnlineRebuild" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding CanRebuildOnline}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Page.Resources>
     <!-- The page template (#150): the verdict on the missing and unused indexes first, then the four
-         lists on tabs the Navigator keeps. A missing index's CREATE statement is in the drawer. -->
+         lists on tabs the Navigator keeps. A missing index's CREATE statement is in the drawer. Bound to
+         IndexHealthViewModel (#187). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Index Health" PageKey="IndexHealth">
-        <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}"
+        <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}" SelectedIndex="{Binding TabIndex}"
                     BorderBrush="{StaticResource Border}"
                     Foreground="{StaticResource TextPrimary}">
 
@@ -15,20 +35,19 @@
                 <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="True">
-                            <Button x:Name="BtnCreateScript" DockPanel.Dock="Right" Content="Generate CREATE Script"
+                            <Button x:Name="BtnCreateScript" DockPanel.Dock="Right" Content="{Binding MissingScope.ButtonText}"
                                     Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
-                                    IsEnabled="False" Click="BtnCreateScript_Click"
+                                    IsEnabled="{Binding MissingScope.HasRows}" Command="{Binding CreateScriptCommand}"
+                                    CommandParameter="{Binding Items, ElementName=MissingGrid}"
                                     ToolTip="Generate a T-SQL script that creates the selected missing indexes (or every row shown if none are selected). The script is shown for review — nothing is executed." />
                             <controls:GridFilterBox x:Name="MissingFilter" DockPanel.Dock="Right" Margin="0,0,10,0"
-                                                    Target="{Binding ElementName=MissingGrid}"
-                                                    FilterChanged="MissingFilter_FilterChanged" />
+                                                    Target="{Binding ElementName=MissingGrid}" />
                             <TextBlock Text="Recommended Missing Indexes" Style="{StaticResource SectionHeader}"
                                        VerticalAlignment="Center" />
                         </DockPanel>
-                        <DataGrid x:Name="MissingGrid"
+                        <DataGrid x:Name="MissingGrid" ItemsSource="{Binding Missing}" SelectedItem="{Binding SelectedMissing}"
                                   IsReadOnly="True" CanUserAddRows="False"
-                                  ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow"
-                                  SelectionChanged="MissingGrid_SelectionChanged">
+                                  ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Database"       Binding="{Binding DatabaseName}"                  Width="100" />
                                 <DataGridTextColumn Header="Schema"         Binding="{Binding SchemaName}"                    Width="80" />
@@ -65,20 +84,19 @@
                 <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="True">
-                            <Button x:Name="BtnDropScript" DockPanel.Dock="Right" Content="Generate DROP Script"
+                            <Button x:Name="BtnDropScript" DockPanel.Dock="Right" Content="{Binding UnusedScope.ButtonText}"
                                     Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
-                                    IsEnabled="False" Click="BtnDropScript_Click"
+                                    IsEnabled="{Binding UnusedScope.HasRows}" Command="{Binding DropScriptCommand}"
+                                    CommandParameter="{Binding Items, ElementName=UnusedGrid}"
                                     ToolTip="Generate a T-SQL script that drops the selected unused indexes (or every row shown if none are selected). The script is shown for review — nothing is executed." />
                             <controls:GridFilterBox x:Name="UnusedFilter" DockPanel.Dock="Right" Margin="0,0,10,0"
-                                                    Target="{Binding ElementName=UnusedGrid}"
-                                                    FilterChanged="UnusedFilter_FilterChanged" />
+                                                    Target="{Binding ElementName=UnusedGrid}" />
                             <TextBlock Text="Unused Indexes (zero reads since last restart)" Style="{StaticResource SectionHeader}"
                                        VerticalAlignment="Center" />
                         </DockPanel>
-                        <DataGrid x:Name="UnusedGrid"
+                        <DataGrid x:Name="UnusedGrid" ItemsSource="{Binding Unused}" SelectedItem="{Binding SelectedUnused}"
                                   IsReadOnly="True" CanUserAddRows="False"
-                                  ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow"
-                                  SelectionChanged="UnusedGrid_SelectionChanged">
+                                  ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Database"       Binding="{Binding DatabaseName}"                  Width="100" />
                                 <DataGridTextColumn Header="Schema"         Binding="{Binding SchemaName}"                    Width="80" />
@@ -113,7 +131,7 @@
                             <TextBlock Text="Index reads, writes and health assessment since last SQL Server restart"
                                        Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center" />
                         </DockPanel>
-                        <DataGrid x:Name="UsageGrid" CanUserAddRows="False"
+                        <DataGrid x:Name="UsageGrid" ItemsSource="{Binding Usage}" SelectedItem="{Binding SelectedUsage}" CanUserAddRows="False"
                                   IsReadOnly="True" AutoGenerateColumns="False"
                                   RowBackground="{StaticResource BgDeep}"
                                   AlternatingRowBackground="{StaticResource BgSidebar}"
@@ -163,45 +181,52 @@
                         <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
                             <TextBlock Text="Fragmentation Criteria" Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0,0,20,0" />
                             <TextBlock Text="Min Page Count:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
-                            <TextBox x:Name="TxtMinPageCount" Text="1000" Width="60" Margin="0,0,15,0" Padding="2" VerticalAlignment="Center" KeyDown="FragParam_KeyDown" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}" />
+                            <TextBox x:Name="TxtMinPageCount" Text="{Binding MinPagesText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,15,0" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding RefreshFragmentationCommand}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
                             <TextBlock Text="Min Frag %:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
-                            <TextBox x:Name="TxtMinFragPct" Text="10" Width="40" Margin="0,0,15,0" Padding="2" VerticalAlignment="Center" KeyDown="FragParam_KeyDown" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}" />
+                            <TextBox x:Name="TxtMinFragPct" Text="{Binding MinFragText, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="0,0,15,0" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding RefreshFragmentationCommand}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
                             <Button x:Name="BtnRefreshFrag" Content="↻  Refresh" Style="{DynamicResource RefreshButton}"
-                                    Padding="12,4" VerticalAlignment="Center" Click="BtnRefreshFrag_Click"
+                                    Padding="12,4" VerticalAlignment="Center" Command="{Binding RefreshFragmentationCommand}"
                                     ToolTip="Apply the criteria above and reload the fragmentation grid (Enter in either box does the same)." />
                         </WrapPanel>
 
                         <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
                             <TextBlock Text="Maintenance Script" Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0,0,20,0" />
                             <TextBlock Text="Reorganize from:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
-                            <TextBox x:Name="TxtReorganizePct" Text="5" Width="40" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}"
+                            <TextBox x:Name="TxtReorganizePct" Text="{Binding ReorganizeText, UpdateSourceTrigger=PropertyChanged}" Width="40" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}"
                                      ToolTip="Indexes at or above this fragmentation are REORGANIZE'd. Anything below it is skipped." />
                             <TextBlock Text="%" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="3,0,15,0"/>
                             <TextBlock Text="Rebuild from:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
-                            <TextBox x:Name="TxtRebuildPct" Text="30" Width="40" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}"
+                            <TextBox x:Name="TxtRebuildPct" Text="{Binding RebuildText, UpdateSourceTrigger=PropertyChanged}" Width="40" Padding="2" VerticalAlignment="Center" Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}" BorderBrush="{StaticResource Border}"
                                      ToolTip="Indexes at or above this fragmentation are REBUILD'd instead of REORGANIZE'd." />
                             <TextBlock Text="%" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" Margin="3,0,15,0"/>
                             <CheckBox x:Name="ChkOnlineRebuild" Content="ONLINE = ON" VerticalAlignment="Center" Margin="0,0,15,0"
-                                      IsEnabled="False" Foreground="{StaticResource TextMuted}"
-                                      ToolTip="Checking whether this server's edition supports online index rebuilds…" />
-                            <Button x:Name="BtnMaintenanceScript" Content="Generate Maintenance Script"
+                                      Style="{StaticResource OnlineRebuild}" IsEnabled="{Binding CanRebuildOnline}" IsChecked="{Binding OnlineRebuild}"
+                                      ToolTip="{Binding OnlineRebuildToolTip}" ToolTipService.ShowOnDisabled="True" />
+                            <Button x:Name="BtnMaintenanceScript" Content="{Binding FragmentationScope.ButtonText}"
                                     Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
-                                    IsEnabled="False" Click="BtnMaintenanceScript_Click"
+                                    IsEnabled="{Binding FragmentationScope.HasRows}" Command="{Binding MaintenanceScriptCommand}"
+                                    CommandParameter="{Binding Items, ElementName=FragGrid}"
                                     ToolTip="Generate a T-SQL ALTER INDEX script for the selected rows (or every row shown if none are selected). The script is shown for review — nothing is executed." />
                         </WrapPanel>
 
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="True">
                             <controls:GridFilterBox x:Name="FragFilter" DockPanel.Dock="Right" Margin="10,0,0,0"
-                                                    Target="{Binding ElementName=FragGrid}"
-                                                    FilterChanged="FragFilter_FilterChanged" />
-                            <TextBlock x:Name="TxtFragStatus" Foreground="{StaticResource TextMuted}" FontSize="11"
+                                                    Target="{Binding ElementName=FragGrid}" />
+                            <TextBlock x:Name="TxtFragStatus" Style="{StaticResource FragmentationStatus}" FontSize="11" Text="{Binding FragmentationStatus}"
                                        TextWrapping="Wrap" VerticalAlignment="Center" />
                         </DockPanel>
 
-                        <DataGrid x:Name="FragGrid" CanUserAddRows="False"
+                        <DataGrid x:Name="FragGrid" ItemsSource="{Binding Fragmentation}" SelectedItem="{Binding SelectedFragmentation}" CanUserAddRows="False"
                                   IsReadOnly="True" AutoGenerateColumns="False"
                                   SelectionMode="Extended" SelectionUnit="FullRow"
-                                  SelectionChanged="FragGrid_SelectionChanged"
                                   RowBackground="{StaticResource BgDeep}"
                                   AlternatingRowBackground="{StaticResource BgSidebar}"
                                   Foreground="{StaticResource TextPrimary}"

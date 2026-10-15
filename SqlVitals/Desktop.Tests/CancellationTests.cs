@@ -35,6 +35,7 @@ public sealed class CancellationTests : IDisposable
             .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
             .AddSingleton<IDialogService>(new FakeDialogService())
             .AddSingleton<IFileDialogs>(new FakeFileDialogs())
+            .AddSingleton<IClipboard>(new FakeClipboard())
             .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)
@@ -58,12 +59,12 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void LeavingAPage_CancelsWhatItsCodeBehindIsReading() => UiThread.Run(() =>
     {
-        var reading = new TaskCompletionSource<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>();
-        var repo    = new FakeRepository { GetIndexHealthAsync = () => reading.Task };
-        var made    = Factory().Create("IndexHealth", new PageArgs(new Route("IndexHealth"), repo));
+        var reading = new TaskCompletionSource<IEnumerable<PerfmonCounter>>();
+        var repo    = new FakeRepository { GetPerfmonCountersAsync = () => reading.Task };
+        var made    = Factory().Create("Perfmon", new PageArgs(new Route("Perfmon"), repo));
 
         var shown = made.ViewModel.OnNavigatedToAsync();
-        var token = repo.Tokens[nameof(FakeRepository.GetIndexHealthAsync)];
+        var token = repo.Tokens[nameof(FakeRepository.GetPerfmonCountersAsync)];
         Assert.False(token.IsCancellationRequested);
 
         made.ViewModel.OnNavigatedFrom();
@@ -71,8 +72,8 @@ public sealed class CancellationTests : IDisposable
         Assert.True(token.IsCancellationRequested);
         reading.SetCanceled(token);
         UiThread.Wait(shown);
-        // Left, and cancelled: nothing reported, nothing in the verdict.
-        Assert.Empty(_shell.Reports);
+        // Left, and cancelled: nothing reported, nothing in the verdict. (Perfmon tells the bar its kind as it opens.)
+        Assert.Equal(["Context"], _shell.Reports.Distinct());
     });
 
     [Fact]
@@ -100,16 +101,16 @@ public sealed class CancellationTests : IDisposable
     public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
     {
         // A page whose code-behind reads gets the page's lifetime as its token (#184's pages pass their own, linked to it).
-        var repo = new FakeRepository { GetIndexHealthAsync = () => Task.FromResult<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(([], [])) };
-        var made = Factory().Create("IndexHealth", new PageArgs(new Route("IndexHealth"), repo));
+        var repo = new FakeRepository { GetPerfmonCountersAsync = () => Task.FromResult<IEnumerable<PerfmonCounter>>([]) };
+        var made = Factory().Create("Perfmon", new PageArgs(new Route("Perfmon"), repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
-        var first = repo.Tokens[nameof(FakeRepository.GetIndexHealthAsync)];
+        var first = repo.Tokens[nameof(FakeRepository.GetPerfmonCountersAsync)];
         made.ViewModel.OnNavigatedFrom();
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 
         Assert.True(first.IsCancellationRequested);
-        Assert.False(repo.Tokens[nameof(FakeRepository.GetIndexHealthAsync)].IsCancellationRequested);
+        Assert.False(repo.Tokens[nameof(FakeRepository.GetPerfmonCountersAsync)].IsCancellationRequested);
     });
 
     [Fact]

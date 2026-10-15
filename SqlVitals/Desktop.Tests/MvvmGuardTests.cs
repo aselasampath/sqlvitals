@@ -20,14 +20,9 @@ public sealed class MvvmGuardTests
     /// <summary>Page code that reads through a repository itself.</summary>
     private static readonly string[] RepositoryReferencesAllowed =
     [
-        "Pages/DeadlocksPage.xaml.cs",
-        "Pages/FileIoPage.xaml.cs",
-        "Pages/IndexHealthPage.xaml.cs",
         "Pages/LiveMetricsDashboardPage.xaml.cs",
-        "Pages/MemoryPage.xaml.cs",
         "Pages/OverviewPage.xaml.cs",
         "Pages/PerfmonPage.xaml.cs",
-        "Pages/QueryRegressionsPage.xaml.cs",
         "Pages/QueryStorePage.xaml.cs",
         "Pages/SpTracePage.xaml.cs",
         "Pages/WaitsPage.xaml.cs",
@@ -36,14 +31,10 @@ public sealed class MvvmGuardTests
     /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
     private static readonly Dictionary<string, int> ClicksAllowed = new()
     {
-        ["Pages/DeadlocksPage.xaml"]                     = 4,
-        ["Pages/FileIoPage.xaml"]                        = 2,
         ["Pages/HomePage.xaml"]                          = 4,
-        ["Pages/IndexHealthPage.xaml"]                   = 4,
         ["Pages/LiveMetricsDashboardPage.xaml"]          = 4,
         ["Pages/OverviewPage.xaml"]                      = 14,
         ["Pages/PerfmonPage.xaml"]                       = 2,
-        ["Pages/QueryRegressionsPage.xaml"]              = 3,
         ["Pages/QueryStorePage.xaml"]                    = 7,
         ["Pages/Settings/ActivityCategory.xaml"]         = 1,
         ["Pages/Settings/AlertsCategory.xaml"]           = 8,
@@ -61,16 +52,10 @@ public sealed class MvvmGuardTests
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
     private static readonly string[] CodeBehindPagesAllowed =
     [
-        "AlertsPage",
-        "DeadlocksPage",
-        "FileIoPage",
         "HomePage",
-        "IndexHealthPage",
         "LiveMetricsDashboardPage",
-        "MemoryPage",
         "OverviewPage",
         "PerfmonPage",
-        "QueryRegressionsPage",
         "QueryStorePage",
         "SpTracePage",
         "WaitsPage",

@@ -17,7 +17,7 @@ namespace SqlVitals.Desktop.Services;
 /// per connection until SqlVitals exits. Every session's samples are saved to the local history
 /// (see <see cref="HistoryWriter"/>), and every start and stop to its activity log.
 /// </summary>
-public sealed class MonitoringManager : IDisposable
+public sealed class MonitoringManager : IAlertFeed, IDisposable
 {
     private readonly Dictionary<Guid, MonitoringSession> _sessions = new();
 

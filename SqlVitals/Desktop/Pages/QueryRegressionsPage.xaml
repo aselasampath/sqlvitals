@@ -4,6 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Query Regressions">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -85,29 +86,30 @@
     </Page.Resources>
 
     <!-- The page template (#149): the verdict on the queries that got slower first, what is compared
-         folding to one line, then the queries; a row selected shows its plans in the details drawer. -->
+         folding to one line, then the queries; a row selected shows its plans in the details drawer.
+         Bound to QueryRegressionsViewModel (#187). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Query Regressions — queries that got slower" PageKey="QueryRegressions">
         <controls:PageShell.Actions>
             <Button x:Name="BtnCheck" Content="↻ Check" Style="{StaticResource RefreshButton}" Padding="12,4"
                     ToolTip="Check again with these settings (or press Enter in either box). The settings are saved."
-                    Click="BtnCheck_Click"/>
+                    Command="{Binding CheckCommand}"/>
         </controls:PageShell.Actions>
 
         <!-- What to compare, and when a query counts as regressed -->
         <controls:PageShell.Sections>
-        <controls:FoldSection x:Name="CriteriaSection" Key="criteria" Header="What is compared">
+        <controls:FoldSection x:Name="CriteriaSection" Key="criteria" Header="What is compared" FoldedSummary="{Binding CriteriaSummary}">
         <Border Style="{StaticResource KpiCard}" Margin="0">
             <StackPanel>
                 <WrapPanel>
                     <TextBlock Text="Recent:" Style="{StaticResource ToolbarLabel}"/>
                     <ComboBox x:Name="CmbRecent" Width="120" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="Choice_SelectionChanged"
+                              ItemsSource="{Binding RecentNames}" SelectedIndex="{Binding RecentIndex}"
                               ToolTip="The period checked for slower queries, ending now."/>
 
                     <TextBlock Text="Compared with:" Style="{StaticResource ToolbarLabel}"/>
                     <ComboBox x:Name="CmbBaseline" Width="170" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="Choice_SelectionChanged">
-                        <ComboBoxItem Content="The 7 days before" IsSelected="True"
+                              SelectedIndex="{Binding BaselineIndex}">
+                        <ComboBoxItem Content="The 7 days before"
                                       ToolTip="The week just before the recent period: many executions, so a steady average."/>
                         <ComboBoxItem Content="The same time last week"
                                       ToolTip="The recent period a week earlier, like the trend pages' Compare to baseline. Fairer for load that follows the day of the week."/>
@@ -115,8 +117,8 @@
 
                     <TextBlock Text="Source:" Style="{StaticResource ToolbarLabel}"/>
                     <ComboBox x:Name="CmbSource" Width="150" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="Choice_SelectionChanged">
-                        <ComboBoxItem Content="Auto" IsSelected="True"
+                              SelectedIndex="{Binding SourceIndex}">
+                        <ComboBoxItem Content="Auto"
                                       ToolTip="Query Store when it is on for this database, the monitoring history otherwise."/>
                         <ComboBoxItem Content="Query Store"
                                       ToolTip="This database's Query Store: every query, with its plans."/>
@@ -127,20 +129,28 @@
 
                 <WrapPanel Margin="0,10,0,0">
                     <TextBlock Text="Flag a rise in average duration or CPU of more than" Style="{StaticResource ToolbarLabel}"/>
-                    <TextBox x:Name="TxtThreshold" Width="60" Style="{StaticResource ToolbarBox}" KeyDown="Criteria_KeyDown"
-                             ToolTip="Percent. 50 flags a query whose average went up by more than half; 100, one that more than doubled."/>
+                    <TextBox x:Name="TxtThreshold" Width="60" Style="{StaticResource ToolbarBox}" Text="{Binding ThresholdText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Percent. 50 flags a query whose average went up by more than half; 100, one that more than doubled.">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding CheckCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
                     <TextBlock Text="%" Style="{StaticResource ToolbarLabel}" Margin="4,0,16,0"/>
 
                     <TextBlock Text="with at least" Style="{StaticResource ToolbarLabel}"/>
-                    <TextBox x:Name="TxtMinExecutions" Width="60" Style="{StaticResource ToolbarBox}" KeyDown="Criteria_KeyDown"
-                             ToolTip="Executions a query needs in each period to be compared, so one odd run can't flag it. Lower it to 1 for jobs that run once a day."/>
+                    <TextBox x:Name="TxtMinExecutions" Width="60" Style="{StaticResource ToolbarBox}" Text="{Binding MinExecutionsText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Executions a query needs in each period to be compared, so one odd run can't flag it. Lower it to 1 for jobs that run once a day.">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding CheckCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
                     <TextBlock Text="executions in each period" Style="{StaticResource ToolbarLabel}" Margin="6,0,16,0"/>
                 </WrapPanel>
 
                 <TextBlock x:Name="TxtError" Foreground="{StaticResource Danger}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap" Visibility="Collapsed"/>
+                           TextWrapping="Wrap" Text="{Binding CriteriaError}" Visibility="{Binding ShowsCriteriaError, Converter={StaticResource Visible}}"/>
                 <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,8,0,0"
-                           TextWrapping="Wrap"/>
+                           TextWrapping="Wrap" Text="{Binding ReadNote}"/>
             </StackPanel>
         </Border>
         </controls:FoldSection>
@@ -150,12 +160,12 @@
         <Border Style="{StaticResource KpiCard}">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="True">
-                    <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=RegressionsGrid}" />
-                    <TextBlock x:Name="TxtCount" Text="Regressed queries" Style="{StaticResource SectionHeader}"
+                    <controls:GridFilterBox x:Name="RegressionsFilter" DockPanel.Dock="Right" Target="{Binding ElementName=RegressionsGrid}" />
+                    <TextBlock x:Name="TxtCount" Text="{Binding CountText}" Style="{StaticResource SectionHeader}"
                                Margin="0" VerticalAlignment="Center" />
                 </DockPanel>
                 <Grid>
-                    <DataGrid x:Name="RegressionsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
+                    <DataGrid x:Name="RegressionsGrid" ItemsSource="{Binding Regressions}" SelectedItem="{Binding SelectedRegression}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
                         <DataGrid.Columns>
                             <DataGridTextColumn x:Name="QueryColumn" Header="Query" Binding="{Binding QueryKey}" Width="75" ElementStyle="{StaticResource QueryLink}">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query Store query_id, or the query_hash (0x…) when the monitoring history is the source."/></Style></DataGridTextColumn.HeaderStyle>
@@ -201,9 +211,11 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <Button Content="Now" Tag="{Binding}" Click="ViewRecentPlan_Click"
+                                            <Button Content="Now" CommandParameter="{Binding}"
+                                                    Command="{Binding DataContext.ViewRecentPlanCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                     Style="{StaticResource RefreshButton}" Padding="8,3" FontSize="11" Margin="2,1"/>
-                                            <Button Content="Before" Tag="{Binding}" Click="ViewBaselinePlan_Click"
+                                            <Button Content="Before" CommandParameter="{Binding}"
+                                                    Command="{Binding DataContext.ViewBaselinePlanCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                     Style="{StaticResource RefreshButton}" Padding="8,3" FontSize="11" Margin="2,1">
                                                 <Button.Visibility>
                                                     <Binding Path="PlanDiffers">
@@ -223,7 +235,8 @@
                     <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
                                Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,60,0,0"
                                HorizontalAlignment="Center" VerticalAlignment="Top"
-                               IsHitTestVisible="False" Visibility="Collapsed"/>
+                               IsHitTestVisible="False" Text="{Binding NoDataText}"
+                               Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}"/>
                 </Grid>
             </DockPanel>
         </Border>

@@ -4,6 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Alerts">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -65,29 +66,31 @@
 
     <!-- The page template (#150): the verdict on the active alerts first (and whether alerts are
          raised at all), then every alert. Which alerts to list is beside the title; a row's details
-         are in the drawer. -->
+         are in the drawer. Bound to AlertsViewModel (#187). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Alerts" PageKey="Alerts">
         <controls:PageShell.Actions>
             <WrapPanel>
                 <TextBlock Text="Connection:" Style="{StaticResource ToolbarLabel}"/>
                 <ComboBox x:Name="CmbConnection" Width="200" Style="{StaticResource ToolbarCombo}"
                           AutomationProperties.Name="Connection"
-                          SelectionChanged="Filter_SelectionChanged"
-                          ToolTip="Show every connection's alerts, or one connection's. Alerts of a deleted connection show under All connections."/>
+                          ItemsSource="{Binding Connections}" SelectedItem="{Binding SelectedConnection}" DisplayMemberPath="Name"
+                          ToolTip="Show every connection's alerts, or one connection's. Alerts of a deleted connection show under All connections.">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}">
+                            <Setter Property="ToolTip" Value="{Binding Summary}"/>
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
 
                 <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
                 <ComboBox x:Name="CmbStatus" Width="140" Style="{StaticResource ToolbarCombo}"
                           AutomationProperties.Name="Show"
-                          SelectionChanged="Filter_SelectionChanged">
-                    <ComboBoxItem Content="Active and past" IsSelected="True"/>
-                    <ComboBoxItem Content="Active only"/>
-                    <ComboBoxItem Content="Past only"/>
-                </ComboBox>
+                          ItemsSource="{Binding StatusNames}" SelectedIndex="{Binding StatusIndex}"/>
 
                 <TextBlock Text="Period:" Style="{StaticResource ToolbarLabel}"/>
                 <ComboBox x:Name="CmbPeriod" Width="140" Style="{StaticResource ToolbarCombo}"
                           AutomationProperties.Name="Period"
-                          SelectionChanged="Filter_SelectionChanged"
+                          ItemsSource="{Binding PeriodNames}" SelectedIndex="{Binding PeriodIndex}"
                           ToolTip="Alerts active at any time in the period. Active alerts are always listed. History older than the retention in Settings is deleted, alerts with it."/>
             </WrapPanel>
         </controls:PageShell.Actions>
@@ -97,14 +100,14 @@
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="True">
                     <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=AlertsGrid}" />
-                    <TextBlock x:Name="TxtCount" Text="Alerts" Style="{StaticResource SectionHeader}"
+                    <TextBlock x:Name="TxtCount" Text="{Binding CountText}" Style="{StaticResource SectionHeader}"
                                Margin="0" VerticalAlignment="Center" />
                 </DockPanel>
                 <!-- When an alert starts and ends, and why a connection picked raises none -->
                 <TextBlock x:Name="TxtStatus" DockPanel.Dock="Bottom" Foreground="{StaticResource TextMuted}" FontSize="12"
-                           Margin="0,8,0,0" TextWrapping="Wrap"/>
+                           Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding Note}"/>
                 <Grid>
-                    <DataGrid x:Name="AlertsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
+                    <DataGrid x:Name="AlertsGrid" ItemsSource="{Binding Alerts}" SelectedItem="{Binding SelectedAlert}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="70" ElementStyle="{StaticResource StatusText}">
                                 <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Active: still past its threshold. Ended: back to normal, or monitoring stopped (see Ended because)."/></Style></DataGridTextColumn.HeaderStyle>
@@ -144,7 +147,8 @@
                     <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
                                Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,60,0,0"
                                HorizontalAlignment="Center" VerticalAlignment="Top"
-                               IsHitTestVisible="False" Visibility="Collapsed"/>
+                               IsHitTestVisible="False" Text="{Binding NoDataText}"
+                               Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}"/>
                 </Grid>
             </DockPanel>
         </Border>

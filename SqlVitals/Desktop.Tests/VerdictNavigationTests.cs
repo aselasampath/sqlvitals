@@ -46,8 +46,9 @@ public sealed class VerdictNavigationTests
     [Fact]
     public async Task Alerts_Investigate_OpensTheWorstAlertsEvidence()
     {
-        var activeOnly = 0;
-        var model = new AlertsViewModel(_navigator, () => activeOnly++);
+        var dir   = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
+        var feed  = new FakeAlertFeed();
+        var model = new AlertsViewModel(feed, new ConnectionSettingsService(dir), _navigator);
         var now   = DateTime.UtcNow;
         var conn  = Guid.NewGuid();
         Alert Cpu(HealthLevel level, int minutesAgo) =>
@@ -59,12 +60,14 @@ public sealed class VerdictNavigationTests
         await Press(model, AlertsVerdict.Investigate);
         Assert.Empty(_navigator.Moves);
 
-        model.Show([new(warning, "Hot"), new(critical, "Hot")], "in the last 7 days", now, monitored: 1, notMonitored: []);
+        feed.Active.AddRange([warning, critical]);
+        await model.RefreshAsync();
         await Press(model, AlertsVerdict.Investigate);
         await Press(model, AlertsVerdict.ActiveOnly);
 
         Assert.Equal((critical, ActivitySources.AlertsPage), Assert.Single(_navigator.Investigated));
-        Assert.Equal(1, activeOnly);
+        Assert.Equal(AlertsViewModel.ActiveOnlyIndex, model.StatusIndex);
+        try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
     }
 
     [Fact]
@@ -129,14 +132,15 @@ public sealed class VerdictNavigationTests
     [Fact]
     public async Task QueryRegressions_OpenQuery_OpensQueryStoreOnIt()
     {
-        var plans = 0;
-        var model = new QueryRegressionsViewModel(showPlans: () => plans++, _navigator);
+        var dir   = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
+        var model = new QueryRegressionsViewModel(new FakeRepository(), null, new ConnectionSettingsService(dir), _navigator, new FakeDialogService());
 
         await Press(model, QueryRegressionsVerdict.OpenQuery, id: 42);
-        await Press(model, QueryRegressionsVerdict.ShowPlans);
+        await Press(model, QueryRegressionsVerdict.ShowPlans);   // nothing checked yet: nothing to show
 
         Assert.Equal(["QueryStore ⟵ Query Regressions: Query 42"], _navigator.Moves);
-        Assert.Equal(1, plans);
+        Assert.Null(model.SelectedRegression);
+        try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
     }
 
     [Fact]

@@ -142,7 +142,7 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── Deadlocks ────────────────────────────────────────────────────────
 
-    private static DeadlockReport Deadlock(DateTime utc, string victimCode, string otherCode, params string[] objects) =>
+    internal static DeadlockReport Deadlock(DateTime utc, string victimCode, string otherCode, params string[] objects) =>
         new(utc,
             [new("p1", true, 55, "svc_orders", "APP-WEB03", "OrderService", "SalesDb", "read committed (2)", "X", "KEY: 7:7205", 4_210, 2, "user_transaction",
                  victimCode, "UPDATE dbo.Orders SET Status = 2 WHERE OrderId = @id", null, utc.ToLocalTime().AddSeconds(-5)),
@@ -152,7 +152,7 @@ public sealed class TemplateRolloutTests : IDisposable
                 [new DeadlockLock("p1", 55, "X")], [new DeadlockLock("p2", 61, "U")])).ToList(),
             "<deadlock><victim-list /></deadlock>");
 
-    private static DeadlockHistory DeadlockHistoryOf(DateTime now) => new(
+    internal static DeadlockHistory DeadlockHistoryOf(DateTime now) => new(
     [
         Deadlock(now.AddMinutes(-12), "dbo.usp_ShipOrder", "dbo.usp_BillOrder", "SalesDb.dbo.Orders", "SalesDb.dbo.OrderLines"),
         Deadlock(now.AddHours(-3), "dbo.usp_ShipOrder", "dbo.usp_BillOrder", "SalesDb.dbo.Orders", "SalesDb.dbo.OrderLines"),
@@ -165,9 +165,9 @@ public sealed class TemplateRolloutTests : IDisposable
     public void Deadlocks_OpensWithHowManyAndTheObjectFoughtOverMost() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => Task.FromResult(DeadlockHistoryOf(DateTime.UtcNow)) }, settings);
+        var page = Wave3Pages.Deadlocks(new FakeRepository { GetDeadlockHistoryAsync = () => Task.FromResult(DeadlockHistoryOf(DateTime.UtcNow)) }, settings);
         page.CmbRange.SelectedIndex = 1;   // Last 24 hours
-        Hosted(page, page.RefreshAsync, "deadlocks.png", () => AssertLaidOut(page.Shell, page.Tabs));
+        Hosted(page, page.ViewModel.RefreshAsync, "deadlocks.png", () => AssertLaidOut(page.Shell, page.Tabs));
 
         var verdict = page.Shell.Verdict!;
         Assert.Equal("4 deadlocks in the last 24 hours; SalesDb.dbo.OrderLines in 3 of them", verdict.Headline);
@@ -191,10 +191,10 @@ public sealed class TemplateRolloutTests : IDisposable
     public void Deadlocks_NoneInTheRange_OffersTheOlderOnes() => UiThread.Run(() =>
     {
         var now  = DateTime.UtcNow;
-        var page = new DeadlocksPage(new FakeRepository { GetDeadlockHistoryAsync = () => Task.FromResult(
+        var page = Wave3Pages.Deadlocks(new FakeRepository { GetDeadlockHistoryAsync = () => Task.FromResult(
             new DeadlockHistory([Deadlock(now.AddDays(-3), "a", "b", "t")], DeadlockSource.RingBuffer, 1, 0, null, null)) });
         page.CmbRange.SelectedIndex = 0;   // Last hour
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal((VerdictLevel.Ok, "No deadlocks in the last hour"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
         Press(page.Shell.VerdictView, 0);
@@ -458,7 +458,7 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── Query Regressions ────────────────────────────────────────────────
 
-    private static IWaitStatsRepository RegressionsRepo() => new FakeRepository
+    internal static IWaitStatsRepository RegressionsRepo() => new FakeRepository
     {
         GetQueryStoreRegressionStatsAsync = _ => Task.FromResult(new QueryStoreRegressionStats("SalesDb", "READ_WRITE", true,
         [
@@ -481,9 +481,9 @@ public sealed class TemplateRolloutTests : IDisposable
     public void QueryRegressions_OpensWithTheWorstQuery_AndItsPlansInTheDrawer() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page   = new QueryRegressionsPage(RegressionsRepo(), null, settings);
+        var page   = Wave3Pages.QueryRegressions(RegressionsRepo(), null, settings);
         var source = (IDetailsSource)page;
-        Hosted(page, page.RefreshAsync, "query-regressions.png", () =>
+        Hosted(page, page.ViewModel.RefreshAsync, "query-regressions.png", () =>
         {
             AssertLaidOut(page.Shell, page.RegressionsGrid);
             Press(page.Shell.VerdictView, 0);   // Show its plans
@@ -681,8 +681,8 @@ public sealed class TemplateRolloutTests : IDisposable
     // ── A page that can't read says so in its verdict ────────────────────
 
     // App Connections and Plan Cache Health read in their view models (#185), Processes and Resource
-    // Queries too (#186): their own view model tests.
-    public static TheoryData<string> Unreadable => new() { "Deadlocks", "Waits", "QueryRegressions", "SpTrace" };
+    // Queries too (#186), Deadlocks and Query Regressions too (#187): their own view model tests.
+    public static TheoryData<string> Unreadable => new() { "Waits", "SpTrace" };
 
     [Theory, MemberData(nameof(Unreadable))]
     public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
@@ -690,17 +690,13 @@ public sealed class TemplateRolloutTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
-            GetDeadlockHistoryAsync           = () => Task.FromException<DeadlockHistory>(error),
             GetTopWaitTypesAsync              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
             GetCumulativeWaitsAsync           = () => Task.FromException<IEnumerable<WaitStatCumulative>>(error),
-            GetQueryStoreRegressionStatsAsync = _ => Task.FromException<QueryStoreRegressionStats>(error),
             PollProcedureStatsAsync           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
         };
         ICodeBehindPage page = tag switch
         {
-            "Deadlocks"        => new DeadlocksPage(repo),
             "Waits"            => new WaitsPage(repo),
-            "QueryRegressions" => new QueryRegressionsPage(repo, null, Settings()),
             _                  => new SpTracePage(repo),
         };
 
@@ -723,11 +719,11 @@ public sealed class TemplateRolloutTests : IDisposable
             (string Key, Page Page, PageKind Kind)[] pages =
             [
                 ("Processes", Wave2Pages.Processes(repo, Settings()), PageKind.Live),
-                ("Deadlocks", new DeadlocksPage(repo, Settings()), PageKind.Snapshot),
+                ("Deadlocks", Wave3Pages.Deadlocks(repo, Settings()), PageKind.Snapshot),
                 ("AppConnections", new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(repo), Settings()), PageKind.Snapshot),
                 ("Waits", new WaitsPage(repo, null, Settings()), PageKind.Live),
                 ("ResourceQueries", Wave2Pages.ResourceQueries(repo, null, Settings()), PageKind.Snapshot),
-                ("QueryRegressions", new QueryRegressionsPage(repo, null, Settings()), PageKind.History),
+                ("QueryRegressions", Wave3Pages.QueryRegressions(repo, null, Settings()), PageKind.History),
                 ("PlanCacheHealth", new PlanCacheHealthPage(new PlanCacheHealthViewModel(repo, repo), Settings()), PageKind.Snapshot),
                 ("SpTrace", new SpTracePage(repo, Settings()), PageKind.Live),
             ];

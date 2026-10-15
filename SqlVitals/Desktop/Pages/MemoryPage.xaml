@@ -4,9 +4,27 @@
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Memory">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+        <!-- The system memory state: green while memory is available, red when low, amber otherwise. -->
+        <Style x:Key="MemoryState" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#34D399"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Figures.StateTone}" Value="Success">
+                    <Setter Property="Foreground" Value="{StaticResource Success}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Figures.StateTone}" Value="Danger">
+                    <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Figures.StateTone}" Value="Warning">
+                    <Setter Property="Foreground" Value="{StaticResource Warning}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Page.Resources>
     <!-- The page template (#150): the verdict on queries waiting for memory first; the figures and
          the trend fold to one line; then the clerks and the grants on tabs the Navigator keeps.
-         Start and Stop are the top bar's Resume and Pause (#140). -->
+         Start and Stop are the top bar's Resume and Pause (#140). Bound to MemoryViewModel (#187). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Memory" PageKey="Memory">
         <controls:PageShell.Actions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -15,20 +33,16 @@
                 <ComboBox x:Name="CmbInterval" Width="75" Height="26" FontSize="11"
                           Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                           BorderBrush="{StaticResource Border}" VerticalContentAlignment="Center"
-                          SelectionChanged="CmbInterval_SelectionChanged"
+                          ItemsSource="{Binding IntervalNames}" SelectedIndex="{Binding IntervalIndex}"
                           ToolTip="How often the memory figures are read while trending. Resume (▶) in the top bar starts it, Pause stops it."
                           Margin="0,0,8,0">
                     <ComboBox.ItemContainerStyle>
                         <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                     </ComboBox.ItemContainerStyle>
-                    <ComboBoxItem Content="5s" />
-                    <ComboBoxItem Content="10s" IsSelected="True" />
-                    <ComboBoxItem Content="30s" />
-                    <ComboBoxItem Content="60s" />
                 </ComboBox>
                 <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="1"
                         CornerRadius="4" Padding="10,3" Height="26" ToolTip="Seconds to the next read; -- while paused">
-                    <TextBlock x:Name="TxtCountdown" Text="--"
+                    <TextBlock x:Name="TxtCountdown" Text="{Binding Countdown}"
                                Foreground="{StaticResource Accent}" FontSize="12"
                                VerticalAlignment="Center" />
                 </Border>
@@ -36,64 +50,64 @@
         </controls:PageShell.Actions>
 
         <controls:PageShell.Sections>
-            <controls:FoldSection x:Name="FiguresSection" Key="figures" Header="Figures">
+            <controls:FoldSection x:Name="FiguresSection" Key="figures" Header="Figures" FoldedSummary="{Binding FiguresSummary}">
                 <Border Background="{StaticResource BgCard}" Padding="18,10" CornerRadius="6"
                         BorderBrush="{StaticResource Border}" BorderThickness="1">
                 <WrapPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Physical Memory" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiPhysical" Text="--" Foreground="{StaticResource TextPrimary}"
+                        <TextBlock x:Name="KpiPhysical" Text="{Binding Figures.Physical}" Foreground="{StaticResource TextPrimary}"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="SQL Server Memory" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiTotal" Text="--" Foreground="#38BDF8"
+                        <TextBlock x:Name="KpiTotal" Text="{Binding Figures.Total}" Foreground="#38BDF8"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Target Memory" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiTarget" Text="--" Foreground="#60A5FA"
+                        <TextBlock x:Name="KpiTarget" Text="{Binding Figures.Target}" Foreground="#60A5FA"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Buffer Pool" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiBuffer" Text="--" Foreground="#34D399"
+                        <TextBlock x:Name="KpiBuffer" Text="{Binding Figures.Buffer}" Foreground="#34D399"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Plan Cache" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiPlanCache" Text="--" Foreground="#A78BFA"
+                        <TextBlock x:Name="KpiPlanCache" Text="{Binding Figures.PlanCache}" Foreground="#A78BFA"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Available Physical" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiAvailPhys" Text="--" Foreground="{StaticResource TextPrimary}"
+                        <TextBlock x:Name="KpiAvailPhys" Text="{Binding Figures.AvailablePhysical}" Foreground="{StaticResource TextPrimary}"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Total Page File" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiPageFile" Text="--" Foreground="{StaticResource TextPrimary}"
+                        <TextBlock x:Name="KpiPageFile" Text="{Binding Figures.PageFile}" Foreground="{StaticResource TextPrimary}"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="Available Page File" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiAvailPage" Text="--" Foreground="{StaticResource TextPrimary}"
+                        <TextBlock x:Name="KpiAvailPage" Text="{Binding Figures.AvailablePageFile}" Foreground="{StaticResource TextPrimary}"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="System Memory State" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiMemState" Text="--" Foreground="#34D399"
+                        <TextBlock x:Name="KpiMemState" Text="{Binding Figures.State}" Style="{StaticResource MemoryState}"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                     <StackPanel>
                         <TextBlock Text="Memory Model" Foreground="{StaticResource TextMuted}" FontSize="10" />
-                        <TextBlock x:Name="KpiMemModel" Text="--" Foreground="{StaticResource TextPrimary}"
+                        <TextBlock x:Name="KpiMemModel" Text="{Binding Figures.Model}" Foreground="{StaticResource TextPrimary}"
                                    FontSize="20" FontWeight="Bold" />
                     </StackPanel>
                 </WrapPanel>
                 </Border>
             </controls:FoldSection>
-            <controls:FoldSection x:Name="TrendSection" Key="trend" Header="Trend (GB)">
+            <controls:FoldSection x:Name="TrendSection" Key="trend" Header="Trend (GB)" FoldedSummary="{Binding TrendSummary}">
                 <Border Style="{StaticResource KpiCard}" Margin="0">
                     <Grid Height="170">
                         <lvc:CartesianChart x:Name="MemChart"
@@ -104,13 +118,13 @@
                                    Text="Press Resume (▶) in the top bar to trend memory"
                                    Foreground="{StaticResource TextMuted}" FontSize="14"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Visibility="Visible" />
+                                   Visibility="{Binding ShowsNoSamples, Converter={StaticResource Visible}}" />
                     </Grid>
                 </Border>
             </controls:FoldSection>
         </controls:PageShell.Sections>
 
-        <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}"
+        <TabControl x:Name="Tabs" Background="{StaticResource BgDeep}" SelectedIndex="{Binding TabIndex}"
                     BorderBrush="{StaticResource Border}"
                     Foreground="{StaticResource TextPrimary}">
             <TabItem x:Name="TabClerks" Header="Memory Clerks">
@@ -130,7 +144,7 @@
                     </Border>
 
                     <Border Grid.Column="1" Style="{StaticResource KpiCard}">
-                        <DataGrid x:Name="ClerksGrid">
+                        <DataGrid x:Name="ClerksGrid" ItemsSource="{Binding Clerks}">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Clerk Type"   Binding="{Binding ClerkType}"                              Width="160" />
                                 <DataGridTextColumn Header="Clerk Name"   Binding="{Binding ClerkName}"                              Width="200" />
@@ -157,7 +171,7 @@
 
             <TabItem x:Name="TabGrants" Header="Memory Grants">
                 <Border Style="{StaticResource KpiCard}" Margin="0,10,0,0">
-                    <DataGrid x:Name="GrantsGrid">
+                    <DataGrid x:Name="GrantsGrid" ItemsSource="{Binding Grants}" SelectedItem="{Binding SelectedGrant}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Session ID"   Binding="{Binding SessionId}"                               Width="80" />
                             <DataGridTextColumn Header="Login"        Binding="{Binding LoginName}"                               Width="120" />

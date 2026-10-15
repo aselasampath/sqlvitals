@@ -122,14 +122,15 @@ public sealed class PageFactoryTests : IDisposable
         var error = new InvalidOperationException("Timeout expired.");
         var repo  = new FakeRepository
         {
-            GetIndexHealthAsync = () => Task.FromException<(IEnumerable<MissingIndex>, IEnumerable<UnusedIndex>)>(error),
+            GetPerfmonCountersAsync = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
         };
-        var made = Factory().Create("IndexHealth", Args("IndexHealth", repo));
+        var made = Factory().Create("Perfmon", Args("Perfmon", repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 
-        Assert.Equal(["Error Load: Timeout expired."], _shell.Reports);
-        Assert.Same(made.ViewModel, _shell.From.Single());
+        // Perfmon tells the bar its kind as it opens; the failure is reported once.
+        Assert.Equal(["Error Load: Timeout expired."], _shell.Reports.Where(r => r != "Context"));
+        Assert.Same(made.ViewModel, _shell.From[_shell.Reports.IndexOf("Error Load: Timeout expired.")]);
         // The page says what it couldn't read, as before.
         var verdict = ((PageShell)made.View.FindName("Shell")).Verdict!;
         Assert.Equal(VerdictLevel.Unknown, verdict.Level);

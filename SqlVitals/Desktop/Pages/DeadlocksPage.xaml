@@ -4,6 +4,7 @@
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Deadlocks">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -63,36 +64,37 @@
     </Page.Resources>
 
     <!-- The page template (#149): the verdict on the deadlocks in the range first, where they were
-         read from folding to one line, then the deadlocks and the recurring ones. -->
+         read from folding to one line, then the deadlocks and the recurring ones. Bound to
+         DeadlocksViewModel (#187). -->
     <controls:PageShell x:Name="Shell" Margin="20" Title="Deadlocks — history from system_health" PageKey="Deadlocks">
         <!-- The range applies to both tabs, so it stays beside the title when the source folds. -->
         <controls:PageShell.Actions>
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
                 <ComboBox x:Name="CmbRange" Width="190" Style="{StaticResource ToolbarCombo}" Margin="0,0,10,0"
-                          SelectionChanged="CmbRange_SelectionChanged"
+                          ItemsSource="{Binding RangeNames}" SelectedIndex="{Binding RangeIndex}"
                           ToolTip="Deadlocks reported in this period, ending now. system_health rolls over its files, so how far back it reaches depends on how busy the server is."/>
                 <Button x:Name="BtnReload" Content="↻ Read again" Style="{StaticResource RefreshButton}" Padding="12,4"
                         ToolTip="Read system_health again for deadlocks since this page opened."
-                        Click="BtnReload_Click"/>
+                        Command="{Binding RefreshCommand}"/>
             </StackPanel>
         </controls:PageShell.Actions>
 
         <!-- Where the history was read from, and anything that stopped it being read -->
         <controls:PageShell.Sections>
-            <controls:FoldSection x:Name="SourceSection" Key="source" Header="Source">
+            <controls:FoldSection x:Name="SourceSection" Key="source" Header="Source" FoldedSummary="{Binding SourceSummary}">
                 <Border Style="{StaticResource KpiCard}" Margin="0">
                     <StackPanel>
                         <TextBlock x:Name="TxtProblem" Foreground="{StaticResource Warning}" FontSize="12" Margin="0,0,0,8"
-                                   TextWrapping="Wrap" Visibility="Collapsed"/>
+                                   TextWrapping="Wrap" Text="{Binding Problem}" Visibility="{Binding ShowsProblem, Converter={StaticResource Visible}}"/>
                         <TextBlock x:Name="TxtStatus" Foreground="{StaticResource TextMuted}" FontSize="12"
-                                   TextWrapping="Wrap"/>
+                                   TextWrapping="Wrap" Text="{Binding ReadNote}"/>
                     </StackPanel>
                 </Border>
             </controls:FoldSection>
         </controls:PageShell.Sections>
 
-        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0">
+        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" SelectedIndex="{Binding TabIndex}">
 
             <!-- ── Every deadlock, newest first ───────────────────────── -->
             <TabItem x:Name="TabDeadlocks" Header="Deadlocks">
@@ -106,13 +108,13 @@
                     <Border Grid.Row="0" Style="{StaticResource KpiCard}">
                         <DockPanel>
                             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=DeadlocksGrid}"/>
-                                <TextBlock x:Name="TxtCount" Text="Deadlocks" Style="{StaticResource SectionHeader}"
+                                <controls:GridFilterBox x:Name="DeadlocksFilter" DockPanel.Dock="Right" Target="{Binding ElementName=DeadlocksGrid}"/>
+                                <TextBlock x:Name="TxtCount" Text="{Binding CountText}" Style="{StaticResource SectionHeader}"
                                            Margin="0" VerticalAlignment="Center"/>
                             </DockPanel>
                             <Grid>
-                                <DataGrid x:Name="DeadlocksGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                          SelectionMode="Single" SelectionChanged="DeadlocksGrid_SelectionChanged">
+                                <DataGrid x:Name="DeadlocksGrid" ItemsSource="{Binding Deadlocks}" SelectedItem="{Binding SelectedDeadlock}"
+                                          IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Time" Binding="{Binding Time, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="130">
                                             <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="When the deadlock monitor found it and chose the victim, on this PC's clock."/></Style></DataGridTextColumn.HeaderStyle>
@@ -138,7 +140,8 @@
                                 <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620"
                                            Foreground="{StaticResource TextMuted}" FontSize="14" Margin="0,40,0,0"
                                            HorizontalAlignment="Center" VerticalAlignment="Top"
-                                           IsHitTestVisible="False" Visibility="Collapsed"/>
+                                           IsHitTestVisible="False" Text="{Binding NoDataText}"
+                                           Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}"/>
                             </Grid>
                         </DockPanel>
                     </Border>
@@ -148,7 +151,7 @@
 
                     <!-- ── The selected deadlock ──────────────────────────── -->
                     <Border Grid.Row="2" Style="{StaticResource KpiCard}">
-                        <Grid x:Name="DetailPanel" IsEnabled="False">
+                        <Grid x:Name="DetailPanel" IsEnabled="{Binding HasDeadlock}">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -160,19 +163,19 @@
                             <DockPanel Grid.Row="0" Margin="0,0,0,8">
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                     <Button x:Name="BtnCopyXml" Content="Copy XML" Style="{StaticResource SmallButton}"
-                                            Click="BtnCopyXml_Click" ToolTip="Copy the deadlock report's XML."/>
+                                            Command="{Binding CopyXmlCommand}" ToolTip="Copy the deadlock report's XML."/>
                                     <Button x:Name="BtnSaveXdl" Content="Save as .xdl…" Style="{StaticResource SmallButton}"
-                                            Click="BtnSaveXdl_Click"
+                                            Command="{Binding SaveXdlCommand}"
                                             ToolTip="Save the deadlock graph. Open the file in SSMS (File → Open) to see it drawn."/>
                                 </StackPanel>
-                                <TextBlock x:Name="TxtDetailHeader" Text="Select a deadlock above to see who took part."
+                                <TextBlock x:Name="TxtDetailHeader" Text="{Binding DetailHeader}"
                                            Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                             </DockPanel>
 
                             <TextBlock Grid.Row="1" Text="Participants" Foreground="{StaticResource TextMuted}" FontSize="11" Margin="0,0,0,4"/>
-                            <DataGrid x:Name="ProcessesGrid" Grid.Row="2" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                      SelectionMode="Single" SelectionChanged="ProcessesGrid_SelectionChanged">
+                            <DataGrid x:Name="ProcessesGrid" Grid.Row="2" ItemsSource="{Binding Processes}" SelectedItem="{Binding SelectedProcess}"
+                                      IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="56" ElementStyle="{StaticResource RoleText}"/>
                                     <DataGridTextColumn Header="SPID" Binding="{Binding SessionText}" Width="72"/>
@@ -205,7 +208,7 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
 
-                                <DataGrid x:Name="ResourcesGrid" Grid.Column="0" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
+                                <DataGrid x:Name="ResourcesGrid" Grid.Column="0" ItemsSource="{Binding Resources}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="80"/>
                                         <DataGridTextColumn Header="Object" Binding="{Binding ObjectText}" Width="*" MinWidth="140" ElementStyle="{StaticResource SingleLineText}"/>
@@ -218,7 +221,7 @@
                                 <GridSplitter Grid.Column="1" Width="5" VerticalAlignment="Stretch" HorizontalAlignment="Center"
                                               Background="{StaticResource Border}" Margin="4,0"/>
 
-                                <TextBox x:Name="TxtStatement" Grid.Column="2"
+                                <TextBox x:Name="TxtStatement" Grid.Column="2" Text="{Binding StatementText, Mode=OneWay}"
                                          IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                                          Background="{StaticResource BgDeep}" Foreground="{StaticResource TextPrimary}"
                                          BorderBrush="{StaticResource Border}" BorderThickness="1"
@@ -235,12 +238,12 @@
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                             <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=PatternsGrid}"/>
-                            <TextBlock x:Name="TxtPatternCount" Text="Deadlock patterns" Style="{StaticResource SectionHeader}"
+                            <TextBlock x:Name="TxtPatternCount" Text="{Binding PatternCountText}" Style="{StaticResource SectionHeader}"
                                        Margin="0" VerticalAlignment="Center"/>
                         </DockPanel>
                         <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,0,0,8"
                                    Text="Deadlocks on the same objects by the same code count as one pattern, the most frequent first. Fix the top one first: it keeps coming back. Double-click a row to open its newest deadlock."/>
-                        <DataGrid x:Name="PatternsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                        <DataGrid x:Name="PatternsGrid" ItemsSource="{Binding Patterns}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
                                   SelectionMode="Single" MouseDoubleClick="PatternsGrid_MouseDoubleClick">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Deadlocks" Binding="{Binding Count, StringFormat=N0}" Width="80" ElementStyle="{StaticResource Number}"/>
@@ -253,7 +256,8 @@
                                 <DataGridTemplateColumn Header="" Width="110" CanUserSort="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <Button Content="Open newest" Tag="{Binding}" Click="OpenNewest_Click"
+                                            <Button Content="Open newest" CommandParameter="{Binding}"
+                                                    Command="{Binding DataContext.OpenNewestCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                     Style="{StaticResource RefreshButton}" Padding="8,3" FontSize="11" Margin="2,1"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
