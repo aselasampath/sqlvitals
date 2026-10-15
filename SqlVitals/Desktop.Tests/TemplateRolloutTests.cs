@@ -257,9 +257,9 @@ public sealed class TemplateRolloutTests : IDisposable
     public void Waits_OpensWithTheTopCategory_UnderTheTrend_AndTheChartFolds() => UiThread.Run(() =>
     {
         var settings = Settings();
-        var page = new WaitsPage(WaitsRepo(), null, settings);
+        var page = Wave4Pages.Waits(WaitsRepo(), null, settings);
         ((IPageContext)page).TakeBarTools();
-        Hosted(page, page.RefreshAsync, "waits.png", () =>
+        Hosted(page, page.ViewModel.RefreshAsync, "waits.png", () =>
         {
             // The trend and the table share what the verdict and the top 15 leave (#178).
             AssertLaidOut(page.Shell, page.TrendChart, minDetail: 180);
@@ -282,7 +282,7 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Equal(["chart"], settings.Folded("Waits"));
 
         // Opened again: still folded.
-        var again = new WaitsPage(new FakeRepository(), null, settings);
+        var again = Wave4Pages.Waits(new FakeRepository(), null, settings);
         Assert.True(again.ChartSection.IsFolded);
     });
 
@@ -298,9 +298,9 @@ public sealed class TemplateRolloutTests : IDisposable
                 new(now.AddMinutes(-20), 300, new Dictionary<string, WaitTypeTotals> { ["LCK_M_X"] = new("LCK_M_X", 2, 6_000, 0) }),
             ],
         };
-        var page   = new WaitsPage(WaitsRepo(), new ConnectionHistory(history, Guid.NewGuid()), Settings());
+        var page   = Wave4Pages.Waits(WaitsRepo(), new ConnectionHistory(history, Guid.NewGuid()), Settings());
         var picker = (TimeRangePicker)((IPageContext)page).TakeBarTools()!;
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Equal(10, page.WaitsGrid.Items.Count);
 
         picker.Pick(HistoryRange.LastHour);
@@ -325,7 +325,7 @@ public sealed class TemplateRolloutTests : IDisposable
     public void Waits_TheTrendsVerdict_OnceItDrawsLines_AndTheBarStartsAndStopsIt() => UiThread.Run(() =>
     {
         // CXPACKET waits more and more; WRITELOG steadily.
-        var page = new WaitsPage(WaitsRepo(n =>
+        var page = Wave4Pages.Waits(WaitsRepo(n =>
         [
             Cumulative("CXPACKET", "CPU", 1_000_000 + n * n * 40, 1000 + n * 10),
             Cumulative("WRITELOG", "I/O", 800_000 + n * 60, 900 + n * 5),
@@ -335,7 +335,7 @@ public sealed class TemplateRolloutTests : IDisposable
         context.TakeBarTools();   // the range picker goes to the top bar, as in the app
 
         Assert.Null(page.Shell.Verdict);   // nothing read yet
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         // Not trending yet: the top waits' verdict, which can start it.
         Assert.StartsWith("Most waiting is on I/O", page.Shell.Verdict!.Headline);
         Assert.True(context.IsPaused);
@@ -344,7 +344,7 @@ public sealed class TemplateRolloutTests : IDisposable
         {
             for (var i = 0; i < 8; i++)
             {
-                await page.RefreshAsync();
+                await page.ViewModel.RefreshAsync();
                 await Task.Delay(120);
             }
         }, "wait-trend.png", () =>
@@ -368,18 +368,18 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void Waits_TheTopWaitsUnread_TheTrendStillReads_AndTheVerdictSaysWhatWasnt() => UiThread.Run(() =>
     {
-        var page = new WaitsPage(new FakeRepository
+        var page = Wave4Pages.Waits(new FakeRepository
         {
             GetTopWaitTypesAsync    = () => Task.FromException<IEnumerable<TopWaitType>>(new InvalidOperationException("Timeout expired.")),
             GetCumulativeWaitsAsync = () => Task.FromResult<IEnumerable<WaitStatCumulative>>([Cumulative("WRITELOG", "I/O", 800_000, 900)]),
         }, null, Settings());
 
-        var error = Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
-        Assert.Equal("Timeout expired.", error.Message);
         Assert.Equal("Couldn't read the wait statistics", page.Shell.Verdict!.Headline);
+        Assert.Equal("Error: Timeout expired. Refresh to try again.", page.Shell.Verdict.Why);
         // The trend read its wait types, so Top 20 and Resume work.
-        Assert.Equal(["WRITELOG"], page.WaitTypeList.Items.Cast<WaitTypeItem>().Select(i => i.WaitType));
+        Assert.Equal(["WRITELOG"], page.ViewModel.AllWaitTypes.Select(i => i.WaitType));
         // Not read isn't the same as nothing waited.
         Assert.Equal("Not read yet", page.ChartSection.FoldedSummary);
     });
@@ -387,16 +387,16 @@ public sealed class TemplateRolloutTests : IDisposable
     [Fact]
     public void Waits_ThatCantRead_SaysSoInTheVerdict() => UiThread.Run(() =>
     {
-        var page = new WaitsPage(new FakeRepository
+        var page = Wave4Pages.Waits(new FakeRepository
         {
             GetTopWaitTypesAsync    = () => Task.FromResult<IEnumerable<TopWaitType>>(TopWaitTypes),
             GetCumulativeWaitsAsync = () => Task.FromException<IEnumerable<WaitStatCumulative>>(new InvalidOperationException("Timeout expired.")),
         });
-        // The page says so in its verdict, and rethrows for its view model to report it once (#169).
-        var error = Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
+        // The view model says so in the verdict, and reports it once (#169).
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
-        Assert.Equal("Timeout expired.", error.Message);
         Assert.Equal("Couldn't read the wait statistics", page.Shell.Verdict!.Headline);
+        Assert.Equal("Error: Timeout expired. Refresh to try again.", page.Shell.Verdict.Why);
     });
 
     // ── Resource Queries ─────────────────────────────────────────────────
@@ -630,7 +630,7 @@ public sealed class TemplateRolloutTests : IDisposable
     {
         var now = DateTime.Now;
         var running = new TraceSessionStatus(true, TraceMode.ExtendedEvents, "SqlVitals_SpTrace", null, 5, 0, false);
-        var page = new SpTracePage(new FakeRepository
+        var page = Wave4Pages.SpTrace(new FakeRepository
         {
             StartTraceAsync         = _ => Task.FromResult(running),
             StopTraceAsync          = () => Task.FromResult(TraceSessionStatus.Stopped("SqlVitals_SpTrace")),
@@ -652,7 +652,7 @@ public sealed class TemplateRolloutTests : IDisposable
         }, Settings());
         var source = (IDetailsSource)page;
 
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         Assert.Equal("Not capturing", page.Shell.Verdict!.Headline);
 
         Hosted(page, async () =>
@@ -660,7 +660,7 @@ public sealed class TemplateRolloutTests : IDisposable
             Press(page.Shell.VerdictView, 0);   // Start Trace
             await Task.Delay(50);
             page.PrepareForShutdown();   // no timed poll during the test: one read, below
-            await page.RefreshAsync();
+            await page.ViewModel.RefreshAsync();
         }, "sp-trace.png", () =>
         {
             AssertLaidOut(page.Shell, page.CallsGrid, minDetail: 300);
@@ -678,35 +678,8 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.Equal(9, page.AggregateGrid.Columns.Count);
     });
 
-    // ── A page that can't read says so in its verdict ────────────────────
-
-    // App Connections and Plan Cache Health read in their view models (#185), Processes and Resource
-    // Queries too (#186), Deadlocks and Query Regressions too (#187): their own view model tests.
-    public static TheoryData<string> Unreadable => new() { "Waits", "SpTrace" };
-
-    [Theory, MemberData(nameof(Unreadable))]
-    public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
-    {
-        var error = new InvalidOperationException("Timeout expired.");
-        var repo  = new FakeRepository
-        {
-            GetTopWaitTypesAsync              = () => Task.FromException<IEnumerable<TopWaitType>>(error),
-            GetCumulativeWaitsAsync           = () => Task.FromException<IEnumerable<WaitStatCumulative>>(error),
-            PollProcedureStatsAsync           = () => Task.FromException<IReadOnlyList<SpAggregateRow>>(error),
-        };
-        ICodeBehindPage page = tag switch
-        {
-            "Waits"            => new WaitsPage(repo),
-            _                  => new SpTracePage(repo),
-        };
-
-        Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
-
-        var verdict = ((PageShell)((Page)page).FindName("Shell")).Verdict!;
-        Assert.Equal(VerdictLevel.Unknown, verdict.Level);
-        Assert.StartsWith("Couldn't read ", verdict.Headline);
-        Assert.Equal("Error: Timeout expired. Refresh to try again.", verdict.Why);
-    });
+    // A page that can't read says so in its verdict: each page's view model tests, since every page
+    // here reads in its view model (#184-#188).
 
     // ── Every page on the template, its state kept by the Navigator ──────
 
@@ -721,11 +694,11 @@ public sealed class TemplateRolloutTests : IDisposable
                 ("Processes", Wave2Pages.Processes(repo, Settings()), PageKind.Live),
                 ("Deadlocks", Wave3Pages.Deadlocks(repo, Settings()), PageKind.Snapshot),
                 ("AppConnections", new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(repo), Settings()), PageKind.Snapshot),
-                ("Waits", new WaitsPage(repo, null, Settings()), PageKind.Live),
+                ("Waits", Wave4Pages.Waits(repo, null, Settings()), PageKind.Live),
                 ("ResourceQueries", Wave2Pages.ResourceQueries(repo, null, Settings()), PageKind.Snapshot),
                 ("QueryRegressions", Wave3Pages.QueryRegressions(repo, null, Settings()), PageKind.History),
                 ("PlanCacheHealth", new PlanCacheHealthPage(new PlanCacheHealthViewModel(repo, repo), Settings()), PageKind.Snapshot),
-                ("SpTrace", new SpTracePage(repo, Settings()), PageKind.Live),
+                ("SpTrace", Wave4Pages.SpTrace(repo, Settings()), PageKind.Live),
             ];
             foreach (var (key, page, kind) in pages)
             {

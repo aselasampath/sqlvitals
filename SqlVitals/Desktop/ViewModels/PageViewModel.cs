@@ -237,6 +237,19 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         }
     }
 
+    /// <summary>
+    /// A read beside the page's own failed (a trend's baseline): the top bar and the log say so as
+    /// they do for a timed read, without a message box. What is on screen stays.
+    /// </summary>
+    /// <param name="source">What failed, in the log: "Waits baseline".</param>
+    protected void ReportSideError(string source, Exception exception)
+    {
+        if (_shell is { } shell)
+            shell.ReportError(this, source, exception, PageRead.Timed);
+        else
+            AppLog.Error($"{source}: failed", exception);
+    }
+
     // A read that must see a change made during the one in progress: waits for it, then reads.
     private async Task ReadAfterAsync(PageRead read)
     {
@@ -251,12 +264,20 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     /// </summary>
     protected void ReportContextChanged() => _shell?.ReportContextChanged(this);
 
-    /// <summary>Pauses or resumes the timed refresh; resuming waits a whole interval again.</summary>
+    /// <summary>
+    /// Pauses or resumes the timed refresh; resuming waits a whole interval again. Resuming a page
+    /// already running, or one that can't (<see cref="CanResume"/>), changes nothing.
+    /// </summary>
     public void SetPaused(bool paused)
     {
+        if (!paused && (!IsPaused || !CanResume))
+            return;
         IsPaused = paused;
         Reschedule();
     }
+
+    /// <summary>The timed refresh may be resumed now: a trend showing a past range can't be (#188).</summary>
+    protected virtual bool CanResume => true;
 
     /// <summary>
     /// What the page keeps when it is left, to be put back when its route is opened again (#139):

@@ -806,10 +806,9 @@ public partial class MainWindow : Window
         Close();
     }
 
-    // Last line of defence for the live SP trace: SpTracePage drops its event session when
-    // the user navigates away, but closing the window while that page is open does not
-    // raise Unloaded reliably. Without this the session keeps collecting on the monitored
-    // server after the app is gone.
+    // Last line of defence for the live SP trace: SP Trace's view model drops its event session
+    // when the user navigates away, but exiting while that page is open doesn't navigate away.
+    // Without this the session keeps collecting on the monitored server after the app is gone.
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         // Closing the window only hides it, unless the user asked to exit or Windows is ending

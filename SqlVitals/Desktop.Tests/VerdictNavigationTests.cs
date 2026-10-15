@@ -73,43 +73,58 @@ public sealed class VerdictNavigationTests
     [Fact]
     public async Task Perfmon_Cause_OpensThePageOfTheCounterPastItsLimit()
     {
-        var model = new PerfmonViewModel(_navigator);
+        static PerfmonCounter Counter(string name, long value) => new("SQLServer:Memory Manager", name, "", value, 65792, DateTime.Now);
+        var model = new PerfmonViewModel(new FakeRepository
+        {
+            GetPerfmonCountersAsync = () => Task.FromResult<IEnumerable<PerfmonCounter>>(
+                [Counter("Batch Requests/sec", 120), Counter("Memory Grants Pending", 3)]),
+        }, null, _navigator);
 
-        model.Show([new PerfmonSeries("Page life expectancy", [300, 310])], WaitTrendState.Live, noData: null);
+        // General Throughput, the group it opens on: nothing past a limit.
+        await model.RefreshAsync();
         await Press(model, PerfmonVerdict.Cause);
         Assert.Empty(_navigator.Moves);
 
-        model.Show([new PerfmonSeries("Memory Grants Pending", [0, 3])], WaitTrendState.Live, noData: null);
+        model.Group = "Memory Pressure";
+        await model.RefreshAsync();
         await Press(model, PerfmonVerdict.Cause);
         Assert.Equal(["Memory"], _navigator.Moves);
     }
 
-    private WaitsViewModel Waits(List<string>? done = null) =>
-        new(_navigator, startTrend: () => done?.Add("start"), chartTopWaits: () => done?.Add("top 20"));
-
-    private static void ShowTop(WaitsViewModel model, IReadOnlyList<TopWaitType> top) =>
-        model.Show(top, during: null, [], WaitTrendState.NotStarted, "ms/s", "", noData: null);
+    // Waits, having read these top waits, and the same wait types' totals for the trend.
+    private async Task<WaitsViewModel> Waits(IReadOnlyList<TopWaitType> top)
+    {
+        var model = new WaitsViewModel(new FakeRepository
+        {
+            GetTopWaitTypesAsync    = () => Task.FromResult<IEnumerable<TopWaitType>>(top),
+            GetCumulativeWaitsAsync = () => Task.FromResult<IEnumerable<WaitStatCumulative>>(top.Select(w =>
+                new WaitStatCumulative(w.WaitType, w.WaitCategory, 0, 10, w.WaitTimeMs, 0, 0, w.WaitTimeMs, 1, 1, 1, w.WaitTimeMs / 1000.0,
+                                       DateTime.Now, DateTime.Now.AddDays(-3), "#000", ""))),
+        }, null, _navigator);
+        await model.RefreshAsync();
+        return model;
+    }
 
     [Fact]
     public async Task Waits_OpensThePageOfTheTopCategory_AndStartsAndChartsTheTrendOnThePage()
     {
-        var done  = new List<string>();
-        var model = Waits(done);
-        ShowTop(model, [Wait("SOS_SCHEDULER_YIELD", "CPU", 9_000), Wait("PAGEIOLATCH_SH", "I/O", 4_000), Wait("WRITELOG", "I/O", 3_000)]);
+        var model = await Waits([Wait("SOS_SCHEDULER_YIELD", "CPU", 9_000), Wait("PAGEIOLATCH_SH", "I/O", 4_000), Wait("WRITELOG", "I/O", 3_000)]);
+        model.ClearAllCommand.Execute(null);
+        Assert.True(model.IsPaused);
 
         await Press(model, TopWaitsVerdict.Cause);
         await Press(model, WaitsVerdict.StartTrend);
         await Press(model, WaitTrendVerdict.TopWaits);
 
         Assert.Equal(["ResourceQueries"], _navigator.Moves);
-        Assert.Equal(["start", "top 20"], done);
+        Assert.False(model.IsPaused);
+        Assert.Equal(3, model.AllWaitTypes.Count(i => i.IsChecked));
     }
 
     [Fact]
     public async Task Waits_Cause_NowhereForACategoryNoPageExplains()
     {
-        var model = Waits();
-        ShowTop(model, [Wait("ASYNC_NETWORK_IO", "Network", 9_000)]);
+        var model = await Waits([Wait("ASYNC_NETWORK_IO", "Network", 9_000)]);
 
         await Press(model, TopWaitsVerdict.Cause);
 
@@ -146,7 +161,7 @@ public sealed class VerdictNavigationTests
     [Fact]
     public void ShowError_SaysWhatCouldNotBeRead_InTheTopBarsWords()
     {
-        var model = Waits();
+        var model = new WaitsViewModel(new FakeRepository(), null, _navigator);
         var error = new TimeoutException("Execution Timeout Expired");
 
         model.ShowError("the wait stats", error);

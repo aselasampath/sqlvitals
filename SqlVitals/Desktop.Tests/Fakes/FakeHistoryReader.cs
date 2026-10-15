@@ -12,12 +12,25 @@ public sealed class FakeHistoryReader : IHistoryReader
 
     public string Path => "fake history";
 
-    public IReadOnlyList<WaitHistoryBucket> ReadWaits(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket) =>
-        Waits.Where(b => b.TimeUtc >= fromUtc && b.TimeUtc < toUtc).ToList();
+    /// <summary>Called as <see cref="ReadWaits"/> or <see cref="ReadCounters"/> starts, on the read's thread: a test can hold a read there.</summary>
+    public Action? Reading { get; init; }
+
+    public IReadOnlyList<WaitHistoryBucket> ReadWaits(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket)
+    {
+        Reading?.Invoke();
+        return Waits.Where(b => b.TimeUtc >= fromUtc && b.TimeUtc < toUtc).ToList();
+    }
 
     public IReadOnlyList<StoredConnection> ReadConnections() => [];
     public IReadOnlyList<MetricHistoryPoint> ReadMetrics(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket) => [];
-    public IReadOnlyList<CounterHistoryBucket> ReadCounters(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket) => [];
+    /// <summary>What <see cref="ReadCounters"/> returns: the buckets inside the range asked for.</summary>
+    public IReadOnlyList<CounterHistoryBucket> Counters { get; init; } = [];
+
+    public IReadOnlyList<CounterHistoryBucket> ReadCounters(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket)
+    {
+        Reading?.Invoke();
+        return Counters.Where(b => b.TimeUtc >= fromUtc && b.TimeUtc < toUtc).ToList();
+    }
     public IReadOnlyList<HistoryQueryTotals> ReadQueryTotals(Guid connectionId, DateTime fromUtc, DateTime toUtc) => [];
     public IReadOnlyDictionary<string, QueryTextInfo> ReadQueryTexts(Guid connectionId, IReadOnlyCollection<string> queryHashes) =>
         new Dictionary<string, QueryTextInfo>();
