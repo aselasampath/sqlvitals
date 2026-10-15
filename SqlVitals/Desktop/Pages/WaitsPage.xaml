@@ -4,6 +4,9 @@
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
       Background="{StaticResource BgDeep}" Title="Waits">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+    </Page.Resources>
     <!-- The page template (#149): the verdict first, the top 15 folding to one line, then the trend
          of the wait types picked above the top waits for the range (#178: Wait Trend and Top Waits
          were two pages). Start and Stop are the top bar's Resume and Pause (#140). -->
@@ -18,15 +21,11 @@
                               Width="200" Height="26" FontSize="11"
                               Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                               BorderBrush="{StaticResource Border}" VerticalContentAlignment="Center"
-                              SelectionChanged="CmbMetric_SelectionChanged"
+                              ItemsSource="{Binding MetricNames}" SelectedIndex="{Binding MetricIndex}"
                               Margin="0,0,20,0">
                         <ComboBox.ItemContainerStyle>
                             <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                         </ComboBox.ItemContainerStyle>
-                        <ComboBoxItem Content="Wait Time (ms/sec)"     IsSelected="True" />
-                        <ComboBoxItem Content="Signal Wait (ms/sec)" />
-                        <ComboBoxItem Content="Resource Wait (ms/sec)" />
-                        <ComboBoxItem Content="Waiting Tasks/sec" />
                     </ComboBox>
 
                     <!-- Interval -->
@@ -37,23 +36,20 @@
                               Width="80" Height="26" FontSize="11"
                               Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                               BorderBrush="{StaticResource Border}" VerticalContentAlignment="Center"
-                              SelectionChanged="CmbInterval_SelectionChanged"
+                              ItemsSource="{Binding IntervalNames}" SelectedIndex="{Binding IntervalIndex}"
+                              IsEnabled="{Binding IsLive}"
                               ToolTip="How often the waits are read while live. Resume (▶) in the top bar starts reading, Pause stops it."
                               Margin="0,0,8,0">
                         <ComboBox.ItemContainerStyle>
                             <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                         </ComboBox.ItemContainerStyle>
-                        <ComboBoxItem Content="5s" />
-                        <ComboBoxItem Content="10s" IsSelected="True" />
-                        <ComboBoxItem Content="30s" />
-                        <ComboBoxItem Content="60s" />
                     </ComboBox>
 
                     <!-- Countdown badge -->
                     <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="1"
                             CornerRadius="4" Padding="10,3" Height="26" Margin="0,0,12,0"
                             ToolTip="Seconds to the next read; -- while paused">
-                        <TextBlock x:Name="TxtCountdown" Text="--"
+                        <TextBlock x:Name="TxtCountdown" Text="{Binding Countdown}"
                                    Foreground="{StaticResource Accent}" FontSize="12"
                                    VerticalAlignment="Center" />
                     </Border>
@@ -66,7 +62,7 @@
         </controls:PageShell.Actions>
 
         <controls:PageShell.Sections>
-            <controls:FoldSection x:Name="ChartSection" Key="chart" Header="Top 15 — Wait Time (sec)">
+            <controls:FoldSection x:Name="ChartSection" Key="chart" Header="Top 15 — Wait Time (sec)" FoldedSummary="{Binding TopSummary}">
                 <Border Style="{StaticResource KpiCard}" Margin="0">
                     <lvc:CartesianChart x:Name="TopChart" Height="150" Background="Transparent" TooltipPosition="Top" LegendPosition="Hidden" />
                 </Border>
@@ -111,18 +107,18 @@
                             Margin="0,0,3,0" Padding="6,5" FontSize="11"
                             Background="#1A93C5FD" Foreground="#93C5FD"
                             BorderBrush="#93C5FD" BorderThickness="1"
-                            Click="BtnTopWaits_Click" />
+                            Command="{Binding ChartTopWaitsCommand}" />
                     <Button x:Name="BtnClearAll" Grid.Column="1"
                             Content="Clear All"
                             Margin="3,0,0,0" Padding="6,5" FontSize="11"
                             Background="#1A93C5FD" Foreground="#93C5FD"
                             BorderBrush="#93C5FD" BorderThickness="1"
-                            Click="BtnClearAll_Click" />
+                            Command="{Binding ClearAllCommand}" />
                 </Grid>
 
                 <!-- Selected count -->
                 <TextBlock x:Name="TxtSelCount" DockPanel.Dock="Top"
-                           Text="0 / 0 selected"
+                           Text="{Binding SelectionCount}"
                            Foreground="{StaticResource TextMuted}" FontSize="11"
                            Margin="12,0,12,6" />
 
@@ -132,7 +128,7 @@
                              Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="1"
                              Foreground="{StaticResource TextPrimary}" CaretBrush="{StaticResource TextPrimary}"
                              Padding="6,5" FontSize="11"
-                             TextChanged="TxtSearch_TextChanged" />
+                             Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="Filter wait types…"
                                Foreground="{StaticResource TextMuted}" FontSize="11"
                                Padding="8,5" IsHitTestVisible="False">
@@ -151,14 +147,12 @@
 
                 <!-- Wait type checkbox list -->
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl x:Name="WaitTypeList" Margin="4,0,4,8">
+                    <ItemsControl x:Name="WaitTypeList" Margin="4,0,4,8" ItemsSource="{Binding WaitTypes}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <CheckBox Content="{Binding WaitType}"
                                           IsChecked="{Binding IsChecked}"
-                                          Foreground="{StaticResource TextPrimary}" Margin="4,2" FontSize="11"
-                                          Checked="WaitType_CheckChanged"
-                                          Unchecked="WaitType_CheckChanged" />
+                                          Foreground="{StaticResource TextPrimary}" Margin="4,2" FontSize="11" />
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -185,11 +179,11 @@
                                     TooltipPosition="Top"
                                     LegendPosition="Bottom" />
                 <TextBlock x:Name="TxtNoData"
-                           Text="Select wait types on the left, then press Resume (▶) in the top bar to begin trending"
+                           Text="{Binding NoData}"
                            TextWrapping="Wrap" TextAlignment="Center" MaxWidth="560"
                            Foreground="{StaticResource TextMuted}" FontSize="14"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="Visible" />
+                           Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}" />
             </Grid>
 
             <!-- Status bar -->
@@ -197,12 +191,12 @@
                     BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0">
                 <DockPanel>
                     <TextBlock x:Name="TxtStatus" DockPanel.Dock="Left"
-                               Text="Ready — tick wait types, then press Resume (▶) in the top bar"
+                               Text="{Binding StatusLine}"
                                Foreground="{StaticResource TextMuted}" FontSize="11"
                                VerticalAlignment="Center" />
                     <TextBlock x:Name="TxtMaxNote" DockPanel.Dock="Right"
                                Foreground="{StaticResource Warning}" FontSize="11"
-                               VerticalAlignment="Center" Text="" />
+                               VerticalAlignment="Center" Text="{Binding MaxNote}" />
                 </DockPanel>
             </Border>
 
@@ -216,8 +210,8 @@
     <Border Grid.Row="2" Style="{StaticResource KpiCard}" Margin="0">
         <DockPanel>
             <TextBlock x:Name="TxtTopHeader" DockPanel.Dock="Top" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"
-                       Text="Top wait types since the server started" />
-            <DataGrid x:Name="WaitsGrid" AutomationProperties.Name="Top wait types">
+                       Text="{Binding TopHeader}" />
+            <DataGrid x:Name="WaitsGrid" AutomationProperties.Name="Top wait types" ItemsSource="{Binding TopWaits}">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Rank"       Binding="{Binding WaitRank}"           Width="50" />
                     <DataGridTextColumn Header="Wait Type"  Binding="{Binding WaitType}"           Width="200" />

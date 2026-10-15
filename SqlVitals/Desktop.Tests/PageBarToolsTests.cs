@@ -23,8 +23,8 @@ public sealed class PageBarToolsTests
     private static Page Create(string tag) => tag switch
     {
         "LiveMetrics" => new LiveMetricsDashboardPage(Repo()),
-        "Waits"       => new WaitsPage(Repo(), null),
-        "Perfmon"     => new PerfmonPage(Repo(), null),
+        "Waits"       => Wave4Pages.Waits(Repo()),
+        "Perfmon"     => Wave4Pages.Perfmon(Repo()),
         _             => throw new ArgumentOutOfRangeException(nameof(tag)),
     };
 

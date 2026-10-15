@@ -27,7 +27,7 @@ public static class PageRegistrations
                                                                                 Navigator(s), Shell(s), s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
             .AddPage("Alerts",           (s, a) => new AlertsPage(new AlertsViewModel(Monitoring(s), Settings(s), Navigator(s), a.Route.AlertsConnectionId, Time(s)),
                                                                   Settings(s)), p => p.ViewModel)
-            .AddPage("Waits",            (s, a) => new WaitsPage(a.Repo, History(s, a), Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
+            .AddPage("Waits",            (s, a) => new WaitsPage(new WaitsViewModel(a.Repo, History(s, a), Navigator(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("Processes",        (s, a) => new ProcessesPage(new ProcessesViewModel(a.Repo, a.Repo, Settings(s), Navigator(s), a.Route.View), Settings(s)), p => p.ViewModel)
             .AddPage("Deadlocks",        (s, a) => new DeadlocksPage(new DeadlocksViewModel(a.Repo, Dialogs(s), s.GetRequiredService<IFileDialogs>(),
                                                                                     s.GetRequiredService<IClipboard>(), Time(s)), Settings(s)), p => p.ViewModel)
@@ -47,8 +47,8 @@ public static class PageRegistrations
             .AddPage("StaleStats",       (s, a) => new StaleStatisticsPage(new StaleStatisticsViewModel(a.Repo, Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("DbStorage",        (s, a) => new DatabaseStoragePage(new DatabaseStorageViewModel(a.Repo), Settings(s)), p => p.ViewModel)
             .AddPage("AppConnections",   (s, a) => new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(a.Repo), Settings(s)), p => p.ViewModel)
-            .AddPage("Perfmon",          (s, a) => new PerfmonPage(a.Repo, History(s, a), Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
-            .AddPage("SpTrace",          (s, a) => new SpTracePage(a.Repo, Settings(s), Shell(s)), p => p.ViewModel)
+            .AddPage("Perfmon",          (s, a) => new PerfmonPage(new PerfmonViewModel(a.Repo, History(s, a), Navigator(s), Time(s)), Settings(s)), p => p.ViewModel)
+            .AddPage("SpTrace",          (s, a) => new SpTracePage(new SpTraceViewModel(a.Repo, a.Repo, Dialogs(s)), Settings(s)), p => p.ViewModel)
             .AddPage("Export",           (s, a) => new ExportPage(new ExportViewModel(s.GetRequiredService<Func<IWaitStatsRepository, ExportService>>()(a.Repo), Dialogs(s),
                                                                                 s.GetRequiredService<IFileDialogs>(), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("Settings",         (s, a) => new SettingsPage(Settings(s), Monitoring(s), s.GetRequiredService<ChatNotificationService>(),

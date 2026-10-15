@@ -59,12 +59,13 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void LeavingAPage_CancelsWhatItsCodeBehindIsReading() => UiThread.Run(() =>
     {
-        var reading = new TaskCompletionSource<IEnumerable<PerfmonCounter>>();
-        var repo    = new FakeRepository { GetPerfmonCountersAsync = () => reading.Task };
-        var made    = Factory().Create("Perfmon", new PageArgs(new Route("Perfmon"), repo));
+        // Query Store still reads in its code-behind (#189 moves it).
+        var reading = new TaskCompletionSource<QueryStoreStatus>();
+        var repo    = new FakeRepository { GetQueryStoreStatusAsync = () => reading.Task };
+        var made    = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
 
         var shown = made.ViewModel.OnNavigatedToAsync();
-        var token = repo.Tokens[nameof(FakeRepository.GetPerfmonCountersAsync)];
+        var token = repo.Tokens[nameof(FakeRepository.GetQueryStoreStatusAsync)];
         Assert.False(token.IsCancellationRequested);
 
         made.ViewModel.OnNavigatedFrom();
@@ -72,8 +73,8 @@ public sealed class CancellationTests : IDisposable
         Assert.True(token.IsCancellationRequested);
         reading.SetCanceled(token);
         UiThread.Wait(shown);
-        // Left, and cancelled: nothing reported, nothing in the verdict. (Perfmon tells the bar its kind as it opens.)
-        Assert.Equal(["Context"], _shell.Reports.Distinct());
+        // Left, and cancelled: no read or error reported (a page may tell the bar its kind as it opens).
+        Assert.All(_shell.Reports, report => Assert.Equal("Context", report));
     });
 
     [Fact]
@@ -101,16 +102,16 @@ public sealed class CancellationTests : IDisposable
     public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
     {
         // A page whose code-behind reads gets the page's lifetime as its token (#184's pages pass their own, linked to it).
-        var repo = new FakeRepository { GetPerfmonCountersAsync = () => Task.FromResult<IEnumerable<PerfmonCounter>>([]) };
-        var made = Factory().Create("Perfmon", new PageArgs(new Route("Perfmon"), repo));
+        var repo = new FakeRepository { GetQueryStoreStatusAsync = () => Task.FromException<QueryStoreStatus>(new InvalidOperationException("Query Store is off.")) };
+        var made = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
 
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
-        var first = repo.Tokens[nameof(FakeRepository.GetPerfmonCountersAsync)];
+        var first = repo.Tokens[nameof(FakeRepository.GetQueryStoreStatusAsync)];
         made.ViewModel.OnNavigatedFrom();
         UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
 
         Assert.True(first.IsCancellationRequested);
-        Assert.False(repo.Tokens[nameof(FakeRepository.GetPerfmonCountersAsync)].IsCancellationRequested);
+        Assert.False(repo.Tokens[nameof(FakeRepository.GetQueryStoreStatusAsync)].IsCancellationRequested);
     });
 
     [Fact]

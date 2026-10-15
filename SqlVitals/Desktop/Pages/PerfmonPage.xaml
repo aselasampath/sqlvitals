@@ -7,6 +7,8 @@
      >
 
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+
         <!-- Flat button for Select All / Clear All -->
         <Style x:Key="FlatBtn" TargetType="Button">
             <Setter Property="Height"           Value="24"/>
@@ -48,7 +50,8 @@
                           BorderBrush="{StaticResource Border}"
                           FontFamily="Segoe UI" FontSize="12"
                           ToolTip="How often the counters are read while live. Resume (▶) in the top bar starts reading, Pause stops it."
-                          SelectionChanged="CmbInterval_SelectionChanged">
+                          ItemsSource="{Binding IntervalNames}" SelectedIndex="{Binding IntervalIndex}"
+                          IsEnabled="{Binding IsLive}">
                     <ComboBox.ItemContainerStyle>
                         <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                     </ComboBox.ItemContainerStyle>
@@ -57,7 +60,7 @@
                         BorderBrush="{StaticResource Border}" BorderThickness="1"
                         CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center"
                         ToolTip="Seconds to the next read; -- while paused">
-                    <TextBlock x:Name="TxtCountdown" Text="--"
+                    <TextBlock x:Name="TxtCountdown" Text="{Binding Countdown}"
                                Foreground="{StaticResource TextMuted}"
                                VerticalAlignment="Center"
                                FontFamily="Segoe UI Mono" FontSize="11"
@@ -94,7 +97,7 @@
                               Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
                               BorderBrush="{StaticResource Border}"
                               FontFamily="Segoe UI" FontSize="12"
-                              SelectionChanged="CmbGroup_SelectionChanged">
+                              ItemsSource="{Binding GroupChoices}" SelectedItem="{Binding Group}">
                         <ComboBox.ItemContainerStyle>
                             <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                         </ComboBox.ItemContainerStyle>
@@ -107,8 +110,8 @@
                             <ColumnDefinition Width="6"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="Select All" Style="{StaticResource FlatBtn}" Click="SelectAll_Click"/>
-                        <Button Grid.Column="2" Content="Clear All"  Style="{StaticResource FlatBtn}" Click="ClearAll_Click"/>
+                        <Button Grid.Column="0" Content="Select All" Style="{StaticResource FlatBtn}" Command="{Binding SelectAllCommand}"/>
+                        <Button Grid.Column="2" Content="Clear All"  Style="{StaticResource FlatBtn}" Command="{Binding ClearAllCommand}"/>
                     </Grid>
 
                     <!-- Search box -->
@@ -118,18 +121,16 @@
                              CaretBrush="{StaticResource TextPrimary}"
                              BorderBrush="{StaticResource Border}" BorderThickness="1"
                              Padding="6,2" FontFamily="Segoe UI" FontSize="11"
-                             TextChanged="TxtSearch_TextChanged"/>
+                             Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"/>
 
                     <!-- Checkboxes list (scrollable) -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl x:Name="CounterList">
+                        <ItemsControl x:Name="CounterList" ItemsSource="{Binding Counters}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <CheckBox Style="{StaticResource DarkCheck}"
                                               Content="{Binding DisplayName}"
-                                              IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                                              Checked="Counter_CheckChanged"
-                                              Unchecked="Counter_CheckChanged"/>
+                                              IsChecked="{Binding IsChecked, Mode=TwoWay}"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -161,12 +162,12 @@
                                             TooltipPosition="Top"
                                             LegendPosition="Bottom"/>
                         <TextBlock x:Name="TxtNoData"
-                                   Text="Select counters from the left panel to begin charting."
+                                   Text="{Binding NoData}"
                                    TextWrapping="Wrap" TextAlignment="Center" MaxWidth="560"
                                    Foreground="{StaticResource TextMuted}"
                                    FontFamily="Segoe UI" FontSize="13"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Visibility="Collapsed"/>
+                                   Visibility="{Binding ShowsNoData, Converter={StaticResource Visible}}"/>
                     </Grid>
                 </Border>
 
@@ -182,7 +183,7 @@
                                    FontFamily="Segoe UI" FontSize="10"
                                    DockPanel.Dock="Right" VerticalAlignment="Center"/>
                         <TextBlock x:Name="TxtStatus"
-                                   Text="Not reading: Resume (▶) in the top bar starts it, Refresh reads once."
+                                   Text="{Binding StatusLine}"
                                    Foreground="{StaticResource TextMuted}"
                                    FontFamily="Segoe UI" FontSize="10"
                                    VerticalAlignment="Center"/>

@@ -243,7 +243,7 @@ public sealed class TemplateEverywhereTests : IDisposable
     public void Perfmon_OpensWithTheCountersPastTheirLimit() => UiThread.Run(() =>
     {
         static PerfmonCounter Counter(string name, long value, int type = 65792) => new("SQLServer:Memory Manager", name, "", value, type, Now);
-        var page = new PerfmonPage(new FakeRepository
+        var page = Wave4Pages.Perfmon(new FakeRepository
         {
             GetPerfmonCountersAsync = () => Task.FromResult<IEnumerable<PerfmonCounter>>(
             [
@@ -257,7 +257,7 @@ public sealed class TemplateEverywhereTests : IDisposable
         // Before anything is read: what to do.
         Assert.Equal("Not charting yet", page.Shell.Verdict!.Headline);
 
-        Hosted(page, page.RefreshAsync, null);
+        Hosted(page, page.ViewModel.RefreshAsync, null);
         Assert.Equal((VerdictLevel.Ok, "1 counter charted, none past a known limit"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
 
         page.CmbGroup.SelectedItem = "Memory Pressure";
@@ -530,33 +530,8 @@ public sealed class TemplateEverywhereTests : IDisposable
         Assert.Equal("Choose where to save the report", page.Shell.Verdict!.Headline);
     });
 
-    // ── A page that can't read says so in its verdict ────────────────────
-
-    // TempDB and Stale Stats read in their view models (#184), DB Storage too (#185), Agent Jobs, Config
-    // Checks and Security Audit too (#186), Memory, File I/O and Index Health too (#187): their own view
-    // model tests.
-    public static TheoryData<string> Unreadable => new() { "Perfmon" };
-
-    [Theory, MemberData(nameof(Unreadable))]
-    public void APageThatCantRead_SaysSoInItsVerdict(string tag) => UiThread.Run(() =>
-    {
-        var error = new InvalidOperationException("Timeout expired.");
-        var repo  = new FakeRepository
-        {
-            GetPerfmonCountersAsync     = () => Task.FromException<IEnumerable<PerfmonCounter>>(error),
-        };
-        ICodeBehindPage page = tag switch
-        {
-            _               => new PerfmonPage(repo),
-        };
-
-        Assert.Throws<InvalidOperationException>(() => UiThread.Wait(page.RefreshAsync()));
-
-        var verdict = ((PageShell)((Page)page).FindName("Shell")).Verdict!;
-        Assert.Equal(VerdictLevel.Unknown, verdict.Level);
-        Assert.StartsWith("Couldn't read ", verdict.Headline);
-        Assert.Equal("Error: Timeout expired. Refresh to try again.", verdict.Why);
-    });
+    // A page that can't read says so in its verdict: each page's view model tests, since every page
+    // here reads in its view model (#184-#188).
 
     // ── Every page in the sidebar is on the template ─────────────────────
 
@@ -605,7 +580,7 @@ public sealed class TemplateEverywhereTests : IDisposable
                 ("TempDb", new TempDbPage(new TempDbViewModel(repo), settings), PageKind.Snapshot),
                 ("FileIo", Wave3Pages.FileIo(repo, settings), PageKind.Live),
                 ("DbStorage", new DatabaseStoragePage(new DatabaseStorageViewModel(repo), settings), PageKind.Snapshot),
-                ("Perfmon", new PerfmonPage(repo, null, settings), PageKind.Live),
+                ("Perfmon", Wave4Pages.Perfmon(repo, null, settings), PageKind.Live),
                 ("IndexHealth", Wave3Pages.IndexHealth(repo, settings), PageKind.Snapshot),
                 ("StaleStats", new StaleStatisticsPage(new StaleStatisticsViewModel(repo, new FakeDialogService()), settings), PageKind.Snapshot),
                 ("AgentJobs", Wave2Pages.AgentJobs(repo, settings), PageKind.Snapshot),

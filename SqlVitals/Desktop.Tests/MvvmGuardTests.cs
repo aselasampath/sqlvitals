@@ -22,10 +22,7 @@ public sealed class MvvmGuardTests
     [
         "Pages/LiveMetricsDashboardPage.xaml.cs",
         "Pages/OverviewPage.xaml.cs",
-        "Pages/PerfmonPage.xaml.cs",
         "Pages/QueryStorePage.xaml.cs",
-        "Pages/SpTracePage.xaml.cs",
-        "Pages/WaitsPage.xaml.cs",
     ];
 
     /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
@@ -34,7 +31,6 @@ public sealed class MvvmGuardTests
         ["Pages/HomePage.xaml"]                          = 4,
         ["Pages/LiveMetricsDashboardPage.xaml"]          = 4,
         ["Pages/OverviewPage.xaml"]                      = 14,
-        ["Pages/PerfmonPage.xaml"]                       = 2,
         ["Pages/QueryStorePage.xaml"]                    = 7,
         ["Pages/Settings/ActivityCategory.xaml"]         = 1,
         ["Pages/Settings/AlertsCategory.xaml"]           = 8,
@@ -45,8 +41,6 @@ public sealed class MvvmGuardTests
         ["Pages/Settings/NotificationAreaCategory.xaml"] = 1,
         ["Pages/Settings/ThresholdsCategory.xaml"]       = 3,
         ["Pages/SettingsPage.xaml"]                      = 1,
-        ["Pages/SpTracePage.xaml"]                       = 2,
-        ["Pages/WaitsPage.xaml"]                         = 2,
     };
 
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
@@ -55,10 +49,7 @@ public sealed class MvvmGuardTests
         "HomePage",
         "LiveMetricsDashboardPage",
         "OverviewPage",
-        "PerfmonPage",
         "QueryStorePage",
-        "SpTracePage",
-        "WaitsPage",
     ];
 
     // ── View models stay out of the view ─────────────────────────────────

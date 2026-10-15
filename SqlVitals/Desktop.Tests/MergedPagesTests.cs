@@ -55,14 +55,14 @@ public sealed class MergedPagesTests : IDisposable
     public void Waits_Renders(string theme) => UiThread.Run(() =>
     {
         using var themed = Themed(theme);
-        var page = new WaitsPage(new FakeRepository
+        var page = Wave4Pages.Waits(new FakeRepository
         {
             GetTopWaitTypesAsync    = () => Task.FromResult<IEnumerable<TopWaitType>>([Top(1, "PAGEIOLATCH_SH", "I/O", 4_120_000), Top(2, "LCK_M_X", "Locks", 820_000)]),
             GetCumulativeWaitsAsync = () => Task.FromResult<IEnumerable<WaitStatCumulative>>([]),
         }, null, Settings());
         ((IPageContext)page).TakeBarTools();
 
-        TemplateRolloutTests.Hosted(page, page.RefreshAsync, $"waits-{theme}.png", () =>
+        TemplateRolloutTests.Hosted(page, page.ViewModel.RefreshAsync, $"waits-{theme}.png", () =>
         {
             TemplateRolloutTests.AssertLaidOut(page.Shell, page.TrendChart, minDetail: 180);
             TemplateRolloutTests.AssertLaidOut(page.Shell, page.WaitsGrid, minDetail: 150);
