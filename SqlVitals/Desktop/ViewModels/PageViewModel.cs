@@ -127,6 +127,7 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         _shown = true;
         _lifetime?.Begin();
         StartViewTicks();
+        OnShowing();
         await ReadAsync(PageRead.Load);
         Reschedule();
     }
@@ -152,6 +153,12 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     /// (the history of the row selected) is cancelled here.
     /// </summary>
     protected virtual void OnLeaving() { }
+
+    /// <summary>
+    /// The page is about to be shown, before it loads: what it follows only while shown (the
+    /// monitoring's alerts) starts here, and stops in <see cref="OnLeaving"/>.
+    /// </summary>
+    protected virtual void OnShowing() { }
 
     /// <inheritdoc cref="RefreshCommand"/>
     [ReportsItsErrors]

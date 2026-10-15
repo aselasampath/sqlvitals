@@ -1,20 +1,20 @@
-using System.Globalization;
-using System.Windows;
+using System.Collections.Specialized;
 using System.Windows.Controls;
-using System.Windows.Input;
 using SqlVitals.Desktop.Controls;
-using SqlVitals.Desktop.Helpers;
-using SqlVitals.Engine.Models;
-using SqlVitals.Engine.Repositories;
-using SqlVitals.Engine.Scripting;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
-using SqlVitals.Engine.Verdicts;
+using ScriptScope = SqlVitals.Desktop.ViewModels.Pages.IndexHealthViewModel.ScriptScope;
 
 namespace SqlVitals.Desktop.Pages;
 
-public partial class IndexHealthPage : System.Windows.Controls.Page, ICodeBehindPage, IPageContext, IDetailsSource
+/// <summary>
+/// Index Health, bound to <see cref="IndexHealthViewModel"/> (#150, #187): the code-behind fills the
+/// details drawer with the missing index selected, tells each script what its grid selects and
+/// shows, focuses a box whose value can't be used, and scrolls the index the verdict shows into view.
+/// </summary>
+public partial class IndexHealthPage : Page, IPageContext, IDetailsSource
 {
     // ── The details drawer (#150): the selected missing index ─────────────────
     // Its figures, its columns and its CREATE statement with Copy, which the grid's last column cuts short.
@@ -39,48 +39,43 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, ICodeBehind
                          "CREATE statement (review before running it)", index.CreateIndexStatement);
     }
 
-    // The page template's verdict (#150): the missing indexes asked for, and the unused ones.
     internal IndexHealthViewModel ViewModel { get; }
 
     // Read once, and again on Refresh, from the connection's database (#140).
     public PageKind Kind => PageKind.Snapshot;
     public bool UsesDatabase => true;
 
-    private const double DefaultMinFragPct   = 10;
-    private const long   DefaultMinPageCount = 1000;
-
-    private readonly IWaitStatsRepository _repo;
-
-    // Bumped on every fragmentation load so a slower, older load (e.g. the top bar's Refresh
-    // overlapping the in-page one) cannot overwrite the grid with results for stale criteria.
-    private int _fragLoadVersion;
-
-    // One edition probe per page instance: MainWindow builds a fresh page after a connection
-    // switch, so the answer cannot go stale underneath us.
-    private bool _onlineSupportChecked;
-
     /// <param name="folds">Where the verdict's fold is remembered; none in some tests.</param>
-    public IndexHealthPage(IWaitStatsRepository repo, ISectionFolds? folds = null)
+    public IndexHealthPage(IndexHealthViewModel viewModel, ISectionFolds? folds = null)
     {
-        _repo = repo;
+        ViewModel   = viewModel;
+        DataContext = viewModel;
         InitializeComponent();
 
-        ViewModel = new IndexHealthViewModel(showMissing: ShowTopMissing, showUnused: () => Tabs.SelectedItem = TabUnused);
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
         DrawerParts.FollowSelection(MissingGrid, ShowMissing, _drawer.Clear);
+        ViewModel.ShowRow += ShowTopMissing;
+        ViewModel.InvalidField += FocusField;
+
+        Follow(MissingGrid, MissingFilter, ViewModel.MissingScope);
+        Follow(UnusedGrid, UnusedFilter, ViewModel.UnusedScope);
+        Follow(FragGrid, FragFilter, ViewModel.FragmentationScope);
     }
 
-    // What the verdict judged, so Show it opens the suggestion it names whatever the grid shows.
-    private IReadOnlyList<MissingIndex> _missing = [];
-
-    // The verdict's Show it: the Missing Indexes tab, the most valuable selected (past a filter
-    // typed in the box) and in the drawer.
-    private void ShowTopMissing()
+    // What a script covers follows its grid: the rows selected, those shown, and whether a search filters them.
+    private static void Follow(DataGrid grid, GridFilterBox filter, ScriptScope scope)
     {
-        Tabs.SelectedItem = TabMissing;
-        if (IndexHealthVerdict.Top(_missing) is not { } top)
-            return;
+        void Update() => scope.Update(grid.SelectedItems.Cast<object>().ToList(), grid.Items.Count, filter.IsActive);
+        grid.SelectionChanged += (_, _) => Update();
+        filter.FilterChanged += (_, _) => Update();
+        ((INotifyCollectionChanged)grid.Items).CollectionChanged += (_, _) => Update();
+        Update();
+    }
+
+    // The verdict's Show it: past a search that hides it, in view and in the drawer.
+    private void ShowTopMissing(MissingIndex top)
+    {
         if (!MissingGrid.Items.Contains(top))
             MissingFilter.Clear();
         MissingGrid.SelectedItem = top;
@@ -88,352 +83,17 @@ public partial class IndexHealthPage : System.Windows.Controls.Page, ICodeBehind
         ShowMissing(top, open: true);
     }
 
-    public async System.Threading.Tasks.Task RefreshAsync()
+    // A value that can't be used: its box, ready to type over.
+    private void FocusField(string field)
     {
-        // The top bar's Refresh has nowhere to report a validation problem, so it keeps the
-        // old behaviour of falling back to defaults — and writes them back into the boxes
-        // so the criteria on screen always match the rows in the grid.
-        if (!TryReadFragCriteria(out double minFrag, out long minPages, out _, out _))
+        var box = field switch
         {
-            minFrag  = DefaultMinFragPct;
-            minPages = DefaultMinPageCount;
-            TxtMinFragPct.Text   = minFrag.ToString(CultureInfo.CurrentCulture);
-            TxtMinPageCount.Text = minPages.ToString(CultureInfo.CurrentCulture);
-        }
-
-        IEnumerable<MissingIndex> missing;
-        IEnumerable<UnusedIndex> unused;
-        IEnumerable<IndexUsagePattern> usage;
-        try
-        {
-            (missing, unused) = await _repo.GetIndexHealthAsync();
-            usage = await _repo.GetIndexUsagePatternsAsync();
-        }
-        catch (Exception ex)
-        {
-            ViewModel.ShowError("the index statistics", ex);
-            throw;
-        }
-        var missingList = missing.ToList();
-        var unusedList  = unused.ToList();
-        ViewModel.Show(missingList, unusedList);
-        _missing = missingList;
-
-        // A refresh keeps each grid's column sort and filter; the order below is only the default.
-        DataGridRefresh.SetItemsSource(MissingGrid, missingList
-            .OrderBy(m => m.Severity == "CRITICAL" ? 1 : m.Severity == "WARNING" ? 2 : 3)
-            .ThenByDescending(m => m.ImpactScore)
-            .ToList());
-        DataGridRefresh.SetItemsSource(UnusedGrid, unusedList.OrderByDescending(u => u.UserUpdates).ToList());
-        DataGridRefresh.SetItemsSource(UsageGrid,  usage.ToList());
-        UpdateCreateScriptButton();
-        UpdateDropScriptButton();
-
-        await UpdateOnlineRebuildSupportAsync();
-        await LoadFragmentationAsync(minFrag, minPages);
-    }
-
-    /// <summary>
-    /// ONLINE = ON is an edition feature — offering it where the server rejects it would only
-    /// produce a script that fails. Ask once, then enable the box (and default it on, since an
-    /// online rebuild is the one that doesn't take the table away from the application).
-    /// </summary>
-    private async System.Threading.Tasks.Task UpdateOnlineRebuildSupportAsync()
-    {
-        if (_onlineSupportChecked) return;
-        _onlineSupportChecked = true;
-
-        try
-        {
-            if (await _repo.SupportsOnlineIndexRebuildAsync())
-            {
-                ChkOnlineRebuild.IsEnabled = true;
-                ChkOnlineRebuild.IsChecked = true;
-                ChkOnlineRebuild.Foreground = (System.Windows.Media.Brush)FindResource("TextPrimary");
-                ChkOnlineRebuild.ToolTip = "Rebuild rowstore indexes with WITH (ONLINE = ON) so the table stays available. "
-                    + "Slower, and it needs more log and tempdb space.";
-            }
-            else
-            {
-                ChkOnlineRebuild.ToolTip = "This server's edition does not support online index rebuilds — "
-                    + "the script would fail. Enterprise, Developer, Azure SQL Database and Managed Instance do.";
-            }
-        }
-        catch
-        {
-            // The edition check failed (server unreachable, permissions). Leave the box off:
-            // a rebuild without ONLINE runs everywhere, one with it does not.
-            _onlineSupportChecked = false;
-            ChkOnlineRebuild.ToolTip = "Could not read the server edition, so online rebuilds are not offered. "
-                + "Refresh to try again.";
-        }
-    }
-
-    private void MissingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateCreateScriptButton();
-    private void MissingFilter_FilterChanged(object? sender, EventArgs e) => UpdateCreateScriptButton();
-
-    private void UpdateCreateScriptButton()
-    {
-        int selected = MissingGrid.SelectedItems.Count;
-        int total    = MissingGrid.Items.Count;
-
-        BtnCreateScript.IsEnabled = total > 0;
-        BtnCreateScript.Content = $"Generate CREATE Script ({ScopeLabel(selected, total, MissingFilter)})";
-    }
-
-    private void BtnCreateScript_Click(object sender, RoutedEventArgs e)
-    {
-        // Selected rows if the user picked some, otherwise every row the filter shows —
-        // in the grid's current sort order so the script reads like what's on screen.
-        var selected = MissingGrid.SelectedItems.OfType<MissingIndex>().ToHashSet();
-        var suggestions = MissingGrid.Items.OfType<MissingIndex>()
-            .Where(i => selected.Count == 0 || selected.Contains(i))
-            .ToList();
-        if (suggestions.Count == 0) return;
-
-        var notice =
-            $"Review before running. {suggestions.Count:N0} index(es) will be created. " +
-            "SQL Server does not check these suggestions against your existing indexes, and every new index slows writes. SqlVitals does not run this script.";
-
-        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
-            "Create Missing Indexes",
-            notice,
-            MissingIndexCreateScript.Build(suggestions, DateTime.Now),
-            $"CreateMissingIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
-    }
-
-    private void UnusedGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateDropScriptButton();
-    private void UnusedFilter_FilterChanged(object? sender, EventArgs e) => UpdateDropScriptButton();
-
-    private void UpdateDropScriptButton()
-    {
-        int selected = UnusedGrid.SelectedItems.Count;
-        int total    = UnusedGrid.Items.Count;
-
-        BtnDropScript.IsEnabled = total > 0;
-        BtnDropScript.Content = $"Generate DROP Script ({ScopeLabel(selected, total, UnusedFilter)})";
-    }
-
-    private void BtnDropScript_Click(object sender, RoutedEventArgs e)
-    {
-        // Selected rows if the user picked some, otherwise every row the filter shows —
-        // in the grid's current sort order so the script reads like what's on screen.
-        var selected = UnusedGrid.SelectedItems.OfType<UnusedIndex>().ToHashSet();
-        var indexes = UnusedGrid.Items.OfType<UnusedIndex>()
-            .Where(i => selected.Count == 0 || selected.Contains(i))
-            .ToList();
-        if (indexes.Count == 0) return;
-
-        int uniqueCount = indexes.Count(i => i.IsUnique);
-        var notice =
-            $"Review before running. {indexes.Count - uniqueCount:N0} index(es) will be dropped" +
-            (uniqueCount > 0 ? $"; {uniqueCount:N0} unique index(es) are commented out" : "") +
-            ". Usage stats reset on every SQL Server restart — confirm the uptime in the script covers a full business cycle. SqlVitals does not run this script.";
-
-        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
-            "Drop Unused Indexes",
-            notice,
-            UnusedIndexDropScript.Build(indexes, DateTime.Now),
-            $"DropUnusedIndexes_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
-    }
-
-    private void FragGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateMaintenanceScriptButton();
-    private void FragFilter_FilterChanged(object? sender, EventArgs e) => UpdateMaintenanceScriptButton();
-
-    private void UpdateMaintenanceScriptButton()
-    {
-        int selected = FragGrid.SelectedItems.Count;
-        int total    = FragGrid.Items.Count;
-
-        BtnMaintenanceScript.IsEnabled = total > 0;
-        BtnMaintenanceScript.Content = $"Generate Maintenance Script ({ScopeLabel(selected, total, FragFilter)})";
-    }
-
-    // What a script button will cover: the selection, else every row — or, while a filter is
-    // on, only the rows it shows, so the button never claims "all" for a filtered grid.
-    private static string ScopeLabel(int selected, int shown, GridFilterBox filter) =>
-        selected > 0      ? $"{selected} selected" :
-        filter.IsActive   ? $"{shown} shown" :
-                            "all";
-
-    private void BtnMaintenanceScript_Click(object sender, RoutedEventArgs e)
-    {
-        if (!TryReadScriptThresholds(out var options, out string error, out var invalidBox))
-        {
-            SetFragStatus(error, isError: true);
-            invalidBox?.Focus();
-            invalidBox?.SelectAll();
-            return;
-        }
-
-        // Selected rows if the user picked some, otherwise every row the filter shows —
-        // in the grid's current sort order so the script reads like what's on screen.
-        var selected = FragGrid.SelectedItems.OfType<IndexFragmentation>().ToHashSet();
-        var indexes = FragGrid.Items.OfType<IndexFragmentation>()
-            .Where(i => selected.Count == 0 || selected.Contains(i))
-            .ToList();
-        if (indexes.Count == 0) return;
-
-        var summary = IndexMaintenanceScript.Summarize(indexes, options);
-        var notice =
-            $"Review before running. {summary.Rebuild:N0} index(es) will be rebuilt and {summary.Reorganize:N0} reorganized" +
-            (summary.Skipped > 0 ? $"; {summary.Skipped:N0} skipped" : "") +
-            (options.OnlineRebuild ? ", rebuilds using ONLINE = ON" : "") +
-            ". A rebuild without ONLINE = ON locks the table for the whole operation — run this in a maintenance window. SqlVitals does not run this script.";
-
-        CompositionRoot.Get<IDialogService>().ShowSqlScript(new SqlScript(
-            "Index Maintenance",
-            notice,
-            IndexMaintenanceScript.Build(indexes, options, DateTime.Now),
-            $"IndexMaintenance_{DateTime.Now:yyyyMMdd_HHmm}.sql"), modal: true);
-    }
-
-    /// <summary>
-    /// Reads the script thresholds. Min page count is shared with the grid criteria above —
-    /// an index too small to be worth defragmenting is the same index in both places.
-    /// </summary>
-    private bool TryReadScriptThresholds(out IndexMaintenanceOptions options, out string error, out TextBox? invalidBox)
-    {
-        options = new IndexMaintenanceOptions();
-        error = string.Empty;
-        invalidBox = null;
-
-        if (!double.TryParse(TxtReorganizePct.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double reorg)
-            || reorg <= 0 || reorg > 100)
-        {
-            error = "Reorganize from % must be a number greater than 0 and at most 100.";
-            invalidBox = TxtReorganizePct;
-            return false;
-        }
-
-        if (!double.TryParse(TxtRebuildPct.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double rebuild)
-            || rebuild <= 0 || rebuild > 100)
-        {
-            error = "Rebuild from % must be a number greater than 0 and at most 100.";
-            invalidBox = TxtRebuildPct;
-            return false;
-        }
-
-        if (rebuild < reorg)
-        {
-            error = "Rebuild from % must be at least the reorganize threshold — a rebuild is the heavier fix.";
-            invalidBox = TxtRebuildPct;
-            return false;
-        }
-
-        if (!long.TryParse(TxtMinPageCount.Text, NumberStyles.Integer | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture, out long minPages) || minPages <= 0)
-        {
-            error = "Min Page Count must be a whole number greater than 0.";
-            invalidBox = TxtMinPageCount;
-            return false;
-        }
-
-        options = new IndexMaintenanceOptions
-        {
-            ReorganizeThresholdPercent = reorg,
-            RebuildThresholdPercent    = rebuild,
-            MinPageCount               = minPages,
-            OnlineRebuild              = ChkOnlineRebuild.IsEnabled && ChkOnlineRebuild.IsChecked == true,
+            IndexHealthViewModel.MinFragField    => TxtMinFragPct,
+            IndexHealthViewModel.MinPagesField   => TxtMinPageCount,
+            IndexHealthViewModel.ReorganizeField => TxtReorganizePct,
+            _                                    => TxtRebuildPct,
         };
-        return true;
-    }
-
-    private async void BtnRefreshFrag_Click(object sender, RoutedEventArgs e) => await ViewModel.ReportErrorsOf(RefreshFragmentationAsync());
-
-    private async void FragParam_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter) return;
-        e.Handled = true;
-        await ViewModel.ReportErrorsOf(RefreshFragmentationAsync());
-    }
-
-    private async System.Threading.Tasks.Task RefreshFragmentationAsync()
-    {
-        // Enter in a text box bypasses the disabled button — ignore it while a load is running.
-        if (!BtnRefreshFrag.IsEnabled) return;
-
-        if (!TryReadFragCriteria(out double minFrag, out long minPages, out string error, out var invalidBox))
-        {
-            SetFragStatus(error, isError: true);
-            invalidBox?.Focus();
-            invalidBox?.SelectAll();
-            return;
-        }
-
-        try
-        {
-            await LoadFragmentationAsync(minFrag, minPages);
-        }
-        catch
-        {
-            // Already reported inline by LoadFragmentationAsync.
-        }
-    }
-
-    /// <summary>
-    /// Reloads only the fragmentation grid — the other tabs don't depend on these criteria,
-    /// so they keep their rows, sort and scroll position. Reports progress and failure inline;
-    /// rethrows so the top bar's Refresh can report it in the top bar too.
-    /// </summary>
-    private async System.Threading.Tasks.Task LoadFragmentationAsync(double minFrag, long minPages)
-    {
-        var version = ++_fragLoadVersion;
-        BtnRefreshFrag.IsEnabled = false;
-        SetFragStatus("Loading…", isError: false);
-        try
-        {
-            var rows = (await _repo.GetIndexFragmentationAsync(minFrag, minPages)).ToList();
-            if (version != _fragLoadVersion) return;
-
-            DataGridRefresh.SetItemsSource(FragGrid, rows);
-            UpdateMaintenanceScriptButton();
-            SetFragStatus(
-                $"{rows.Count:N0} index{(rows.Count == 1 ? "" : "es")} with ≥ {minFrag:0.##}% fragmentation " +
-                $"and ≥ {minPages:N0} pages · updated {DateTime.Now:HH:mm:ss}",
-                isError: false);
-        }
-        catch (Exception ex)
-        {
-            if (version == _fragLoadVersion)
-                SetFragStatus(ErrorStatus.Format(ex) + " — the grid still shows the previous results.", isError: true);
-            throw;
-        }
-        finally
-        {
-            if (version == _fragLoadVersion)
-                BtnRefreshFrag.IsEnabled = true;
-        }
-    }
-
-    private bool TryReadFragCriteria(out double minFrag, out long minPages, out string error, out TextBox? invalidBox)
-    {
-        error = string.Empty;
-        invalidBox = null;
-        minPages = 0;
-
-        if (!double.TryParse(TxtMinFragPct.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out minFrag)
-            || minFrag <= 0 || minFrag > 100)
-        {
-            error = "Min Frag % must be a number greater than 0 and at most 100.";
-            invalidBox = TxtMinFragPct;
-            return false;
-        }
-
-        if (!long.TryParse(TxtMinPageCount.Text, NumberStyles.Integer | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture, out minPages) || minPages <= 0)
-        {
-            error = "Min Page Count must be a whole number greater than 0.";
-            invalidBox = TxtMinPageCount;
-            return false;
-        }
-
-        return true;
-    }
-
-    private void SetFragStatus(string text, bool isError)
-    {
-        TxtFragStatus.Text = text;
-        TxtFragStatus.Foreground = (System.Windows.Media.Brush)FindResource(isError ? "Danger" : "TextMuted");
+        box.Focus();
+        box.SelectAll();
     }
 }
