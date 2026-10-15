@@ -10,6 +10,9 @@ using System.Windows.Media.Imaging;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Home;
@@ -101,7 +104,11 @@ public sealed class HomePageTests : IDisposable
         store.Write(records);
     }
 
-    private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+    private static void Click(Button button) => TemplateRolloutTests.Click(button);
+
+    // Home on its view model, as the page factory builds it.
+    private static HomePage Home(MonitoringManager monitoring, ConnectionSettingsService settings) =>
+        new(new HomeViewModel(monitoring, settings, new DirectWatchStarter(monitoring), new FakeUiDispatcher()));
 
     private static Button ButtonOn(FrameworkElement page, string content, string tileName) =>
         UiThread.Find<Button>(page).Single(b => Equals(b.Content, content) &&
@@ -138,7 +145,7 @@ public sealed class HomePageTests : IDisposable
     {
         var (monitoring, settings) = Setup();
         QuietWatchedByTheService(monitoring);
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
 
         var quiet = page.TilesShown.Single(t => t.Tile.Name == "Quiet").Tile;
@@ -155,7 +162,7 @@ public sealed class HomePageTests : IDisposable
     public void Home_ListsEverySavedConnection_MostAttentionFirst_WithItsStatusInWords() => UiThread.Run(() =>
     {
         var (monitoring, settings) = Setup();
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
 
         Assert.Equal(["Down", "Hot", "Quiet"], page.TilesShown.Select(t => t.Tile.Name));
@@ -173,14 +180,15 @@ public sealed class HomePageTests : IDisposable
 
         // Three tiles across, then "+ Add a connection".
         Assert.Equal(4, page.Tiles.Items.Count);
-        Assert.Equal("+ Add a connection", ((Button)page.Tiles.Items[3]).Content);
+        Assert.Same(HomePage.AddConnection, page.Tiles.Items[3]);
+        Assert.Single(UiThread.Find<Button>(page), b => Equals(b.Content, "+ Add a connection"));
     });
 
     [Fact]
     public void Open_AsksToOpenThatServersDetails() => UiThread.Run(() =>
     {
         var (monitoring, settings) = Setup();
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
         var opened = new List<Guid>();
         page.OpenRequested += opened.Add;
@@ -195,7 +203,7 @@ public sealed class HomePageTests : IDisposable
     {
         // What the sidebar's connection selector did for each server (#141).
         var (monitoring, settings) = Setup();
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
         var opened = new List<Guid>();
         var edited = new List<Guid>();
@@ -239,7 +247,7 @@ public sealed class HomePageTests : IDisposable
     public void Retry_TriesTheServerAgain_AndOpensItsDetails() => UiThread.Run(() =>
     {
         var (monitoring, settings) = Setup();
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
         var opened = new List<Guid>();
         page.OpenRequested += opened.Add;
@@ -262,7 +270,7 @@ public sealed class HomePageTests : IDisposable
     public void Start_OnATileThatIsntMonitored_StartsMonitoringIt_AndNotAnotherServer() => UiThread.Run(() =>
     {
         var (monitoring, settings) = Setup();
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
 
         Click(ButtonOn(page, "▶ Start monitoring", "Quiet"));
@@ -278,9 +286,9 @@ public sealed class HomePageTests : IDisposable
         var (monitoring, settings) = Setup();
         var before = _calls.Count;
 
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         Assert.Equal(before, _calls.Count);
     });
@@ -291,9 +299,9 @@ public sealed class HomePageTests : IDisposable
         SeedADayWithANightOff(_quiet);
         var (monitoring, settings) = Setup();
 
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
 
         var quiet = page.TilesShown.Single(t => t.Tile.Id == _quiet.Id);
         Assert.Equal("Monitored 14 h of the last 24 h", quiet.CoverageText);
@@ -313,9 +321,9 @@ public sealed class HomePageTests : IDisposable
         var (monitoring, settings) = Setup();
         using var themed = Themed(theme);
 
-        var page = new HomePage(monitoring, settings);
+        var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
-        UiThread.Wait(page.RefreshAsync());
+        UiThread.Wait(page.ViewModel.RefreshAsync());
         UiThread.Layout(page, 1100, 900);
 
         // CPU at 99 % is critical; TempDB isn't reported, so CPU is 18 of the 100 among the eight
@@ -325,7 +333,7 @@ public sealed class HomePageTests : IDisposable
         Assert.Equal("82", hot.Tile.ScoreText);
         Assert.Equal("Lowered by CPU −18. 1 check has no data.", hot.Tile.Reason);
         Assert.Equal(HealthLevel.Unknown, hot.Tile.Bars.Single(b => b.Indicator == HealthIndicator.TempDbSpace).Level);
-        Assert.Equal(((SolidColorBrush)HealthBrushes.Grey).Color, ((SolidColorBrush)hot.Bars.Single(b => b.Label == "Temp").Brush).Color);
+        Assert.Equal(HealthLevel.Unknown, hot.Bars.Single(b => b.Label == "Temp").Level);
 
         // On the tile, the headline comes before the number, in the status's colour.
         var headline = UiThread.Find<TextBlock>(page).Single(t => t.Text == hot.Tile.Headline);

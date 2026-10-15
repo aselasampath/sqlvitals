@@ -22,7 +22,7 @@ public sealed class PageBarToolsTests
 
     private static Page Create(string tag) => tag switch
     {
-        "LiveMetrics" => new LiveMetricsDashboardPage(Repo()),
+        "LiveMetrics" => Wave5Pages.LiveMetrics(Repo()),
         "Waits"       => Wave4Pages.Waits(Repo()),
         "Perfmon"     => Wave4Pages.Perfmon(Repo()),
         _             => throw new ArgumentOutOfRangeException(nameof(tag)),
@@ -51,7 +51,7 @@ public sealed class PageBarToolsTests
     [Fact]
     public void LiveMetrics_HandsTheBarItsSampleInterval_AndReadsAsPausedWhileNotMonitored() => UiThread.Run(() =>
     {
-        var page  = new LiveMetricsDashboardPage(Repo());
+        var page  = Wave5Pages.LiveMetrics(Repo());
         var tools = Laid(page.TakeBarTools()!);
 
         var interval = UiThread.Find<ComboBox>(tools).Single(c => System.Windows.Automation.AutomationProperties.GetName(c) == "Sample every");

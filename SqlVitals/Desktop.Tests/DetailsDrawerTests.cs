@@ -250,7 +250,7 @@ public sealed class DetailsDrawerTests : IDisposable
                                           200, 1482, 1630, 0, DateTime.UtcNow.AddDays(-20), DateTime.Now);
         var row = new QueryStoreQueryRow(4183, 0, null, "SELECT o.OrderId FROM dbo.Orders o", 2, 8_412, 0, 18_120, 18_120, 2_310, 41_000_000,
                                          null, 902, DateTime.UtcNow.AddMinutes(-3));
-        var page = new QueryStorePage(new FakeRepository
+        var page = Wave5Pages.QueryStore(new FakeRepository
         {
             GetQueryStoreStatusAsync          = () => Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)),
             GetQueryStoreTopQueriesAsync      = (_, _, _, _) => Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>([row])),
@@ -259,8 +259,8 @@ public sealed class DetailsDrawerTests : IDisposable
         }, Settings());
         var source = (IDetailsSource)page;
         page.Tabs.SelectedItem = page.TabTop;   // off screen, no tab is selected until it is shown
-        UiThread.Wait(page.RefreshAsync());
-        UiThread.Wait(page.VerdictLoaded);
+        UiThread.Wait(page.ViewModel.RefreshAsync());
+        UiThread.Wait(page.ViewModel.VerdictLoaded);
         Assert.Equal("Select a query in any tab to see its text, its figures and its plans.", source.Details.Hint);
 
         page.TopGrid.SelectedItem = row;

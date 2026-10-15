@@ -8,5 +8,5 @@ namespace SqlVitals.Desktop.ViewModels;
 public sealed record KpiCard(string Label, string Value, KpiCard.Tones Tone, string Tip)
 {
     /// <summary>The theme brush the value is drawn in.</summary>
-    public enum Tones { Accent, Info, Success, Warning, Danger }
+    public enum Tones { Accent, Info, Success, Warning, Danger, Muted }
 }

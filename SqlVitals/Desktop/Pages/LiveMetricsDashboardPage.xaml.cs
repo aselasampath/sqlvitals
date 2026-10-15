@@ -1,91 +1,116 @@
-using System.Collections.ObjectModel;
+using System.Windows.Controls.Primitives;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Shapes;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
-using SqlVitals.Engine.Models;
-using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Engine.Activity;
-using SqlVitals.Engine.History;
-using SqlVitals.Engine.Monitoring;
 using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.History;
+using Chart = SqlVitals.Desktop.ViewModels.Pages.LiveMetricsDashboardViewModel.Chart;
+using Metric = SqlVitals.Desktop.ViewModels.Pages.LiveMetricsDashboardViewModel.Metric;
 
 namespace SqlVitals.Desktop.Pages;
 
-[SuppressMessage("Design", "CA1001", Justification = "A Page isn't IDisposable; Page_Unloaded disposes _adHoc")]
-public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageContext, IFocusPage
+/// <summary>
+/// Live charts, bound to <see cref="LiveMetricsDashboardViewModel"/> (#189): the code-behind hands the
+/// range picker and the sample interval to the top bar, builds a card per chart shown with its
+/// series in the theme's colours, and opens the health score's breakdown.
+/// </summary>
+public partial class LiveMetricsDashboardPage : Page, IPageContext, IFocusPage
 {
-    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
-    internal LiveMetricsDashboardViewModel ViewModel { get; } = new();
+    internal LiveMetricsDashboardViewModel ViewModel { get; }
 
-    // ── An alert's window (#145) ──────────────────────────────────────────
-    // An alert that has ended opens the charts on its window, read from the monitoring history,
-    // until Show all (or another range) goes back to live.
-    private HistoryRange? _focusRange;
+    // Each chart's card and LiveCharts chart, and its series: its own, and last week's beside them.
+    private readonly Dictionary<Chart, Border> _panels = [];
+    private readonly Dictionary<Chart, LiveChartsCore.SkiaSharpView.WPF.CartesianChart> _charts = [];
+    private readonly Dictionary<Chart, (Func<ISeries[]> Current, ISeries[] Baseline)> _chartSeries = [];
+    private ProcessMapControl? _processMap;
+
+    public LiveMetricsDashboardPage(LiveMetricsDashboardViewModel viewModel)
+    {
+        ViewModel   = viewModel;
+        DataContext = viewModel;
+        InitializeComponent();
+        RangePicker.SetHistoryAvailable(viewModel.HistoryAvailable, ConnectionHistory.UnavailableReason);
+        viewModel.CompareToBaseline = RangePicker.CompareToBaseline;
+        // Its own, as it moves to the top bar (TakeBarTools), out of the page's.
+        CmbInterval.DataContext = viewModel;
+
+        foreach (var chart in Enum.GetValues<Chart>())
+            ShowPanel(chart);
+
+        viewModel.Sampled            += ForceChartUpdate;
+        viewModel.WaitsChanged       += () => { ApplySeries(Chart.Waits); ForceChartUpdate(); };
+        viewModel.BreakdownRequested += OpenBreakdown;
+        viewModel.PropertyChanged    += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(LiveMetricsDashboardViewModel.ShowsWaits):      ShowPanel(Chart.Waits); break;
+                case nameof(LiveMetricsDashboardViewModel.ShowsCpu):        ShowPanel(Chart.Cpu); break;
+                case nameof(LiveMetricsDashboardViewModel.ShowsThroughput): ShowPanel(Chart.Throughput); break;
+                case nameof(LiveMetricsDashboardViewModel.ShowsPhysicalIo): ShowPanel(Chart.PhysicalIo); break;
+                case nameof(LiveMetricsDashboardViewModel.ShowsMemory):     ShowPanel(Chart.Memory); break;
+                case nameof(LiveMetricsDashboardViewModel.ShowsProcessMap): ShowPanel(Chart.ProcessMap); break;
+                case nameof(LiveMetricsDashboardViewModel.Axis):            ApplyXAxisLimits(); break;
+                case nameof(LiveMetricsDashboardViewModel.CompareToBaseline):
+                    foreach (var chart in _chartSeries.Keys)
+                        ApplySeries(chart);
+                    break;
+                case nameof(LiveMetricsDashboardViewModel.Processes) when ViewModel.Processes is { } nodes:
+                    _processMap?.UpdateNodes(nodes);
+                    break;
+                case nameof(LiveMetricsDashboardViewModel.Breakdown) when HealthScorePopup.IsOpen:
+                    ShowBreakdown();
+                    break;
+            }
+        };
+    }
+
+    // ── An alert's window (#145) ──────────────────────────────────────────────
 
     public void ShowFocus(PageFocus focus)
     {
-        if (focus.FromUtc is not { } from || _history is null)
-            return;
-        var to = focus.ToUtc ?? DateTime.UtcNow;
-        if (to <= from)
-            return;
         // Before the page loads: its first load reads the window instead of plotting live samples.
-        var range = HistoryRange.Custom(from, to);
+        if (ViewModel.FocusRange(focus) is not { } range)
+            return;
         RangePicker.Pick(range, notify: false);
         if (RangePicker.Range == range)
-            _range = _focusRange = range;
+            ViewModel.ShowFocus(range);
     }
 
     public void ClearFocus()
     {
-        if (_focusRange is null)
-            return;
-        _focusRange = null;
-        RangePicker.Pick(HistoryRange.Live);
+        if (ViewModel.ClearFocus())
+            RangePicker.Pick(HistoryRange.Live);
     }
 
-    public bool ShowsWindow => _focusRange is not null;
+    public bool ShowsWindow => ViewModel.ShowsWindow;
+    public string? FocusNote => ViewModel.FocusNote;
+    public string? ShowAllText => ViewModel.ShowAllText;
 
-    public string? FocusNote => _focusRange is { } range && _range == range
-        ? $"showing {range.Label} from the monitoring history"
-        : null;
-
-    public string? ShowAllText => _focusRange is { } range && _range == range ? "Show live" : null;
-
-    // ── Top bar (#140) ───────────────────────────────────────────────────
-    // Live, or History while a past range is picked. The range picker and the sample interval
-    // are in the top bar; the interval box says how often, so the badge doesn't repeat it. Not
+    // ── Top bar (#140) ───────────────────────────────────────────────────────
+    // Live, or History while a past range is picked. The range picker and the sample interval are
+    // in the top bar; the interval box says how often, so the badge doesn't repeat it. Not
     // monitored, nothing moves: it reads as paused, and Start monitoring is what resumes it.
-    public PageKind Kind => _range.IsLive ? PageKind.Live : PageKind.History;
-    public bool CanPause => _range.IsLive && IsMonitoring;
-    public bool IsPaused => _paused || !IsMonitoring;
-    public DateTime? DataTo => _range.IsLive ? null : PageBar.DataTo(_historyLoad, p => p.TimeUtc);
+
+    public PageKind Kind => ViewModel.IsLive ? PageKind.Live : PageKind.History;
+    public bool CanPause => ViewModel.CanPause;
+    public bool IsPaused => ViewModel.IsPaused || !ViewModel.IsMonitoring;
+    public DateTime? DataTo => ViewModel.DataTo;
 
     // Paused, the charts stop moving so they can be read; the session keeps collecting and
     // recording, and Resume plots what arrived meanwhile.
-    private bool _paused;
-
-    public void SetPaused(bool paused)
-    {
-        _paused = paused;
-        if (!paused && _range.IsLive)
-            ShowNewSamples();
-        _shell.ReportContextChanged(this);
-    }
+    public void SetPaused(bool paused) => ViewModel.SetPaused(paused);
 
     public FrameworkElement? TakeBarTools()
     {
@@ -96,91 +121,33 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         return tools;
     }
 
-    // ?? Constants ??????????????????????????????????????????????????????
-    private const int MaxPoints = MonitoringSession.MaxPoints;   // rolling window length
+    // Connected from XAML by name: a generic event handler is attached through reflection.
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
+    private async void RangePicker_RangeChanged(object? sender, HistoryRange range) =>
+        await ViewModel.ReportErrorsOf(ViewModel.PickRangeAsync(range));
 
-    // ?? Repo & timer ??????????????????????????????????????????????????
-    // Collection lives in the connection's MonitoringSession, which keeps running (and keeps
-    // its history) while the user is on another page or another connection. The page only
-    // plots it; the view model's clock just drives the countdown (#169). While the connection isn't monitored
-    // there is no session and nothing is sent to the server (#115).
-    private readonly IWaitStatsRepository _repo;
-    private readonly MonitoringManager?   _monitoring;
-    private readonly Guid?                _connectionId;
-    private readonly MonitoringSession?   _adHoc;          // when there is no saved connection
-    private MonitoringSession?            _session;        // null while not monitored
-    private readonly bool                 _itemsReady;
-    private DateTime?                     _lastPlotted;
-    private bool                          _refreshingMap;
+    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
+    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
+    private void RangePicker_BaselineChanged(object? sender, bool on) => ViewModel.CompareToBaseline = on;
 
-    // A past range from the monitoring history replaces the live samples on the charts while
-    // it is picked; the session keeps collecting (and recording) meanwhile.
-    private readonly ConnectionHistory?   _history;
-    private HistoryRange                  _range = HistoryRange.Live;
-    private int                           _historyVersion;   // bumped per load; a stale load is dropped
-    private string                        _axisFormat = "HH:mm:ss";
-    private double?                       _xMin, _xMax;      // the picked range; null while live
-    private HistoryLoad<MetricHistoryPoint>? _historyLoad;   // the picked range's read; null while live
-    private string                        _historyNote = "";
-    private readonly (ObservableCollection<DateTimePoint> Series, Func<LiveMetricSample, double> Value)[] _plotted;
+    // ── The health score's breakdown (#36) ────────────────────────────────────
 
-    // "Compare to baseline" draws the same time last week on every chart, dashed: a line per
-    // metric, and on the stacked waits chart one line for the total of the categories shown.
-    // It is re-clipped to the charts as the live window moves.
-    private const int WaitCategories = 6;   // the first entries of _plotted, stacked on the waits chart
-    private readonly BaselineTracker<MetricHistoryPoint>? _baseline;
-    private readonly ObservableCollection<DateTimePoint>[] _baselineValues;   // parallel to _plotted
-    private readonly ObservableCollection<DateTimePoint>   _baselineWaits = [];
-    // Other starts unticked: the catch-all band would dwarf the categories that point at a cause.
-    private static readonly bool[]        WaitsShownByDefault = [true, true, true, true, true, false];
-    private readonly bool[]               _waitsShown = [.. WaitsShownByDefault];
-    private string                        _baselineNote = "";
+    // Clicking anywhere else closes it (StaysOpen is false).
+    private void OpenBreakdown()
+    {
+        ShowBreakdown();
+        HealthScorePopup.IsOpen = true;
+    }
 
-    // Each chart's own series, and its baseline series shown beside them while the baseline is on.
-    private readonly Dictionary<string, (Func<ISeries[]> Current, ISeries[] Baseline)> _chartSeries = [];
+    private void ShowBreakdown()
+    {
+        var breakdown = ViewModel.Breakdown;
+        HealthScoreDetails.Show(breakdown.Name, breakdown.Score, breakdown.Text, breakdown.Paused);
+    }
 
-    private static readonly int[] Intervals =
-        Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
-    // "every 10s", in the top bar beside the Live badge (#140).
-    private static string IntervalLabel(int s) =>
-        s < 60 ? $"every {s}s" : $"every {s / 60}m {s % 60:00}s";
+    // ── The cards, in the theme's colours ─────────────────────────────────────
 
-    // ?? Previous snapshot for delta-wait calculation ???????????????????
-
-    // ?? Time-series ring buffers ??????????????????????????????????????
-    // Waits
-    private readonly ObservableCollection<DateTimePoint> _waitCpu     = [];
-    private readonly ObservableCollection<DateTimePoint> _waitIo      = [];
-    private readonly ObservableCollection<DateTimePoint> _waitLock    = [];
-    private readonly ObservableCollection<DateTimePoint> _waitMem     = [];
-    private readonly ObservableCollection<DateTimePoint> _waitNet     = [];
-    private readonly ObservableCollection<DateTimePoint> _waitOther   = [];
-    // CPU
-    private readonly ObservableCollection<DateTimePoint> _cpuPct      = [];
-    // Throughput
-    private readonly ObservableCollection<DateTimePoint> _batches     = [];
-    private readonly ObservableCollection<DateTimePoint> _compiles    = [];
-    private readonly ObservableCollection<DateTimePoint> _recompiles  = [];
-    private readonly ObservableCollection<DateTimePoint> _txns        = [];
-    // Physical I/O
-    private readonly ObservableCollection<DateTimePoint> _physReads   = [];
-    private readonly ObservableCollection<DateTimePoint> _physWrites  = [];
-    // Memory
-    private readonly ObservableCollection<DateTimePoint> _ple         = [];
-    private readonly ObservableCollection<DateTimePoint> _mgPending   = [];
-    private readonly ObservableCollection<DateTimePoint> _bufCache    = [];
-
-    // ?? Panel registry: tag ? Border card ????????????????????????????
-    private readonly Dictionary<string, Border> _panels = [];
-    private readonly Dictionary<string, LiveChartsCore.SkiaSharpView.WPF.CartesianChart> _charts = [];
-
-    // ?? Chip registry: tag ? ToggleButton ????????????????????????????
-    private readonly Dictionary<string, ToggleButton> _chips = [];
-
-    // ?? Process Map fields ???????????????????????????????????????????
-    private ProcessMapControl? _activeProcessMap;
-
-    // ?? SkiaSharp colours ?????????????????????????????????????????????
     private static SKColor ColCpu   => ChartTheme.Of("WaitCpuColor");
     private static SKColor ColIo    => ChartTheme.Of("WaitIoColor");
     private static SKColor ColLock  => ChartTheme.Of("WaitLockColor");
@@ -197,408 +164,183 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
     private static SKColor ColMgP   => ChartTheme.Of("DangerColor");
     private static SKColor ColBuf   => ChartTheme.Of("SuccessColor");
 
-    // Named in the health score's breakdown.
-    private readonly string               _connectionName;
-
-    // The top bar: what this page read, what went wrong, and its kind or window (#166).
-    private readonly IShellStatus _shell;
-
-    // What Start does for a saved connection (#172); null for an ad-hoc one.
-    private readonly IWatchStarter? _starter;
-
-    // The link to Settings, where monitoring is turned on.
-    private readonly INavigator _navigator;
-
-    /// <param name="monitoring">Owns the saved connections' sessions, and starts and stops them.</param>
-    /// <param name="connectionId">The active saved connection; null for one from appsettings.json only.</param>
-    public LiveMetricsDashboardPage(IWaitStatsRepository repo, MonitoringManager? monitoring = null, Guid? connectionId = null,
-                                    ConnectionHistory? history = null, string? connectionName = null,
-                                    INavigator? navigator = null, IShellStatus? shell = null, IWatchStarter? starter = null)
+    // A chart's card, added in its place while its chip is on, removed when it is off.
+    private void ShowPanel(Chart chart)
     {
-        _shell       = shell ?? CompositionRoot.Get<IShellStatus>();
-        _starter     = starter ?? (monitoring is null ? null : new DirectWatchStarter(monitoring));
-        _navigator   = navigator ?? CompositionRoot.Get<INavigator>();
-        _repo        = repo;
-        _connectionName = connectionName ?? "This connection";
-        _monitoring  = monitoring;
-        _connectionId = connectionId;
-        if (connectionId is null)
-            _adHoc = new MonitoringSession(null, repo, string.Empty);
-        _session     = _adHoc ?? monitoring?.Get(connectionId);
-        _history     = history;
-        _plotted =
+        if (_panels.Remove(chart, out var existing))
+        {
+            ChartGrid.Children.Remove(existing);
+            _charts.Remove(chart);
+            _chartSeries.Remove(chart);
+            if (chart == Chart.ProcessMap)
+                _processMap = null;
+        }
+
+        if (ViewModel.Shows(chart))
+        {
+            var panel = chart switch
+            {
+                Chart.Waits      => BuildWaitsPanel(),
+                Chart.Cpu        => BuildCpuPanel(),
+                Chart.Throughput => BuildThroughputPanel(),
+                Chart.PhysicalIo => BuildPhysicalIoPanel(),
+                Chart.Memory     => BuildMemoryPanel(),
+                _                => BuildProcessMapPanel(),
+            };
+            _panels[chart] = panel;
+            ChartGrid.Children.Insert(Math.Min(InsertIndex(chart), ChartGrid.Children.Count), panel);
+        }
+        ChartGrid.Columns = ChartGrid.Children.Count <= 1 ? 1 : 2;
+    }
+
+    // Where a card goes so the cards keep their order.
+    private int InsertIndex(Chart chart) =>
+        Enum.GetValues<Chart>().TakeWhile(c => c != chart).Count(c => _panels.TryGetValue(c, out var panel) && ChartGrid.Children.Contains(panel));
+
+    private Border BuildCpuPanel()
+    {
+        var chart  = MakeCartesian(Chart.Cpu);
+        var series = new ISeries[] { Line(Metric.Cpu, "SQL Server CPU", ColCpu) };
+        SetSeries(Chart.Cpu, () => series, BaselineLine(Metric.Cpu, "SQL Server CPU", ColCpu));
+        SetDateTimeAxes(chart, "% CPU", 0, 100);
+        return WrapPanel("CPU Usage", chart, Chart.Cpu);
+    }
+
+    private Border BuildThroughputPanel()
+    {
+        var chart  = MakeCartesian(Chart.Throughput);
+        var series = new ISeries[]
+        {
+            Line(Metric.Batches,        "Batch Requests", ColBatch),
+            Line(Metric.Compilations,   "Compilations",   ColComp),
+            Line(Metric.Recompilations, "Recompilations", ColRec),
+            Line(Metric.Transactions,   "Transactions",   ColTxn),
+        };
+        SetSeries(Chart.Throughput, () => series,
+            BaselineLine(Metric.Batches,        "Batch Requests", ColBatch),
+            BaselineLine(Metric.Compilations,   "Compilations",   ColComp),
+            BaselineLine(Metric.Recompilations, "Recompilations", ColRec),
+            BaselineLine(Metric.Transactions,   "Transactions",   ColTxn));
+        SetDateTimeAxes(chart, "# per sec.");
+        return WrapPanel("SQL Throughput", chart, Chart.Throughput);
+    }
+
+    private Border BuildPhysicalIoPanel()
+    {
+        var chart  = MakeCartesian(Chart.PhysicalIo);
+        var series = new ISeries[]
+        {
+            Line(Metric.PhysicalReads,  "Physical Reads",  ColPhysR),
+            Line(Metric.PhysicalWrites, "Physical Writes", ColPhysW),
+        };
+        SetSeries(Chart.PhysicalIo, () => series,
+            BaselineLine(Metric.PhysicalReads,  "Physical Reads",  ColPhysR),
+            BaselineLine(Metric.PhysicalWrites, "Physical Writes", ColPhysW));
+        SetDateTimeAxes(chart, "R/W per sec.");
+        return WrapPanel("Physical R/W", chart, Chart.PhysicalIo);
+    }
+
+    private Border BuildMemoryPanel()
+    {
+        var chart = MakeCartesian(Chart.Memory);
+
+        // Grants pending and the cache hit ratio on the first axis; page life expectancy on the second.
+        var series = new ISeries[]
+        {
+            Line(Metric.GrantsPending,       "Mem Grants Pending",     ColMgP, 0),
+            Line(Metric.BufferCacheHitRatio, "Buffer Cache Hit Ratio", ColBuf, 0),
+            Line(Metric.PageLifeExpectancy,  "Page Life Expectancy",   ColPle, 1),
+        };
+        SetSeries(Chart.Memory, () => series,
+            BaselineLine(Metric.GrantsPending,       "Mem Grants Pending",     ColMgP, 0),
+            BaselineLine(Metric.BufferCacheHitRatio, "Buffer Cache Hit Ratio", ColBuf, 0),
+            BaselineLine(Metric.PageLifeExpectancy,  "Page Life Expectancy",   ColPle, 1));
+
+        chart.XAxes = [TimeAxis()];
+        chart.YAxes =
         [
-            (_waitCpu,    s => s.WaitCpuMsPerSec),
-            (_waitIo,     s => s.WaitIoMsPerSec),
-            (_waitLock,   s => s.WaitLockMsPerSec),
-            (_waitMem,    s => s.WaitMemoryMsPerSec),
-            (_waitNet,    s => s.WaitNetworkMsPerSec),
-            (_waitOther,  s => s.WaitOtherMsPerSec),
-            (_cpuPct,     s => s.SqlCpuPct),
-            (_batches,    s => s.BatchRequestsPerSec),
-            (_compiles,   s => s.CompilationsPerSec),
-            (_recompiles, s => s.RecompilationsPerSec),
-            (_txns,       s => s.TransactionsPerSec),
-            (_physReads,  s => s.PhysicalReadsPerSec),
-            (_physWrites, s => s.PhysicalWritesPerSec),
-            (_ple,        s => s.PageLifeExpectancySec),
-            (_mgPending,  s => s.MemoryGrantsPending),
-            (_bufCache,   s => s.BufferCacheHitRatio),
+            new Axis
+            {
+                Name            = "Count / %",
+                NamePaint       = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
+                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
+                TextSize        = 14,
+                Position        = LiveChartsCore.Measure.AxisPosition.Start,
+            },
+            // PLE as seconds, hours or days, by its size.
+            new Axis
+            {
+                Name            = "PLE (sec)",
+                NamePaint       = new SolidColorPaint(ColPle) { IsAntialias = true },
+                LabelsPaint     = new SolidColorPaint(ColPle) { IsAntialias = true },
+                SeparatorsPaint = null,   // no grid lines of its own, to avoid clutter
+                TextSize        = 14,
+                Position        = LiveChartsCore.Measure.AxisPosition.End,
+                Labeler         = v => v < 0 ? "0s" : v < 3600 ? $"{v:N0}s" : v < 86400 ? $"{v / 3600:N1}h" : $"{v / 86400:N1}d",
+            },
         ];
-        _baselineValues = _plotted.Select(_ => new ObservableCollection<DateTimePoint>()).ToArray();
-        if (history is not null)
-            _baseline = new BaselineTracker<MetricHistoryPoint>(history, (reader, id, from, to, bucket) => reader.ReadMetrics(id, from, to, bucket));
-        InitializeComponent();
-        RangePicker.SetHistoryAvailable(history is not null, ConnectionHistory.UnavailableReason);
-
-        // Populate interval ComboBox with the connection's interval (default 10 s), kept while
-        // it isn't monitored too.
-        CmbInterval.ItemsSource   = Intervals.Select(IntervalLabel).ToList();
-        var index = Array.IndexOf(Intervals, _adHoc?.IntervalSeconds ?? _monitoring?.IntervalFor(connectionId) ?? MonitoringSession.DefaultIntervalSeconds);
-        CmbInterval.SelectedIndex = index >= 0 ? index : 1;
-        _itemsReady = true;
-
-        // Build chip registry from XAML-named buttons
-        // (populated in Loaded after InitializeComponent)
-
-        ViewModel.TickWhileShown(TimeSpan.FromSeconds(1), UpdateCountdown);
-
-        // Subscribed here rather than in Loaded: MainWindow calls RefreshAsync straight after
-        // navigating, and that sample can arrive before the page has loaded. The manager's own
-        // event is subscribed in Loaded, since the manager outlives the page.
-        Subscribe(_session);
+        return WrapPanel("Memory", chart, Chart.Memory);
     }
 
-    private void Subscribe(MonitoringSession? session)
+    private Border BuildProcessMapPanel()
     {
-        if (session is null) return;
-        session.SampleAdded  += Session_SampleAdded;
-        session.StateChanged += Session_StateChanged;
+        _processMap = new ProcessMapControl();
+        if (ViewModel.Processes is { } nodes)
+            _processMap.UpdateNodes(nodes);
+        return WrapPanel("Process Map", _processMap, Chart.ProcessMap);
     }
 
-    private void Unsubscribe(MonitoringSession? session)
+    // The waits stacked, the categories ticked on its card; the baseline is one line against the
+    // top of the stack: last week's total of the categories shown.
+    private Border BuildWaitsPanel()
     {
-        if (session is null) return;
-        session.SampleAdded  -= Session_SampleAdded;
-        session.StateChanged -= Session_StateChanged;
-    }
-
-    // Start or Stop here, in the selector or in the tray: the manager made or ended the session.
-    private void Monitoring_SessionStateChanged(Guid connectionId)
-    {
-        if (connectionId != _connectionId || _monitoring is null)
-            return;
-
-        var session = _monitoring.Get(connectionId);
-        if (!ReferenceEquals(session, _session))
+        var chart = MakeCartesian(Chart.Waits);
+        var stacked = new[]
         {
-            Unsubscribe(_session);
-            _session = session;
-            Subscribe(_session);
-            _lastPlotted = null;
-            if (_range.IsLive && _session is not null)
-                ShowLive();
-        }
-        Session_StateChanged(_session);
-    }
+            StackedArea(Metric.WaitCpu,     "CPU",     ColCpu),
+            StackedArea(Metric.WaitIo,      "I/O",     ColIo),
+            StackedArea(Metric.WaitLock,    "Locks",   ColLock),
+            StackedArea(Metric.WaitMemory,  "Memory",  ColMem),
+            StackedArea(Metric.WaitNetwork, "Network", ColNet),
+            StackedArea(Metric.WaitOther,   "Other",   ColOther),
+        };
+        SetSeries(Chart.Waits,
+            () => stacked.Where((_, i) => ViewModel.WaitsShown[i].IsShown).Cast<ISeries>().ToArray(),
+            BaselineSeries.Line(ViewModel.BaselineWaits, "Total waits", ChartTheme.AxisColor));
+        SetDateTimeAxes(chart, "Wait (ms/s)");
 
-    private bool IsMonitoring => _session is { IsRunning: true };
-
-    // ?? Page lifetime ?????????????????????????????????????????????????
-    private void Page_Loaded(object sender, RoutedEventArgs e)
-    {
-        // Register chips
-        _chips["Waits"]      = ChipWaits;
-        _chips["Cpu"]        = ChipCpu;
-        _chips["Throughput"] = ChipThroughput;
-        _chips["PhysicalIO"] = ChipPhysicalIO;
-        _chips["Memory"]     = ChipMemory;
-        _chips["ProcessMap"] = ChipProcessMap;
-
-        // Build all panels (hidden panels are simply removed from the grid)
-        BuildAllPanels();
-
-        // Plot the history collected while this page wasn't open. The new charts draw it when
-        // they load, so no forced update here. Not over a past range picked before it loaded (#145).
-        if (_range.IsLive)
-            PlotNewSamples();
-
-        // Shared sessions are started by MonitoringManager. The ad-hoc one follows Start
-        // monitoring automatically like them, and otherwise waits for Start.
-        if (_adHoc is not null && (_monitoring?.StartsAutomatically ?? true))
-            _adHoc.Start();
-
-        // Started or stopped elsewhere (selector, tray) from now on, or since the page was made.
-        if (_monitoring is not null && _connectionId is { } id)
+        var filters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        foreach (var category in ViewModel.WaitsShown)
         {
-            _monitoring.SessionStateChanged += Monitoring_SessionStateChanged;
-            Monitoring_SessionStateChanged(id);
-        }
-
-        SyncRunButton();
-        UpdateCountdown();
-        UpdateHealthScore();
-    }
-
-    private void Page_Unloaded(object sender, RoutedEventArgs e)
-    {
-        // The session outlives the page; don't let it keep this page alive.
-        Unsubscribe(_session);
-        _monitoring?.SessionStateChanged -= Monitoring_SessionStateChanged;
-
-        _adHoc?.Dispose();
-    }
-
-    // ?? IRefreshable ??????????????????????????????????????????????????
-    // Live: takes a sample now (joining one already in flight), which Session_SampleAdded plots;
-    // nothing while monitoring is off, so Refresh sends nothing to the server. A past range:
-    // reads it again, so "last hour" moves up to now. A failure propagates so MainWindow can
-    // report it.
-    // Paused, Refresh still shows the sample it took, once.
-    public async System.Threading.Tasks.Task RefreshAsync()
-    {
-        if (!_range.IsLive)
-            await LoadHistoryAsync();
-        else if (IsMonitoring)
-        {
-            await _session!.CollectNowAsync();
-            if (_paused)
-                ShowNewSamples();
-        }
-    }
-
-    private void Session_SampleAdded(MonitoringSession session, LiveMetricSample sample)
-    {
-        if (_paused)
-            return;
-
-        if (_range.IsLive)
-        {
-            ShowNewSamples();
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        _ = RefreshProcessMapAsync();
-    }
-
-    private void ShowNewSamples()
-    {
-        PlotNewSamples();
-        PlotBaseline();
-        ForceChartUpdate();
-        _ = LoadBaselineAsync();
-    }
-
-    // Time range
-    // Connected from XAML by name: a generic event handler is attached through reflection.
-    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
-    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
-    private async void RangePicker_RangeChanged(object? sender, HistoryRange range)
-    {
-        _range = range;
-        _shell.ReportContextChanged(this);
-
-        // A baseline belongs to the range it was read for.
-        _baseline?.Clear();
-        _baselineNote = "";
-        PlotBaseline();
-
-        if (range.IsLive)
-        {
-            ShowLive();
-            await LoadBaselineAsync();
-            return;
-        }
-
-        try
-        {
-            await LoadHistoryAsync();
-        }
-        catch (Exception ex)
-        {
-            // Only the latest pick owns the status line.
-            if (_range == range)
+            var box = new CheckBox
             {
-                ShowStatus($"Could not read the history: {ex.Message}");
-                _shell.ReportError(this, "Live Metrics history", ex, PageRead.Timed);
-            }
+                Content    = category.Name,
+                Margin     = new Thickness(6, 0, 0, 0),
+                FontSize   = 11,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Cursor     = Cursors.Hand,
+            };
+            box.SetBinding(ToggleButton.IsCheckedProperty, new Binding(nameof(LiveMetricsDashboardViewModel.WaitCategory.IsShown)) { Source = category });
+            box.SetResourceReference(ForegroundProperty, "TextMuted");
+            filters.Children.Add(box);
         }
+        return WrapPanel("Waits - Stack Area", chart, Chart.Waits, filters);
     }
-
-    private void ShowLive()
-    {
-        _historyVersion++;
-        _axisFormat  = "HH:mm:ss";
-        _xMin = _xMax = null;
-        _historyLoad = null;
-        ShowStatus("");
-
-        foreach (var (series, _) in _plotted)
-            series.Clear();
-        _lastPlotted = null;
-        PlotNewSamples();
-        PlotBaseline();
-        ApplyXAxisLimits();
-        ForceChartUpdate();
-    }
-
-    private async System.Threading.Tasks.Task LoadHistoryAsync()
-    {
-        if (_history is null || _range.IsLive)
-            return;
-
-        var version = ++_historyVersion;
-        ShowStatus($"Reading {_range.Label.ToLowerInvariant()} from history…");
-
-        var load = await _history.LoadAsync(_range, (reader, id, from, to, bucket) => reader.ReadMetrics(id, from, to, bucket));
-        if (version != _historyVersion)
-            return;   // the user picked something else meanwhile
-
-        // On the server's clock, like the live samples, so switching to a past range doesn't
-        // shift the axis by the server's time zone. The range's ends use the latest offset.
-        var offset = load.Items.Count > 0 ? load.Items[^1].ServerClockOffset : TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
-        _historyLoad = load;
-        _axisFormat  = ConnectionHistory.AxisFormat(load.Span);
-        _xMin = (load.FromUtc + offset).Ticks;
-        _xMax = (load.ToUtc + offset).Ticks;
-
-        foreach (var (series, _) in _plotted)
-            series.Clear();
-        foreach (var (time, point) in OnServerClock(load.Items, load.Bucket, offset))
-            foreach (var (series, value) in _plotted)
-                series.Add(new DateTimePoint(time, point is null ? null : value(point.Averages)));
-
-        ShowStatus(load.Items.Count == 0
-            ? load.NoData("Live Metrics samples are recorded while SqlVitals monitors this connection.")
-            : load.Describe(load.Items.Select(p => p.TimeUtc).ToList(), "the server's clock"));
-        _shell.ReportContextChanged(this);
-
-        PlotBaseline();
-        ApplyXAxisLimits();
-        ForceChartUpdate();
-
-        await LoadBaselineAsync();
-    }
-
-    // History points on the server's clock, as the live samples are plotted, with a null where
-    // the line breaks. Each point uses the server's offset recorded with it, so a daylight-saving
-    // change on the server lands where the server saw it.
-    private static IEnumerable<(DateTime Time, MetricHistoryPoint? Point)> OnServerClock(
-        IReadOnlyList<MetricHistoryPoint> items, TimeSpan bucket, TimeSpan offset)
-    {
-        foreach (var (time, point) in HistoryGaps.WithGaps(items, p => p.TimeUtc, bucket))
-        {
-            if (point is not null)
-                offset = point.ServerClockOffset;
-            yield return (time + offset, point);
-        }
-    }
-
-    // ── Baseline ────────────────────────────────────────────────────────────
-    // Connected from XAML by name: a generic event handler is attached through reflection.
-    [SuppressMessage("Style", "IDE0051", Justification = "Connected from XAML")]
-    [SuppressMessage("Style", "IDE0060", Justification = "Event handler signature")]
-    private async void RangePicker_BaselineChanged(object? sender, bool on)
-    {
-        _baseline?.Clear();
-        _baselineNote = "";
-        PlotBaseline();
-        foreach (var tag in _chartSeries.Keys)
-            ApplySeries(tag);
-        ShowStatus(_historyNote);
-        ForceChartUpdate();
-        await LoadBaselineAsync();
-    }
-
-    // Reads the baseline for what the charts show, when they don't have one yet: the past range
-    // on screen, or the live window. Live, that is a new read only every half hour or so.
-    [ReportsItsErrors]
-    private async System.Threading.Tasks.Task LoadBaselineAsync()
-    {
-        if (_baseline is null || !RangePicker.CompareToBaseline)
-            return;
-
-        try
-        {
-            var read = _range.IsLive
-                ? await _baseline.EnsureLiveAsync(_cpuPct.Count > 1 ? _cpuPct[^1].DateTime - _cpuPct[0].DateTime : TimeSpan.Zero)
-                : _historyLoad is { } load && await _baseline.LoadAsync(load.FromUtc, load.ToUtc, load.Bucket);
-            if (!read || _baseline.Current is not { } baseline)
-                return;
-
-            _baselineNote = baseline.Describe();
-            ShowStatus(_historyNote);
-            PlotBaseline();
-            ForceChartUpdate();
-        }
-        catch (Exception ex)
-        {
-            _baselineNote = $"Could not read the baseline: {ex.Message}";
-            ShowStatus(_historyNote);
-            _shell.ReportError(this, "Live Metrics baseline", ex, PageRead.Timed);
-        }
-    }
-
-    // Fills the baseline series from the baseline read last, over the times the charts show: the
-    // range picked, or the live samples so far (so the baseline never stretches the live axis).
-    // Empty while the baseline is off.
-    private void PlotBaseline()
-    {
-        foreach (var series in _baselineValues)
-            series.Clear();
-        _baselineWaits.Clear();
-
-        if (!RangePicker.CompareToBaseline || _baseline?.Current is not { } baseline)
-            return;
-
-        DateTime from, to;
-        if (_xMin is { } min && _xMax is { } max)
-            (from, to) = (new DateTime((long)min), new DateTime((long)max));
-        else if (_cpuPct.Count > 0)
-            (from, to) = (_cpuPct[0].DateTime, _cpuPct[^1].DateTime);
-        else
-            return;
-
-        var offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
-        foreach (var (time, point) in HistoryBaseline.Shift(OnServerClock(baseline.Items, baseline.Bucket, offset), from, to))
-        {
-            for (var i = 0; i < _plotted.Length; i++)
-                _baselineValues[i].Add(new DateTimePoint(time, point is null ? null : _plotted[i].Value(point.Averages)));
-
-            double? waits = null;
-            if (point is not null)
-            {
-                waits = 0;
-                for (var i = 0; i < WaitCategories; i++)
-                    if (_waitsShown[i])
-                        waits += _plotted[i].Value(point.Averages);
-            }
-            _baselineWaits.Add(new DateTimePoint(time, waits));
-        }
-    }
-
-    private ObservableCollection<DateTimePoint> BaselineOf(ObservableCollection<DateTimePoint> series) =>
-        _baselineValues[Array.FindIndex(_plotted, p => p.Series == series)];
 
     // Registers a chart's series and shows them, with its baseline while that is on.
-    private void SetSeries(string tag, Func<ISeries[]> current, params ISeries[] baseline)
+    private void SetSeries(Chart chart, Func<ISeries[]> current, params ISeries[] baseline)
     {
-        _chartSeries[tag] = (current, baseline);
-        ApplySeries(tag);
+        _chartSeries[chart] = (current, baseline);
+        ApplySeries(chart);
     }
 
-    private void ApplySeries(string tag)
+    private void ApplySeries(Chart chart)
     {
-        if (!_charts.TryGetValue(tag, out var chart) || !_chartSeries.TryGetValue(tag, out var series))
+        if (!_charts.TryGetValue(chart, out var view) || !_chartSeries.TryGetValue(chart, out var series))
             return;
-        chart.Series = RangePicker.CompareToBaseline ? [.. series.Current(), .. series.Baseline] : series.Current();
-    }
-
-    // The history status line, with what the baseline shows while it is on.
-    private void ShowStatus(string historyNote)
-    {
-        _historyNote = historyNote;
-        var baselineNote = RangePicker.CompareToBaseline ? _baselineNote : "";
-        TxtHistoryStatus.Text = string.Join(" · ", new[] { historyNote, baselineNote }.Where(s => s.Length > 0));
+        view.Series = ViewModel.CompareToBaseline ? [.. series.Current(), .. series.Baseline] : series.Current();
     }
 
     // Shows the whole picked range, so missing history reads as missing rather than being cropped.
@@ -607,463 +349,28 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         foreach (var chart in _charts.Values)
             foreach (var axis in chart.XAxes)
             {
-                axis.MinLimit = _xMin;
-                axis.MaxLimit = _xMax;
+                axis.MinLimit = ViewModel.Axis.MinTicks;
+                axis.MaxLimit = ViewModel.Axis.MaxTicks;
             }
     }
 
-    private void Session_StateChanged(MonitoringSession? session)
-    {
-        SyncRunButton();
-        UpdateCountdown();
-        UpdateHealthScore();
-        _shell.ReportContextChanged(this);
-    }
-
-    // Why nothing is collected, for the banner and the health score while not monitored.
-    private string NotMonitoredText =>
-        _connectionId is { } id && _monitoring is not null ? _monitoring.NotMonitoredReason(id) : MonitoringPlan.AutomaticOffText;
-
-    // ── Health score (#36) ──────────────────────────────────────────────────
-    // Always the latest sample's, also while a past range is on the charts. None while not
-    // monitored: an old score would read as the server's health now.
-    private void UpdateHealthScore()
-    {
-        var score = IsMonitoring ? _session!.Score : null;
-        var brush = score is null ? HealthBrushes.Grey : HealthBrushes.For(score.Level);
-        RunHealthScore.Text        = score?.Value.ToString(CultureInfo.CurrentCulture) ?? "—";
-        RunHealthScore.Foreground  = brush;
-        BtnHealthScore.BorderBrush = brush;
-        BtnHealthScore.Opacity     = IsMonitoring ? 1 : 0.6;
-        BtnHealthScore.ToolTip     = !IsMonitoring ? NotMonitoredText
-                                   : score is null ? _session!.HealthText
-                                   : $"{score.Summary()}\nClick to see which checks lowered it.";
-
-        if (HealthScorePopup.IsOpen)
-            ShowHealthScoreDetails();
-    }
-
-    private void ShowHealthScoreDetails()
-    {
-        if (IsMonitoring)
-            HealthScoreDetails.Show(_connectionName, _session!.Score, _session.HealthText, paused: false);
-        else
-            HealthScoreDetails.Show(_connectionName, null, NotMonitoredText, paused: true);
-    }
-
-    private void BtnHealthScore_Click(object sender, RoutedEventArgs e)
-    {
-        // Clicking anywhere else closes it (StaysOpen is false).
-        ShowHealthScoreDetails();
-        HealthScorePopup.IsOpen = true;
-    }
-
-    // Appends every session sample not plotted yet, so the page catches up whether the
-    // samples arrived while it was closed or one at a time while it is open.
-    private void PlotNewSamples()
-    {
-        foreach (var sample in _session?.Samples ?? [])
-        {
-            if (_lastPlotted is { } last && sample.Time <= last)
-                continue;
-            AppendSample(sample);
-            _lastPlotted = sample.Time;
-        }
-    }
-
+    // Drawn now rather than on LiveCharts' next pass.
     private void ForceChartUpdate()
     {
-        // Force update charts to fix freeze issue
         foreach (var chart in _charts.Values)
         {
-            // CoreChart throws ("Core not set yet") rather than returning null until the chart
-            // has loaded — e.g. a panel just built, or a sample arriving before the page loads.
+            // CoreChart throws ("Core not set yet") rather than returning null until the chart has
+            // loaded: a card just built, or a sample arriving before the page loads.
             if (!chart.IsLoaded)
                 continue;
-
             chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
         }
     }
 
-    // The process map is only needed while it is on screen, so it is fetched by the page
-    // rather than collected in the background.
-    private async System.Threading.Tasks.Task RefreshProcessMapAsync()
-    {
-        if (!IsLoaded || _refreshingMap || _activeProcessMap == null || ChipProcessMap.IsChecked != true)
-            return;
+    // ── LiveCharts helpers ───────────────────────────────────────────────────
 
-        _refreshingMap = true;
-        try
-        {
-            var nodes = (await _repo.GetProcessesAsync()).ToList();
-            _activeProcessMap?.UpdateNodes(nodes);
-            _shell.ReportRead(this, PageRead.Timed);
-        }
-        catch (Exception ex)
-        {
-            _shell.ReportError(this, "Live Metrics process map", ex, PageRead.Timed);
-        }
-        finally
-        {
-            _refreshingMap = false;
-        }
-    }
-
-    // ?? Timer ?????????????????????????????????????????????????????????
-    private void UpdateCountdown()
-    {
-        if (!IsMonitoring)
-        {
-            TxtCountdown.Text = "--";
-            return;
-        }
-
-        var remaining = (int)Math.Ceiling(_session!.TimeUntilNextSample.TotalSeconds);
-        TxtCountdown.Text = remaining >= 60
-            ? $"{remaining / 60}:{remaining % 60:00}"
-            : $"{remaining}s";
-    }
-
-    // Shows the connection's monitoring state: the Start/Stop button, and the banner saying
-    // nothing is collected while it's off (#115).
-    private void SyncRunButton()
-    {
-        var monitoring = IsMonitoring;
-        var canStart   = monitoring || _connectionId is not { } id || _monitoring is null || _monitoring.CanStart(id);
-
-        BtnMonitor.Content   = monitoring ? "■  Stop monitoring" : "▶  Start monitoring";
-        BtnMonitor.IsEnabled = canStart;
-        BtnMonitor.ToolTip   = monitoring
-            ? "Stop collecting live metrics, history and alerts for this connection until SqlVitals exits. Its active alerts end."
-            : canStart
-                ? "Collect live metrics, history and alerts for this connection until SqlVitals exits. The first sample is taken straight away."
-                : NotMonitoredText;
-        AutomationProperties.SetName(BtnMonitor, monitoring ? "Stop monitoring" : "Start monitoring");
-
-        MonitoringOffBanner.Visibility = monitoring ? Visibility.Collapsed : Visibility.Visible;
-        TxtMonitoringOffReason.Text    =
-            _connectionId is { } active && _monitoring?.Decision(active) is { Reason: not MonitoringReason.AutomaticOff }
-                ? NotMonitoredText
-                : "Nothing is sent to the server for Live Metrics, history or alerts until you press Start.";
-        BtnBannerStart.IsEnabled       = canStart;
-        BtnBannerStart.ToolTip         = canStart ? BtnMonitor.ToolTip : NotMonitoredText;
-    }
-
-    private void BtnMonitor_Click(object sender, RoutedEventArgs e)
-    {
-        if (IsMonitoring)
-            StopMonitoring();
-        else
-            StartMonitoring();
-    }
-
-    private void BtnBannerStart_Click(object sender, RoutedEventArgs e) => StartMonitoring();
-
-    // The saved connection's session is the manager's, so the dot, alerts and history follow it.
-    private void StartMonitoring()
-    {
-        if (_connectionId is { } id && _starter is not null)
-            _ = _starter.StartAsync(id, ActivitySources.LiveMetrics);
-        else
-            _adHoc?.Start();
-        Session_StateChanged(_session);
-    }
-
-    private void StopMonitoring()
-    {
-        if (_connectionId is { } id && _monitoring is not null)
-            _monitoring.Stop(id, ActivitySources.LiveMetrics);
-        else
-            _adHoc?.Pause();
-        Session_StateChanged(_session);
-    }
-
-    private async void LnkMonitoringSetting_Click(object sender, RoutedEventArgs e) =>
-        await ViewModel.ReportErrorsOf(_navigator.GoToAsync("Settings"));
-
-    // ?? Snapshot ? ring buffers ????????????????????????????????????????
-    // Rates are computed by LiveMetricSample.From in the session; the page only plots them.
-    private void AppendSample(LiveMetricSample s)
-    {
-        foreach (var (series, value) in _plotted)
-        {
-            series.Add(new DateTimePoint(s.Time, value(s)));
-            while (series.Count > MaxPoints)
-                series.RemoveAt(0);
-        }
-    }
-
-    // ?? Panel builder ?????????????????????????????????????????????????
-    private void BuildAllPanels()
-    {
-        ChartGrid.Children.Clear();
-        _panels.Clear();
-        _charts.Clear();
-
-        BuildWaitsPanel();
-        BuildCpuPanel();
-        BuildThroughputPanel();
-        BuildPhysicalIoPanel();
-        BuildMemoryPanel();
-        BuildProcessMapPanel();
-
-        AdjustColumns();
-    }
-
-    private void AdjustColumns()
-    {
-        int visible = ChartGrid.Children.Count;
-        ChartGrid.Columns = visible <= 1 ? 1 : 2;
-    }
-
-    // ?? Individual panel factories ?????????????????????????????????????
-    private void BuildWaitsPanel()
-    {
-        if (_chips.TryGetValue("Waits", out var chip) && chip.IsChecked != true) return;
-        _panels["Waits"] = BuildWaitsPanelDirectWithFilters();
-        ChartGrid.Children.Add(_panels["Waits"]);
-    }
-
-    private void BuildCpuPanel()
-    {
-        if (_chips.TryGetValue("Cpu", out var chip) && chip.IsChecked != true) return;
-        _panels["Cpu"] = BuildCpuPanelDirect();
-        ChartGrid.Children.Add(_panels["Cpu"]);
-    }
-
-    private void BuildThroughputPanel()
-    {
-        if (_chips.TryGetValue("Throughput", out var chip) && chip.IsChecked != true) return;
-        _panels["Throughput"] = BuildThroughputPanelDirect();
-        ChartGrid.Children.Add(_panels["Throughput"]);
-    }
-
-    private void BuildPhysicalIoPanel()
-    {
-        if (_chips.TryGetValue("PhysicalIO", out var chip) && chip.IsChecked != true) return;
-        _panels["PhysicalIO"] = BuildPhysicalIoPanelDirect();
-        ChartGrid.Children.Add(_panels["PhysicalIO"]);
-    }
-
-    private void BuildMemoryPanel()
-    {
-        if (_chips.TryGetValue("Memory", out var chip) && chip.IsChecked != true) return;
-        _panels["Memory"] = BuildMemoryPanelDirect();
-        ChartGrid.Children.Add(_panels["Memory"]);
-    }
-
-    private void BuildProcessMapPanel()
-    {
-        if (_chips.TryGetValue("ProcessMap", out var chip) && chip.IsChecked != true) return;
-        _panels["ProcessMap"] = BuildProcessMapPanelDirect();
-        ChartGrid.Children.Add(_panels["ProcessMap"]);
-    }
-
-    // ?? Close-panel handler ???????????????????????????????????????????
-    private void ClosePanel_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.Tag is string tag)
-        {
-            // Remove from grid
-            if (_panels.TryGetValue(tag, out var panel))
-            {
-                ChartGrid.Children.Remove(panel);
-                _panels.Remove(tag);
-                _charts.Remove(tag);
-            }
-
-            // Uncheck the chip so it reflects closed state
-            if (_chips.TryGetValue(tag, out var chip))
-                chip.IsChecked = false;
-
-            AdjustColumns();
-        }
-    }
-
-    // ?? Chip toggle handler ???????????????????????????????????????????
-    private void Chip_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!IsLoaded) return;   // guard during InitializeComponent
-
-        if (sender is ToggleButton chip && chip.Tag is string tag)
-        {
-            // Remove old instance if present
-            if (_panels.TryGetValue(tag, out var existing))
-            {
-                ChartGrid.Children.Remove(existing);
-                _panels.Remove(tag);
-                _charts.Remove(tag);
-            }
-
-            if (chip.IsChecked == true)
-            {
-                // Re-add in correct order
-                int insertIdx = GetInsertIndex(tag);
-                Border? newPanel = tag switch
-                {
-                    "Waits"      => BuildPanelFor("Waits"),
-                    "Cpu"        => BuildPanelFor("Cpu"),
-                    "Throughput" => BuildPanelFor("Throughput"),
-                    "PhysicalIO" => BuildPanelFor("PhysicalIO"),
-                    "Memory"     => BuildPanelFor("Memory"),
-                    "ProcessMap" => BuildPanelFor("ProcessMap"),
-                    _            => null
-                };
-                if (newPanel is not null)
-                {
-                    _panels[tag] = newPanel;
-                    ChartGrid.Children.Insert(
-                        Math.Min(insertIdx, ChartGrid.Children.Count), newPanel);
-                }
-            }
-        }
-        AdjustColumns();
-    }
-
-    private Border? BuildPanelFor(string tag)
-    {
-        // Temporarily force chip to checked so the Build method doesn't skip it
-        return tag switch
-        {
-            "Waits"      => BuildWaitsPanelDirectWithFilters(),
-            "Cpu"        => BuildCpuPanelDirect(),
-            "Throughput" => BuildThroughputPanelDirect(),
-            "PhysicalIO" => BuildPhysicalIoPanelDirect(),
-            "Memory"     => BuildMemoryPanelDirect(),
-            "ProcessMap" => BuildProcessMapPanelDirect(),
-            _            => null
-        };
-    }
-
-    // Direct builders (no chip-check guard) used by Chip_Changed ??????
-    private Border BuildCpuPanelDirect()
-    {
-        var chart = MakeCartesian();
-        _charts["Cpu"] = chart;
-        var series = new ISeries[] { Line(_cpuPct, "SQL Server CPU", ColCpu) };
-        SetSeries("Cpu", () => series, BaselineLine(_cpuPct, "SQL Server CPU", ColCpu));
-        SetDateTimeAxes(chart, "% CPU", 0, 100);
-        return WrapPanel("CPU Usage", chart, "Cpu");
-    }
-
-    private Border BuildThroughputPanelDirect()
-    {
-        var chart = MakeCartesian();
-        _charts["Throughput"] = chart;
-        var series = new ISeries[]
-        {
-            Line(_batches,    "Batch Requests",  ColBatch),
-            Line(_compiles,   "Compilations",    ColComp),
-            Line(_recompiles, "Recompilations",  ColRec),
-            Line(_txns,       "Transactions",    ColTxn),
-        };
-        SetSeries("Throughput", () => series,
-            BaselineLine(_batches,    "Batch Requests",  ColBatch),
-            BaselineLine(_compiles,   "Compilations",    ColComp),
-            BaselineLine(_recompiles, "Recompilations",  ColRec),
-            BaselineLine(_txns,       "Transactions",    ColTxn));
-        SetDateTimeAxes(chart, "# per sec.");
-        return WrapPanel("SQL Throughput", chart, "Throughput");
-    }
-
-    private Border BuildPhysicalIoPanelDirect()
-    {
-        var chart = MakeCartesian();
-        _charts["PhysicalIO"] = chart;
-        var series = new ISeries[]
-        {
-            Line(_physReads,  "Physical Reads",  ColPhysR),
-            Line(_physWrites, "Physical Writes", ColPhysW),
-        };
-        SetSeries("PhysicalIO", () => series,
-            BaselineLine(_physReads,  "Physical Reads",  ColPhysR),
-            BaselineLine(_physWrites, "Physical Writes", ColPhysW));
-        SetDateTimeAxes(chart, "R/W per sec.");
-        return WrapPanel("Physical R/W", chart, "PhysicalIO");
-    }
-
-    private Border BuildMemoryPanelDirect()
-    {
-        var chart = MakeCartesian();
-        _charts["Memory"] = chart;
-        
-        // 1. Configure Series with Axis assignments
-        var series = new ISeries[]
-        {
-            // Primary Axis (Index 0)
-            Line(_mgPending, "Mem Grants Pending",     ColMgP, 0),
-            Line(_bufCache,  "Buffer Cache Hit Ratio", ColBuf, 0),
-
-            // Secondary Axis (Index 1) for PLE
-            Line(_ple, "Page Life Expectancy", ColPle, 1),
-        };
-        SetSeries("Memory", () => series,
-            BaselineLine(_mgPending, "Mem Grants Pending",     ColMgP, 0),
-            BaselineLine(_bufCache,  "Buffer Cache Hit Ratio", ColBuf, 0),
-            BaselineLine(_ple,       "Page Life Expectancy",   ColPle, 1));
-
-        // 2. Configure X-Axis (Time)
-        chart.XAxes = new[] { TimeAxis() };
-
-        // 3. Configure Y-Axes
-        chart.YAxes = new[]
-        {
-            // Axis 0: Count / %
-            new Axis
-            {
-                Name            = "Count / %",
-                NamePaint       = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
-                LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
-                SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
-                TextSize        = 14,
-                Position        = LiveChartsCore.Measure.AxisPosition.Start
-            },
-            // Axis 1: PLE � format label as h:mm or Xd depending on magnitude
-            new Axis
-            {
-                Name            = "PLE (sec)",
-                NamePaint       = new SolidColorPaint(ColPle) { IsAntialias = true },
-                LabelsPaint     = new SolidColorPaint(ColPle) { IsAntialias = true },
-                SeparatorsPaint = null, // Hide grid lines to avoid clutter
-                TextSize        = 14,
-                Position        = LiveChartsCore.Measure.AxisPosition.End,
-                Labeler         = v =>
-                {
-                    if (v < 0) return "0s";
-                    if (v < 3600)   return $"{v:N0}s";
-                    if (v < 86400)  return $"{v / 3600:N1}h";
-                    return $"{v / 86400:N1}d";
-                }
-            }
-        };
-
-        return WrapPanel("Memory", chart, "Memory");
-    }
-
-    private Border BuildProcessMapPanelDirect()
-    {
-        _activeProcessMap = new ProcessMapControl();
-        return WrapPanel("Process Map", _activeProcessMap, "ProcessMap");
-    }
-
-    // Compute insertion index to preserve panel order ??????????????????
-    private static readonly string[] PanelOrder = ["Waits","Cpu","Throughput","PhysicalIO","Memory","ProcessMap"];
-
-    private int GetInsertIndex(string tag)
-    {
-        int idx = 0;
-        foreach (var key in PanelOrder)
-        {
-            if (key == tag) break;
-            if (_panels.TryGetValue(key, out var panel) && ChartGrid.Children.Contains(panel))
-                idx++;
-        }
-        return idx;
-    }
-
-    // ?? LiveCharts helpers ????????????????????????????????????????????
-    private static LiveChartsCore.SkiaSharpView.WPF.CartesianChart MakeCartesian() =>
-        new()
+    private LiveChartsCore.SkiaSharpView.WPF.CartesianChart MakeCartesian(Chart chart) =>
+        _charts[chart] = new()
         {
             TooltipPosition = LiveChartsCore.Measure.TooltipPosition.Top,
             LegendPosition  = LiveChartsCore.Measure.LegendPosition.Bottom,
@@ -1071,27 +378,21 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
             AnimationsSpeed = TimeSpan.Zero,
         };
 
-    private static StackedAreaSeries<DateTimePoint> StackedArea(
-        ObservableCollection<DateTimePoint> values, string name, SKColor color) =>
+    private StackedAreaSeries<DateTimePoint> StackedArea(Metric metric, string name, SKColor color) =>
         new()
         {
-            Values          = values,
-            Name            = name,
-            Fill            = new SolidColorPaint(color.WithAlpha(160)),
-            Stroke          = new SolidColorPaint(color) { StrokeThickness = 1.5f },
-            GeometrySize    = 0,
-            LineSmoothness  = 0.4,
+            Values         = ViewModel.Points(metric),
+            Name           = name,
+            Fill           = new SolidColorPaint(color.WithAlpha(160)),
+            Stroke         = new SolidColorPaint(color) { StrokeThickness = 1.5f },
+            GeometrySize   = 0,
+            LineSmoothness = 0.4,
         };
 
-    // The baseline under one of the plotted series.
-    private ISeries BaselineLine(ObservableCollection<DateTimePoint> series, string name, SKColor color, int scalesAt = 0) =>
-        BaselineSeries.Line(BaselineOf(series), name, color, scalesAt);
-
-    private static LineSeries<DateTimePoint> Line(
-        ObservableCollection<DateTimePoint> values, string name, SKColor color, int scalesAt = 0) =>
+    private LineSeries<DateTimePoint> Line(Metric metric, string name, SKColor color, int scalesAt = 0) =>
         new()
         {
-            Values         = values,
+            Values         = ViewModel.Points(metric),
             Name           = name,
             Stroke         = new SolidColorPaint(color) { StrokeThickness = 1.8f },
             Fill           = null,
@@ -1102,23 +403,24 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
             ScalesYAt      = scalesAt,
         };
 
+    // The baseline under one of the plotted series.
+    private ISeries BaselineLine(Metric metric, string name, SKColor color, int scalesAt = 0) =>
+        BaselineSeries.Line(ViewModel.Baseline(metric), name, color, scalesAt);
+
     // Labels follow the range on screen: seconds while live, dates on ranges over a day.
     private DateTimeAxis TimeAxis() =>
-        new(TimeSpan.FromSeconds(1), dt => dt.ToString(_axisFormat, CultureInfo.CurrentCulture))
+        new(TimeSpan.FromSeconds(1), dt => dt.ToString(ViewModel.Axis.Format, CultureInfo.CurrentCulture))
         {
             LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
             SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
             TextSize        = 14,
-            MinLimit        = _xMin,
-            MaxLimit        = _xMax,
+            MinLimit        = ViewModel.Axis.MinTicks,
+            MaxLimit        = ViewModel.Axis.MaxTicks,
         };
 
-    private void SetDateTimeAxes(
-        LiveChartsCore.SkiaSharpView.WPF.CartesianChart chart,
-        string yLabel,
-        double? yMin = null, double? yMax = null)
+    private void SetDateTimeAxes(LiveChartsCore.SkiaSharpView.WPF.CartesianChart chart, string yLabel, double? yMin = null, double? yMax = null)
     {
-        chart.XAxes = new[] { TimeAxis() };
+        chart.XAxes = [TimeAxis()];
         var yAxis = new Axis
         {
             Name            = yLabel,
@@ -1129,11 +431,11 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         };
         if (yMin.HasValue) yAxis.MinLimit = yMin;
         if (yMax.HasValue) yAxis.MaxLimit = yMax;
-        chart.YAxes = new[] { yAxis };
+        chart.YAxes = [yAxis];
     }
 
-    // ?? Chart card wrapper with title + close button ??????????????????
-    private Border WrapPanel(string title, FrameworkElement chart, string tag, FrameworkElement? extraHeader = null)
+    // A chart's card: its title, its ✕ (which turns its chip off), and what else its header holds.
+    private Border WrapPanel(string title, FrameworkElement content, Chart chart, FrameworkElement? extraHeader = null)
     {
         var header = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
 
@@ -1149,16 +451,16 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         DockPanel.SetDock(titleBlock, Dock.Left);
         header.Children.Add(titleBlock);
 
-        var closeBtn = new Button
+        var close = new Button
         {
-            Content = "x",
-            Tag     = tag,
-            Style   = (Style)FindResource("CloseButton"),
+            Content             = "x",
+            Style               = (Style)FindResource("CloseButton"),
             HorizontalAlignment = HorizontalAlignment.Right,
+            Command             = ViewModel.CloseCommand,
+            CommandParameter    = chart,
         };
-        DockPanel.SetDock(closeBtn, Dock.Right);
-        closeBtn.Click += ClosePanel_Click;
-        header.Children.Add(closeBtn);
+        DockPanel.SetDock(close, Dock.Right);
+        header.Children.Add(close);
 
         if (extraHeader != null)
         {
@@ -1169,100 +471,16 @@ public partial class LiveMetricsDashboardPage : Page, ICodeBehindPage, IPageCont
         var inner = new Grid();
         inner.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
         Grid.SetRow(header, 0);
         inner.Children.Add(header);
-
-        Grid.SetRow(chart, 1);
-        inner.Children.Add(chart);
+        Grid.SetRow(content, 1);
+        inner.Children.Add(content);
 
         return new Border
         {
-            Style   = (Style)Application.Current.FindResource("KpiCard"),
-            Margin  = new Thickness(4),
-            Child   = inner,
+            Style  = (Style)Application.Current.FindResource("KpiCard"),
+            Margin = new Thickness(4),
+            Child  = inner,
         };
-    }
-
-    // ?? Toolbar handlers ??????????????????????????????????????????????
-    // Sets this connection's collection interval — it applies in the background too.
-    // Kept for the connection while it isn't monitored too.
-    private void CmbInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_itemsReady || CmbInterval.SelectedIndex < 0) return;
-        var seconds = Intervals[CmbInterval.SelectedIndex];
-        if (_connectionId is { } id && _monitoring is not null)
-            _monitoring.SetInterval(id, seconds);
-        else
-            _adHoc?.IntervalSeconds = seconds;
-        UpdateCountdown();
-    }
-
-    private Border BuildWaitsPanelDirectWithFilters()
-    {
-        var chart = MakeCartesian();
-        _charts["Waits"] = chart;
-        var sCpu   = StackedArea(_waitCpu,   "CPU",     ColCpu);
-        var sIo    = StackedArea(_waitIo,    "I/O",     ColIo);
-        var sLock  = StackedArea(_waitLock,  "Locks",   ColLock);
-        var sMem   = StackedArea(_waitMem,   "Memory",  ColMem);
-        var sNet   = StackedArea(_waitNet,   "Network", ColNet);
-        var sOther = StackedArea(_waitOther, "Other",   ColOther);
-
-        // Keep definition order for stacking
-        var definitions = new[]
-        {
-            (Series: sCpu, Label: "CPU"),
-            (Series: sIo, Label: "I/O"),
-            (Series: sLock, Label: "Locks"),
-            (Series: sMem, Label: "Mem"),
-            (Series: sNet, Label: "Net"),
-            (Series: (ISeries)sOther, Label: "Other")
-        };
-
-        var filters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,10,0) };
-        var checkBoxes = new List<CheckBox>();
-
-        // Initial set: every category but Other. The baseline is one line against the top of the
-        // stack: last week's total of the categories shown.
-        WaitsShownByDefault.CopyTo(_waitsShown, 0);
-        PlotBaseline();
-        SetSeries("Waits",
-            () => definitions.Where((_, i) => _waitsShown[i]).Select(x => x.Series).ToArray(),
-            BaselineSeries.Line(_baselineWaits, "Total waits", ChartTheme.AxisColor));
-        SetDateTimeAxes(chart, "Wait (ms/s)");
-
-        void RebuildSeries(object? sender, RoutedEventArgs e)
-        {
-            for (int i = 0; i < checkBoxes.Count; i++)
-                _waitsShown[i] = checkBoxes[i].IsChecked == true;
-            PlotBaseline();
-            ApplySeries("Waits");
-            // Force update
-            if (chart.IsLoaded)
-                chart.CoreChart.Update(new LiveChartsCore.Kernel.ChartUpdateParams { IsAutomaticUpdate = false, Throttling = false });
-        }
-
-        for (int i = 0; i < definitions.Length; i++)
-        {
-            var def = definitions[i];
-            var cb = new CheckBox
-            {
-                Content = def.Label,
-                IsChecked = _waitsShown[i],
-                Margin = new Thickness(6,0,0,0),
-                FontSize = 11,
-                FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Cursor = Cursors.Hand
-            };
-            cb.SetResourceReference(ForegroundProperty, "TextMuted");
-            cb.Checked += RebuildSeries;
-            cb.Unchecked += RebuildSeries;
-            checkBoxes.Add(cb);
-            filters.Children.Add(cb);
-        }
-
-        return WrapPanel("Waits - Stack Area", chart, "Waits", filters);
     }
 }

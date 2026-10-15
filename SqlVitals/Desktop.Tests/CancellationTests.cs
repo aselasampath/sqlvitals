@@ -39,6 +39,7 @@ public sealed class CancellationTests : IDisposable
             .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)
+            .AddSingleton<IUiDispatcher>(new FakeUiDispatcher())
             .AddSingleton(new OverviewVisits(settings))
             .AddSingleton(new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }))
             .AddSingleton<Func<IWaitStatsRepository, ExportService>>(repository => new ExportService(repository))
@@ -56,25 +57,38 @@ public sealed class CancellationTests : IDisposable
 
     // ── A page left ──────────────────────────────────────────────────────
 
-    [Fact]
-    public void LeavingAPage_CancelsWhatItsCodeBehindIsReading() => UiThread.Run(() =>
+    // Query Store on, with nothing in it: its settings and its tabs read.
+    private static FakeRepository QueryStoreOn() => new()
     {
-        // Query Store still reads in its code-behind (#189 moves it).
-        var reading = new TaskCompletionSource<QueryStoreStatus>();
-        var repo    = new FakeRepository { GetQueryStoreStatusAsync = () => reading.Task };
-        var made    = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
+        GetQueryStoreStatusAsync = () => Task.FromResult(new QueryStoreStatus("SalesDb",
+            new QueryStoreHealth("SalesDb", "READ_WRITE", "READ_WRITE", 0, 410, 1000, 41, 900, 60, 30, "AUTO", "AUTO", null,
+                                 200, 1482, 1630, 0, DateTime.UtcNow.AddDays(-20), DateTime.Now),
+            QueryStoreFeatures.None)),
+        GetQueryStoreTopQueriesAsync = (_, _, _, _) => Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>([])),
+    };
 
-        var shown = made.ViewModel.OnNavigatedToAsync();
-        var token = repo.Tokens[nameof(FakeRepository.GetQueryStoreStatusAsync)];
+    [Fact]
+    public void LeavingAPage_CancelsWhatItsViewModelReadsBesideItsLoad() => UiThread.Run(() =>
+    {
+        // Query Store reads a tab when it is opened, outside its load: the page's lifetime ends it (#167).
+        var reading = new TaskCompletionSource<QueryStoreRows<QueryStoreVariationRow>>();
+        var repo    = QueryStoreOn();
+        repo.GetQueryStoreHighVariationAsync = (_, _, _, _) => reading.Task;
+        var made    = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
+        var model   = (QueryStoreViewModel)made.ViewModel;
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        model.SelectedTab = (int)QueryStoreViewModel.Tab.Variation;
+        var token = repo.Tokens[nameof(FakeRepository.GetQueryStoreHighVariationAsync)];
         Assert.False(token.IsCancellationRequested);
 
-        made.ViewModel.OnNavigatedFrom();
+        model.OnNavigatedFrom();
 
         Assert.True(token.IsCancellationRequested);
         reading.SetCanceled(token);
-        UiThread.Wait(shown);
-        // Left, and cancelled: no read or error reported (a page may tell the bar its kind as it opens).
-        Assert.All(_shell.Reports, report => Assert.Equal("Context", report));
+        UiThread.Wait(model.TabLoaded);
+        // Left, and cancelled: nothing about it is said.
+        Assert.DoesNotContain(_shell.Reports, report => report.StartsWith("Error", StringComparison.Ordinal));
     });
 
     [Fact]
@@ -101,17 +115,21 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
     {
-        // A page whose code-behind reads gets the page's lifetime as its token (#184's pages pass their own, linked to it).
-        var repo = new FakeRepository { GetQueryStoreStatusAsync = () => Task.FromException<QueryStoreStatus>(new InvalidOperationException("Query Store is off.")) };
-        var made = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
+        // A read beside the load gets the page's lifetime as its token (a load passes its own, linked to it).
+        var repo = QueryStoreOn();
+        repo.GetQueryStoreHighVariationAsync = (_, _, _, _) => Task.FromException<QueryStoreRows<QueryStoreVariationRow>>(new InvalidOperationException("Not now."));
+        var made  = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
+        var model = (QueryStoreViewModel)made.ViewModel;
 
-        UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
-        var first = repo.Tokens[nameof(FakeRepository.GetQueryStoreStatusAsync)];
-        made.ViewModel.OnNavigatedFrom();
-        UiThread.Wait(made.ViewModel.OnNavigatedToAsync());
+        UiThread.Wait(model.OnNavigatedToAsync());
+        model.SelectedTab = (int)QueryStoreViewModel.Tab.Variation;
+        UiThread.Wait(model.TabLoaded);
+        var first = repo.Tokens[nameof(FakeRepository.GetQueryStoreHighVariationAsync)];
+        model.OnNavigatedFrom();
+        UiThread.Wait(model.OnNavigatedToAsync());   // reads the tab on screen again
 
         Assert.True(first.IsCancellationRequested);
-        Assert.False(repo.Tokens[nameof(FakeRepository.GetQueryStoreStatusAsync)].IsCancellationRequested);
+        Assert.False(repo.Tokens[nameof(FakeRepository.GetQueryStoreHighVariationAsync)].IsCancellationRequested);
     });
 
     [Fact]

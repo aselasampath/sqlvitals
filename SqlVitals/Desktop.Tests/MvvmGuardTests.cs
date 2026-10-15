@@ -17,21 +17,12 @@ public sealed class MvvmGuardTests
     /// <summary>View models that refer to the view, and to what: none since #182 took <c>PageViewModel.ShowError</c> off <c>MainWindow</c>.</summary>
     private static readonly Dictionary<string, string[]> ViewReferencesAllowed = new();
 
-    /// <summary>Page code that reads through a repository itself.</summary>
-    private static readonly string[] RepositoryReferencesAllowed =
-    [
-        "Pages/LiveMetricsDashboardPage.xaml.cs",
-        "Pages/OverviewPage.xaml.cs",
-        "Pages/QueryStorePage.xaml.cs",
-    ];
+    /// <summary>Page code that reads through a repository itself: none since #189 moved the last pages' reads.</summary>
+    private static readonly string[] RepositoryReferencesAllowed = [];
 
     /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
     private static readonly Dictionary<string, int> ClicksAllowed = new()
     {
-        ["Pages/HomePage.xaml"]                          = 4,
-        ["Pages/LiveMetricsDashboardPage.xaml"]          = 4,
-        ["Pages/OverviewPage.xaml"]                      = 14,
-        ["Pages/QueryStorePage.xaml"]                    = 7,
         ["Pages/Settings/ActivityCategory.xaml"]         = 1,
         ["Pages/Settings/AlertsCategory.xaml"]           = 8,
         ["Pages/Settings/AppearanceCategory.xaml"]       = 1,
@@ -43,14 +34,8 @@ public sealed class MvvmGuardTests
         ["Pages/SettingsPage.xaml"]                      = 1,
     };
 
-    /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. Each wave of #180 takes its pages off.</summary>
-    private static readonly string[] CodeBehindPagesAllowed =
-    [
-        "HomePage",
-        "LiveMetricsDashboardPage",
-        "OverviewPage",
-        "QueryStorePage",
-    ];
+    /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. None since #189's wave.</summary>
+    private static readonly string[] CodeBehindPagesAllowed = [];
 
     // ── View models stay out of the view ─────────────────────────────────
 

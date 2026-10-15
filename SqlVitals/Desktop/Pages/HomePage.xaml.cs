@@ -1,44 +1,27 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
-using System.Windows.Media;
-using SqlVitals.Desktop.Controls;
-using SqlVitals.Desktop.Helpers;
+using System.Windows.Input;
+using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Engine.Activity;
-using SqlVitals.Engine.Alerts;
-using SqlVitals.Engine.History;
-using SqlVitals.Engine.Home;
-using SqlVitals.Engine.Monitoring;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Engine.Alerts;
 
 namespace SqlVitals.Desktop.Pages;
 
 /// <summary>
-/// Home (#130): every saved connection as a tile with its health score, the ones that need
-/// attention first. Everything comes from the monitoring sessions and the local history; Home
-/// never queries a server, and never contacts one that isn't monitored.
+/// Home (#130), bound to <see cref="HomeViewModel"/> (#189): the code-behind sizes the tiles to
+/// fill the row, holds their order while the pointer is over them, and opens a tile's menu and its
+/// score's breakdown beside it.
 /// </summary>
-public partial class HomePage : Page, ICodeBehindPage, IPageContext
+public partial class HomePage : Page, IPageContext
 {
-    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
-    internal HomeViewModel ViewModel { get; } = new();
-
     // Every monitored server's health as its samples arrive (#140); each has its own interval.
     public PageKind Kind => PageKind.Live;
 
-    /// <summary>How far back a tile's sparkline goes.</summary>
-    public static readonly TimeSpan TrendSpan = TimeSpan.FromHours(1);
-
-    private static readonly TimeSpan TrendBucket = TimeSpan.FromMinutes(1);
-
-    /// <summary>How far back a tile says how much was monitored (#170), and the buckets it's read in.</summary>
-    public static readonly TimeSpan CoverageSpan   = TimeSpan.FromHours(24);
-    public static readonly TimeSpan CoverageBucket = TimeSpan.FromMinutes(5);
+    internal HomeViewModel ViewModel { get; }
 
     // The narrowest a tile gets before the grid drops a column.
     private const double MinTileWidth = 300;
@@ -46,80 +29,60 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
     public static readonly DependencyProperty TileWidthProperty =
         DependencyProperty.Register(nameof(TileWidth), typeof(double), typeof(HomePage), new PropertyMetadata(MinTileWidth + 14));
 
-    private readonly MonitoringManager         _monitoring;
-    private readonly ConnectionSettingsService _settings;
-    private readonly ObservableCollection<HomeTile> _tiles = new();
-    private readonly Button _addTile;
+    // The ⋯ last pressed: the breakdown opens beside it.
+    private FrameworkElement? _menuButton;
 
-    // A new order waits while the mouse is over the tiles, so one doesn't move from under a click.
-    private bool _reorderPending;
-
-    // Bumped per history load; an earlier, slower load's result is dropped.
-    private int _loadVersion;
-
-    // The settings as of the last build. Re-read when they or monitoring change, not per sample:
-    // reading means decrypting the file.
-    private ConnectionStore _store = new();
-
-    // The top bar: what this page read, what went wrong, and its kind or window (#166).
-    private readonly IShellStatus _shell;
-
-    // What Start does (#172): asks whether the collector service should watch it.
-    private readonly IWatchStarter _starter;
-
-    /// <param name="starter">What Start does (#172); straight to monitoring when null (tests).</param>
-    public HomePage(MonitoringManager monitoring, ConnectionSettingsService settings, IShellStatus? shell = null,
-                    IWatchStarter? starter = null)
+    public HomePage(HomeViewModel viewModel)
     {
-        _shell = shell ?? CompositionRoot.Get<IShellStatus>();
-        _starter = starter ?? new DirectWatchStarter(monitoring);
-        _monitoring = monitoring;
-        _settings   = settings;
+        ViewModel   = viewModel;
+        DataContext = viewModel;
         InitializeComponent();
 
-        _addTile = new Button
-        {
-            Content   = "+ Add a connection",
-            Margin    = new Thickness(0, 0, 14, 14),
-            MinHeight = 236,
-            ToolTip   = "Opens Settings to add a SQL Server connection",
-            Style     = (Style)Resources["AddTile"],
-        };
-        _addTile.Click += (_, _) => AddConnectionRequested?.Invoke();
+        // The tiles, then "+ Add a connection": an item of its own, not a Button among the items,
+        // which WPF would show without a template (binding error 26).
+        Tiles.ItemTemplateSelector = new TileTemplates((DataTemplate)Tiles.Resources["TileTemplate"], (DataTemplate)Tiles.Resources["AddTemplate"]);
         Tiles.ItemsSource = new CompositeCollection
         {
-            new CollectionContainer { Collection = _tiles },
-            _addTile,
+            new CollectionContainer { Collection = viewModel.Tiles },
+            AddConnection,
         };
-
-        Build();
 
         SizeChanged += (_, _) => UpdateTileWidth();
-        Loaded += (_, _) =>
+        viewModel.MenuRequested += OpenMenu;
+        viewModel.PropertyChanged += (_, e) =>
         {
-            _monitoring.SessionStateChanged += OnSessionStateChanged;
-            _monitoring.MonitoringChanged   += Build;
-            _settings.Changed               += OnSettingsChanged;
-        };
-        Unloaded += (_, _) =>
-        {
-            _monitoring.SessionStateChanged -= OnSessionStateChanged;
-            _monitoring.MonitoringChanged   -= Build;
-            _settings.Changed               -= OnSettingsChanged;
+            if (e.PropertyName == nameof(HomeViewModel.Breakdown))
+                ShowBreakdown();
         };
     }
 
-    /// <summary>Open was pressed on a tile, or Retry (which has already asked for a new sample).</summary>
-    public event Action<Guid>? OpenRequested;
+    /// <inheritdoc cref="HomeViewModel.OpenRequested"/>
+    public event Action<Guid>? OpenRequested
+    {
+        add    => ViewModel.OpenRequested += value;
+        remove => ViewModel.OpenRequested -= value;
+    }
 
-    /// <summary>A tile's Investigate: its worst active alert's evidence (#145).</summary>
-    public event Action<Alert>? InvestigateRequested;
+    /// <inheritdoc cref="HomeViewModel.InvestigateRequested"/>
+    public event Action<Alert>? InvestigateRequested
+    {
+        add    => ViewModel.InvestigateRequested += value;
+        remove => ViewModel.InvestigateRequested -= value;
+    }
 
-    /// <summary>"+ Add a connection" was pressed.</summary>
-    public event Action? AddConnectionRequested;
+    /// <inheritdoc cref="HomeViewModel.AddConnectionRequested"/>
+    public event Action? AddConnectionRequested
+    {
+        add    => ViewModel.AddConnectionRequested += value;
+        remove => ViewModel.AddConnectionRequested -= value;
+    }
 
-    /// <summary>Edit connection… in a tile's menu (#141).</summary>
-    public event Action<Guid>? EditRequested;
+    /// <inheritdoc cref="HomeViewModel.EditRequested"/>
+    public event Action<Guid>? EditRequested
+    {
+        add    => ViewModel.EditRequested += value;
+        remove => ViewModel.EditRequested -= value;
+    }
 
     /// <summary>The width of a tile's slot, gap included, so the tiles fill the row.</summary>
     public double TileWidth
@@ -129,153 +92,15 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
     }
 
     /// <summary>The tiles in the order shown, without "+ Add a connection".</summary>
-    internal IReadOnlyList<HomeTile> TilesShown => _tiles;
+    internal IReadOnlyList<HomeTile> TilesShown => ViewModel.Tiles;
 
-    /// <summary>
-    /// Reads the last hour of every tile's score from the history, for the sparklines, and the
-    /// last day's, for how much of it was monitored (#170).
-    /// </summary>
-    public async Task RefreshAsync()
+    /// <summary>The item after the tiles that "+ Add a connection" is drawn for.</summary>
+    internal static readonly object AddConnection = new();
+
+    // A tile's template for a tile, "+ Add a connection"'s for the item after them.
+    private sealed class TileTemplates(DataTemplate tile, DataTemplate add) : DataTemplateSelector
     {
-        Build();
-
-        var version = ++_loadVersion;
-        var reader  = _monitoring.HistoryReader;
-        var ids     = _tiles.Select(t => t.Tile.Id).ToList();
-        var toUtc   = DateTime.UtcNow;
-        var fromUtc = toUtc - TrendSpan;
-
-        IReadOnlyDictionary<Guid, (IReadOnlyList<ScorePoint> Hour, Coverage Day)> history;
-        try
-        {
-            history = await Task.Run(() => ids.ToDictionary(
-                id => id,
-                id => ((IReadOnlyList<ScorePoint>)reader.ReadScores(id, fromUtc, toUtc, TrendBucket).Select(ScorePoint.From).ToList(),
-                       Coverage.Of(reader.ReadScores(id, toUtc - CoverageSpan, toUtc, CoverageBucket).Select(p => p.TimeUtc),
-                                   toUtc - CoverageSpan, toUtc, CoverageBucket))));
-        }
-        catch (HistorySchemaTooNewException)
-        {
-            // A newer SqlVitals wrote the file: the sparklines start from the live scores.
-            return;
-        }
-        if (version != _loadVersion)
-            return;
-
-        foreach (var tile in _tiles)
-            if (history.TryGetValue(tile.Tile.Id, out var read))
-                tile.SetHistory(read.Hour, read.Day);
-    }
-
-    // ── Building and updating the tiles ───────────────────────────────────────
-
-    // Every saved connection's tile, from the settings and the sessions as they stand.
-    private void Build()
-    {
-        var store = _store = _settings.Load();
-        var now   = DateTime.Now;
-        var built = store.Connections.Select(c => ServerTile.From(InputFor(c, store), now)).ToList();
-
-        var byId = _tiles.ToDictionary(t => t.Tile.Id);
-        foreach (var gone in _tiles.Where(t => built.All(b => b.Id != t.Tile.Id)).ToList())
-            _tiles.Remove(gone);
-        foreach (var tile in built)
-        {
-            if (byId.TryGetValue(tile.Id, out var existing))
-                existing.Update(tile, _monitoring.Get(tile.Id)?.Score, WorstAlert(tile.Id));
-            else
-                _tiles.Add(new HomeTile(tile, _monitoring.Get(tile.Id)?.Score, WorstAlert(tile.Id)));
-        }
-
-        Reorder();
-        UpdateSummary(store.Connections.Count);
-    }
-
-    private TileInput InputFor(ConnectionSettings conn, ConnectionStore store) => InputFor(conn, store, _monitoring);
-
-    /// <summary>What Home and a server's Overview know about a connection, from its settings and session.</summary>
-    internal static TileInput InputFor(ConnectionSettings conn, ConnectionStore store, MonitoringManager monitoring)
-    {
-        var session = monitoring.Get(conn.Id);
-        return new TileInput(
-            conn.Id, conn.DisplayName, conn.Server, conn.DatabaseLabel,
-            IsActive:           conn.Id == store.ActiveConnectionId,
-            IsMonitored:        session is { IsRunning: true },
-            Score:              session?.Score,
-            LastSuccess:        session?.LastSuccess,
-            FailingSince:       session?.FailingSince,
-            LastError:          session?.LastError,
-            NotMonitoredReason: session is { IsRunning: true } ? null : monitoring.NotMonitoredReason(conn.Id),
-            CanStart:           monitoring.CanStart(conn.Id),
-            // A collector watches it (#172): the tile says what the collector's history says.
-            Elsewhere:          session is { IsRunning: true } ? null : monitoring.WatchFor(conn.Id));
-    }
-
-    // A sample, a failure, or a start or stop of one connection: only its tile changes.
-    private void OnSessionStateChanged(Guid connectionId)
-    {
-        var tile = _tiles.FirstOrDefault(t => t.Tile.Id == connectionId);
-        var conn = _store.Connections.FirstOrDefault(c => c.Id == connectionId);
-        if (tile is null || conn is null)
-        {
-            Build();
-            return;
-        }
-
-        tile.Update(ServerTile.From(InputFor(conn, _store), DateTime.Now), _monitoring.Get(connectionId)?.Score, WorstAlert(connectionId));
-        if (_breakdownFor == connectionId)
-            ShowBreakdown(connectionId, tile.Tile.Name);
-        Reorder();
-        UpdateSummary(_store.Connections.Count);
-        _shell.ReportRead(this, PageRead.Timed);
-    }
-
-    // A connection added, removed, renamed or made active. After the save has been applied.
-    private void OnSettingsChanged(IReadOnlyList<ActivityEntry> rows) => Dispatcher.InvokeAsync(Build);
-
-    // Moves the tiles into the order they should be in, unless the mouse is over them.
-    private void Reorder()
-    {
-        var order = TileOrder.Sort(_tiles.Select(t => t.Tile)).Select(t => t.Id).ToList();
-        if (order.SequenceEqual(_tiles.Select(t => t.Tile.Id)))
-        {
-            _reorderPending = false;
-            return;
-        }
-        if (Tiles.IsMouseOver)
-        {
-            _reorderPending = true;
-            return;
-        }
-
-        _reorderPending = false;
-        for (var i = 0; i < order.Count; i++)
-        {
-            var from = _tiles.IndexOf(_tiles.First(t => t.Tile.Id == order[i]));
-            if (from != i)
-                _tiles.Move(from, i);
-        }
-    }
-
-    private void Tiles_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (_reorderPending)
-            Reorder();
-    }
-
-    private void UpdateSummary(int connections)
-    {
-        var summary = HomeSummary.From(_tiles.Select(t => t.Tile).ToList());
-        TxtHeadline.Text   = summary.Headline;
-        Counts.ItemsSource = summary.Counts.Select(c => new HomeCount(c.Text, HealthBrushes.Tint(c.Status))).ToList();
-
-        TxtNote.Text = connections == 0
-            ? "No saved connections yet. Add one to see its health here."
-            : summary.Monitored == 0
-                ? "Nothing is monitored, so no scores are being taken. Start a connection from its tile's ⋯ menu or " +
-                  "Start button, or turn on Start monitoring automatically in Settings."
-                : string.Empty;
-        TxtNote.Visibility = TxtNote.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        public override DataTemplate SelectTemplate(object item, DependencyObject container) => item is HomeTile ? tile : add;
     }
 
     private void UpdateTileWidth()
@@ -286,236 +111,80 @@ public partial class HomePage : Page, ICodeBehindPage, IPageContext
         TileWidth   = Math.Floor(width / columns);
     }
 
-    // The alert a tile's Investigate opens (#145): the worst active one, the oldest first.
-    private Alert? WorstAlert(Guid connectionId) =>
-        (_monitoring.Get(connectionId)?.ActiveAlerts ?? [])
-            .OrderByDescending(a => a.Severity)
-            .ThenBy(a => a.StartedUtc)
-            .FirstOrDefault();
+    private void Tiles_MouseEnter(object sender, MouseEventArgs e) => ViewModel.HoldOrder = true;
 
-    // ── Buttons ───────────────────────────────────────────────────────────────
+    private void Tiles_MouseLeave(object sender, MouseEventArgs e) => ViewModel.HoldOrder = false;
 
-    private void Investigate_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: HomeTile { Alert: { } alert } })
-            InvestigateRequested?.Invoke(alert);
-    }
-
-    private async void TileAction_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: HomeTile { Tile: var tile } })
-            return;
-
-        switch (tile.Action)
-        {
-            case TileAction.Start:
-                await _starter.StartAsync(tile.Id, ActivitySources.Home);
-                break;
-
-            case TileAction.Retry:
-                if (_monitoring.Get(tile.Id) is { } session)
-                    _ = RetryAsync(session);
-                OpenRequested?.Invoke(tile.Id);
-                break;
-
-            default:
-                OpenRequested?.Invoke(tile.Id);
-                break;
-        }
-    }
-
-    // ── The tile's menu (#141) ────────────────────────────────────────────────
-
-    // The connection whose breakdown is open; kept current as its samples arrive.
-    private Guid? _breakdownFor;
+    // ── The tile's menu (#141) and its score's breakdown ──────────────────────
 
     /// <summary>The menu last opened on a tile; for tests.</summary>
     internal ContextMenu? TileMenu { get; private set; }
 
-    // Open, Start or Stop monitoring, Why this score, Edit connection: what the sidebar's
-    // connection selector offered for each server, now that the sidebar shows only the open one.
-    private void TileMenu_Click(object sender, RoutedEventArgs e)
+    // What the view model offers for the tile, under its ⋯.
+    private void OpenMenu(HomeTile tile)
     {
-        if (sender is not FrameworkElement { DataContext: HomeTile { Tile: var tile } } button)
+        if (MoreButtonOf(tile) is not { } button)
             return;
 
-        var id         = tile.Id;
-        var monitoring = _monitoring.IsMonitoring(id);
-        var menu = new ContextMenu { PlacementTarget = button, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
-
-        menu.Items.Add(Item("Open", () => OpenRequested?.Invoke(id)));
-        var toggle = Item(monitoring ? "Stop monitoring" : "Start monitoring", () =>
+        var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
+        foreach (var choice in ViewModel.MenuFor(tile))
         {
-            if (monitoring) _monitoring.Stop(id, ActivitySources.Home);
-            else            _ = _starter.StartAsync(id, ActivitySources.Home);
-        });
-        toggle.IsEnabled = monitoring || _monitoring.CanStart(id);
-        toggle.ToolTip   = monitoring ? "Stop monitoring this connection until SqlVitals exits. Its active alerts end."
-                                      : "Start monitoring this connection until SqlVitals exits, without switching to it.";
-        menu.Items.Add(toggle);
-        // After the menu has closed and let go of the mouse, or the popup closes at once.
-        var why = Item("Why this score…", () => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
-        {
-            _breakdownFor = id;
-            ShowBreakdown(id, tile.Name);
-            BreakdownPopup.PlacementTarget = button;
-            BreakdownPopup.IsOpen = true;
-        }));
-        why.IsEnabled = _monitoring.Get(id) is { Score: not null };
-        menu.Items.Add(why);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Edit connection…", () => EditRequested?.Invoke(id)));
-        ToolTipService.SetShowOnDisabled(toggle, true);
+            if (choice is null)
+            {
+                menu.Items.Add(new Separator());
+                continue;
+            }
+            var item = new MenuItem { Header = choice.Header, IsEnabled = choice.IsEnabled, ToolTip = choice.ToolTip };
+            ToolTipService.SetShowOnDisabled(item, true);
+            item.Click += (_, _) =>
+            {
+                _menuButton = button;
+                choice.Choose();
+            };
+            menu.Items.Add(item);
+        }
 
         menu.Closed += (_, _) => TileMenu = null;
         TileMenu = menu;
         menu.IsOpen = true;
+    }
 
-        static MenuItem Item(string header, Action click)
+    // The ⋯ on a tile's element.
+    private Button? MoreButtonOf(HomeTile tile) =>
+        Tiles.ItemContainerGenerator.ContainerFromItem(tile) is DependencyObject container
+            ? Descendants(container).OfType<Button>().FirstOrDefault(b => b.Name == "MoreButton")
+            : null;
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
         {
-            var item = new MenuItem { Header = header };
-            item.Click += (_, _) => click();
-            return item;
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            yield return child;
+            foreach (var deeper in Descendants(child))
+                yield return deeper;
         }
     }
 
-    private void ShowBreakdown(Guid id, string name)
+    // After the menu has closed and let go of the mouse, or the popup closes at once.
+    private void ShowBreakdown()
     {
-        var session = _monitoring.Get(id);
-        Breakdown.Show(name, session?.Score,
-                       session is null ? _monitoring.NotMonitoredReason(id) : session.HealthText,
-                       paused: session is { IsRunning: false });
-    }
-
-    private void BreakdownPopup_Closed(object? sender, EventArgs e) => _breakdownFor = null;
-
-    // A failure is already in the session's state, which the tile and the Overview show.
-    internal static async Task RetryAsync(MonitoringSession session)
-    {
-        try { await session.CollectNowAsync(); }
-        catch (Exception ex) { AppLog.Info($"Home: retry failed: {ConnectionSettingsService.RedactSecrets(ex.Message)}"); }
-    }
-}
-
-/// <summary>A count at the top of Home, on its status's colour: "2 critical".</summary>
-public sealed record HomeCount(string Text, Brush Tint);
-
-/// <summary>One of a tile's six bars.</summary>
-public sealed record HomeBar(string Label, Brush Brush, string ToolTip);
-
-/// <summary>
-/// A Home tile (#130): the <see cref="ServerTile"/> with its colours and its last hour of scores.
-/// Replaced in place as samples arrive, so the tile keeps its element and only redraws.
-/// </summary>
-public sealed class HomeTile : INotifyPropertyChanged
-{
-    private IReadOnlyList<ScorePoint> _history = [];
-    private readonly List<ScorePoint> _live = new();
-
-    public HomeTile(ServerTile tile, HealthScore? score, Alert? alert = null)
-    {
-        Tile  = tile;
-        Alert = alert;
-        AddLive(score);
-    }
-
-    public ServerTile Tile { get; private set; }
-
-    /// <summary>The server's worst active alert, whose evidence Investigate opens (#145); null when none.</summary>
-    public Alert? Alert { get; private set; }
-
-    public Visibility InvestigateVisibility => Alert is null ? Visibility.Collapsed : Visibility.Visible;
-
-    public string InvestigateToolTip => Alert is { } alert
-        ? $"{HealthThresholds.Info(alert.Indicator).Name} · {AlertText.Severity(alert.Severity).ToLowerInvariant()}: open {EvidenceRoutes.For(alert.Indicator).Text}, filtered to the alert"
-        : string.Empty;
-
-    public string InvestigateName => Alert is { } alert
-        ? $"Investigate the {HealthThresholds.Info(alert.Indicator).Name} alert on {Tile.Name}"
-        : string.Empty;
-
-    public Brush StatusBrush => HealthBrushes.For(Tile.Status);
-    public Brush StatusTint  => HealthBrushes.Tint(Tile.Status);
-
-    public Visibility ActiveVisibility => Tile.IsActive ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility ScoreVisibility  => Tile.Status == TileStatus.Off ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility OffVisibility    => Tile.Status == TileStatus.Off ? Visibility.Visible : Visibility.Collapsed;
-
-    public string? ReasonToolTip => Tile.ReasonToolTip ?? Tile.Reason;
-
-    /// <summary>"More for UAT": the tile's menu.</summary>
-    public string MenuName => $"More for {Tile.Name}";
-
-    /// <summary>"Open UAT", "Retry DR replica", "Start monitoring localhost".</summary>
-    public string ActionName => Tile.Action switch
-    {
-        TileAction.Start => $"Start monitoring {Tile.Name}",
-        TileAction.Retry => $"Retry {Tile.Name}",
-        _                => $"Open {Tile.Name}",
-    } + $" ({Tile.AutomationName})";
-
-    public string ActionToolTip => Tile.Action switch
-    {
-        TileAction.Start when !Tile.CanAct => $"Can't start: {Tile.Footer}",
-        TileAction.Start => "Start monitoring this connection until SqlVitals exits, without switching to it.",
-        TileAction.Retry => "Try to reach the server now, and open its Overview",
-        _                => "Open this server's details: its score over time, its checks and its alerts",
-    };
-
-    public IReadOnlyList<HomeBar> Bars => Tile.Bars
-        .Select(b => new HomeBar(b.Label, HealthBrushes.For(b.Level), b.ToolTip))
-        .ToList();
-
-    /// <summary>The last hour of scores: from the history, then the live ones since.</summary>
-    public ScoreChartData Trend
-    {
-        get
+        if (ViewModel.Breakdown is not { } breakdown)
         {
-            var to = DateTime.UtcNow;
-            return new ScoreChartData(ScoreTrend.Merge(_history, _live), to - HomePage.TrendSpan, to, TimeSpan.FromMinutes(1));
-        }
-    }
-
-    [SuppressMessage("Performance", "CA1822", Justification = "Bound in XAML; a binding needs an instance member")]
-    public string TrendToolTip => "Health score over the last hour. Grey: not monitored. Red: the server couldn't be reached.";
-
-    /// <summary>"Monitored 14 h of the last 24 h" (#170); empty until the history is read.</summary>
-    public string CoverageText => Coverage?.Text() ?? string.Empty;
-
-    /// <summary>The longest gap, when there was one.</summary>
-    public string? CoverageToolTip => Coverage?.LongestGapText(t => t.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture));
-
-    /// <summary>How much of the last day was monitored (#170); null until the history is read.</summary>
-    public Coverage? Coverage { get; private set; }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public void Update(ServerTile tile, HealthScore? score, Alert? alert = null)
-    {
-        Tile  = tile;
-        Alert = alert;
-        AddLive(score);
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-    }
-
-    public void SetHistory(IReadOnlyList<ScorePoint> history, Coverage? coverage = null)
-    {
-        _history = history;
-        Coverage = coverage ?? Coverage;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Trend)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CoverageText)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CoverageToolTip)));
-    }
-
-    // Each new score once; none older than the sparkline shows.
-    private void AddLive(HealthScore? score)
-    {
-        if (score is null || Tile.Status == TileStatus.Off)
+            BreakdownPopup.IsOpen = false;
             return;
-
-        var at = score.Time.ToUniversalTime();
-        if (_live.Count == 0 || at > _live[^1].TimeUtc)
-            _live.Add(new ScorePoint(at, score.Value, score.Level != HealthLevel.Unavailable));
-        _live.RemoveAll(p => p.TimeUtc < DateTime.UtcNow - HomePage.TrendSpan);
+        }
+        Breakdown.Show(breakdown.Name, breakdown.Score, breakdown.Text, breakdown.Paused);
+        if (BreakdownPopup.IsOpen)
+            return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (ViewModel.Breakdown is null)
+                return;
+            BreakdownPopup.PlacementTarget = _menuButton;
+            BreakdownPopup.IsOpen = true;
+        });
     }
+
+    private void BreakdownPopup_Closed(object? sender, EventArgs e) => ViewModel.BreakdownFor = null;
 }

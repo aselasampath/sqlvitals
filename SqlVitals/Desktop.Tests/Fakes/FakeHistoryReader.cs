@@ -22,7 +22,19 @@ public sealed class FakeHistoryReader : IHistoryReader
     }
 
     public IReadOnlyList<StoredConnection> ReadConnections() => [];
-    public IReadOnlyList<MetricHistoryPoint> ReadMetrics(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket) => [];
+    /// <summary>The metrics held; a read gets those in its window.</summary>
+    public IReadOnlyList<MetricHistoryPoint> Metrics { get; init; } = [];
+
+    /// <summary>What a read of the metrics throws, for a history that can't be read.</summary>
+    public Exception? MetricsFail { get; set; }
+
+    public IReadOnlyList<MetricHistoryPoint> ReadMetrics(Guid connectionId, DateTime fromUtc, DateTime toUtc, TimeSpan bucket)
+    {
+        Reading?.Invoke();
+        if (MetricsFail is { } failure)
+            throw failure;
+        return Metrics.Where(p => p.TimeUtc >= fromUtc && p.TimeUtc < toUtc).ToList();
+    }
     /// <summary>What <see cref="ReadCounters"/> returns: the buckets inside the range asked for.</summary>
     public IReadOnlyList<CounterHistoryBucket> Counters { get; init; } = [];
 

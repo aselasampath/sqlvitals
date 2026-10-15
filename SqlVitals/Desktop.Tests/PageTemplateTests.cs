@@ -233,7 +233,7 @@ public sealed class PageTemplateTests : IDisposable
             new("4183", IsRecent: false, PlanId: 311, Executions: 1000, DurationUs: 1000 * 500_000.0, CpuUs: 1000 * 100_000.0),
             new("4183", IsRecent: true,  PlanId: 902, Executions: 200,  DurationUs: 200 * 2_050_000.0, CpuUs: 200 * 100_000.0),
         ];
-        var page = new QueryStorePage(new FakeRepository
+        var page = Wave5Pages.QueryStore(new FakeRepository
         {
             GetQueryStoreStatusAsync          = () => Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)),
             GetQueryStoreTopQueriesAsync      = (_, _, _, _) => Task.FromResult(new QueryStoreRows<QueryStoreQueryRow>(
@@ -254,8 +254,8 @@ public sealed class PageTemplateTests : IDisposable
         window.Show();
         try
         {
-            UiThread.Wait(page.RefreshAsync());
-            UiThread.Wait(page.VerdictLoaded);
+            UiThread.Wait(page.ViewModel.RefreshAsync());
+            UiThread.Wait(page.ViewModel.VerdictLoaded);
             UiThread.Wait(Task.Delay(100));   // the window lays out the rows read
             window.UpdateLayout();
             Render(page, "query-store.png");

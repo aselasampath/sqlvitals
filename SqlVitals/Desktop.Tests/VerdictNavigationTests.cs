@@ -134,14 +134,20 @@ public sealed class VerdictNavigationTests
     [Fact]
     public async Task QueryStore_OpensRegressions_AndAQueryInItsOwnWindow()
     {
-        var opened = new List<long>();
-        var model  = new QueryStoreViewModel(openQuery: opened.Add, _navigator);
+        var dir     = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
+        var dialogs = new FakeDialogService();
+        var health  = new QueryStoreHealth("SalesDb", "READ_WRITE", "READ_WRITE", 0, 410, 1000, 41, 900, 60, 30, "AUTO", "AUTO", null,
+                                           200, 1482, 1630, 0, DateTime.UtcNow.AddDays(-20), DateTime.Now);
+        var repo    = new FakeRepository { GetQueryStoreStatusAsync = () => Task.FromResult(new QueryStoreStatus("SalesDb", health, QueryStoreFeatures.None)) };
+        var model   = new QueryStoreViewModel(repo, new ConnectionSettingsService(dir), _navigator, dialogs, new FakeClipboard());
+        await model.RefreshAsync();   // a query's window needs the settings read
 
         await Press(model, QueryStoreVerdict.OpenQuery, id: 42);
         await Press(model, QueryStoreVerdict.Regressions);
 
-        Assert.Equal([42L], opened);
+        Assert.Equal(["Query Store query 42"], dialogs.Shown);
         Assert.Equal(["QueryRegressions"], _navigator.Moves);
+        try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
     }
 
     [Fact]
