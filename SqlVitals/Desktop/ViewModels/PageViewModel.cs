@@ -250,6 +250,12 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
             AppLog.Error($"{source}: failed", exception);
     }
 
+    /// <summary>
+    /// What the page shows moved on without a read of its own (a monitoring sample arrived): the
+    /// top bar's "As of" is now, as after a timed read.
+    /// </summary>
+    protected void ReportUpdated() => _shell?.ReportRead(this, PageRead.Timed);
+
     // A read that must see a change made during the one in progress: waits for it, then reads.
     private async Task ReadAfterAsync(PageRead read)
     {

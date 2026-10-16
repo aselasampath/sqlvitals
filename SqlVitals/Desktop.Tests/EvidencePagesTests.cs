@@ -5,6 +5,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Home;
 using SqlVitals.Engine.Models;
@@ -261,16 +262,28 @@ public sealed class EvidencePagesTests : IDisposable
     });
 
     [Fact]
+    public void AHomeTile_ShowsTheLastHourOfItsViewModelsClock()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2026, 3, 2, 9, 0, 0, TimeSpan.Zero));
+        var tile = ServerTile.From(new TileInput(Server, "PROD", "prod-sql", "Sales", false, true, null), DateTime.Now);
+
+        var home = new HomeTile(tile, null, time: time);
+
+        Assert.Equal(time.GetUtcNow().UtcDateTime, home.Trend.ToUtc);
+        Assert.Equal(time.GetUtcNow().UtcDateTime - HomeTile.TrendSpan, home.Trend.FromUtc);
+    }
+
+    [Fact]
     public void AHomeTile_OffersInvestigate_OnlyWithAnActiveAlert()
     {
         var tile  = ServerTile.From(new TileInput(Server, "PROD", "prod-sql", "Sales", false, true, null), DateTime.Now);
         var alert = new Alert(Guid.NewGuid(), Server, HealthIndicator.Blocking, HealthLevel.Critical, DateTime.UtcNow, null, 240, 120, "");
 
         var home = new HomeTile(tile, null);
-        Assert.Equal(Visibility.Collapsed, home.InvestigateVisibility);
+        Assert.False(home.ShowsInvestigate);
 
         home.Update(tile, null, alert);
-        Assert.Equal(Visibility.Visible, home.InvestigateVisibility);
+        Assert.True(home.ShowsInvestigate);
         Assert.Equal("Investigate the Blocking alert on PROD", home.InvestigateName);
         Assert.StartsWith("Blocking · critical: open Blocking chain", home.InvestigateToolTip);
     }

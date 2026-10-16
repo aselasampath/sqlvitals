@@ -8,6 +8,8 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels.Pages;
+using static SqlVitals.Desktop.ViewModels.Pages.OverviewViewModel;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.AgentJobs;
 using SqlVitals.Engine.Deadlocks;
@@ -99,20 +101,30 @@ public sealed class OverviewPageTests : IDisposable
         store.Write(records);
     }
 
-    // The page, laid out, loaded, and its server reads finished.
+    // The page on its view model, as the page factory builds it.
+    private OverviewPage Overview(Guid id, LookWindow look)
+    {
+        var model = new OverviewViewModel(id, _monitoring!, _settings!, look, new DirectWatchStarter(_monitoring!), new FakeUiDispatcher(), new FakeClipboard());
+        model.Connect("Overview", new FakeShellStatus(), new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
+        return new OverviewPage(model);
+    }
+
+    // The page, laid out, opened, and its server reads finished.
     private OverviewPage Open(ConnectionSettings conn)
     {
-        var page = new OverviewPage(conn.Id, _monitoring!, _settings!, _look);
+        var page = Overview(conn.Id, _look);
         UiThread.Layout(page, 1400, 1600);
-        UiThread.Wait(page.RefreshAsync());
-        UiThread.Wait(page.SinceLoaded);
+        UiThread.Wait(page.ViewModel.OnNavigatedToAsync());
+        UiThread.Wait(page.ViewModel.SinceLoaded);
         UiThread.Layout(page, 1400, 1600);
         return page;
     }
 
     private static List<T> Rows<T>(ItemsControl list) => list.ItemsSource.Cast<T>().ToList();
 
-    private static void Click(Hyperlink link) => link.RaiseEvent(new RoutedEventArgs(Hyperlink.ClickEvent));
+    // As a click does: its command runs, which a raised Click event alone doesn't do.
+    private static void Click(Hyperlink link) =>
+        typeof(Hyperlink).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(link, null);
 
     private static IEnumerable<Hyperlink> Links(DependencyObject root) =>
         UiThread.Find<TextBlock>(root).SelectMany(t => t.Inlines.OfType<Hyperlink>());
@@ -203,12 +215,10 @@ public sealed class OverviewPageTests : IDisposable
         // CPU, batch requests/s, waiting tasks and page life expectancy; CPU coloured by its thresholds.
         var headlines = Rows<HeadlineTile>(page.HeadlinesList);
         Assert.Equal(["CPU", "Batch requests/s", "Waiting tasks", "Page life expectancy"], headlines.Select(h => h.Label));
-        Assert.Equal(("12 %", HealthBrushesGreen), (headlines[0].Value, headlines[0].ValueBrush));
+        Assert.Equal(("12 %", (HealthLevel?)HealthLevel.Healthy), (headlines[0].Value, headlines[0].Level));
         Assert.Equal(["4"], headlines.Where(h => h.Label == "Waiting tasks").Select(h => h.Value));
         Assert.All(headlines, h => Assert.Single(h.Trend));
     });
-
-    private static System.Windows.Media.Brush HealthBrushesGreen => Helpers.HealthBrushes.Green;
 
     [Fact]
     public void SinceYouLastLooked_CountsTheDeadlocksAndFailedJobsAfterTheLastLook() => UiThread.Run(() =>
@@ -238,10 +248,11 @@ public sealed class OverviewPageTests : IDisposable
     [Fact]
     public void SinceYouLastLooked_TheFirstTime_CoversTheLastDay() => UiThread.Run(() =>
     {
-        var (monitoring, settings) = Setup();
-        var page = new OverviewPage(_calm.Id, monitoring, settings, SinceLastLooked.Window(null, DateTime.UtcNow));
-        UiThread.Wait(page.RefreshAsync());
-        UiThread.Wait(page.SinceLoaded);
+        Setup();
+        var page = Overview(_calm.Id, SinceLastLooked.Window(null, DateTime.UtcNow));
+        UiThread.Wait(page.ViewModel.OnNavigatedToAsync());
+        UiThread.Wait(page.ViewModel.SinceLoaded);
+        UiThread.Layout(page, 1400, 1600);
 
         Assert.Equal("In the last 24 hours: this is the first time this Overview has been opened.", page.TxtSinceWhen.Text);
         // Both deadlocks are in the last day.
@@ -269,7 +280,7 @@ public sealed class OverviewPageTests : IDisposable
 
         // Investigate (#145): Resource Queries by CPU, from 15 minutes before the alert started.
         var evidence = UiThread.Find<Button>(page.AlertsList).Single();
-        evidence.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        TemplateRolloutTests.Click(evidence);
         var route = Assert.Single(opened);
         Assert.Equal(("ResourceQueries", _hot.Id, FocusKind.TopCpu), (route.Tag, route.ConnectionId, route.Focus!.Filter.Kind));
         Assert.Equal(alert.Alert.StartedUtc - EvidenceRoutes.Margin, route.Focus.FromUtc);
@@ -299,7 +310,7 @@ public sealed class OverviewPageTests : IDisposable
         Assert.Null(route.Focus.FromUtc);
 
         // CPU at 99 %: past critical.
-        Assert.Equal(Helpers.HealthBrushes.Red, Rows<HeadlineTile>(page.HeadlinesList)[0].ValueBrush);
+        Assert.Equal(HealthLevel.Critical, Rows<HeadlineTile>(page.HeadlinesList)[0].Level);
     });
 
     [Fact]
@@ -355,7 +366,7 @@ public sealed class OverviewPageTests : IDisposable
         // Nothing is asked of a server that can't be reached.
         Assert.DoesNotContain(_calls, c => c.Server == "down" && c.Method != nameof(IWaitStatsRepository.GetLiveMetricsAsync));
 
-        page.BtnMakeActive.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        TemplateRolloutTests.Click(page.BtnMakeActive);
         Assert.Equal([_down.Id], madeActive);
     });
 
@@ -379,8 +390,8 @@ public sealed class OverviewPageTests : IDisposable
     [Fact]
     public void ARemovedConnection_SaysSo() => UiThread.Run(() =>
     {
-        var (monitoring, settings) = Setup();
-        var page = new OverviewPage(Guid.NewGuid(), monitoring, settings, _look);
+        Setup();
+        var page = Overview(Guid.NewGuid(), _look);
         UiThread.Layout(page, 1200, 1000);
 
         Assert.Equal(Visibility.Visible, page.TxtMissing.Visibility);

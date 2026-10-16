@@ -2,8 +2,9 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
-      Background="{StaticResource BgDeep}" Title="Query Store">
+      x:Name="Root" Background="{StaticResource BgDeep}" Title="Query Store">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -123,32 +124,69 @@
             </Setter>
         </Style>
         <DataTemplate x:Key="ViewPlanCell">
-            <Button Content="View Plan" Tag="{Binding}" Click="ViewPlan_Click" Style="{StaticResource RowButton}"
+            <Button Content="View Plan" Style="{StaticResource RowButton}"
+                    Command="{Binding DataContext.ViewPlanCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"
                     ToolTip="The plan this query used most in the period, drawn like SSMS."/>
         </DataTemplate>
     </Page.Resources>
 
     <!-- The page template (#146): the verdict on regressed queries first, the health cards folding
          to one line, then the period and the reports. -->
-    <controls:PageShell x:Name="Shell" Margin="20" Title="Query Store" PageKey="QueryStore">
+    <controls:PageShell x:Name="Shell" Margin="20" Title="{Binding Title}" PageKey="QueryStore">
         <controls:PageShell.Actions>
             <Button Content="🐢 Regressed queries" Style="{StaticResource LinkButton}"
-                    VerticalAlignment="Center" Click="BtnRegressions_Click"
+                    VerticalAlignment="Center" Command="{Binding RegressionsCommand}"
                     ToolTip="Open Query Regressions: queries that got slower, recent period against a baseline, for this database."/>
         </controls:PageShell.Actions>
 
         <controls:PageShell.Sections>
-        <controls:FoldSection x:Name="HealthSection" Key="health" Header="Health and settings">
+        <controls:FoldSection x:Name="HealthSection" Key="health" Header="Health and settings" FoldedSummary="{Binding HealthSummary}">
         <StackPanel>
         <!-- Health and settings cards -->
-        <WrapPanel x:Name="HealthPanel"/>
+        <ItemsControl x:Name="HealthPanel" ItemsSource="{Binding Cards}" Focusable="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Margin="0,0,8,8" Width="138" Padding="12,8">
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource KpiCard}">
+                                <Style.Triggers>
+                                    <!-- Forced plans opens its tab -->
+                                    <DataTrigger Binding="{Binding Label}" Value="Forced plans">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Border.InputBindings>
+                            <MouseBinding Gesture="LeftClick" Command="{Binding DataContext.OpenCardCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                        </Border.InputBindings>
+                        <Border.ToolTip>
+                            <ToolTip>
+                                <StackPanel MaxWidth="340">
+                                    <TextBlock Text="{Binding Label}" FontWeight="Bold" Margin="0,0,0,4"/>
+                                    <TextBlock Text="{Binding Tip}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </ToolTip>
+                        </Border.ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Value}" Style="{StaticResource KpiToneValue}" FontSize="16" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Label}" Style="{StaticResource KpiLabel}"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
         <!-- Settings checks: why, and the fix to copy -->
-        <ItemsControl x:Name="ChecksList" Margin="0,0,0,0">
+        <ItemsControl x:Name="ChecksList" Margin="0,0,0,0" ItemsSource="{Binding Checks}">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <DockPanel Margin="0,2">
-                        <Button DockPanel.Dock="Right" Content="⧉ Copy fix" Tag="{Binding}" Click="CopyFix_Click"
+                        <Button DockPanel.Dock="Right" Content="⧉ Copy fix"
+                                Command="{Binding DataContext.CopyFixCommand, ElementName=Root}" CommandParameter="{Binding}"
                                 Padding="8,1" FontSize="11" Margin="8,0,0,0"
                                 ToolTip="{Binding Fix}">
                             <Button.Style>
@@ -198,36 +236,53 @@
                 <DockPanel LastChildFill="False">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <TextBlock Text="Query ID:" Style="{StaticResource ToolbarLabel}"/>
-                        <TextBox x:Name="TxtQueryId" Width="90" Style="{StaticResource ToolbarBox}" KeyDown="TxtQueryId_KeyDown"
-                                 ToolTip="Any Query Store query ID, e.g. one from an SSMS report or a colleague's message. Enter opens its details."/>
+                        <TextBox x:Name="TxtQueryId" Width="90" Style="{StaticResource ToolbarBox}"
+                                 Text="{Binding QueryIdText, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Any Query Store query ID, e.g. one from an SSMS report or a colleague's message. Enter opens its details.">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding OpenQueryIdCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
                         <Button Content="Open details" Style="{StaticResource SecondaryButton}" Padding="10,3" Margin="6,0,0,0"
-                                Click="BtnOpenQuery_Click" ToolTip="Open the Query details window for this query ID."/>
+                                Command="{Binding OpenQueryIdCommand}" ToolTip="Open the Query details window for this query ID."/>
                     </StackPanel>
 
                     <TextBlock DockPanel.Dock="Left" Text="Period:" Style="{StaticResource ToolbarLabel}"/>
                     <ComboBox DockPanel.Dock="Left" x:Name="CmbPeriod" Width="130" Style="{StaticResource ToolbarCombo}"
-                              SelectionChanged="CmbPeriod_SelectionChanged"
+                              ItemsSource="{Binding PeriodNames}" SelectedIndex="{Binding PeriodIndex}"
                               ToolTip="What every tab but Forced Plans reads, on the server's clock, in whole Query Store intervals."/>
-                    <StackPanel DockPanel.Dock="Left" x:Name="CustomPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,16,0">
+                    <StackPanel DockPanel.Dock="Left" x:Name="CustomPanel" Orientation="Horizontal" Margin="0,0,16,0"
+                                Visibility="{Binding ShowsCustom, Converter={StaticResource Visible}}">
                         <TextBlock Text="From" Style="{StaticResource ToolbarLabel}"/>
-                        <DatePicker x:Name="FromDate" Height="26" Width="115" FontSize="11"/>
-                        <TextBox x:Name="FromTime" Width="50" Margin="4,0,10,0" Style="{StaticResource ToolbarBox}" KeyDown="CustomTime_KeyDown"
-                                 ToolTip="Time on this PC's clock, 24-hour, e.g. 09:30"/>
+                        <DatePicker x:Name="FromDate" Height="26" Width="115" FontSize="11" SelectedDate="{Binding CustomFromDate}"/>
+                        <TextBox x:Name="FromTime" Width="50" Margin="4,0,10,0" Style="{StaticResource ToolbarBox}"
+                                 Text="{Binding CustomFromTime, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Time on this PC's clock, 24-hour, e.g. 09:30">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyCustomCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
                         <TextBlock Text="to" Style="{StaticResource ToolbarLabel}"/>
-                        <DatePicker x:Name="ToDate" Height="26" Width="115" FontSize="11"/>
-                        <TextBox x:Name="ToTime" Width="50" Margin="4,0,10,0" Style="{StaticResource ToolbarBox}" KeyDown="CustomTime_KeyDown"
-                                 ToolTip="Time on this PC's clock, 24-hour, e.g. 17:05"/>
-                        <Button Content="Show" Style="{StaticResource RefreshButton}" Padding="12,3" Click="BtnApplyCustom_Click"/>
+                        <DatePicker x:Name="ToDate" Height="26" Width="115" FontSize="11" SelectedDate="{Binding CustomToDate}"/>
+                        <TextBox x:Name="ToTime" Width="50" Margin="4,0,10,0" Style="{StaticResource ToolbarBox}"
+                                 Text="{Binding CustomToTime, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Time on this PC's clock, 24-hour, e.g. 17:05">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyCustomCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
+                        <Button Content="Show" Style="{StaticResource RefreshButton}" Padding="12,3" Command="{Binding ApplyCustomCommand}"/>
                     </StackPanel>
-                    <TextBlock DockPanel.Dock="Left" x:Name="TxtDataFrom" Style="{StaticResource TabStatus}"/>
+                    <TextBlock DockPanel.Dock="Left" x:Name="TxtDataFrom" Style="{StaticResource TabStatus}" Text="{Binding DataFromText}"/>
                 </DockPanel>
                 <TextBlock x:Name="TxtPeriodError" Foreground="{StaticResource Danger}" FontSize="12" Margin="0,6,0,0"
-                           TextWrapping="Wrap" Visibility="Collapsed"/>
+                           TextWrapping="Wrap" Text="{Binding PeriodError}"
+                           Visibility="{Binding ShowsPeriodError, Converter={StaticResource Visible}}"/>
             </StackPanel>
         </Border>
 
         <TabControl Grid.Row="1" x:Name="Tabs" Background="Transparent" BorderThickness="0"
-                    SelectionChanged="Tabs_SelectionChanged">
+                    SelectedIndex="{Binding SelectedTab}">
 
             <!-- ── Top Queries (SSMS: Top Resource Consuming Queries) ──────── -->
             <TabItem x:Name="TabTop" Header="Top Queries">
@@ -237,18 +292,22 @@
                             <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=TopGrid}"/>
                             <WrapPanel>
                                 <TextBlock Text="Rank by:" Style="{StaticResource ToolbarLabel}"/>
-                                <ComboBox x:Name="CmbRank" Width="120" Style="{StaticResource ToolbarCombo}" SelectionChanged="TopChoice_SelectionChanged"
+                                <ComboBox x:Name="CmbRank" Width="120" Style="{StaticResource ToolbarCombo}"
+                                          ItemsSource="{Binding RankChoices}" DisplayMemberPath="Name" SelectedIndex="{Binding RankIndex}"
                                           ToolTip="What makes a query heavy. Log used and TempDB used need SQL Server 2017 or later."/>
                                 <TextBlock Text="Statistic:" Style="{StaticResource ToolbarLabel}"/>
-                                <ComboBox x:Name="CmbStatistic" Width="90" Style="{StaticResource ToolbarCombo}" SelectionChanged="TopChoice_SelectionChanged"
+                                <ComboBox x:Name="CmbStatistic" Width="90" Style="{StaticResource ToolbarCombo}"
+                                          ItemsSource="{Binding StatisticNames}" SelectedIndex="{Binding StatisticIndex}" IsEnabled="{Binding StatisticEnabled}"
                                           ToolTip="Total: the query's whole cost in the period. Average: per execution. Max: its worst execution. Std dev: how much executions differ."/>
                                 <TextBlock Text="Show:" Style="{StaticResource ToolbarLabel}"/>
-                                <ComboBox x:Name="CmbTop" Width="70" Style="{StaticResource ToolbarCombo}" SelectionChanged="TopChoice_SelectionChanged"/>
-                                <TextBlock x:Name="TxtTopStatus" Style="{StaticResource TabStatus}"/>
+                                <ComboBox x:Name="CmbTop" Width="70" Style="{StaticResource ToolbarCombo}"
+                                          ItemsSource="{Binding TopNames}" SelectedIndex="{Binding TopIndex}"/>
+                                <TextBlock x:Name="TxtTopStatus" Style="{StaticResource TabStatus}" Text="{Binding TopStatus}"/>
                             </WrapPanel>
                         </DockPanel>
-                        <controls:ScriptNotice DockPanel.Dock="Top" x:Name="TopNotice"/>
+                        <controls:ScriptNotice DockPanel.Dock="Top" x:Name="TopNotice" Message="{Binding TopNotice.Message}" Script="{Binding TopNotice.Script}"/>
                         <DataGrid x:Name="TopGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  ItemsSource="{Binding TopRows}" SelectedItem="{Binding SelectedTopRow}"
                                   SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Binding="{Binding QueryId}" Width="70" ElementStyle="{StaticResource Number}">
@@ -303,21 +362,22 @@
                     <DockPanel>
                         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                             <TextBlock Text="Charts:" Style="{StaticResource ToolbarLabel}"/>
-                            <ItemsControl x:Name="ChartMetricsList">
+                            <ItemsControl x:Name="ChartMetricsList" ItemsSource="{Binding ChartMetrics}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}" Margin="0,0,12,0" FontSize="12"
-                                                  Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"
-                                                  Checked="ChartMetric_Changed" Unchecked="ChartMetric_Changed"/>
+                                                  Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </WrapPanel>
-                        <TextBlock DockPanel.Dock="Top" x:Name="TxtOverTimeStatus" Style="{StaticResource TabStatus}" Margin="0,0,0,6"/>
-                        <controls:ScriptNotice DockPanel.Dock="Top" x:Name="OverTimeNotice"/>
+                        <TextBlock DockPanel.Dock="Top" x:Name="TxtOverTimeStatus" Style="{StaticResource TabStatus}" Margin="0,0,0,6"
+                                   Text="{Binding OverTimeStatus}"/>
+                        <controls:ScriptNotice DockPanel.Dock="Top" x:Name="OverTimeNotice" Message="{Binding OverTimeNotice.Message}"
+                                               Script="{Binding OverTimeNotice.Script}"/>
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel x:Name="ChartsPanel"/>
                         </ScrollViewer>
@@ -334,14 +394,16 @@
                             <WrapPanel>
                                 <TextBlock Text="Metric:" Style="{StaticResource ToolbarLabel}"/>
                                 <ComboBox x:Name="CmbVariationMetric" Width="120" Style="{StaticResource ToolbarCombo}"
-                                          SelectionChanged="CmbVariationMetric_SelectionChanged"/>
-                                <TextBlock x:Name="TxtVariationStatus" Style="{StaticResource TabStatus}"/>
+                                          ItemsSource="{Binding VariationMetricNames}" SelectedIndex="{Binding VariationMetricIndex}"/>
+                                <TextBlock x:Name="TxtVariationStatus" Style="{StaticResource TabStatus}" Text="{Binding VariationStatus}"/>
                             </WrapPanel>
                         </DockPanel>
                         <TextBlock DockPanel.Dock="Top" Style="{StaticResource TabStatus}" Margin="0,0,0,8"
                                    Text="High variation with more than one plan often means the plan suits some parameter values and not others (parameter sniffing). Compare the plans in Query details."/>
-                        <controls:ScriptNotice DockPanel.Dock="Top" x:Name="VariationNotice"/>
+                        <controls:ScriptNotice DockPanel.Dock="Top" x:Name="VariationNotice" Message="{Binding VariationNotice.Message}"
+                                               Script="{Binding VariationNotice.Script}"/>
                         <DataGrid x:Name="VariationGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  ItemsSource="{Binding VariationRows}" SelectedItem="{Binding SelectedVariationRow}"
                                   SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Binding="{Binding QueryId}" Width="70" ElementStyle="{StaticResource Number}" Header="Query ID"/>
@@ -376,11 +438,12 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*" MinHeight="120"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" x:Name="TxtWaitsStatus" Style="{StaticResource TabStatus}" Margin="0,0,0,6"/>
-                        <controls:ScriptNotice Grid.Row="1" x:Name="WaitsNotice"/>
+                        <TextBlock Grid.Row="0" x:Name="TxtWaitsStatus" Style="{StaticResource TabStatus}" Margin="0,0,0,6" Text="{Binding WaitsStatus}"/>
+                        <controls:ScriptNotice Grid.Row="1" x:Name="WaitsNotice" Message="{Binding WaitsNotice.Message}" Script="{Binding WaitsNotice.Script}"/>
                         <ListBox Grid.Row="2" x:Name="WaitCategoriesList" Background="Transparent" BorderThickness="0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 SelectionChanged="WaitCategoriesList_SelectionChanged">
+                                 ItemsSource="{Binding WaitBars}" SelectedItem="{Binding SelectedWaitBar}"
+                                 Visibility="{Binding ShowsWaitBars, Converter={StaticResource Visible}}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid ToolTip="{Binding Explanation}" Cursor="Hand">
@@ -411,10 +474,10 @@
                         </ListBox>
                         <DockPanel Grid.Row="3" Margin="0,10,0,6">
                             <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=WaitQueriesGrid}"/>
-                            <TextBlock x:Name="TxtWaitQueriesHeader" Text="Click a wait category to see the queries that waited on it."
-                                       Style="{StaticResource TabStatus}"/>
+                            <TextBlock x:Name="TxtWaitQueriesHeader" Text="{Binding WaitQueriesHeader}" Style="{StaticResource TabStatus}"/>
                         </DockPanel>
                         <DataGrid Grid.Row="4" x:Name="WaitQueriesGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  ItemsSource="{Binding WaitQueryRows}" SelectedItem="{Binding SelectedWaitQueryRow}"
                                   SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Binding="{Binding QueryId}" Width="70" ElementStyle="{StaticResource Number}" Header="Query ID"/>
@@ -451,10 +514,11 @@
                         </Grid.RowDefinitions>
                         <DockPanel Grid.Row="0" Margin="0,0,0,6">
                             <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=ForcedGrid}"/>
-                            <TextBlock x:Name="TxtForcedStatus" Style="{StaticResource TabStatus}"/>
+                            <TextBlock x:Name="TxtForcedStatus" Style="{StaticResource TabStatus}" Text="{Binding ForcedStatus}"/>
                         </DockPanel>
-                        <controls:ScriptNotice Grid.Row="1" x:Name="ForcedNotice"/>
+                        <controls:ScriptNotice Grid.Row="1" x:Name="ForcedNotice" Message="{Binding ForcedNotice.Message}" Script="{Binding ForcedNotice.Script}"/>
                         <DataGrid Grid.Row="2" x:Name="ForcedGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  ItemsSource="{Binding ForcedRows}" SelectedItem="{Binding SelectedForcedRow}"
                                   SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick" RowStyle="{StaticResource WarningRow}">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Binding="{Binding QueryId}" Width="70" ElementStyle="{StaticResource Number}" Header="Query ID"/>
@@ -481,9 +545,12 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal">
-                                                <Button Content="View Plan" Tag="{Binding}" Click="ViewPlan_Click" Style="{StaticResource RowButton}"
-                                                        ToolTip="The forced plan, drawn like SSMS."/>
-                                                <Button Content="Copy unforce" Tag="{Binding}" Click="CopyUnforce_Click" Style="{StaticResource RowButton}"
+                                                <Button Content="View Plan" Style="{StaticResource RowButton}"
+                                                        Command="{Binding DataContext.ViewPlanCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                        CommandParameter="{Binding}" ToolTip="The forced plan, drawn like SSMS."/>
+                                                <Button Content="Copy unforce" Style="{StaticResource RowButton}"
+                                                        Command="{Binding DataContext.CopyUnforceCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                        CommandParameter="{Binding}"
                                                         ToolTip="Copy EXEC sys.sp_query_store_unforce_plan for this plan. SqlVitals never forces or unforces a plan itself."/>
                                             </StackPanel>
                                         </DataTemplate>
@@ -494,11 +561,13 @@
                         </DataGrid>
 
                         <TextBlock Grid.Row="3" x:Name="TxtHintsHeader" Text="Query Store hints" Style="{StaticResource SectionHeader}"
-                                   Margin="0,12,0,6" Visibility="Collapsed"
+                                   Margin="0,12,0,6" Visibility="{Binding ShowsHintsHeader, Converter={StaticResource Visible}}"
                                    ToolTip="Hints set with sys.sp_query_store_set_hints, or by the system (SQL Server 2022+ and Azure SQL)."/>
-                        <controls:ScriptNotice Grid.Row="4" x:Name="HintsNotice"/>
+                        <controls:ScriptNotice Grid.Row="4" x:Name="HintsNotice" Message="{Binding HintsNotice.Message}" Script="{Binding HintsNotice.Script}"/>
                         <DataGrid Grid.Row="5" x:Name="HintsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick" Visibility="Collapsed">
+                                  ItemsSource="{Binding HintRows}" SelectedItem="{Binding SelectedHintRow}"
+                                  SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick"
+                                  Visibility="{Binding ShowsHints, Converter={StaticResource Visible}}">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Binding="{Binding QueryId}" Width="70" ElementStyle="{StaticResource Number}" Header="Query ID"/>
                                 <DataGridTextColumn Binding="{Binding HintText}" Width="220" ElementStyle="{StaticResource SingleLineText}" Header="Hint"/>

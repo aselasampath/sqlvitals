@@ -171,6 +171,7 @@ public partial class QueryStoreQueryWindow : Window
     private async void ViewPlan_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: QueryStorePlanSummary plan } btn)
-            await QueryStorePage.ShowPlanAsync(_repo, btn, plan.PlanId, _queryId, _details?.Query?.QueryText).Reported("show the plan");
+            await BusyButton.WhileAsync(btn, () => QueryStorePlans.ShowAsync(_repo, CompositionRoot.Get<IDialogService>(), plan.PlanId, _queryId,
+                                                                              _details?.Query?.QueryText)).Reported("show the plan");
     }
 }

@@ -1,10 +1,12 @@
 <Page x:Class="SqlVitals.Desktop.Pages.HomePage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:pages="clr-namespace:SqlVitals.Desktop.Pages"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
       x:Name="Root" Background="{StaticResource BgDeep}" Title="Home">
     <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+        <helpers:HealthBrush x:Key="Health"/>
         <!-- A status or "Active" label beside a tile's name. -->
         <Style x:Key="Chip" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
@@ -55,13 +57,15 @@
         <StackPanel Margin="20,20,6,20">
             <!-- Heading, and a count per status on the right -->
             <DockPanel Margin="0,0,14,14">
-                <ItemsControl x:Name="Counts" DockPanel.Dock="Right" VerticalAlignment="Bottom" Focusable="False">
+                <ItemsControl x:Name="Counts" DockPanel.Dock="Right" VerticalAlignment="Bottom" Focusable="False"
+                              ItemsSource="{Binding Counts}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type pages:HomeCount}">
-                            <Border Style="{StaticResource Chip}" Background="{Binding Tint}" Padding="10,3">
+                        <DataTemplate>
+                            <Border Style="{StaticResource Chip}" Padding="10,3"
+                                    Background="{Binding Status, Converter={StaticResource Health}, ConverterParameter=Tint}">
                                 <TextBlock Text="{Binding Text}" FontSize="12" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextPrimary}"/>
                             </Border>
@@ -70,12 +74,12 @@
                 </ItemsControl>
                 <StackPanel>
                     <TextBlock Text="Your servers" Style="{StaticResource SectionHeader}" FontSize="20" Margin="0"/>
-                    <TextBlock x:Name="TxtHeadline" Style="{StaticResource Muted}" FontSize="12" Margin="0,2,0,0"/>
+                    <TextBlock x:Name="TxtHeadline" Text="{Binding Headline}" Style="{StaticResource Muted}" FontSize="12" Margin="0,2,0,0"/>
                 </StackPanel>
             </DockPanel>
 
-            <TextBlock x:Name="TxtNote" Foreground="{StaticResource TextMuted}" FontSize="12" TextWrapping="Wrap"
-                       Margin="0,0,14,12" Visibility="Collapsed"/>
+            <TextBlock x:Name="TxtNote" Text="{Binding Note}" Foreground="{StaticResource TextMuted}" FontSize="12" TextWrapping="Wrap"
+                       Margin="0,0,14,12" Visibility="{Binding ShowsNote, Converter={StaticResource Visible}}"/>
 
             <!-- A tile's score breakdown (#36), beside its menu button -->
             <Popup x:Name="BreakdownPopup" Placement="Bottom" VerticalOffset="4" StaysOpen="False"
@@ -84,15 +88,16 @@
             </Popup>
 
             <!-- One tile per saved connection, then "+ Add a connection" -->
-            <ItemsControl x:Name="Tiles" Focusable="False" MouseLeave="Tiles_MouseLeave"
+            <ItemsControl x:Name="Tiles" Focusable="False" MouseEnter="Tiles_MouseEnter" MouseLeave="Tiles_MouseLeave"
                           AutomationProperties.Name="Saved connections">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapPanel ItemWidth="{Binding TileWidth, ElementName=Root}"/>
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type pages:HomeTile}">
+                <ItemsControl.Resources>
+                    <!-- A tile; then "+ Add a connection", picked by TileTemplates in the code-behind -->
+                    <DataTemplate x:Key="TileTemplate">
                         <Border Margin="0,0,14,14" Padding="16,14" CornerRadius="10" MinHeight="236"
                                 Background="{StaticResource BgCard}" BorderThickness="1"
                                 AutomationProperties.Name="{Binding Tile.AutomationName}">
@@ -112,18 +117,20 @@
                                 <DockPanel DockPanel.Dock="Top">
                                     <!-- Open, Start or Stop monitoring, the score's breakdown, Edit (#141):
                                          what the sidebar's connection selector did before 0.57.0 -->
-                                    <Button DockPanel.Dock="Right" Content="&#xE712;" Click="TileMenu_Click"
+                                    <Button x:Name="MoreButton" DockPanel.Dock="Right" Content="&#xE712;"
+                                            Command="{Binding DataContext.ShowMenuCommand, ElementName=Root}" CommandParameter="{Binding}"
                                             Style="{StaticResource NavArrowButton}" Width="26" Height="26" Margin="6,0,0,0"
                                             FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" BorderBrush="Transparent"
                                             AutomationProperties.Name="{Binding MenuName}" ToolTip="More: monitoring, the score's breakdown, edit"/>
-                                    <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Background="{Binding StatusTint}">
+                                    <Border DockPanel.Dock="Right" Style="{StaticResource Chip}"
+                                            Background="{Binding Tile.Status, Converter={StaticResource Health}, ConverterParameter=Tint}">
                                         <TextBlock Text="{Binding Tile.StatusLabel}" Style="{StaticResource ChipText}"/>
                                     </Border>
                                     <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Background="{StaticResource AccentLight}"
-                                            Visibility="{Binding ActiveVisibility}">
+                                            Visibility="{Binding Tile.IsActive, Converter={StaticResource Visible}}">
                                         <TextBlock Text="ACTIVE" Style="{StaticResource ChipText}"/>
                                     </Border>
-                                    <Ellipse Width="10" Height="10" Fill="{Binding StatusBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <Ellipse Width="10" Height="10" Fill="{Binding Tile.Status, Converter={StaticResource Health}}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                     <TextBlock Text="{Binding Tile.Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"
                                                ToolTip="{Binding Tile.Name}"/>
@@ -133,14 +140,16 @@
 
                                 <!-- When it was sampled, and the button -->
                                 <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-                                    <Button DockPanel.Dock="Right" Content="{Binding Tile.ActionText}" Click="TileAction_Click"
-                                            IsEnabled="{Binding Tile.CanAct}" Visibility="{Binding ScoreVisibility}"
+                                    <Button DockPanel.Dock="Right" Content="{Binding Tile.ActionText}"
+                                            Command="{Binding DataContext.ActOnTileCommand, ElementName=Root}" CommandParameter="{Binding}"
+                                            IsEnabled="{Binding Tile.CanAct}" Visibility="{Binding ShowsScore, Converter={StaticResource Visible}}"
                                             Style="{StaticResource SecondaryButton}" Padding="14,5"
                                             AutomationProperties.Name="{Binding ActionName}" ToolTip="{Binding ActionToolTip}"
                                             ToolTipService.ShowOnDisabled="True"/>
                                     <!-- An active alert's evidence (#145) -->
-                                    <Button DockPanel.Dock="Right" Content="Investigate" Click="Investigate_Click" Margin="0,0,8,0"
-                                            Visibility="{Binding InvestigateVisibility}"
+                                    <Button DockPanel.Dock="Right" Content="Investigate" Margin="0,0,8,0"
+                                            Command="{Binding DataContext.InvestigateCommand, ElementName=Root}" CommandParameter="{Binding}"
+                                            Visibility="{Binding ShowsInvestigate, Converter={StaticResource Visible}}"
                                             Style="{StaticResource SecondaryButton}" Padding="12,5"
                                             AutomationProperties.Name="{Binding InvestigateName}" ToolTip="{Binding InvestigateToolTip}"/>
                                     <TextBlock Text="{Binding Tile.Footer}" Style="{StaticResource Muted}" VerticalAlignment="Center"
@@ -148,10 +157,11 @@
                                 </DockPanel>
 
                                 <!-- Not monitored: why, and Start -->
-                                <StackPanel DockPanel.Dock="Top" Visibility="{Binding OffVisibility}" Margin="0,22,0,0">
+                                <StackPanel DockPanel.Dock="Top" Visibility="{Binding IsOff, Converter={StaticResource Visible}}" Margin="0,22,0,0">
                                     <TextBlock Text="{Binding Tile.Reason}" Foreground="{StaticResource TextMuted}" FontSize="12"
                                                TextWrapping="Wrap"/>
-                                    <Button Content="{Binding Tile.ActionText}" Click="TileAction_Click" HorizontalAlignment="Left"
+                                    <Button Content="{Binding Tile.ActionText}" HorizontalAlignment="Left"
+                                            Command="{Binding DataContext.ActOnTileCommand, ElementName=Root}" CommandParameter="{Binding}"
                                             IsEnabled="{Binding Tile.CanAct}" Margin="0,10,0,0"
                                             Style="{StaticResource RefreshButton}"
                                             AutomationProperties.Name="{Binding ActionName}" ToolTip="{Binding ActionToolTip}"
@@ -160,14 +170,14 @@
 
                                 <!-- Monitored: the worst state and its reason first (#173), then the score, its last
                                      hour, why it's lower, and a bar per check -->
-                                <StackPanel DockPanel.Dock="Top" Visibility="{Binding ScoreVisibility}">
-                                    <TextBlock Text="{Binding Tile.Headline}" Foreground="{Binding StatusBrush}" FontSize="15"
+                                <StackPanel DockPanel.Dock="Top" Visibility="{Binding ShowsScore, Converter={StaticResource Visible}}">
+                                    <TextBlock Text="{Binding Tile.Headline}" Foreground="{Binding Tile.Status, Converter={StaticResource Health}}" FontSize="15"
                                                FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                                MaxHeight="42" ToolTip="{Binding Tile.Headline}"/>
                                     <DockPanel Margin="0,2,0,0">
                                         <StackPanel DockPanel.Dock="Right" VerticalAlignment="Bottom">
                                             <controls:ScoreChart Width="120" Height="36" HorizontalAlignment="Right"
-                                                                 Data="{Binding Trend}" LineBrush="{Binding StatusBrush}"
+                                                                 Data="{Binding Trend}" LineBrush="{Binding Tile.Status, Converter={StaticResource Health}}"
                                                                  ToolTip="{Binding TrendToolTip}"/>
                                             <!-- How much of the last day was watched (#170) -->
                                             <TextBlock Text="{Binding CoverageText}" FontSize="10" HorizontalAlignment="Right"
@@ -177,7 +187,7 @@
                                         <TextBlock VerticalAlignment="Bottom">
                                             <Run Text="Score " FontSize="12" Foreground="{StaticResource TextMuted}"/><Run
                                                  Text="{Binding Tile.ScoreText, Mode=OneWay}" FontSize="26" FontWeight="Bold"
-                                                 Foreground="{Binding StatusBrush, Mode=OneWay}"/><Run
+                                                 Foreground="{Binding Tile.Status, Mode=OneWay, Converter={StaticResource Health}}"/><Run
                                                  Text=" / 100" FontSize="12" Foreground="{StaticResource TextMuted}"/>
                                         </TextBlock>
                                     </DockPanel>
@@ -189,9 +199,9 @@
                                             <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="{x:Type pages:HomeBar}">
+                                            <DataTemplate>
                                                 <StackPanel Margin="2,0" ToolTip="{Binding ToolTip}" Background="Transparent">
-                                                    <Border Height="6" CornerRadius="3" Background="{Binding Brush}"/>
+                                                    <Border Height="6" CornerRadius="3" Background="{Binding Level, Converter={StaticResource Health}}"/>
                                                     <TextBlock Text="{Binding Label}" FontSize="10" HorizontalAlignment="Center"
                                                                Foreground="{StaticResource TextMuted}" Margin="0,3,0,0"/>
                                                 </StackPanel>
@@ -202,7 +212,12 @@
                             </DockPanel>
                         </Border>
                     </DataTemplate>
-                </ItemsControl.ItemTemplate>
+                    <DataTemplate x:Key="AddTemplate">
+                        <Button Content="+ Add a connection" Margin="0,0,14,14" MinHeight="236" Style="{StaticResource AddTile}"
+                                ToolTip="Opens Settings to add a SQL Server connection"
+                                Command="{Binding DataContext.AddConnectionCommand, ElementName=Root}"/>
+                    </DataTemplate>
+                </ItemsControl.Resources>
             </ItemsControl>
         </StackPanel>
     </ScrollViewer>

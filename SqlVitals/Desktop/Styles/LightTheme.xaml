@@ -339,6 +339,9 @@
             <DataTrigger Binding="{Binding Tone}" Value="Danger">
                 <Setter Property="Foreground" Value="{DynamicResource Danger}" />
             </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="Muted">
+                <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            </DataTrigger>
         </Style.Triggers>
     </Style>
 

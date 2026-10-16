@@ -41,6 +41,7 @@ public sealed class PageFactoryTests : IDisposable
             .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)
+            .AddSingleton<IUiDispatcher>(new FakeUiDispatcher())
             .AddSingleton(new OverviewVisits(settings))
             .AddSingleton(new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }))
             .AddSingleton<IWatchStarter>(new DirectWatchStarter(_monitoring))

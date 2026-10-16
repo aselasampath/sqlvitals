@@ -234,7 +234,7 @@ internal partial class ConnectionEditor : UserControl
             return;
         }
 
-        var tile = ServerTile.From(HomePage.InputFor(conn, _store, _context.Monitoring), DateTime.Now);
+        var tile = ServerTile.From(ViewModels.Pages.HomeViewModel.InputFor(conn, _store, _context.Monitoring), DateTime.Now);
         TxtName.Text = RunCrumb.Text = conn.DisplayName;
         Dot.Visibility            = Visibility.Visible;
         Dot.Fill                  = HealthBrushes.For(tile.Status);

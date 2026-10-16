@@ -19,12 +19,12 @@ public static class PageRegistrations
     public static IServiceCollection AddPages(this IServiceCollection services) =>
         services
             .AddSingleton<IPageFactory, PageFactory>()
-            .AddPage("Home",             (s, a) => new HomePage(Monitoring(s), Settings(s), Shell(s), s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
-            .AddPage("Overview",         (s, a) => new OverviewPage(a.Route.ServerId!.Value, Monitoring(s), Settings(s),
-                                                                    s.GetRequiredService<OverviewVisits>().Open(a.Route.ServerId!.Value), Shell(s),
-                                                                    s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
-            .AddPage("LiveMetrics",      (s, a) => new LiveMetricsDashboardPage(a.Repo, Monitoring(s), a.ConnectionId, History(s, a), a.ConnectionName,
-                                                                                Navigator(s), Shell(s), s.GetRequiredService<IWatchStarter>()), p => p.ViewModel)
+            .AddPage("Home",             (s, a) => new HomePage(new HomeViewModel(Monitoring(s), Settings(s), Starter(s), Ui(s), Time(s))), p => p.ViewModel)
+            .AddPage("Overview",         (s, a) => new OverviewPage(new OverviewViewModel(a.Route.ServerId!.Value, Monitoring(s), Settings(s),
+                                                                    s.GetRequiredService<OverviewVisits>().Open(a.Route.ServerId!.Value),
+                                                                    Starter(s), Ui(s), s.GetRequiredService<IClipboard>(), time: Time(s))), p => p.ViewModel)
+            .AddPage("LiveMetrics",      (s, a) => new LiveMetricsDashboardPage(new LiveMetricsDashboardViewModel(a.Repo, Monitoring(s), a.ConnectionId,
+                                                                                History(s, a), a.ConnectionName, Navigator(s), Starter(s))), p => p.ViewModel)
             .AddPage("Alerts",           (s, a) => new AlertsPage(new AlertsViewModel(Monitoring(s), Settings(s), Navigator(s), a.Route.AlertsConnectionId, Time(s)),
                                                                   Settings(s)), p => p.ViewModel)
             .AddPage("Waits",            (s, a) => new WaitsPage(new WaitsViewModel(a.Repo, History(s, a), Navigator(s), Time(s)), Settings(s)), p => p.ViewModel)
@@ -38,7 +38,8 @@ public static class PageRegistrations
             .AddPage("SecurityAudit",    (s, a) => new SecurityAuditPage(new SecurityAuditViewModel(a.Repo, Dialogs(s), a.ConnectionName, Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("TempDb",           (s, a) => new TempDbPage(new TempDbViewModel(a.Repo), Settings(s)), p => p.ViewModel)
             .AddPage("Memory",           (s, a) => new MemoryPage(new MemoryViewModel(a.Repo), Settings(s)), p => p.ViewModel)
-            .AddPage("QueryStore",       (s, a) => new QueryStorePage(a.Repo, Settings(s), Navigator(s), Shell(s)), p => p.ViewModel)
+            .AddPage("QueryStore",       (s, a) => new QueryStorePage(new QueryStoreViewModel(a.Repo, Settings(s), Navigator(s), Dialogs(s),
+                                                                                  s.GetRequiredService<IClipboard>(), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("QueryRegressions", (s, a) => new QueryRegressionsPage(new QueryRegressionsViewModel(a.Repo, History(s, a), Settings(s), Navigator(s),
                                                                                                   Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("IndexHealth",      (s, a) => new IndexHealthPage(new IndexHealthViewModel(a.Repo, a.Repo, Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
@@ -60,9 +61,10 @@ public static class PageRegistrations
     private static ConnectionSettingsService Settings(IServiceProvider s) => s.GetRequiredService<ConnectionSettingsService>();
     private static MonitoringManager Monitoring(IServiceProvider s) => s.GetRequiredService<MonitoringManager>();
     private static INavigator Navigator(IServiceProvider s) => s.GetRequiredService<INavigator>();
-    private static IShellStatus Shell(IServiceProvider s) => s.GetRequiredService<IShellStatus>();
     private static IDialogService Dialogs(IServiceProvider s) => s.GetRequiredService<IDialogService>();
     private static TimeProvider Time(IServiceProvider s) => s.GetRequiredService<TimeProvider>();
+    private static IUiDispatcher Ui(IServiceProvider s) => s.GetRequiredService<IUiDispatcher>();
+    private static IWatchStarter Starter(IServiceProvider s) => s.GetRequiredService<IWatchStarter>();
 
     // The open connection's history of samples, on pages that chart it.
     private static ConnectionHistory? History(IServiceProvider s, PageArgs a) => Monitoring(s).HistoryFor(a.ConnectionId);

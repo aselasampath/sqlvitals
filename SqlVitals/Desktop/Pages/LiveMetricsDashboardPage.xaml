@@ -3,11 +3,13 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
       xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="SqlVitals.Desktop.Pages.LiveMetricsDashboardPage"
-      Title="Live charts"
-      Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+      Title="Live charts">
 
   <Page.Resources>
+    <BooleanToVisibilityConverter x:Key="Visible"/>
+    <helpers:HealthBrush x:Key="Health"/>
     <!-- Chart toggle chip button -->
     <Style x:Key="ChipButton" TargetType="{x:Type ToggleButton}">
       <Setter Property="Height"          Value="24"/>
@@ -92,7 +94,19 @@
                        VerticalAlignment="Center" Margin="0,0,0,0"/>
       <!-- Health score of the latest sample (#36); click for the checks that lowered it -->
       <Button x:Name="BtnHealthScore" DockPanel.Dock="Left" Margin="14,0,0,0" VerticalAlignment="Center"
-              Cursor="Hand" Click="BtnHealthScore_Click" AutomationProperties.Name="Health score">
+              Cursor="Hand" Command="{Binding ShowBreakdownCommand}" AutomationProperties.Name="Health score"
+              ToolTip="{Binding HealthToolTip}"
+              BorderBrush="{Binding HealthLevel, Converter={StaticResource Health}, FallbackValue={StaticResource HealthNone}}">
+        <Button.Style>
+          <Style TargetType="{x:Type Button}">
+            <Style.Triggers>
+              <!-- Not monitored: no score now -->
+              <DataTrigger Binding="{Binding IsMonitoring}" Value="False">
+                <Setter Property="Opacity" Value="0.6"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
         <Button.Template>
           <ControlTemplate TargetType="{x:Type Button}">
             <Border x:Name="Bd" Background="{DynamicResource BgCard}" BorderBrush="{TemplateBinding BorderBrush}"
@@ -111,7 +125,8 @@
         </Button.Template>
         <TextBlock FontFamily="Segoe UI" VerticalAlignment="Center">
           <Run Text="Health" FontSize="11" Foreground="{DynamicResource TextMuted}"/><Run
-               Text=" "/><Run x:Name="RunHealthScore" Text="—" FontSize="14" FontWeight="Bold"/><Run
+               Text=" "/><Run x:Name="RunHealthScore" Text="{Binding HealthScoreText, Mode=OneWay}" FontSize="14" FontWeight="Bold"
+               Foreground="{Binding HealthLevel, Mode=OneWay, Converter={StaticResource Health}, FallbackValue={StaticResource HealthNone}}"/><Run
                Text=" / 100" FontSize="10" Foreground="{DynamicResource TextMuted}"/>
         </TextBlock>
       </Button>
@@ -133,22 +148,23 @@
                           FontFamily="Segoe UI" FontSize="12"
                           AutomationProperties.Name="Sample every"
                           ToolTip="How often this connection is sampled. Collection and recording carry on in the background, also while a past range is shown."
-                          SelectionChanged="CmbInterval_SelectionChanged">
+                          ItemsSource="{Binding IntervalNames}" SelectedIndex="{Binding IntervalIndex}">
           <ComboBox.ItemContainerStyle>
             <Style TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource DarkComboItem}"/>
           </ComboBox.ItemContainerStyle>
         </ComboBox>
         <!-- Starts or stops monitoring this connection (#115); the same as ▶ / ■ in the selector -->
-        <Button x:Name="BtnMonitor" Content="▶  Start monitoring" Height="26" MinWidth="130"
+        <Button x:Name="BtnMonitor" Content="{Binding MonitorText}" Height="26" MinWidth="130"
                 Margin="6,0,0,0" Padding="10,0"
                 Style="{StaticResource SecondaryButton}" FontSize="11"
-                ToolTipService.ShowOnDisabled="True"
-                Click="BtnMonitor_Click"/>
+                Command="{Binding ToggleMonitoringCommand}" IsEnabled="{Binding CanStart}"
+                ToolTip="{Binding MonitorToolTip}" AutomationProperties.Name="{Binding MonitorName}"
+                ToolTipService.ShowOnDisabled="True"/>
         <!-- Countdown -->
         <Border Margin="8,0,0,0" Background="{StaticResource BgCard}"
                         BorderBrush="{StaticResource Border}" BorderThickness="1"
                         CornerRadius="3" Padding="6,0" Height="26" VerticalAlignment="Center">
-          <TextBlock x:Name="TxtCountdown" Text="--"
+          <TextBlock x:Name="TxtCountdown" Text="{Binding NextSampleIn}"
                                Foreground="{StaticResource TextMuted}"
                                VerticalAlignment="Center"
                                FontFamily="Segoe UI Mono" FontSize="11"
@@ -160,21 +176,21 @@
     <!-- Monitoring is off (#115): nothing is collected; past ranges still show the saved history -->
     <Border x:Name="MonitoringOffBanner" Grid.Row="1" Background="{DynamicResource BgCard}"
             BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4"
-            Padding="14,10" Margin="0,0,0,10" Visibility="Collapsed">
+            Padding="14,10" Margin="0,0,0,10" Visibility="{Binding ShowsMonitoringOff, Converter={StaticResource Visible}}">
       <DockPanel>
         <Button x:Name="BtnBannerStart" DockPanel.Dock="Right" VerticalAlignment="Center"
                 Style="{StaticResource RefreshButton}" Padding="14,6" Margin="12,0,0,0"
                 Content="▶  Start monitoring" ToolTipService.ShowOnDisabled="True"
-                Click="BtnBannerStart_Click"/>
+                Command="{Binding StartMonitoringCommand}" IsEnabled="{Binding CanStart}" ToolTip="{Binding BannerToolTip}"/>
         <StackPanel VerticalAlignment="Center">
           <TextBlock Text="Monitoring is off. SqlVitals isn't collecting anything from this server."
                      Foreground="{DynamicResource TextPrimary}" FontFamily="Segoe UI" FontSize="13"
                      FontWeight="SemiBold" TextWrapping="Wrap"/>
           <TextBlock FontFamily="Segoe UI" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
                      Foreground="{DynamicResource TextMuted}">
-            <Run x:Name="TxtMonitoringOffReason"/>
+            <Run x:Name="TxtMonitoringOffReason" Text="{Binding MonitoringOffReason, Mode=OneWay}"/>
             <Run Text=" Past ranges (1h, 24h, 7d, Custom…) still show the history saved earlier. "/>
-            <Hyperlink Click="LnkMonitoringSetting_Click" Foreground="{DynamicResource AccentLight}">Start monitoring automatically…</Hyperlink>
+            <Hyperlink Command="{Binding OpenMonitoringSettingsCommand}" Foreground="{DynamicResource AccentLight}">Start monitoring automatically…</Hyperlink>
           </TextBlock>
         </StackPanel>
       </DockPanel>
@@ -189,47 +205,41 @@
                            FontFamily="Segoe UI" FontSize="11"/>
         <ToggleButton x:Name="ChipWaits"      Content="Waits - Stack Area"
                               Tag="Waits"
-                              IsChecked="True"
+                              IsChecked="{Binding ShowsWaits}"
                               Background="#1A2A3A" BorderBrush="#4488CC"
                               Foreground="#88CCFF"
-                              Style="{StaticResource ChipButton}"
-                              Checked="Chip_Changed" Unchecked="Chip_Changed"/>
+                              Style="{StaticResource ChipButton}"/>
         <ToggleButton x:Name="ChipCpu"        Content="CPU Usage"
                               Tag="Cpu"
-                              IsChecked="False"
+                              IsChecked="{Binding ShowsCpu}"
                               Background="#2A1A1A" BorderBrush="#CC4444"
                               Foreground="#FF8888"
-                              Style="{StaticResource ChipButton}"
-                              Checked="Chip_Changed" Unchecked="Chip_Changed"/>
+                              Style="{StaticResource ChipButton}"/>
         <ToggleButton x:Name="ChipThroughput" Content="SQL Throughput"
                               Tag="Throughput"
-                              IsChecked="False"
+                              IsChecked="{Binding ShowsThroughput}"
                               Background="#1A2A1A" BorderBrush="#44AA44"
                               Foreground="#88FF88"
-                              Style="{StaticResource ChipButton}"
-                              Checked="Chip_Changed" Unchecked="Chip_Changed"/>
+                              Style="{StaticResource ChipButton}"/>
         <ToggleButton x:Name="ChipPhysicalIO" Content="Physical R/W"
                               Tag="PhysicalIO"
-                              IsChecked="False"
+                              IsChecked="{Binding ShowsPhysicalIo}"
                               Background="#2A2A1A" BorderBrush="#AAAA44"
                               Foreground="#FFFF88"
-                              Style="{StaticResource ChipButton}"
-                              Checked="Chip_Changed" Unchecked="Chip_Changed"/>
+                              Style="{StaticResource ChipButton}"/>
         <ToggleButton x:Name="ChipMemory"     Content="Memory"
                               Tag="Memory"
-                              IsChecked="False"
+                              IsChecked="{Binding ShowsMemory}"
                               Background="#2A1A2A" BorderBrush="#AA44AA"
                               Foreground="#FF88FF"
-                              Style="{StaticResource ChipButton}"
-                              Checked="Chip_Changed" Unchecked="Chip_Changed"/>
+                              Style="{StaticResource ChipButton}"/>
         <ToggleButton x:Name="ChipProcessMap" Content="Process Map"
                               Tag="ProcessMap"
-                              IsChecked="True"
+                              IsChecked="{Binding ShowsProcessMap}"
                               Background="#1A2A2A" BorderBrush="#44AAAA"
                               Foreground="#88FFFF"
-                              Style="{StaticResource ChipButton}"
-                              Checked="Chip_Changed" Unchecked="Chip_Changed"/>
-        <TextBlock x:Name="TxtHistoryStatus" Foreground="{StaticResource TextMuted}"
+                              Style="{StaticResource ChipButton}"/>
+        <TextBlock x:Name="TxtHistoryStatus" Foreground="{StaticResource TextMuted}" Text="{Binding HistoryStatus}"
                    VerticalAlignment="Center" Margin="10,0,0,0"
                    FontFamily="Segoe UI" FontSize="11"/>
       </WrapPanel>
