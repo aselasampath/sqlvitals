@@ -2,6 +2,7 @@
              x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
              FontFamily="Segoe UI">
     <UserControl.Resources>
         <ResourceDictionary>
@@ -14,21 +15,22 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="32,24,32,24" MaxWidth="900" HorizontalAlignment="Stretch">
             <TextBlock Text="Notification area" Style="{StaticResource PageTitle}" />
-            <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+            <TextBlock x:Name="TxtSubtitle" Text="{Binding Subtitle, Mode=OneTime}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
 
             <Border Style="{StaticResource SettingsCard}">
                 <StackPanel>
                     <DockPanel>
+                        <!-- Shows the setting; a click asks the view model, which puts it back if it couldn't save. -->
                         <CheckBox x:Name="ChkKeepRunningInTray" DockPanel.Dock="Right" Style="{StaticResource Switch}"
                                   AutomationProperties.Name="Keep SqlVitals running in the notification area"
-                                  Click="ChkKeepRunningInTray_Click" />
+                                  IsChecked="{Binding KeepRunning, Mode=OneWay}" Command="{Binding ToggleKeepRunningCommand}" />
                         <StackPanel>
                             <TextBlock Text="Keep SqlVitals running in the notification area" Style="{StaticResource RowLabel}" />
                             <TextBlock Style="{StaticResource RowHelp}"
                                        Text="When the window is minimized or closed. Monitoring, history and alerts carry on while the window is hidden. Click the SqlVitals icon in the notification area (beside the clock; it may be under ^) to bring the window back, or right-click it and choose Exit to quit. When this is off, minimizing goes to the taskbar and closing the window exits SqlVitals." />
                         </StackPanel>
                     </DockPanel>
-                    <TextBlock x:Name="TxtTrayStatus" Style="{StaticResource Status}" />
+                    <controls:StatusText x:Name="TxtTrayStatus" Style="{StaticResource Status}" Line="{Binding Status}" />
                 </StackPanel>
             </Border>
         </StackPanel>

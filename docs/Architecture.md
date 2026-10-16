@@ -87,7 +87,7 @@ Each page is a XAML view with a view model that reads its data, decides what it 
 - **View model:** `ViewModels/Pages/XViewModel.cs`, derived from `PageViewModel` (CommunityToolkit.Mvvm). It may use Engine, the service interfaces in `Services/`, and LiveChartsCore types, but not WPF controls, `MessageBox`, `Application` or a `Dispatcher`.
 - **Buttons** bind `Command=` to `[RelayCommand]` methods. `Click=` is only for view-only actions, and `async void` only for event handlers.
 - **Services** a view model asks for instead of WPF: `IDialogService`, `IClipboard`, `IFileDialogs`, `INavigator`, `IThemeService`, `IShellStatus`, `IRefreshScheduler`, with WPF implementations in `Services/Wpf/` and fakes in `Desktop.Tests/Fakes/`.
-- A few pages (Home, Overview, Live charts, Query Store) still read in their code-behind; the guard tests list them and the list only shrinks.
+- No page reads in its code-behind since #189, and no page's XAML has a `Click=` since #190; the guard tests fail on a new one.
 
 ### The composition root
 
@@ -124,6 +124,14 @@ Wave 5 (#189) settled five more, for the pages that follow the monitoring:
 - **Links the window opens stay events.** Home's *Open*, *Investigate*, *Edit connection* and the Overview's *Make active*, *Change* thresholds and evidence routes open Settings, Alerts or a route with a time window, which `INavigator` doesn't: the view model raises the event and the page forwards it (`add => ViewModel.OpenRequested += value`), so `MainWindow.Wire` is unchanged.
 - **A menu or a popup is the view's; what it holds is the view model's.** Home's ⋯ raises `MenuRequested`; the page builds the `ContextMenu` from `MenuFor(tile)` beside the tile's button, and opens the score's breakdown when `Breakdown` is set. A control the page hands to the top bar (`TakeBarTools`) keeps its own `DataContext`, as Live charts' sample interval does, since it leaves the page's. An item that isn't a tile in a list of tiles (Home's *+ Add a connection*) is drawn by a `DataTemplateSelector`, not put in the list as a `Button`: WPF ignores the item template for it (binding error 26).
 - **Query Store reads a tab when it is opened,** and again after Refresh or a new period. A tab's failure is said in its own line (`ScriptNotice` binds `Message` and `Script`), and the settings read is the only one that fails the page. The drawer shows the row picked last on any tab: a read selects its tab's row again, but moves the drawer only if it showed that query. Its plans open through `Services/QueryStorePlans`, shared with a query's window (`Helpers/BusyButton` greys the button meanwhile).
+
+Settings (#190) settled the rest, for forms that save:
+
+- **Each category of Settings has a view model,** `ViewModels/Settings/XViewModel.cs` for `Pages/Settings/X.xaml`, derived from `SettingsCategoryViewModel` (`TryLeaveAsync`, `OnShownAgain`, and `Activate`/`Deactivate`, which the view calls as it is loaded and unloaded). `SettingsViewModel` keeps them while Settings is open, asks the one on screen before leaving it, and the page maps each to its view, made once. What they need from the app is `Services/SettingsContext`, with fakes for Test connection, the database list, the grid density and the log folder.
+- **A form's rules are validation attributes** on an `ObservableValidator` (the connection editor): an error is shown under a field once it has been typed in (its `Tag` gives the red border, not WPF's validation state, so a new form isn't red all over), the first error in the save bar, and **Save** is disabled while there is any.
+- **A switch that saves as it's clicked** binds `IsChecked` one way and a command that toggles the setting; the view model raises the property again when the save fails, so the switch goes back. A drop-down that saves as it's picked does the same, raised later through `IUiDispatcher.Post`, since a ComboBox ignores it during its own change.
+- **A status line** is a `ViewModels/StatusLine` (redacted, ✓ or ✗) shown by `Controls/StatusText` with the `Status` style. A view model's secret (a password, a webhook URL) is in no bound property until the user asks for it: the PasswordBox's code-behind copies it into the view model, and a saved webhook URL stays out of the form until **Show**.
+- **Two radio buttons that belong together are siblings without a `GroupName`:** a name groups them across the whole window, so another view's buttons (a page kept by the history, a test's) uncheck them through their bindings.
 
 ### Testing a page
 

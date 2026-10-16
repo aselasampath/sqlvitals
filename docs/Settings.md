@@ -49,7 +49,7 @@ The active connection has the accent border. **+ New connection** at the top and
 | **Health thresholds** | [Its own thresholds](#a-connections-own-thresholds). The tab shows an **OWN** tag when the connection uses them. |
 | **Advanced** | Connection timeout, and additional connection-string parameters. |
 
-A bar along the bottom saves **every tab at once**: **Discard**, **Save**, and **Save & make active** (save, then switch every page to it and open its Overview; not shown for the active connection). Moving between tabs keeps what you've typed, and the bar says where: *● Unsaved changes on Connection and Health thresholds*. Typing a value and putting it back leaves nothing unsaved.
+A bar along the bottom saves **every tab at once**: **Discard**, **Save**, and **Save & make active** (save, then switch every page to it and open its Overview; not shown for the active connection). Moving between tabs keeps what you've typed, and the bar says where: *● Unsaved changes on Connection and Health thresholds*. Typing a value and putting it back leaves nothing unsaved. From 0.79.7 **Save** and **Save & make active** stay disabled while something can't be saved, and the bar says what, on whichever tab: a server name, a login and password for SQL Server Authentication, a whole number of seconds for the timeout, additional parameters without a user name or password, a name no other connection has, and its own thresholds when every box can be read. A field you've typed in also says it underneath, with a red border.
 
 - **Saving checks the server first** when anything about how SqlVitals connects changed (server, authentication, login, password, database, encryption, timeout, parameters), and saves nothing if it can't sign in, so the list only ever holds working connections. A new name, the monitoring and alert settings, or thresholds save **without** contacting the server, so a server that's down can still be renamed, muted or given its own thresholds.
 - A connection's settings, its own thresholds and its Windows notifications are saved in **one** write, logged as one change per field in the [activity log](#activity-log).
@@ -101,7 +101,7 @@ From 0.75.0 (#173):
 - Under the table, every monitored connection on these thresholds says what it would score on what's typed: *On the latest sample, UAT would score 76 → 84*.
 - Each change is logged in the [activity log](#activity-log): *Health weight: CPU* 20 → 0, *Health threshold: Page life expectancy scaling* Per 4 GB of buffer pool → Fixed. A connection's own are *Own health weight: …*.
 
-This category keeps an explicit **Save** bar, so a half-typed threshold never grades a sample: **Save** checks every box and applies them to every connection without its own, straight away; **Discard** puts back what's saved. Leaving with unsaved thresholds asks first. See [Health Dot and Background Monitoring](Health-Dot-and-Background-Monitoring.md).
+This category keeps an explicit **Save** bar, so a half-typed threshold never grades a sample: **Save** applies them to every connection without its own, straight away, and from 0.79.7 is disabled while a box can't be read, with the first one said beside it; **Discard** puts back what's saved. Leaving with unsaved thresholds asks first. See [Health Dot and Background Monitoring](Health-Dot-and-Background-Monitoring.md).
 
 ## Alerts & chat
 

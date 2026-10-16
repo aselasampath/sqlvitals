@@ -1,40 +1,17 @@
-using System.Windows;
 using System.Windows.Controls;
-using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels.Settings;
 
 namespace SqlVitals.Desktop.Pages.Settings;
 
-/// <summary>Settings → Notification area (#131): whether closing the window keeps SqlVitals running (#35).</summary>
-internal partial class NotificationAreaCategory : UserControl, ISettingsCategory
+/// <summary>Settings → Notification area (#131), bound to its <see cref="NotificationAreaCategoryViewModel"/> (#190).</summary>
+internal partial class NotificationAreaCategory : UserControl
 {
-    private readonly SettingsContext _context;
-
-    public NotificationAreaCategory(SettingsContext context)
+    public NotificationAreaCategory(NotificationAreaCategoryViewModel model)
     {
-        _context = context;
+        ViewModel   = model;
+        DataContext = model;
         InitializeComponent();
-        TxtSubtitle.Text = SettingsNav.Info(SettingsCategory.NotificationArea).Subtitle;
-        ChkKeepRunningInTray.IsChecked = _context.Service.Load().KeepRunningInTray;
     }
 
-    public Task<bool> TryLeaveAsync() => Task.FromResult(true);
-
-    private void ChkKeepRunningInTray_Click(object sender, RoutedEventArgs e)
-    {
-        var keep = ChkKeepRunningInTray.IsChecked == true;
-        try
-        {
-            _context.Service.SetKeepRunningInTray(keep);
-            SettingsContext.ShowStatus(TxtTrayStatus,
-                keep
-                    ? "Saved: minimizing or closing the window keeps SqlVitals running in the notification area."
-                    : "Saved: closing the window exits SqlVitals and stops monitoring.",
-                success: true);
-        }
-        catch (Exception ex)
-        {
-            SettingsContext.ShowStatus(TxtTrayStatus, $"Could not save the setting: {ex.Message}", success: false);
-            ChkKeepRunningInTray.IsChecked = !keep;
-        }
-    }
+    public NotificationAreaCategoryViewModel ViewModel { get; }
 }

@@ -1,7 +1,12 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
+                    xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls">
     <!-- Shared by Settings' categories and a connection's page (#131). Theme brushes by dynamic
          reference: this dictionary loads before its control is in the page. -->
+
+    <helpers:Shown x:Key="Shown" />
+    <helpers:HealthBrush x:Key="HealthBrush" />
 
     <!-- ── Headings ─────────────────────────────────────────────── -->
     <Style x:Key="PageTitle" TargetType="TextBlock">
@@ -53,11 +58,31 @@
         <Setter Property="TextWrapping" Value="Wrap" />
         <Setter Property="Margin" Value="0,3,24,0" />
     </Style>
-    <Style x:Key="Status" TargetType="TextBlock">
+    <!-- A status line, a Controls.StatusText showing its view model's StatusLine (#190): green when it
+         went, red when it didn't, muted for news on the way; hidden while empty. -->
+    <Style x:Key="Status" TargetType="controls:StatusText">
         <Setter Property="FontSize" Value="11" />
         <Setter Property="TextWrapping" Value="Wrap" />
         <Setter Property="Margin" Value="0,8,0,0" />
-        <Setter Property="Visibility" Value="Collapsed" />
+        <Setter Property="Text" Value="{Binding Line.Text, RelativeSource={RelativeSource Self}}" />
+        <Setter Property="Visibility" Value="{Binding Line.IsShown, RelativeSource={RelativeSource Self}, Converter={StaticResource Shown}}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Line.Success, RelativeSource={RelativeSource Self}}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource Success}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Line.Success, RelativeSource={RelativeSource Self}}" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <!-- What's wrong with a field, under it (#190); its Text bound to the view model's error, hidden while there's none. -->
+    <Style x:Key="FieldError" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+        <Setter Property="Visibility" Value="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource Shown}}" />
     </Style>
 
     <!-- ── Form fields (as before #131) ─────────────────────────── -->
@@ -83,6 +108,13 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}" />
+        <!-- A red border while its Tag holds the error its view model shows under it (#190): only once
+             it's been typed in, unlike WPF's own validation state, so a new form isn't red all over. -->
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}, Converter={StaticResource Shown}}" Value="Visible">
+                <Setter Property="BorderBrush" Value="{DynamicResource Danger}" />
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
     <Style TargetType="PasswordBox">
         <Setter Property="Height" Value="32" />

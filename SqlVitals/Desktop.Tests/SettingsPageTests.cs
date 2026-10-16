@@ -2,10 +2,13 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
+using SqlVitals.Desktop.ViewModels.Settings;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
@@ -16,17 +19,20 @@ using SqlVitals.Engine.Settings;
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
-/// Settings (#131) as WPF builds it, off screen, over the three connections of the Home tests:
-/// "Hot" (active, CPU at 99 %, so critical), "Down" (monitored in the background, unreachable)
-/// and "Quiet" (not monitored). No server is ever contacted: nothing here changes how a
-/// connection connects, so saving doesn't sign in first.
+/// Settings (#131) as WPF builds it, off screen, bound to its view models (#190), over the three
+/// connections of the Home tests: "Hot" (active, CPU at 99 %, so critical), "Down" (monitored in the
+/// background, unreachable) and "Quiet" (not monitored). No server is ever contacted: nothing here
+/// changes how a connection connects, so saving doesn't sign in first. What the view models decide
+/// on their own is in their tests (<see cref="ConnectionEditorViewModelTests"/>, <see cref="SettingsViewModelTests"/>).
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class SettingsPageTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
     private readonly ConcurrentQueue<(string Server, string Method)> _calls = new();
     private readonly List<bool> _applied = new();
-    private readonly List<(string Text, MessageBoxButton Buttons)> _asked = new();
+    private readonly FakeDialogService _dialogs = new();
+    private readonly List<GridDensity> _densities = new();
 
     private readonly ConnectionSettings _hot   = Conn("hot",   "Hot");
     private readonly ConnectionSettings _down  = Conn("down",  "Down", background: true);
@@ -39,12 +45,9 @@ public sealed class SettingsPageTests : IDisposable
     // Run as MainWindow applies a save, e.g. to try leaving Settings as opening Live Metrics does.
     private Func<Task>? _onApply;
 
-    // What the next question is answered with.
-    private MessageBoxResult _answer = MessageBoxResult.Cancel;
-
     // The collector service (#172): installed when a test sets it.
-    private Fakes.FakeCollectorControl? _control;
-    private CollectorLink?               _collectors;
+    private FakeCollectorControl? _control;
+    private CollectorLink?        _collectors;
 
     private static ConnectionSettings Conn(string server, string name, bool background = false) => new()
     {
@@ -82,20 +85,21 @@ public sealed class SettingsPageTests : IDisposable
 
         if (_control is not null)
         {
-            _collectors = new CollectorLink(_control, _settings, new Fakes.FakeUiDispatcher(), TimeProvider.System);
+            _collectors = new CollectorLink(_control, _settings, new FakeUiDispatcher(), TimeProvider.System);
             UiThread.Wait(_collectors.RefreshAsync());
         }
-        var page = new SettingsPage(_settings, _monitoring, _chat, Apply, location, collectors: _collectors)
-        {
-            Prompt = (text, _, buttons, _) =>
-            {
-                _asked.Add((text, buttons));
-                return _answer;
-            },
-        };
+        var page = new SettingsPage(new SettingsViewModel(TestContext(), location));
         UiThread.Layout(page, 1200, 900);
         return page;
     }
+
+    private SettingsContext TestContext() =>
+        new(_settings!, _monitoring!, _chat!, Apply, _dialogs, _collectors)
+        {
+            Theme        = new FakeThemeService(),
+            // Recorded, not applied: the app's resources are every test's.
+            ApplyDensity = _densities.Add,
+        };
 
     // What MainWindow does after a save: monitoring follows the settings.
     private Task Apply(bool connect)
@@ -105,8 +109,6 @@ public sealed class SettingsPageTests : IDisposable
         return _onApply?.Invoke() ?? Task.CompletedTask;
     }
 
-    private static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-
     // Lets the dispatcher run until the task is done, then its result.
     private static T Await<T>(Task<T> task)
     {
@@ -114,15 +116,14 @@ public sealed class SettingsPageTests : IDisposable
         return task.Result;
     }
 
-    private static ConnectionEditor Editor(SettingsPage page) => page.Connections!.Editor!;
+    private static ConnectionEditorViewModel Editor(SettingsPage page) => page.ViewModel.Connections!.Editor!;
 
-    // The text of some inlines, links included.
-    private static string Text(IEnumerable<System.Windows.Documents.Inline> inlines) => string.Concat(inlines.Select(i => i switch
-    {
-        System.Windows.Documents.Run run       => run.Text,
-        System.Windows.Documents.Span span     => Text(span.Inlines),
-        _                                      => string.Empty,
-    }));
+    private static ConnectionEditor EditorView(SettingsPage page) => page.Connections!.Editor!;
+
+    private static T Category<T>(SettingsPage page) where T : SettingsCategoryViewModel =>
+        Assert.IsType<T>(page.ViewModel.Current);
+
+    private IReadOnlyList<string> Asked => _dialogs.Shown;
 
     private int CountChanges(Action action)
     {
@@ -134,6 +135,9 @@ public sealed class SettingsPageTests : IDisposable
         return writes;
     }
 
+    private static RadioButton MenuButton(SettingsPage page, string title) =>
+        UiThread.Find<RadioButton>(page.Menu).Single(r => System.Windows.Automation.AutomationProperties.GetName(r).StartsWith(title, StringComparison.Ordinal));
+
     // ── The side menu ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -143,18 +147,19 @@ public sealed class SettingsPageTests : IDisposable
 
         Assert.Equal(SettingsCategory.Connections, page.Category);
         Assert.IsType<ConnectionsCategory>(page.Shown);
-        Assert.True(page.MenuItemFor(SettingsCategory.Connections).IsChecked);
-        Assert.Equal("Connections, 3 saved", System.Windows.Automation.AutomationProperties.GetName(page.MenuItemFor(SettingsCategory.Connections)));
+        Assert.True(page.ViewModel.MenuItemFor(SettingsCategory.Connections).IsSelected);
+        Assert.True(MenuButton(page, "Connections").IsChecked);
+        Assert.Equal("Connections, 3 saved", page.ViewModel.MenuItemFor(SettingsCategory.Connections).AutomationName);
 
         var shown = new List<SettingsCategory>();
         page.CategoryShown += shown.Add;
-        var alerts = page.MenuItemFor(SettingsCategory.Alerts);
-        alerts.IsChecked = true;
-        Click(alerts);
+        TemplateRolloutTests.Click(MenuButton(page, "Alerts"));
+        UiThread.Layout(page, 1200, 900);
 
         Assert.Equal(SettingsCategory.Alerts, page.Category);
         Assert.IsType<AlertsCategory>(page.Shown);
-        Assert.False(page.MenuItemFor(SettingsCategory.Connections).IsChecked);
+        Assert.True(MenuButton(page, "Alerts").IsChecked);
+        Assert.False(MenuButton(page, "Connections").IsChecked);
         Assert.Equal([SettingsCategory.Alerts], shown);
 
         // The same instance when it's opened again: what's typed in it stays.
@@ -168,26 +173,28 @@ public sealed class SettingsPageTests : IDisposable
     public void TheCollectorService_NotInstalled_SaysHowToGetIt_AndNothingCanBeHandedOver() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Collector));
-        var collector = Assert.IsType<CollectorCategory>(page.Shown);
+        var collector = Category<CollectorCategoryViewModel>(page);
+        var view = Assert.IsType<CollectorCategory>(page.Shown);
 
-        Assert.StartsWith("Not installed. SqlVitals watches your servers itself while it runs.", collector.TxtState.Text);
-        Assert.False(collector.BtnStart.IsEnabled);
+        Assert.StartsWith("Not installed. SqlVitals watches your servers itself while it runs.", view.TxtState.Text);
+        Assert.False(view.BtnStart.IsEnabled);
         Assert.Equal(["Down", "Hot", "Quiet"], collector.Rows.Select(r => r.Name));
         Assert.All(collector.Rows, r => Assert.False(r.CanAct));
         Assert.All(collector.Rows, r => Assert.Equal("The collector service isn't installed on this PC.", r.ActionToolTip));
-        Assert.Equal(0, collector.CmbChoice.SelectedIndex);
+        Assert.Equal(0, view.CmbChoice.SelectedIndex);
     });
 
     [Fact]
     public void TheCollectorService_HandsAServerOver_AndTakesItBack() => UiThread.Run(() =>
     {
         Directory.CreateDirectory(Path.Combine(_dir, "collector"));
-        _control = new Fakes.FakeCollectorControl(Path.Combine(_dir, "collector")) { State = CollectorServiceState.Running };
+        _control = new FakeCollectorControl(Path.Combine(_dir, "collector")) { State = CollectorServiceState.Running };
         var page = Open(new SettingsLocation(SettingsCategory.Collector));
-        var collector = Assert.IsType<CollectorCategory>(page.Shown);
-        Assert.StartsWith("Running. It watches 0 of your servers", collector.TxtState.Text);
-        Assert.False(collector.BtnStart.IsEnabled);
-        Assert.True(collector.BtnStop.IsEnabled);
+        var collector = Category<CollectorCategoryViewModel>(page);
+        var view = Assert.IsType<CollectorCategory>(page.Shown);
+        Assert.StartsWith("Running. It watches 0 of your servers", collector.StateText);
+        Assert.False(view.BtnStart.IsEnabled);
+        Assert.True(view.BtnStop.IsEnabled);
 
         var hot = collector.Rows.Single(r => r.Name == "Hot");
         Assert.Equal(("Hand over", true, "Watched in SqlVitals."), (hot.ActionText, hot.CanAct, hot.Where));
@@ -195,16 +202,17 @@ public sealed class SettingsPageTests : IDisposable
         UiThread.WaitUntil(() => collector.Rows.Single(r => r.Name == "Hot").ActionText == "Take back");
 
         Assert.Equal(_hot.Id, Assert.Single(_control.Saved().Servers).Id);
-        Assert.StartsWith("✓  Handed Hot to the service.", collector.TxtServersStatus.Text);
-        Assert.StartsWith("Running. It watches 1 of your servers", collector.TxtState.Text);
+        Assert.StartsWith("✓  Handed Hot to the service.", collector.ServersStatus.Text);
+        Assert.StartsWith("Running. It watches 1 of your servers", collector.StateText);
 
         collector.Rows.Single(r => r.Name == "Hot").Act.Execute(null);
         UiThread.WaitUntil(() => collector.Rows.Single(r => r.Name == "Hot").ActionText == "Hand over");
         Assert.Empty(_control.Saved().Servers);
 
         // What Start does is saved as it's picked, and logged as a setting.
-        collector.CmbChoice.SelectedIndex = (int)WatchChoice.Service;
+        view.CmbChoice.SelectedIndex = (int)WatchChoice.Service;
         Assert.Equal(WatchChoice.Service, _settings!.Load().WatchChoice);
+        Assert.Equal(WatchChoice.Service, collector.WatchChoice);
     });
 
     [Fact]
@@ -214,7 +222,7 @@ public sealed class SettingsPageTests : IDisposable
         var alerts = Assert.IsType<AlertsCategory>(page.Shown);
 
         // On the screen itself (#170), not only in the wiki, and whether or not there are channels.
-        Assert.Equal(System.Windows.Visibility.Visible, alerts.ChatStopsWarning.Visibility);
+        Assert.Equal(Visibility.Visible, alerts.ChatStopsWarning.Visibility);
         Assert.StartsWith("⚠  Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed", alerts.TxtChatStopsWarning.Text);
     });
 
@@ -224,40 +232,53 @@ public sealed class SettingsPageTests : IDisposable
         const string ping = "https://hc-ping.com/0f3b8a5e-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
         var page = Open(new SettingsLocation(SettingsCategory.Alerts));
         var alerts = Assert.IsType<AlertsCategory>(page.Shown);
-        Click(alerts.BtnAddChatChannel);
+        var model  = alerts.ViewModel;
+        TemplateRolloutTests.Click(alerts.BtnAddChatChannel);
+        UiThread.Layout(page, 1200, 900);
+
+        // Typed in the boxes, so the bindings are what's tested.
+        var form = model.Form!;
+        Assert.Equal(Visibility.Visible, alerts.ChatChannelForm.Visibility);
         alerts.TxtChatName.Text = "DBA team";
         alerts.TxtChatUrl.Text  = "https://prod-27.westeurope.logic.azure.com:443/workflows/0a1b/triggers/manual/paths/invoke?sig=AbCd";
+        Assert.Equal(ChatService.Teams, form.Service);
 
         // Daily at shows the time; the steps follow the service and the schedule.
         alerts.CmbHeartbeat.SelectedIndex = 8;
-        Assert.Equal(System.Windows.Visibility.Visible, alerts.CmbHeartbeatAt.Visibility);
+        UiThread.Layout(page, 1200, 900);
+        Assert.Equal(Visibility.Visible, alerts.CmbHeartbeatAt.Visibility);
         alerts.CmbHeartbeatAt.SelectedIndex = 19; // 09:30
-        Assert.Equal(HeartbeatSchedule.DailyAt(new TimeSpan(9, 30, 0)), alerts.ChosenHeartbeat());
+        Assert.Equal(HeartbeatSchedule.DailyAt(new TimeSpan(9, 30, 0)), form.ChosenHeartbeat());
         alerts.ChkHeartbeatSteps.IsChecked = true;
-        Assert.Equal(System.Windows.Visibility.Visible, alerts.PnlHeartbeatSteps.Visibility);
+        UiThread.Layout(page, 1200, 900);
+        Assert.Equal(Visibility.Visible, alerts.PnlHeartbeatSteps.Visibility);
         Assert.Contains("Recurrence: every day, starting 10:00", alerts.TxtHeartbeatSteps.Text);
 
         // A ping URL that isn't https blocks the save, and says why.
         alerts.TxtPingUrl.Text = "http://hc-ping.com/abc";
-        Click(alerts.BtnSaveChatChannel);
+        TemplateRolloutTests.Click(alerts.BtnSaveChatChannel);
         Assert.Contains("must start with https://", alerts.TxtChatFormMessage.Text);
         Assert.Empty(_settings!.Load().ChatChannels);
 
         alerts.TxtPingUrl.Text = ping;
-        Click(alerts.BtnSaveChatChannel);
+        TemplateRolloutTests.Click(alerts.BtnSaveChatChannel);
+        UiThread.Layout(page, 1200, 900);
 
         var saved = Assert.Single(_settings.Load().ChatChannels);
         Assert.Equal((HeartbeatEvery.Daily, new TimeSpan(9, 30, 0), ping), (saved.HeartbeatEvery, saved.HeartbeatAt, saved.HeartbeatPingUrl));
-        // Reopened after saving: the ping URL is in no control until Show.
+        // Opened again as saved: the URLs are in no control until Show.
+        Assert.NotSame(form, model.Form);
         Assert.Equal(string.Empty, alerts.TxtPingUrl.Text);
+        Assert.Equal(string.Empty, alerts.TxtChatUrl.Text);
         Assert.StartsWith("hc-ping.com/…/4a5b", alerts.TxtPingUrlMasked.Text);
         // The webhook's Show shows both secrets.
-        Click(alerts.BtnShowChatUrl);
+        TemplateRolloutTests.Click(alerts.BtnShowChatUrl);
         Assert.Equal(ping, alerts.TxtPingUrl.Text);
-        // Copy steps is a bound command, not a Click= (the real clipboard is left alone here).
-        Assert.Same(alerts.CopyHeartbeatSteps, alerts.BtnCopyHeartbeatSteps.Command);
+        Assert.Equal(saved.WebhookUrl, alerts.TxtChatUrl.Text);
+        // Copy steps is a bound command (the real clipboard is left alone here).
+        Assert.Same(model.Form!.CopyStepsCommand, alerts.BtnCopyHeartbeatSteps.Command);
         Assert.Equal(8, alerts.CmbHeartbeat.SelectedIndex);
-        var card = Assert.Single((IEnumerable<ChatChannelCard>)alerts.ChannelCards.ItemsSource);
+        var card = Assert.Single(model.Channels);
         Assert.Contains("Heartbeat daily 09:30 + ping", card.Tags);
     });
 
@@ -267,16 +288,18 @@ public sealed class SettingsPageTests : IDisposable
         var page = Open(SettingsLocation.Connection(_down.Id, ConnectionTab.Thresholds));
 
         var editor = Editor(page);
+        var view   = EditorView(page);
         Assert.Equal(_down.Id, editor.ConnectionId);
         Assert.Equal(ConnectionTab.Thresholds, editor.SelectedTab);
-        Assert.Same(editor.TabThresholds, editor.Tabs.SelectedItem);
-        Assert.Equal("Down", editor.TxtName.Text);
-        Assert.Equal("UNREACHABLE", editor.TxtStatusChip.Text);
+        Assert.Same(view.TabThresholds, view.Tabs.SelectedItem);
+        Assert.Equal("Down", view.TxtName.Text);
+        Assert.Equal("UNREACHABLE", view.TxtStatusChip.Text);
 
         // Another tab of the same connection: the page stays, only the tab changes.
         UiThread.Wait(page.OpenAsync(SettingsLocation.Connection(_down.Id, ConnectionTab.Advanced)));
         Assert.Same(editor, Editor(page));
         Assert.Equal(ConnectionTab.Advanced, editor.SelectedTab);
+        Assert.Same(view.TabAdvanced, view.Tabs.SelectedItem);
     });
 
     [Fact]
@@ -284,8 +307,8 @@ public sealed class SettingsPageTests : IDisposable
     {
         var page = Open(SettingsLocation.Connection(Guid.NewGuid()));
 
-        Assert.Null(page.Connections!.Editor);
-        Assert.Equal(3, page.Connections.CardsShown.Count);
+        Assert.Null(page.ViewModel.Connections!.Editor);
+        Assert.Equal(3, page.ViewModel.Connections.Cards.Count);
     });
 
     // ── Connections ───────────────────────────────────────────────────────────
@@ -294,7 +317,7 @@ public sealed class SettingsPageTests : IDisposable
     public void Cards_ShowEveryConnection_InTheSelectorsOrder_WithItsRoleTagsAndState() => UiThread.Run(() =>
     {
         var page  = Open();
-        var cards = page.Connections!.CardsShown.Select(c => c.Card).ToList();
+        var cards = page.ViewModel.Connections!.Cards.Select(c => c.Card).ToList();
 
         Assert.Equal(["Down", "Hot", "Quiet"], cards.Select(c => c.Name));
         Assert.Equal([ConnectionRole.Background, ConnectionRole.Active, ConnectionRole.Off], cards.Select(c => c.Role));
@@ -303,25 +326,43 @@ public sealed class SettingsPageTests : IDisposable
         Assert.Equal(["Windows auth", "Monitored", "Default thresholds"], cards[1].Tags);
         Assert.Equal(["Windows auth", "Not monitored", "Default thresholds"], cards[2].Tags);
 
-        // Two a row at this width, then "+ Add a connection".
-        Assert.Equal(4, page.Connections.Cards.Items.Count);
-        Assert.Equal("+ Add a connection", ((Button)page.Connections.Cards.Items[3]).Content);
+        // The cards, then "+ Add a connection", which opens a new connection's page.
+        var view = page.Connections!;
+        Assert.Equal(4, view.Cards.Items.Count);
+        var add = UiThread.Find<Button>(view.Cards).Single(b => Equals(b.Content, "+ Add a connection"));
+        TemplateRolloutTests.Click(add);
+        Assert.True(page.ViewModel.Connections.Editor!.IsNew);
     });
 
     [Fact]
-    public void NewConnection_OpensAnEmptyPage_ThatSaysWhatsMissing() => UiThread.Run(() =>
+    public void NewConnection_SaysWhatsMissing_AndCantBeSavedUntilItsThere() => UiThread.Run(() =>
     {
         var page   = Open(SettingsLocation.NewConnectionPage);
         var editor = Editor(page);
+        var view   = EditorView(page);
 
         Assert.True(editor.IsNew);
-        Assert.Equal("New connection", editor.TxtName.Text);
+        Assert.Equal("New connection", view.TxtName.Text);
         Assert.False(editor.IsDirty);
-        Assert.True(editor.BtnSave.IsEnabled);
-        Assert.Equal(Visibility.Visible, editor.BtnSaveAndConnect.Visibility);
+        Assert.Equal(Visibility.Visible, view.BtnSaveAndConnect.Visibility);
 
+        // Nothing typed yet: Save is disabled and the bar says why, with no field marked yet.
+        Assert.False(Validation.GetHasError(view.TxtServer));
+        Assert.False(view.BtnSave.IsEnabled);
+        Assert.Equal("Server name is required.", view.TxtProblem.Text);
+        Assert.Null(editor.ServerError);
         Assert.False(Await(editor.SaveAsync(connect: false)));
-        Assert.Equal("✗  Server name is required.", editor.TxtStatus.Text);
+        Assert.Equal("✗  Server name is required.", view.TxtStatus.Text);
+
+        // Typed and cleared again: the field says it too, in red.
+        view.TxtServer.Text = "sql01";
+        view.TxtServer.Text = "";
+        UiThread.Layout(page, 1200, 900);
+        Assert.Equal("Server name is required.", editor.ServerError);
+        Assert.Equal(((System.Windows.Media.SolidColorBrush)page.FindResource("Danger")).Color,
+                     ((System.Windows.Media.SolidColorBrush)view.TxtServer.BorderBrush).Color);
+        Assert.Equal(((System.Windows.Media.SolidColorBrush)page.FindResource("Border")).Color,
+                     ((System.Windows.Media.SolidColorBrush)view.TxtUserName.BorderBrush).Color);
     });
 
     // ── A connection's page ───────────────────────────────────────────────────
@@ -332,22 +373,22 @@ public sealed class SettingsPageTests : IDisposable
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
 
-        editor.TxtConnectionName.Text = "Quiet reporting";
-        editor.ChkNotify.IsChecked = false;
-        editor.ChkCustomThresholds.IsChecked = true;
-        editor.ConnectionThresholds.Box(HealthIndicator.Cpu).Text = "60";
+        editor.Name = "Quiet reporting";
+        editor.Notifies = false;
+        editor.OwnThresholds = true;
+        editor.Thresholds.Row(HealthIndicator.Cpu).Warning.Text = "60";
 
         Assert.True(editor.IsDirty);
-        Assert.Equal("●  Unsaved changes on Connection, Monitoring & alerts and Health thresholds", editor.TxtUnsaved.Text);
-        Assert.Equal(Visibility.Visible, editor.OwnTag.Visibility);
+        Assert.Equal("●  Unsaved changes on Connection, Monitoring & alerts and Health thresholds", editor.UnsavedText);
+        Assert.True(editor.ShowsOwnTag);
 
         var saved  = false;
         var writes = CountChanges(() => saved = Await(editor.SaveAsync(connect: false)));
 
-        Assert.True(saved, editor.TxtStatus.Text);
+        Assert.True(saved, editor.Status.Text);
         Assert.Equal(1, writes);
         Assert.False(editor.IsDirty);
-        Assert.Equal(Visibility.Collapsed, editor.TxtUnsaved.Visibility);
+        Assert.Equal(string.Empty, editor.UnsavedText);
 
         var store = _settings!.Load();
         var quiet = store.Connections.Single(c => c.Id == _quiet.Id);
@@ -363,15 +404,15 @@ public sealed class SettingsPageTests : IDisposable
     {
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
-        editor.TxtConnectionName.Text = "Quiet 2";
+        editor.Name = "Quiet 2";
         bool? couldLeave = null;
         _onApply = async () => couldLeave = await page.TryLeaveAsync();
 
-        Assert.True(Await(editor.SaveAsync(connect: true)), editor.TxtStatus.Text);
+        Assert.True(Await(editor.SaveAsync(connect: true)), editor.Status.Text);
 
         Assert.Equal([true], _applied);
         Assert.True(couldLeave);
-        Assert.Empty(_asked);
+        Assert.Empty(Asked);
         Assert.Equal(_quiet.Id, _settings!.Load().ActiveConnectionId);
     });
 
@@ -383,8 +424,8 @@ public sealed class SettingsPageTests : IDisposable
 
         // From the tray menu, say, after the page was opened.
         _settings!.SetNotificationsMuted(_quiet.Id, muted: true);
-        editor.TxtConnectionName.Text = "Quiet 2";
-        Assert.True(Await(editor.SaveAsync(connect: false)), editor.TxtStatus.Text);
+        editor.Name = "Quiet 2";
+        Assert.True(Await(editor.SaveAsync(connect: false)), editor.Status.Text);
 
         Assert.False(_settings.Load().NotifiesFor(_quiet.Id));
     });
@@ -394,38 +435,48 @@ public sealed class SettingsPageTests : IDisposable
     {
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
+        var view   = EditorView(page);
 
-        editor.TxtConnectionName.Text = "Renamed";
+        // Typed in the boxes, on two tabs.
+        view.TxtConnectionName.Text = "Renamed";
         editor.SelectTab(ConnectionTab.Advanced);
         UiThread.Layout(page, 1200, 900);
-        editor.TxtConnectTimeout.Text = "45";
+        view.TxtConnectTimeout.Text = "45";
         editor.SelectTab(ConnectionTab.Connection);
         UiThread.Layout(page, 1200, 900);
 
-        Assert.Equal("Renamed", editor.TxtConnectionName.Text);
-        Assert.Equal("45", editor.TxtConnectTimeout.Text);
-        Assert.Equal("●  Unsaved changes on Connection and Advanced", editor.TxtUnsaved.Text);
-        Assert.True(editor.BtnDiscard.IsEnabled);
+        Assert.Equal("Renamed", view.TxtConnectionName.Text);
+        Assert.Equal("45", editor.ConnectTimeout);
+        Assert.Equal("●  Unsaved changes on Connection and Advanced", view.TxtUnsaved.Text);
+        Assert.True(view.BtnDiscard.IsEnabled);
 
-        Click(editor.BtnDiscard);
+        TemplateRolloutTests.Click(view.BtnDiscard);
 
         Assert.False(editor.IsDirty);
-        Assert.Equal("Quiet", editor.TxtConnectionName.Text);
-        Assert.Equal("30", editor.TxtConnectTimeout.Text);
-        Assert.False(editor.BtnDiscard.IsEnabled);
-        Assert.False(editor.BtnSave.IsEnabled);
+        Assert.Equal("Quiet", view.TxtConnectionName.Text);
+        Assert.Equal("30", editor.ConnectTimeout);
+        Assert.False(view.BtnDiscard.IsEnabled);
+        Assert.False(view.BtnSave.IsEnabled);
     });
 
     [Fact]
-    public void TypingAValueAndPuttingItBack_LeavesNothingUnsaved() => UiThread.Run(() =>
+    public void ThePasswordBox_IsCopiedToTheViewModel_AndBackOnDiscard() => UiThread.Run(() =>
     {
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
+        var view   = EditorView(page);
+        editor.Authentication = SqlAuthMode.SqlServer;
+        editor.UserName = "app";
+        UiThread.Layout(page, 1200, 900);
+        Assert.Equal(Visibility.Visible, view.PanelPassword.Visibility);
 
-        editor.TxtConnectionName.Text = "Something else";
-        editor.TxtConnectionName.Text = "Quiet";
+        view.TxtPassword.Password = "s3cret";
+        Assert.Equal("s3cret", editor.Password);
+        Assert.Null(editor.PasswordError);
 
-        Assert.False(editor.IsDirty);
+        TemplateRolloutTests.Click(view.BtnDiscard);
+        Assert.Equal(string.Empty, view.TxtPassword.Password);
+        Assert.Equal(Visibility.Collapsed, view.PanelPassword.Visibility);
     });
 
     [Fact]
@@ -433,20 +484,23 @@ public sealed class SettingsPageTests : IDisposable
     {
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
-        editor.TxtConnectionName.Text = "Renamed";
+        editor.Name = "Renamed";
 
-        _answer = MessageBoxResult.Cancel;
+        _dialogs.SaveAnswer = DialogAnswer.Cancel;
         Assert.False(Await(page.TryLeaveAsync()));
-        UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
+
+        // A click on another category that the user takes back: the menu shows Connections again.
+        TemplateRolloutTests.Click(MenuButton(page, "Alerts"));
+        UiThread.Layout(page, 1200, 900);
 
         Assert.Equal(SettingsCategory.Connections, page.Category);
         Assert.Same(editor, Editor(page));
-        Assert.True(page.MenuItemFor(SettingsCategory.Connections).IsChecked);
-        Assert.Equal(2, _asked.Count);
-        Assert.All(_asked, a => Assert.Equal(MessageBoxButton.YesNoCancel, a.Buttons));
-        Assert.StartsWith("Save the changes to \"Quiet\"?", _asked[0].Text);
+        Assert.True(MenuButton(page, "Connections").IsChecked);
+        Assert.False(MenuButton(page, "Alerts").IsChecked);
+        Assert.Equal(2, Asked.Count);
+        Assert.All(Asked, a => Assert.StartsWith("AskToSave: Unsaved changes: Save the changes to \"Quiet\"?", a, StringComparison.Ordinal));
 
-        _answer = MessageBoxResult.No;
+        _dialogs.SaveAnswer = DialogAnswer.No;
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
 
         Assert.Equal(SettingsCategory.Alerts, page.Category);
@@ -457,10 +511,10 @@ public sealed class SettingsPageTests : IDisposable
     public void LeavingWithUnsavedChanges_AndChoosingSave_SavesThemFirst() => UiThread.Run(() =>
     {
         var page   = Open(SettingsLocation.Connection(_quiet.Id, ConnectionTab.Monitoring));
-        var editor = Editor(page);
-        editor.ChkMonitorInBackground.IsChecked = true;
+        var view   = EditorView(page);
+        view.ChkMonitorInBackground.IsChecked = true;
 
-        _answer = MessageBoxResult.Yes;
+        _dialogs.SaveAnswer = DialogAnswer.Yes;
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Monitoring)));
 
         Assert.Equal(SettingsCategory.Monitoring, page.Category);
@@ -473,13 +527,17 @@ public sealed class SettingsPageTests : IDisposable
     {
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
-        editor.TxtConnectionName.Text = "Renamed";
-        _answer = MessageBoxResult.No;
+        editor.Name = "Renamed";
+        _dialogs.SaveAnswer = DialogAnswer.No;
 
-        editor.LnkBack.RaiseEvent(new RoutedEventArgs(System.Windows.Documents.Hyperlink.ClickEvent));
+        Assert.Same(editor.BackCommand, EditorView(page).LnkBack.Command);
+        UiThread.Wait(editor.BackCommand.ExecuteAsync(null));
+        UiThread.Layout(page, 1200, 900);
 
+        Assert.Null(page.ViewModel.Connections!.Editor);
         Assert.Null(page.Connections!.Editor);
-        Assert.Single(_asked);
+        Assert.Equal(Visibility.Visible, page.Connections.ListView.Visibility);
+        Assert.Single(Asked);
     });
 
     [Fact]
@@ -488,18 +546,19 @@ public sealed class SettingsPageTests : IDisposable
         var page   = Open(SettingsLocation.Connection(_quiet.Id));
         var editor = Editor(page);
 
-        _answer = MessageBoxResult.No;
+        _dialogs.ConfirmAnswer = false;
         Assert.False(Await(editor.RemoveAsync()));
         Assert.Equal(3, _settings!.Load().Connections.Count);
 
-        _answer = MessageBoxResult.Yes;
+        _dialogs.ConfirmAnswer = true;
         Assert.True(Await(editor.RemoveAsync()));
 
+        var connections = page.ViewModel.Connections!;
         Assert.Equal(2, _settings.Load().Connections.Count);
-        Assert.Null(page.Connections!.Editor);
-        Assert.Equal(["Down", "Hot"], page.Connections.CardsShown.Select(c => c.Card.Name));
-        Assert.Equal("✓  Removed \"Quiet\".", page.Connections.TxtStatus.Text);
-        Assert.Equal(MessageBoxButton.YesNo, _asked[^1].Buttons);
+        Assert.Null(connections.Editor);
+        Assert.Equal(["Down", "Hot"], connections.Cards.Select(c => c.Card.Name));
+        Assert.Equal("✓  Removed \"Quiet\".", page.Connections!.TxtStatus.Text);
+        Assert.StartsWith("Confirm: Remove Connection: Remove the connection \"Quiet\"", Asked[^1], StringComparison.Ordinal);
     });
 
     // ── Health thresholds ─────────────────────────────────────────────────────
@@ -509,26 +568,30 @@ public sealed class SettingsPageTests : IDisposable
     {
         var page   = Open(SettingsLocation.Connection(_hot.Id, ConnectionTab.Thresholds));
         var editor = Editor(page);
+        var view   = EditorView(page);
         UiThread.Layout(page, 1200, 900);
+        var cpu = editor.Thresholds.Row(HealthIndicator.Cpu);
 
         // The defaults, read-only, with the sample graded on them: CPU 99 % is critical.
-        Assert.True(editor.ConnectionThresholds.IsReadOnly);
-        Assert.Equal(("99 %", "−16"), editor.ConnectionThresholds.Cells(HealthIndicator.Cpu));
-        Assert.Equal(Visibility.Collapsed, editor.TxtPreview.Visibility);
+        Assert.True(editor.Thresholds.IsReadOnly);
+        Assert.True(view.ConnectionThresholds.BoxOf(cpu.Warning).IsReadOnly);
+        Assert.Equal(("99 %", "−16"), (cpu.NowText, cpu.PointsText));
+        Assert.Equal(Visibility.Collapsed, view.TxtPreview.Visibility);
 
-        editor.ChkCustomThresholds.IsChecked = true;
-        editor.ConnectionThresholds.Box(HealthIndicator.Cpu, critical: true).Text = "100";
-        editor.ConnectionThresholds.Box(HealthIndicator.Cpu).Text = "99.5";
+        view.ChkCustomThresholds.IsChecked = true;
+        view.ConnectionThresholds.BoxOf(cpu.Critical).Text = "100";
+        view.ConnectionThresholds.BoxOf(cpu.Warning).Text  = "99.5";
+        UiThread.Layout(page, 1200, 900);
 
-        Assert.False(editor.ConnectionThresholds.IsReadOnly);
-        Assert.Equal(Visibility.Visible, editor.TxtPreview.Visibility);
-        Assert.Equal("On the latest sample, Hot would score 84 → 100", editor.TxtPreview.Text);
-        Assert.Equal(("99 %", "0"), editor.ConnectionThresholds.Cells(HealthIndicator.Cpu));
+        Assert.False(view.ConnectionThresholds.BoxOf(cpu.Warning).IsReadOnly);
+        Assert.Equal(Visibility.Visible, view.TxtPreview.Visibility);
+        Assert.Equal("On the latest sample, Hot would score 84 → 100", view.TxtPreview.Text);
+        Assert.Equal(("99 %", "0"), (cpu.NowText, cpu.PointsText));
 
         // Turning it off again shows the defaults: nothing left to save.
-        editor.ChkCustomThresholds.IsChecked = false;
+        editor.OwnThresholds = false;
         Assert.False(editor.IsDirty);
-        Assert.Equal("75", editor.ConnectionThresholds.Box(HealthIndicator.Cpu).Text);
+        Assert.Equal("75", view.ConnectionThresholds.BoxOf(cpu.Warning).Text);
     });
 
     [Fact]
@@ -537,30 +600,52 @@ public sealed class SettingsPageTests : IDisposable
         var page   = Open(SettingsLocation.Connection(_quiet.Id, ConnectionTab.Thresholds));
         var editor = Editor(page);
 
-        editor.ChkCustomThresholds.IsChecked = true;
-        editor.ConnectionThresholds.Box(HealthIndicator.Cpu).Text = "50";
+        editor.OwnThresholds = true;
+        editor.Thresholds.Row(HealthIndicator.Cpu).Warning.Text = "50";
 
-        Assert.Equal(Visibility.Collapsed, editor.TxtPreview.Visibility);
-        Assert.Equal(("—", "—"), editor.ConnectionThresholds.Cells(HealthIndicator.Cpu));
+        Assert.Null(editor.Preview);
+        Assert.Equal(("—", "—"), (editor.Thresholds.Row(HealthIndicator.Cpu).NowText, editor.Thresholds.Row(HealthIndicator.Cpu).PointsText));
+    });
+
+    [Fact]
+    public void ABoxThatCantBeRead_OnItsOwnThresholds_DisablesSave_AndSaysWhy() => UiThread.Run(() =>
+    {
+        var page   = Open(SettingsLocation.Connection(_quiet.Id, ConnectionTab.Thresholds));
+        var editor = Editor(page);
+        var view   = EditorView(page);
+
+        editor.OwnThresholds = true;
+        editor.Thresholds.Row(HealthIndicator.Cpu).Warning.Text = "abc";
+        UiThread.Layout(page, 1200, 900);
+
+        Assert.False(view.BtnSave.IsEnabled);
+        // Said under the table, not as WPF's red frame around the switch.
+        Assert.False(Validation.GetHasError(view.ChkCustomThresholds));
+        Assert.StartsWith("Health thresholds — CPU", editor.ThresholdsError);
+        Assert.Equal(Visibility.Visible, view.TxtThresholdsError.Visibility);
+        Assert.Equal(editor.ThresholdsError, view.TxtProblem.Text);
     });
 
     [Fact]
     public void TheDefaultThresholds_SaveOnlyWithSave_AndNotWhenHalfTyped() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
-        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
-        var cpu = category.GlobalThresholds.Box(HealthIndicator.Cpu);
+        var category = Category<ThresholdsCategoryViewModel>(page);
+        var view = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var cpu = category.Thresholds.Row(HealthIndicator.Cpu).Warning;
 
-        cpu.Text = "abc";
+        view.GlobalThresholds.BoxOf(cpu).Text = "abc";
         Assert.True(category.IsDirty);
-        Assert.True(category.BtnSave.IsEnabled);
+        Assert.False(view.BtnSave.IsEnabled);
+        Assert.StartsWith("CPU", view.TxtProblem.Text);
         Assert.Equal(75, _settings!.Load().HealthThresholds.CpuPct!.Warning);
 
         Assert.False(category.Save());
         Assert.Equal(75, _settings.Load().HealthThresholds.CpuPct!.Warning);
 
-        cpu.Text = "70";
-        Assert.True(category.Save());
+        view.GlobalThresholds.BoxOf(cpu).Text = "70";
+        Assert.True(view.BtnSave.IsEnabled);
+        TemplateRolloutTests.Click(view.BtnSave);
         Assert.Equal(70, _settings.Load().HealthThresholds.CpuPct!.Warning);
         Assert.False(category.IsDirty);
         Assert.Equal(70, _monitoring!.Get(_hot.Id)!.Thresholds.CpuPct!.Warning);
@@ -570,16 +655,15 @@ public sealed class SettingsPageTests : IDisposable
     public void TheDefaultThresholds_PreviewTheWeights_SaveThem_AndLogThem() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
-        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var category = Category<ThresholdsCategoryViewModel>(page);
         var logged = new List<ActivityEntry>();
         _settings!.Changed += logged.AddRange;
 
         // CPU at 99 % costs Hot 16 points; weighted 0, it costs none (#173).
-        Assert.Equal(Visibility.Visible, category.TxtPreview.Visibility);
-        Assert.Equal("On the latest sample, Hot would still score 84", category.TxtPreview.Text);
-        category.GlobalThresholds.WeightBox(HealthIndicator.Cpu).Text = "0";
+        Assert.Equal("On the latest sample, Hot would still score 84", category.Preview);
+        category.Thresholds.Row(HealthIndicator.Cpu).Weight.Text = "0";
         Assert.True(category.IsDirty);
-        Assert.Equal("On the latest sample, Hot would score 84 → 100", category.TxtPreview.Text);
+        Assert.Equal("On the latest sample, Hot would score 84 → 100", category.Preview);
 
         Assert.True(category.Save());
         Assert.Equal(0, _settings.Load().HealthThresholds.Weight(HealthIndicator.Cpu));
@@ -594,12 +678,12 @@ public sealed class SettingsPageTests : IDisposable
     public void TheDefaultThresholds_PleScaling_IsSaved_AndLogged() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
-        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
+        var category = Category<ThresholdsCategoryViewModel>(page);
         var logged = new List<ActivityEntry>();
         _settings!.Changed += logged.AddRange;
-        Assert.True(category.GlobalThresholds.PleScaled.IsChecked);
+        Assert.True(category.Thresholds.PleScaled);
 
-        category.GlobalThresholds.PleScaled.IsChecked = false;
+        category.Thresholds.PleScaled = false;
         Assert.True(category.IsDirty);
         Assert.True(category.Save());
 
@@ -612,20 +696,21 @@ public sealed class SettingsPageTests : IDisposable
     public void TheDiskGbThresholds_AreSaved_Checked_AndLogged() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
-        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
-        var editor = category.GlobalThresholds;
+        var category = Category<ThresholdsCategoryViewModel>(page);
+        var table = category.Thresholds;
         var logged = new List<ActivityEntry>();
         _settings!.Changed += logged.AddRange;
-        Assert.Equal(("50", "20"), (editor.GbBox().Text, editor.GbBox(critical: true).Text));
+        Assert.Equal(("50", "20"), (table.GbWarning.Text, table.GbCritical.Text));
 
         // The critical one must be below the warning one, as for any check where lower is worse.
-        editor.GbBox(critical: true).Text = "80";
+        table.GbCritical.Text = "80";
+        Assert.Equal("Disk free (GB): the critical threshold must be lower than the warning one.", category.Problem);
         Assert.False(category.Save());
         Assert.Equal("Disk free (GB): the critical threshold must be lower than the warning one.",
-                     category.TxtStatus.Text.TrimStart('✗', ' ', '⚠'));
+                     category.Status.Text.TrimStart('✗', ' ', '⚠'));
 
-        editor.GbBox().Text = "100";
-        editor.GbBox(critical: true).Text = "";
+        table.GbWarning.Text = "100";
+        table.GbCritical.Text = "";
         Assert.True(category.Save());
 
         Assert.Equal(new HealthThreshold(100, null), _settings.Load().HealthThresholds.DiskFreeGb);
@@ -638,15 +723,15 @@ public sealed class SettingsPageTests : IDisposable
     public void Weights_AllZero_OrOutOfRange_AreNotSaved() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
-        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
-        var editor = category.GlobalThresholds;
+        var category = Category<ThresholdsCategoryViewModel>(page);
+        var table = category.Thresholds;
 
-        editor.WeightBox(HealthIndicator.Cpu).Text = "101";
+        table.Row(HealthIndicator.Cpu).Weight.Text = "101";
         Assert.False(category.Save());
-        Assert.Equal("CPU: enter a weight from 0 to 100; 0 leaves it out of the score.", category.TxtStatus.Text.TrimStart('✗', ' ', '⚠'));
+        Assert.Equal("CPU: enter a weight from 0 to 100; 0 leaves it out of the score.", category.Status.Text.TrimStart('✗', ' ', '⚠'));
 
         foreach (var indicator in Enum.GetValues<HealthIndicator>())
-            editor.WeightBox(indicator).Text = "0";
+            table.Row(indicator).Weight.Text = "0";
         Assert.False(category.Save());
         Assert.Equal(HealthWeights.Default, _settings!.Load().HealthThresholds.Weights);
     });
@@ -655,14 +740,14 @@ public sealed class SettingsPageTests : IDisposable
     public void LeavingTheDefaultThresholds_HalfTyped_Asks() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Thresholds));
-        var category = Assert.IsType<ThresholdsCategory>(page.Shown);
-        category.GlobalThresholds.Box(HealthIndicator.Cpu).Text = "70";
+        var category = Category<ThresholdsCategoryViewModel>(page);
+        category.Thresholds.Row(HealthIndicator.Cpu).Warning.Text = "70";
 
-        _answer = MessageBoxResult.Cancel;
+        _dialogs.SaveAnswer = DialogAnswer.Cancel;
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
 
         Assert.Equal(SettingsCategory.Thresholds, page.Category);
-        Assert.Single(_asked);
+        Assert.Single(Asked);
     });
 
     // ── Categories for the whole app ──────────────────────────────────────────
@@ -671,80 +756,105 @@ public sealed class SettingsPageTests : IDisposable
     public void AlertsAndChat_ListsTheMutedConnections_AndItsSwitchMutesThemAll() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Alerts));
-        var alerts = Assert.IsType<AlertsCategory>(page.Shown);
-        Assert.True(alerts.ChkNotifications.IsChecked);
-        Assert.Equal(Visibility.Collapsed, alerts.TxtMuted.Visibility);
+        var alerts = Category<AlertsCategoryViewModel>(page);
+        var view = Assert.IsType<AlertsCategory>(page.Shown);
+        Assert.True(view.ChkNotifications.IsChecked);
+        Assert.Equal(Visibility.Collapsed, view.MutedLine.Visibility);
 
         _settings!.SetNotificationsMuted(_quiet.Id, muted: true);
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Appearance)));
         UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
         UiThread.Layout(page, 1200, 900);
 
-        Assert.True(alerts.ChkNotifications.IsChecked);
-        Assert.Equal("Muted: Quiet", Text(alerts.TxtMuted.Inlines));
-        Assert.Single(alerts.TxtMuted.Inlines.OfType<System.Windows.Documents.Hyperlink>());
+        Assert.True(view.ChkNotifications.IsChecked);
+        Assert.Equal("Muted: ", view.TxtMuted.Text);
+        var muted = Assert.Single(alerts.Muted);
+        Assert.Equal(("Quiet", ""), (muted.Name, muted.Separator));
 
-        alerts.ChkNotifications.IsChecked = false;
-        Click(alerts.ChkNotifications);
+        // The link opens its Monitoring & alerts tab.
+        muted.Open.Execute(null);
+        UiThread.WaitUntil(() => page.Category == SettingsCategory.Connections);
+        Assert.Equal((_quiet.Id, ConnectionTab.Monitoring), (Editor(page).ConnectionId, Editor(page).SelectedTab));
+
+        UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
+        UiThread.Layout(page, 1200, 900);
+        TemplateRolloutTests.Click(view.ChkNotifications);
 
         var store = _settings.Load();
         Assert.All(store.Connections, c => Assert.False(store.NotifiesFor(c.Id)));
-        Assert.False(alerts.ChkNotifications.IsChecked);
+        Assert.False(view.ChkNotifications.IsChecked);
+        Assert.Equal("Every connection is muted: ", alerts.MutedText);
     });
 
     [Fact]
     public void CommandTimeout_SavesOnItsOwn_AndIsApplied() => UiThread.Run(() =>
     {
         var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
-        var monitoring = Assert.IsType<MonitoringCategory>(page.Shown);
-        Assert.Equal("30", monitoring.TxtTimeout.Text);
+        var monitoring = Category<MonitoringCategoryViewModel>(page);
+        var view = Assert.IsType<MonitoringCategory>(page.Shown);
+        Assert.Equal("30", view.TxtTimeout.Text);
 
-        monitoring.TxtTimeout.Text = "0";
+        view.TxtTimeout.Text = "0";
         UiThread.Wait(monitoring.SaveTimeoutAsync());
         Assert.Equal(30, _settings!.Load().CommandTimeoutSeconds);
-        Assert.StartsWith("✗", monitoring.TxtMonitoringStatus.Text);
+        Assert.StartsWith("✗", view.TxtMonitoringStatus.Text);
 
-        monitoring.TxtTimeout.Text = "90";
-        UiThread.Wait(monitoring.SaveTimeoutAsync());
+        view.TxtTimeout.Text = "90";
+        UiThread.Wait(monitoring.SaveTimeoutCommand.ExecuteAsync(null));
 
         Assert.Equal(90, _settings.Load().CommandTimeoutSeconds);
         Assert.Equal([false], _applied);
 
         // Saving a connection keeps it.
-        var editor = new ConnectionEditor(TestContext(), _quiet.Id);
-        editor.TxtConnectionName.Text = "Quiet 2";
+        var editor = new ConnectionEditorViewModel(TestContext(), _quiet.Id) { Name = "Quiet 2" };
         Assert.True(Await(editor.SaveAsync(connect: false)));
         Assert.Equal(90, _settings.Load().CommandTimeoutSeconds);
+    });
+
+    [Fact]
+    public void StartMonitoringAutomatically_TurnedOff_StopsEveryConnection() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
+        var view = Assert.IsType<MonitoringCategory>(page.Shown);
+        Assert.True(view.ChkStartMonitoringAutomatically.IsChecked);
+
+        TemplateRolloutTests.Click(view.ChkStartMonitoringAutomatically);
+        UiThread.WaitUntil(() => _applied.Count == 1);
+
+        Assert.False(_settings!.Load().StartMonitoringAutomatically);
+        Assert.False(view.ChkStartMonitoringAutomatically.IsChecked);
+        Assert.False(_monitoring!.IsMonitoring(_hot.Id));
+        Assert.StartsWith("✓  Saved: monitoring stopped for every connection.", view.TxtMonitoringStatus.Text);
     });
 
     [Fact]
     public void QueryText_SavesAndApplies_AndClearAsksFirst_ThenClearsHereAndInTheService() => UiThread.Run(() =>
     {
         Directory.CreateDirectory(Path.Combine(_dir, "collector"));
-        _control = new Fakes.FakeCollectorControl(Path.Combine(_dir, "collector")) { State = CollectorServiceState.Running };
+        _control = new FakeCollectorControl(Path.Combine(_dir, "collector")) { State = CollectorServiceState.Running };
         var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
-        var monitoring = Assert.IsType<MonitoringCategory>(page.Shown);
-        Assert.Equal("Without literals", ((ComboBoxItem)monitoring.CmbQueryText.SelectedItem).Content);
-        Assert.Same(monitoring.ClearQueryText, monitoring.BtnClearQueryText.Command);
+        var monitoring = Category<MonitoringCategoryViewModel>(page);
+        var view = Assert.IsType<MonitoringCategory>(page.Shown);
+        Assert.Equal("Without literals", ((Choice<QueryTextStorage>)view.CmbQueryText.SelectedItem).Text);
+        Assert.Same(monitoring.ClearQueryTextCommand, view.BtnClearQueryText.Command);
 
-        monitoring.CmbQueryText.SelectedItem = monitoring.CmbQueryText.Items.OfType<ComboBoxItem>()
-                                                         .Single(i => (QueryTextStorage)i.Tag == QueryTextStorage.Off);
+        view.CmbQueryText.SelectedValue = QueryTextStorage.Off;
 
         Assert.Equal(QueryTextStorage.Off, _settings!.Load().QueryTextStorage);
         Assert.Equal(QueryTextStorage.Off, _monitoring!.Get(_hot.Id)!.History!.QueryTexts);
-        Assert.StartsWith("✓  Saved: no query text is kept from now on", monitoring.TxtHistoryStatus.Text);
+        Assert.StartsWith("✓  Saved: no query text is kept from now on", view.TxtHistoryStatus.Text);
 
         // No: nothing is cleared, nothing asked of the service.
-        _answer = MessageBoxResult.No;
-        monitoring.ClearQueryText.Execute(null);
-        Assert.Contains(_asked, a => a.Text.StartsWith("Delete the text of every query", StringComparison.Ordinal));
+        _dialogs.ConfirmAnswer = false;
+        UiThread.Wait(monitoring.ClearQueryTextCommand.ExecuteAsync(null));
+        Assert.Contains(Asked, a => a.StartsWith("Confirm: Clear Stored Query Text: Delete the text of every query", StringComparison.Ordinal));
         Assert.Null(_control.Saved().QueryTextClearRequestedUtc);
 
-        _answer = MessageBoxResult.Yes;
+        _dialogs.ConfirmAnswer = true;
         UiThread.Wait(monitoring.ClearQueryTextAsync());
 
         Assert.NotNull(_control.Saved().QueryTextClearRequestedUtc);
-        Assert.StartsWith("✓  Query text cleared. The collector service clears its own", monitoring.TxtClearQueryTextStatus.Text);
+        Assert.StartsWith("✓  Query text cleared. The collector service clears its own", view.TxtClearQueryTextStatus.Text);
         Assert.Contains(ActivityEvents.QueryTextCleared,
                         new HistoryReader(Path.Combine(_dir, "history.db")).ReadActivity(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddHours(1))
                                                                            .Select(a => a.Entry.Event));
@@ -754,37 +864,143 @@ public sealed class SettingsPageTests : IDisposable
     public void ClearQueryText_DoesntAskAServiceThatIsntInstalled_ThoughItsFolderIsLeft() => UiThread.Run(() =>
     {
         Directory.CreateDirectory(Path.Combine(_dir, "collector"));
-        _control = new Fakes.FakeCollectorControl(Path.Combine(_dir, "collector"));   // not installed
+        _control = new FakeCollectorControl(Path.Combine(_dir, "collector"));   // not installed
         var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
-        var monitoring = Assert.IsType<MonitoringCategory>(page.Shown);
-        _answer = MessageBoxResult.Yes;
+        var monitoring = Category<MonitoringCategoryViewModel>(page);
+        _dialogs.ConfirmAnswer = true;
 
         UiThread.Wait(monitoring.ClearQueryTextAsync());
 
-        Assert.Equal("✓  Query text cleared.", monitoring.TxtClearQueryTextStatus.Text);
+        Assert.Equal("✓  Query text cleared.", monitoring.ClearQueryTextStatus.Text);
         Assert.False(File.Exists(Engine.Service.CollectorPaths.SettingsFile(Path.Combine(_dir, "collector"))));
     });
 
     [Fact]
-    public void AStatusLine_NeverShowsASecret() => UiThread.Run(() =>
+    public void ARetentionCutShort_AsksFirst_AndNoPutsTheSavedOneBack() => UiThread.Run(() =>
     {
-        var line = new TextBlock();
+        var page = Open(new SettingsLocation(SettingsCategory.Monitoring));
+        var monitoring = Category<MonitoringCategoryViewModel>(page);
+        var view = Assert.IsType<MonitoringCategory>(page.Shown);
+        var saved = monitoring.RetentionDays;
+        var shorter = monitoring.RetentionChoices.Select(c => c.Value).Where(d => d < saved).Max();
 
-        SettingsContext.ShowStatus(line, "Could not post to https://hooks.slack.com/services/T1/B2/abc (Password=x;)", success: false);
+        _dialogs.ConfirmAnswer = false;
+        view.CmbHistoryRetention.SelectedValue = shorter;
+        UiThread.Layout(page, 1200, 900);
 
-        Assert.Equal("✗  Could not post to [webhook URL removed] (Password=*****;)", line.Text);
+        Assert.StartsWith("Confirm: Monitoring History: Keep monitoring history for", Asked[^1], StringComparison.Ordinal);
+        Assert.Equal(saved, _settings!.Load().HistoryRetentionDays);
+        Assert.Equal(saved, view.CmbHistoryRetention.SelectedValue);
     });
 
-    private SettingsContext TestContext() =>
-        new(_settings!, _monitoring!, _chat!, Apply, (_, _, _, _) => _answer, _ => { }, _ => { });
-
-    private sealed class NoSender : Engine.ChatNotifications.IWebhookSender
+    [Fact]
+    public void Appearance_SwitchesTheTheme_AndTheDensity() => UiThread.Run(() =>
     {
-        public Task<Engine.ChatNotifications.WebhookResult> SendAsync(Uri url, string json, Engine.ChatNotifications.ChatService service,
-                                                                      CancellationToken cancel = default) =>
+        var page = Open(new SettingsLocation(SettingsCategory.Appearance));
+        var view = Assert.IsType<AppearanceCategory>(page.Shown);
+        var themeChanged = 0;
+        page.ThemeChanged += () => themeChanged++;
+        Assert.Equal("🌙  Dark", view.BtnThemeToggle.Content);
+
+        TemplateRolloutTests.Click(view.BtnThemeToggle);
+        Assert.Equal(1, themeChanged);
+
+        view.RbCompact.IsChecked = true;
+        Assert.Equal([GridDensity.Compact], _densities);
+        Assert.Equal(GridDensity.Compact, _settings!.Load().GridDensity);
+        Assert.False(view.RbComfortable.IsChecked);
+        Assert.StartsWith("Compact:", view.TxtDensity.Text);
+    });
+
+    [Fact]
+    public void TheNotificationArea_SavesAsItsClicked() => UiThread.Run(() =>
+    {
+        var page = Open(new SettingsLocation(SettingsCategory.NotificationArea));
+        var view = Assert.IsType<NotificationAreaCategory>(page.Shown);
+        var keep = _settings!.Load().KeepRunningInTray;
+
+        TemplateRolloutTests.Click(view.ChkKeepRunningInTray);
+
+        Assert.Equal(!keep, _settings.Load().KeepRunningInTray);
+        Assert.Equal(!keep, view.ChkKeepRunningInTray.IsChecked);
+        Assert.StartsWith("✓  Saved:", view.TxtTrayStatus.Text);
+    });
+
+    [Fact]
+    public void AStatusLine_NeverShowsASecret()
+    {
+        var line = new StatusLine();
+
+        line.Show("Could not post to https://hooks.slack.com/services/T1/B2/abc (Password=x;)", success: false);
+
+        Assert.Equal("✗  Could not post to [webhook URL removed] (Password=*****;)", line.Text);
+    }
+
+    // ── Render: every category, each tab, both themes, no binding errors ─────
+
+    public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void EveryCategory_Renders_WithoutABindingError(string theme) => UiThread.Run(() =>
+    {
+        using var themed = MergedPagesTests.Themed(theme);
+        using var errors = BindingErrors.Watch();
+        var page = Open();
+
+        foreach (var info in SettingsNav.Categories)
+        {
+            UiThread.Wait(page.OpenAsync(new SettingsLocation(info.Id)));
+            UiThread.Layout(page, 1200, 900);
+            Render(page, theme, info.Id.ToString());
+            Assert.True(page.Shown!.ActualHeight > 0, info.Title);
+        }
+
+        // An open chat channel form.
+        UiThread.Wait(page.OpenAsync(new SettingsLocation(SettingsCategory.Alerts)));
+        Category<AlertsCategoryViewModel>(page).AddChannelCommand.Execute(null);
+        UiThread.Layout(page, 1200, 900);
+        Render(page, theme, "Alerts-form");
+
+        // A connection's page, each tab, and a new one.
+        foreach (var tab in Enum.GetValues<ConnectionTab>())
+        {
+            UiThread.Wait(page.OpenAsync(SettingsLocation.Connection(_hot.Id, tab)));
+            UiThread.Layout(page, 1200, 900);
+            Render(page, theme, $"connection-{tab}");
+        }
+        Editor(page).OwnThresholds = true;
+        Editor(page).Thresholds.Row(HealthIndicator.Cpu).Warning.Text = "abc";
+        UiThread.Layout(page, 1200, 900);
+        Render(page, theme, "connection-own-thresholds");
+        _dialogs.SaveAnswer = DialogAnswer.No;
+        UiThread.Wait(page.OpenAsync(SettingsLocation.NewConnectionPage));
+        UiThread.Layout(page, 1200, 900);
+        Render(page, theme, "connection-new");
+
+        errors.AssertNone();
+    });
+
+    // To look at: %TEMP%\SqlVitalsTests\settings\<name>-<theme>.png.
+    private static void Render(FrameworkElement element, string theme, string name)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", "settings");
+        Directory.CreateDirectory(dir);
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)element.ActualWidth, (int)element.ActualHeight, 96, 96,
+                                                                          System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var file = File.Create(Path.Combine(dir, $"{name}-{theme}.png"));
+        encoder.Save(file);
+    }
+
+    private sealed class NoSender : IWebhookSender
+    {
+        public Task<WebhookResult> SendAsync(Uri url, string json, ChatService service, CancellationToken cancel = default) =>
             throw new InvalidOperationException("No chat in these tests.");
 
-        public Task<Engine.ChatNotifications.WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
+        public Task<WebhookResult> PingAsync(Uri url, CancellationToken cancel = default) =>
             throw new InvalidOperationException("No chat in these tests.");
     }
 

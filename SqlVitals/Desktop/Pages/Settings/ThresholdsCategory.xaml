@@ -18,13 +18,15 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnDiscard" Content="Discard" Style="{StaticResource SecondaryButton}" Padding="18,8"
-                            Click="Discard_Click" ToolTip="Put back the saved thresholds" />
+                            Command="{Binding DiscardThresholdsCommand}" ToolTip="Put back the saved thresholds" />
                     <Button x:Name="BtnSave" Content="Save" Style="{StaticResource RefreshButton}" Padding="18,8" Margin="8,0,0,0"
-                            Click="Save_Click" ToolTip="Grade every connection without its own thresholds on these" />
+                            Command="{Binding SaveThresholdsCommand}" ToolTip="Grade every connection without its own thresholds on these" />
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                    <TextBlock x:Name="TxtUnsaved" Style="{StaticResource Unsaved}" Visibility="Collapsed" />
-                    <TextBlock x:Name="TxtStatus" Style="{StaticResource Status}" Margin="0,2,0,0" />
+                    <TextBlock x:Name="TxtUnsaved" Style="{StaticResource Unsaved}" Visibility="{Binding IsDirty, Converter={StaticResource Shown}}" />
+                    <!-- Why Save is disabled: the first box that can't be read. -->
+                    <TextBlock x:Name="TxtProblem" Style="{StaticResource FieldError}" Text="{Binding Problem}" Margin="0,2,0,0" />
+                    <controls:StatusText x:Name="TxtStatus" Style="{StaticResource Status}" Line="{Binding Status}" Margin="0,2,0,0" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -32,19 +34,20 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="32,24,32,24" MaxWidth="900" HorizontalAlignment="Stretch">
                 <TextBlock Text="Health thresholds" Style="{StaticResource PageTitle}" />
-                <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+                <TextBlock x:Name="TxtSubtitle" Text="{Binding Subtitle, Mode=OneTime}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
 
                 <Border Style="{StaticResource SettingsCard}">
                     <StackPanel>
                         <TextBlock Text="Checks" Style="{StaticResource CardTitle}" />
-                        <TextBlock x:Name="TxtIntro" Style="{StaticResource CardText}" Margin="0,3,0,14" />
-                        <controls:HealthThresholdsEditor x:Name="GlobalThresholds" />
+                        <TextBlock x:Name="TxtIntro" Text="{Binding Intro}" Style="{StaticResource CardText}" Margin="0,3,0,14" />
+                        <controls:HealthThresholdsEditor x:Name="GlobalThresholds" DataContext="{Binding Thresholds}" />
                         <!-- What the monitored connections on these thresholds would score (#173) -->
                         <TextBlock x:Name="TxtPreview" Margin="0,10,0,0" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextPrimary}" Visibility="Collapsed" />
+                                   Foreground="{DynamicResource TextPrimary}" Text="{Binding Preview}"
+                                   Visibility="{Binding Preview, Converter={StaticResource Shown}}" />
                         <DockPanel Margin="0,10,0,0">
                             <TextBlock DockPanel.Dock="Right" FontSize="12">
-                                <Hyperlink Click="Reset_Click" Foreground="{DynamicResource Accent}"
+                                <Hyperlink Command="{Binding ResetCommand}" Foreground="{DynamicResource Accent}"
                                            ToolTip="Put SqlVitals' own defaults back in the boxes. Save to use them.">Reset to defaults</Hyperlink>
                             </TextBlock>
                             <TextBlock Style="{StaticResource CardText}" Margin="0,0,16,0"

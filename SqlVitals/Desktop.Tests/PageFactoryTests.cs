@@ -38,6 +38,7 @@ public sealed class PageFactoryTests : IDisposable
             .AddSingleton<IRefreshScheduler>(new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()))
             .AddSingleton<IDialogService>(new FakeDialogService())
             .AddSingleton<IFileDialogs>(new FakeFileDialogs())
+            .AddSingleton<IThemeService>(new FakeThemeService())
             .AddSingleton(TimeProvider.System)
             .AddSingleton(settings)
             .AddSingleton(_monitoring)

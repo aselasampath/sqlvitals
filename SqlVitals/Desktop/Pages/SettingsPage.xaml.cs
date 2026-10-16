@@ -1,253 +1,119 @@
-using System.Globalization;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Input;
 using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Engine.Activity;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Engine.ChatNotifications;
+using SqlVitals.Desktop.ViewModels.Settings;
 
 namespace SqlVitals.Desktop.Pages;
 
 /// <summary>
-/// Settings (#131): a side menu of categories in groups, and the category beside it. Each category
-/// is built the first time it's opened. Connections holds a card per saved connection and a page
-/// per connection; the categories for the whole app save as they change.
+/// Settings (#131), bound to its <see cref="SettingsViewModel"/> (#190): a side menu of categories in
+/// groups, and the category beside it. Only view code here: which view shows each category's view
+/// model (made once, so a category opened again is the same, scrolled where it was), and the
+/// first-run flow's.
 /// </summary>
 public partial class SettingsPage : Page, IPageContext
 {
-    // Its view model (#183): the page factory runs its lifecycle; the code-behind still reads.
-    internal SettingsViewModel ViewModel { get; } = new();
+    private readonly Dictionary<SettingsCategoryViewModel, FrameworkElement> _views = new();
+
+    public SettingsPage(SettingsViewModel viewModel)
+    {
+        ViewModel   = viewModel;
+        DataContext = viewModel;
+        InitializeComponent();
+
+        viewModel.PropertyChanged += OnModelChanged;
+        ShowCategory();
+        ShowFirstRun();
+
+        Loaded   += (_, _) => ViewModel.Activate();
+        Unloaded += (_, _) => ViewModel.Deactivate();
+    }
+
+    internal SettingsViewModel ViewModel { get; }
 
     // The app's own settings, not a view of a server's data: no badge in the top bar (#140).
     public PageKind Kind => PageKind.None;
 
-    private readonly SettingsContext _context;
-    private readonly Dictionary<SettingsCategory, FrameworkElement> _built = new();
-    private readonly Dictionary<SettingsCategory, RadioButton> _items = new();
-    private TextBlock? _connectionsCount;
-
-    // Set while a menu item is checked in code, so it isn't a click.
-    private bool _isSelecting;
-    private SettingsCategory _category;
-
-    /// <param name="applyConnections">
-    /// Tells the running app the saved connections changed; true asks it to open the active server's Overview afterwards.
-    /// </param>
-    /// <param name="location">Where it opens; Connections when null.</param>
-    /// <param name="message">Shown above the category, e.g. "Switched to UAT." or a password prompt.</param>
-    public SettingsPage(
-        ConnectionSettingsService service,
-        MonitoringManager monitoring,
-        ChatNotificationService chat,
-        Func<bool, Task> applyConnections,
-        SettingsLocation? location = null,
-        string? message = null,
-        CollectorLink? collectors = null,
-        PermissionChecker? checkPermissions = null,
-        IWatchStarter? starter = null,
-        IClipboard? clipboard = null)
+    /// <inheritdoc cref="SettingsViewModel.ServerRequested"/>
+    public event Action<Guid>? ServerRequested
     {
-        InitializeComponent();
-        _context = new SettingsContext(service, monitoring, chat, applyConnections,
-                                       (text, caption, buttons, icon) => Prompt(text, caption, buttons, icon),
-                                       target => _ = OpenAsync(target),
-                                       id => ServerRequested?.Invoke(id),
-                                       collectors, checkPermissions, starter, clipboard);
-        BuildMenu();
-        UpdateCount();
-
-        // Nothing is open yet, so there's nothing to leave: this completes straight away.
-        _ = OpenAsync(location ?? new SettingsLocation(SettingsCategory.Connections));
-        ShowMessage(message);
-
-        Loaded   += (_, _) => _context.Service.Changed += OnSettingsChanged;
-        Unloaded += (_, _) => _context.Service.Changed -= OnSettingsChanged;
+        add    => ViewModel.ServerRequested += value;
+        remove => ViewModel.ServerRequested -= value;
     }
 
-    /// <summary>"View on Home" on a connection's page: open that server's Overview (#143).</summary>
-    public event Action<Guid>? ServerRequested;
+    /// <inheritdoc cref="SettingsViewModel.ThemeChanged"/>
+    public event Action? ThemeChanged
+    {
+        add    => ViewModel.ThemeChanged += value;
+        remove => ViewModel.ThemeChanged -= value;
+    }
 
-    /// <summary>The theme was switched: open Settings again on Appearance, in the new theme.</summary>
-    public event Action? ThemeChanged;
-
-    /// <summary>A category was opened, so Settings can open on it again this session.</summary>
-    public event Action<SettingsCategory>? CategoryShown;
-
-    /// <summary>Asks the user; tests answer instead of a message box.</summary>
-    internal Ask Prompt { get; set; } = (text, caption, buttons, _) =>
-        buttons == MessageBoxButton.YesNoCancel
-            ? CompositionRoot.Get<IDialogService>().AskToSave(text, caption) switch
-              {
-                  DialogAnswer.Yes => MessageBoxResult.Yes,
-                  DialogAnswer.No  => MessageBoxResult.No,
-                  _                => MessageBoxResult.Cancel,
-              }
-            : CompositionRoot.Get<IDialogService>().Confirm(text, caption) ? MessageBoxResult.Yes : MessageBoxResult.No;
+    /// <inheritdoc cref="SettingsViewModel.CategoryShown"/>
+    public event Action<SettingsCategory>? CategoryShown
+    {
+        add    => ViewModel.CategoryShown += value;
+        remove => ViewModel.CategoryShown -= value;
+    }
 
     /// <summary>The category on screen.</summary>
-    public SettingsCategory Category => _category;
+    public SettingsCategory Category => ViewModel.Category;
 
-    /// <summary>The category's control on screen.</summary>
+    /// <summary>The category's view on screen.</summary>
     internal FrameworkElement? Shown => CategoryHost.Content as FrameworkElement;
 
     /// <summary>The first-run flow (#177) while it is shown; null otherwise.</summary>
     internal FirstRunFlow? FirstRun => FlowHost.Content as FirstRunFlow;
 
-    /// <summary>Connections, once it has been opened.</summary>
-    internal ConnectionsCategory? Connections => _built.GetValueOrDefault(SettingsCategory.Connections) as ConnectionsCategory;
+    /// <summary>Connections' view, once it has been opened.</summary>
+    internal ConnectionsCategory? Connections =>
+        ViewModel.Connections is { } model ? _views.GetValueOrDefault(model) as ConnectionsCategory : null;
 
-    internal RadioButton MenuItemFor(SettingsCategory category) => _items[category];
+    /// <inheritdoc cref="SettingsViewModel.TryLeaveAsync"/>
+    public Task<bool> TryLeaveAsync() => ViewModel.TryLeaveAsync();
 
-    /// <summary>
-    /// Whether Settings can be left for another page. With unsaved changes on a connection's page
-    /// or the default thresholds, it asks to save, discard or stay; false when the user stays.
-    /// </summary>
-    public Task<bool> TryLeaveAsync() =>
-        FirstRun is { } flow ? flow.TryLeaveAsync()
-        : Shown is ISettingsCategory category ? category.TryLeaveAsync() : Task.FromResult(true);
+    /// <inheritdoc cref="SettingsViewModel.OpenAsync"/>
+    public Task OpenAsync(SettingsLocation location) => ViewModel.OpenAsync(location);
 
-    /// <summary>Opens a category, or a connection's tab, leaving the one on screen first.</summary>
-    public async Task OpenAsync(SettingsLocation location)
+    /// <inheritdoc cref="SettingsViewModel.ShowMessage"/>
+    public void ShowMessage(string? message) => ViewModel.ShowMessage(message);
+
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (Shown is not null && location.Category != _category && !await TryLeaveAsync())
+        switch (e.PropertyName)
         {
-            Select(_category);
-            return;
-        }
-
-        if (!_built.TryGetValue(location.Category, out var control))
-            _built[location.Category] = control = Build(location.Category);
-        else if (!ReferenceEquals(control, Shown) && control is ISettingsCategory again)
-            again.OnShownAgain();
-
-        _category = location.Category;
-        Select(_category);
-        CategoryHost.Content = control;
-        AutomationProperties.SetName(CategoryHost, SettingsNav.Info(_category).Title);
-        CategoryShown?.Invoke(_category);
-
-        if (control is ConnectionsCategory connections)
-            await connections.ShowAsync(location);
-
-        // First run (#177): only while nothing is saved, so Back to it later is Connections.
-        if (location.FirstRun && FirstRun is null && _context.Service.Load().Connections.Count == 0)
-            ShowFirstRun();
-    }
-
-    private void ShowFirstRun()
-    {
-        var flow = new FirstRunFlow(_context);
-        flow.Closed += () =>
-        {
-            FlowHost.Content    = null;
-            FlowHost.Visibility = Visibility.Collapsed;
-            _ = Connections?.ShowAsync(new SettingsLocation(SettingsCategory.Connections));
-        };
-        FlowHost.Content    = flow;
-        FlowHost.Visibility = Visibility.Visible;
-    }
-
-    /// <summary>A message above the category; null or empty hides it.</summary>
-    public void ShowMessage(string? message)
-    {
-        TxtBanner.Text    = message ?? string.Empty;
-        Banner.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void CloseBanner_Click(object sender, RoutedEventArgs e) => ShowMessage(null);
-
-    // ── Side menu ─────────────────────────────────────────────────────────────
-
-    private void BuildMenu()
-    {
-        foreach (var group in SettingsNav.Groups)
-        {
-            var heading = new TextBlock
-            {
-                Text       = group.Name.ToUpperInvariant(),
-                FontSize   = 10,
-                FontWeight = FontWeights.SemiBold,
-                Margin     = new Thickness(12, Menu.Children.Count == 0 ? 6 : 16, 0, 4),
-            };
-            heading.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
-            Menu.Children.Add(heading);
-
-            foreach (var info in group.Categories)
-            {
-                var title = new TextBlock { Text = info.Title, VerticalAlignment = VerticalAlignment.Center };
-                var row   = new DockPanel();
-                if (info.Id == SettingsCategory.Connections)
-                {
-                    _connectionsCount = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-                    DockPanel.SetDock(_connectionsCount, Dock.Right);
-                    row.Children.Add(_connectionsCount);
-                }
-                row.Children.Add(title);
-
-                var item = new RadioButton { Content = row, Tag = info.Id, Style = (Style)Resources["MenuItem"] };
-                AutomationProperties.SetName(item, info.Title);
-                item.Click   += MenuItem_Click;
-                item.KeyDown += MenuItem_KeyDown;
-                _items[info.Id] = item;
-                Menu.Children.Add(item);
-            }
+            case nameof(SettingsViewModel.Current):  ShowCategory(); break;
+            case nameof(SettingsViewModel.FirstRun): ShowFirstRun(); break;
         }
     }
 
-    // A click or Space; on the category already open it goes back to its start, e.g. from a
-    // connection's page to the cards.
-    private async void MenuItem_Click(object sender, RoutedEventArgs e)
+    private void ShowCategory()
     {
-        if (_isSelecting || sender is not RadioButton { Tag: SettingsCategory category })
+        if (ViewModel.Current is not { } model)
             return;
-        await ViewModel.ReportErrorsOf(OpenAsync(new SettingsLocation(category)));
+        if (!_views.TryGetValue(model, out var view))
+            _views[model] = view = ViewFor(model);
+        CategoryHost.Content = view;
+        AutomationProperties.SetName(CategoryHost, SettingsNav.Info(ViewModel.Category).Title);
     }
 
-    private void MenuItem_KeyDown(object sender, KeyEventArgs e)
+    private static FrameworkElement ViewFor(SettingsCategoryViewModel model) => model switch
     {
-        if (e.Key != Key.Enter || sender is not RadioButton item)
-            return;
-        item.IsChecked = true;
-        MenuItem_Click(item, e);
-        e.Handled = true;
-    }
+        ConnectionsCategoryViewModel connections   => new ConnectionsCategory(connections),
+        MonitoringCategoryViewModel monitoring     => new MonitoringCategory(monitoring),
+        ThresholdsCategoryViewModel thresholds     => new ThresholdsCategory(thresholds),
+        AlertsCategoryViewModel alerts             => new AlertsCategory(alerts),
+        NotificationAreaCategoryViewModel tray     => new NotificationAreaCategory(tray),
+        ActivityCategoryViewModel activity         => new ActivityCategory(activity),
+        CollectorCategoryViewModel collector       => new CollectorCategory(collector),
+        AppearanceCategoryViewModel appearance     => new AppearanceCategory(appearance),
+        _ => throw new ArgumentOutOfRangeException(nameof(model), model.GetType().Name, "No view for this category."),
+    };
 
-    private void Select(SettingsCategory category)
-    {
-        _isSelecting = true;
-        try { _items[category].IsChecked = true; }
-        finally { _isSelecting = false; }
-    }
-
-    // "Connections  5".
-    private void UpdateCount()
-    {
-        var count = _context.Service.Load().Connections.Count;
-        _connectionsCount?.Text = count.ToString(CultureInfo.CurrentCulture);
-        AutomationProperties.SetName(_items[SettingsCategory.Connections],
-            count == 1 ? "Connections, 1 saved" : $"Connections, {count} saved");
-    }
-
-    private void OnSettingsChanged(IReadOnlyList<ActivityEntry> rows) => Dispatcher.InvokeAsync(UpdateCount);
-
-    private FrameworkElement Build(SettingsCategory category)
-    {
-        switch (category)
-        {
-            case SettingsCategory.Connections:      return new ConnectionsCategory(_context);
-            case SettingsCategory.Monitoring:       return new MonitoringCategory(_context);
-            case SettingsCategory.Thresholds:       return new ThresholdsCategory(_context);
-            case SettingsCategory.Alerts:           return new AlertsCategory(_context);
-            case SettingsCategory.NotificationArea: return new NotificationAreaCategory(_context);
-            case SettingsCategory.Activity:         return new ActivityCategory(_context);
-            case SettingsCategory.Collector:        return new CollectorCategory(_context);
-            default:
-                var appearance = new AppearanceCategory(_context);
-                appearance.ThemeChanged += () => ThemeChanged?.Invoke();
-                return appearance;
-        }
-    }
+    private void ShowFirstRun() =>
+        FlowHost.Content = ViewModel.FirstRun is { } flow ? new FirstRunFlow(flow) : null;
 }

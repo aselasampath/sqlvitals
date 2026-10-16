@@ -1,6 +1,6 @@
 using SqlVitals.Desktop.Services;
 
-namespace SqlVitals.Desktop.Pages.Settings;
+namespace SqlVitals.Desktop.ViewModels;
 
 /// <summary>
 /// Everything on a connection's page (#131), on every tab, as typed. Two are equal when nothing
@@ -56,4 +56,7 @@ internal sealed record ConnectionDraft(
             tabs.Add(ConnectionTab.Advanced);
         return tabs;
     }
+
+    // A record writes every member, the password too; nothing that holds one may print it (#175).
+    public override string ToString() => $"ConnectionDraft {{ Name = {Name}, Server = {Server} }}";
 }

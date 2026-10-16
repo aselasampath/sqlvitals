@@ -2,53 +2,74 @@
              x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:settings="clr-namespace:SqlVitals.Desktop.Pages.Settings"
+             xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+             xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
              x:Name="Root" FontFamily="Segoe UI">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/SqlVitals.Desktop;component/Pages/Settings/SettingsStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- ACTIVE, BACKGROUND or OFF, tinted by the connection's role. -->
+            <Style x:Key="RoleChip" TargetType="Border" BasedOn="{StaticResource Chip}">
+                <Setter Property="Background" Value="{DynamicResource HealthNoneTint}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Card.Role}" Value="Active">
+                        <Setter Property="Background" Value="{DynamicResource ConnectionActiveTint}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Card.Role}" Value="Background">
+                        <Setter Property="Background" Value="{DynamicResource ConnectionBackgroundTint}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid>
         <!-- A card per saved connection -->
-        <ScrollViewer x:Name="ListView" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer x:Name="ListView" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Visibility="{Binding ShowsCards, Converter={StaticResource Shown}}">
             <StackPanel Margin="32,24,18,24">
                 <DockPanel Margin="0,0,14,16">
                     <Button x:Name="BtnNew" DockPanel.Dock="Right" VerticalAlignment="Top" Style="{StaticResource RefreshButton}"
-                            Content="+  New connection" Click="New_Click"
+                            Content="+  New connection" Command="{Binding NewCommand}"
+                            Visibility="{Binding HasCards, Converter={StaticResource Shown}}"
                             ToolTip="Add a SQL Server connection" />
                     <StackPanel>
                         <TextBlock Text="Connections" Style="{StaticResource PageTitle}" />
-                        <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" />
+                        <TextBlock x:Name="TxtSubtitle" Text="{Binding Subtitle, Mode=OneTime}" Style="{StaticResource PageSubtitle}" />
                     </StackPanel>
                 </DockPanel>
 
-                <TextBlock x:Name="TxtStatus" Style="{StaticResource Status}" Margin="0,0,14,12" />
+                <controls:StatusText x:Name="TxtStatus" Style="{StaticResource Status}" Line="{Binding Status}" Margin="0,0,14,12" />
 
                 <!-- No connections yet -->
                 <Border x:Name="EmptyState" Style="{StaticResource SettingsCard}" Margin="0,0,14,0" Padding="28,28"
-                        Visibility="Collapsed">
+                        Visibility="{Binding HasCards, Converter={StaticResource Shown}, ConverterParameter=Not}">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="No saved connections yet" Style="{StaticResource CardTitle}" HorizontalAlignment="Center" />
                         <TextBlock Style="{StaticResource CardText}" TextAlignment="Center" MaxWidth="420" Margin="0,6,0,14"
                                    Text="Add the SQL Server you want to monitor. SqlVitals checks it can sign in before saving, and keeps the details encrypted on this PC." />
                         <Button Content="+  New connection" Style="{StaticResource RefreshButton}" HorizontalAlignment="Center"
-                                Click="New_Click" />
+                                Command="{Binding NewCommand}" />
                     </StackPanel>
                 </Border>
 
                 <!-- Two cards a row, one in a narrow window; then "+ Add a connection" -->
-                <ItemsControl x:Name="Cards" Focusable="False" AutomationProperties.Name="Saved connections">
+                <ItemsControl x:Name="Cards" Focusable="False" AutomationProperties.Name="Saved connections"
+                              Visibility="{Binding HasCards, Converter={StaticResource Shown}}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel ItemWidth="{Binding CardWidth, ElementName=Root}" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type settings:ConnectionCardItem}">
+                    <ItemsControl.Resources>
+                        <!-- "+ Add a connection", after the cards: an item of its own, not a Button among them (binding error 26). -->
+                        <DataTemplate x:Key="AddTemplate">
+                            <Button Content="+ Add a connection" Margin="0,0,14,14" MinHeight="150" Style="{StaticResource AddCard}"
+                                    ToolTip="Add a SQL Server connection" Command="{Binding DataContext.NewCommand, ElementName=Root}" />
+                        </DataTemplate>
+                        <DataTemplate x:Key="CardTemplate" DataType="{x:Type vm:ConnectionCardItem}">
                             <Border Margin="0,0,14,14" Padding="16,14" CornerRadius="10" MinHeight="150"
                                     Background="{DynamicResource BgCard}" BorderThickness="1"
                                     AutomationProperties.Name="{Binding Card.AutomationName}">
@@ -66,10 +87,11 @@
                                 <DockPanel>
                                     <!-- Dot, name and role -->
                                     <DockPanel DockPanel.Dock="Top">
-                                        <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Background="{Binding RoleTint}">
+                                        <Border DockPanel.Dock="Right" Style="{StaticResource RoleChip}">
                                             <TextBlock Text="{Binding Card.RoleLabel}" Style="{StaticResource ChipText}" />
                                         </Border>
-                                        <Ellipse Width="10" Height="10" Fill="{Binding StatusBrush}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <Ellipse Width="10" Height="10" Fill="{Binding Card.Status, Converter={StaticResource HealthBrush}}"
+                                                 Margin="0,0,8,0" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding Card.Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                    Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"
                                                    ToolTip="{Binding Card.Name}" />
@@ -82,21 +104,22 @@
                                     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0"
                                             Padding="0,10,0,0" Margin="0,4,0,0">
                                         <DockPanel>
-                                            <TextBlock DockPanel.Dock="Top" Text="{Binding StateText}" Foreground="{Binding StateBrush}" FontSize="12"
+                                            <TextBlock DockPanel.Dock="Top" Text="{Binding StateText}" FontSize="12"
+                                                       Foreground="{Binding StateStatus, Converter={StaticResource HealthBrush}}"
                                                        FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,0,8"
                                                        ToolTip="{Binding StateToolTip}" />
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                                 <Button Content="Check permissions" Style="{StaticResource SecondaryButton}" Padding="12,5"
                                                         Command="{Binding CheckPermissionsCommand}"
-                                                        Visibility="{Binding CheckPermissionsVisibility}"
+                                                        Visibility="{Binding CanCheckPermissions, Converter={StaticResource Shown}}"
                                                         AutomationProperties.Name="{Binding CheckPermissionsName}"
                                                         ToolTip="Which permissions the login has, which pages miss out without the others, and the GRANT that adds them" />
                                                 <Button Content="Test" Style="{StaticResource SecondaryButton}" Padding="14,5" Margin="8,0,0,0"
-                                                        Click="Test_Click" IsEnabled="{Binding CanTest}"
+                                                        Command="{Binding TestCommand}" IsEnabled="{Binding CanTest}"
                                                         AutomationProperties.Name="{Binding TestName}"
                                                         ToolTip="Try to sign in to the server with the saved details" />
                                                 <Button Content="Edit" Style="{StaticResource SecondaryButton}" Padding="14,5" Margin="8,0,0,0"
-                                                        BorderBrush="{DynamicResource AccentLight}" Click="Edit_Click"
+                                                        BorderBrush="{DynamicResource AccentLight}" Command="{Binding EditCommand}"
                                                         AutomationProperties.Name="{Binding EditName}"
                                                         ToolTip="Open this connection's settings" />
                                             </StackPanel>
@@ -119,12 +142,13 @@
                                 </DockPanel>
                             </Border>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
+                    </ItemsControl.Resources>
                 </ItemsControl>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- A connection's page, over the list while it's open -->
-        <ContentControl x:Name="EditorHost" Focusable="False" Visibility="Collapsed" />
+        <!-- A connection's page, or its Check permissions, over the list while it's open -->
+        <ContentControl x:Name="EditorHost" Focusable="False"
+                        Visibility="{Binding ShowsCards, Converter={StaticResource Shown}, ConverterParameter=Not}" />
     </Grid>
 </UserControl>

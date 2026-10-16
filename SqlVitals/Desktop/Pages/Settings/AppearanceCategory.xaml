@@ -14,15 +14,16 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="32,24,32,24" MaxWidth="900" HorizontalAlignment="Stretch">
             <TextBlock Text="Appearance" Style="{StaticResource PageTitle}" />
-            <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+            <TextBlock x:Name="TxtSubtitle" Text="{Binding Subtitle, Mode=OneTime}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
 
             <Border Style="{StaticResource SettingsCard}">
                 <DockPanel>
                     <Button x:Name="BtnThemeToggle" DockPanel.Dock="Right" VerticalAlignment="Center"
-                            Style="{StaticResource RefreshButton}" Padding="16,7" Click="BtnThemeToggle_Click" />
+                            Style="{StaticResource RefreshButton}" Padding="16,7" Command="{Binding ToggleThemeCommand}"
+                            Content="{Binding ThemeButtonText}" AutomationProperties.Name="{Binding ThemeButtonName}" />
                     <StackPanel>
                         <TextBlock Text="Theme" Style="{StaticResource RowLabel}" />
-                        <TextBlock x:Name="TxtTheme" Style="{StaticResource RowHelp}" />
+                        <TextBlock x:Name="TxtTheme" Text="{Binding ThemeText}" Style="{StaticResource RowHelp}" />
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -31,18 +32,18 @@
             <Border Style="{StaticResource SettingsCard}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <RadioButton x:Name="RbComfortable" Content="Comfortable" GroupName="GridDensity" Margin="0,0,16,0"
-                                     Checked="Density_Checked" VerticalAlignment="Center"
+                        <RadioButton x:Name="RbComfortable" Content="Comfortable" Margin="0,0,16,0"
+                                     IsChecked="{Binding IsComfortable}" VerticalAlignment="Center"
                                      Foreground="{DynamicResource TextPrimary}"
                                      ToolTip="Rows with room around the text: the look grids have always had" />
-                        <RadioButton x:Name="RbCompact" Content="Compact" GroupName="GridDensity"
-                                     Checked="Density_Checked" VerticalAlignment="Center"
+                        <RadioButton x:Name="RbCompact" Content="Compact"
+                                     IsChecked="{Binding IsCompact}" VerticalAlignment="Center"
                                      Foreground="{DynamicResource TextPrimary}"
                                      ToolTip="Tighter rows with the same text: more rows on a small or shared screen" />
                     </StackPanel>
                     <StackPanel>
                         <TextBlock Text="Grid density" Style="{StaticResource RowLabel}" />
-                        <TextBlock x:Name="TxtDensity" Style="{StaticResource RowHelp}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TxtDensity" Text="{Binding DensityText}" Style="{StaticResource RowHelp}" TextWrapping="Wrap" />
                     </StackPanel>
                 </DockPanel>
             </Border>

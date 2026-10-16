@@ -64,23 +64,32 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+
     <DockPanel>
         <!-- Saves every tab of this connection at once -->
         <Border DockPanel.Dock="Bottom" Style="{StaticResource SaveBar}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnDiscard" Content="Discard" Style="{StaticResource SecondaryButton}" Padding="18,8"
-                            Click="Discard_Click" ToolTip="Put back what's saved, on every tab" />
-                    <Button x:Name="BtnSave" Content="Save" Style="{StaticResource SecondaryButton}" Padding="18,8" Margin="8,0,0,0"
-                            BorderBrush="{DynamicResource Accent}" Click="Save_Click"
-                            ToolTip="Save every tab of this connection without switching to it" />
+                            Command="{Binding DiscardCommand}" ToolTip="Put back what's saved, on every tab" />
+                    <!-- Save, beside Save & make active; on the first run Save & continue is the step's main button. -->
+                    <Button x:Name="BtnSave" Content="{Binding SaveText}" Style="{StaticResource SecondaryButton}" Padding="18,8" Margin="8,0,0,0"
+                            BorderBrush="{DynamicResource Accent}" Command="{Binding SaveCommand}" ToolTip="{Binding SaveToolTip}"
+                            Visibility="{Binding IsFirstRun, Converter={StaticResource Shown}, ConverterParameter=Not}" />
+                    <Button x:Name="BtnSaveAndContinue" Content="{Binding SaveText}" Style="{StaticResource RefreshButton}" Padding="18,8"
+                            Margin="8,0,0,0" Command="{Binding SaveCommand}" ToolTip="{Binding SaveToolTip}"
+                            Visibility="{Binding IsFirstRun, Converter={StaticResource Shown}}" />
                     <Button x:Name="BtnSaveAndConnect" Content="Save &amp; make active" Style="{StaticResource RefreshButton}"
-                            Padding="18,8" Margin="8,0,0,0" Click="SaveAndConnect_Click"
+                            Padding="18,8" Margin="8,0,0,0" Command="{Binding SaveAndConnectCommand}"
+                            Visibility="{Binding ShowsSaveAndConnect, Converter={StaticResource Shown}}"
                             ToolTip="Save, then make it the active connection that every page queries" />
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                    <TextBlock x:Name="TxtUnsaved" Style="{StaticResource Unsaved}" Visibility="Collapsed" TextWrapping="Wrap" />
-                    <TextBlock x:Name="TxtStatus" Style="{StaticResource Status}" Margin="0,2,0,0" />
+                    <TextBlock x:Name="TxtUnsaved" Style="{StaticResource Unsaved}" Text="{Binding UnsavedText}" TextWrapping="Wrap"
+                               Visibility="{Binding UnsavedText, Converter={StaticResource Shown}}" />
+                    <!-- Why Save is disabled: the first rule a field breaks, on whichever tab. -->
+                    <TextBlock x:Name="TxtProblem" Style="{StaticResource FieldError}" Text="{Binding Problem}" Margin="0,2,0,0" />
+                    <controls:StatusText x:Name="TxtStatus" Style="{StaticResource Status}" Line="{Binding Status}" Margin="0,2,0,0" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -88,48 +97,56 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="32,20,32,24" MaxWidth="900" HorizontalAlignment="Stretch">
                 <!-- ← Connections / name -->
-                <TextBlock x:Name="Crumb" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,10">
-                    <Hyperlink x:Name="LnkBack" Click="Back_Click" Foreground="{DynamicResource Accent}" TextDecorations="None">← Connections</Hyperlink>
-                    <Run Text="  /  " /><Run x:Name="RunCrumb" />
+                <TextBlock x:Name="Crumb" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,10"
+                           Visibility="{Binding IsFirstRun, Converter={StaticResource Shown}, ConverterParameter=Not}">
+                    <Hyperlink x:Name="LnkBack" Command="{Binding BackCommand}" Foreground="{DynamicResource Accent}" TextDecorations="None">← Connections</Hyperlink>
+                    <Run Text="  /  " /><Run x:Name="RunCrumb" Text="{Binding Title, Mode=OneWay}" />
                 </TextBlock>
 
                 <!-- Name, status and score; where it points; Test and ⋯ -->
                 <DockPanel Margin="0,0,0,16">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
-                        <Button x:Name="BtnTest" Content="Test connection" Style="{StaticResource SecondaryButton}" Click="Test_Click"
+                        <Button x:Name="BtnTest" Content="Test connection" Style="{StaticResource SecondaryButton}" Command="{Binding TestCommand}"
                                 ToolTip="Try to sign in with what's typed here, saved or not" />
                         <Button x:Name="BtnMore" Content="⋯" Style="{StaticResource SecondaryButton}" Padding="12,7" Margin="8,0,0,0"
-                                Click="More_Click" AutomationProperties.Name="More actions" ToolTip="More actions">
+                                Command="{Binding MoreCommand}" AutomationProperties.Name="More actions" ToolTip="More actions"
+                                Visibility="{Binding HasStatus, Converter={StaticResource Shown}}">
                             <Button.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem x:Name="MnuRemove" Header="Remove connection…" Click="Remove_Click" />
+                                    <MenuItem x:Name="MnuRemove" Header="Remove connection…" Command="{Binding RemoveCommand}" />
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
                     </StackPanel>
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="Dot" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,10,0" />
-                            <TextBlock x:Name="TxtName" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"
+                            <Ellipse x:Name="Dot" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,10,0"
+                                     Fill="{Binding TileStatus, Converter={StaticResource HealthBrush}}"
+                                     Visibility="{Binding HasStatus, Converter={StaticResource Shown}}" />
+                            <TextBlock x:Name="TxtName" Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="460" />
-                            <Border x:Name="StatusChip" Style="{StaticResource Chip}" Margin="12,0,0,0">
-                                <TextBlock x:Name="TxtStatusChip" Style="{StaticResource ChipText}" />
+                            <Border x:Name="StatusChip" Style="{StaticResource Chip}" Margin="12,0,0,0"
+                                    Background="{Binding TileStatus, Converter={StaticResource HealthBrush}, ConverterParameter=Tint}"
+                                    Visibility="{Binding HasStatus, Converter={StaticResource Shown}}"
+                                    AutomationProperties.Name="{Binding StatusName}">
+                                <TextBlock x:Name="TxtStatusChip" Text="{Binding StatusText}" Style="{StaticResource ChipText}" />
                             </Border>
-                            <Border x:Name="ActiveChip" Style="{StaticResource Chip}" Background="{DynamicResource AccentLight}">
+                            <Border x:Name="ActiveChip" Style="{StaticResource Chip}" Background="{DynamicResource AccentLight}"
+                                    Visibility="{Binding IsActive, Converter={StaticResource Shown}}">
                                 <TextBlock Text="ACTIVE" Style="{StaticResource ChipText}" />
                             </Border>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                            <TextBlock x:Name="TxtLine" Foreground="{DynamicResource TextMuted}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="TxtViewOnHome" FontSize="12">
-                                <Run Text=" · " Foreground="{DynamicResource TextMuted}" /><Hyperlink Click="ViewOnHome_Click"
+                            <TextBlock x:Name="TxtLine" Text="{Binding Line}" Foreground="{DynamicResource TextMuted}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="TxtViewOnHome" FontSize="12" Visibility="{Binding HasStatus, Converter={StaticResource Shown}}">
+                                <Run Text=" · " Foreground="{DynamicResource TextMuted}" /><Hyperlink Command="{Binding ViewOnHomeCommand}"
                                     Foreground="{DynamicResource Accent}" ToolTip="Its score over time, its checks and its alerts">View on Home</Hyperlink>
                             </TextBlock>
                         </StackPanel>
                     </StackPanel>
                 </DockPanel>
 
-                <TabControl x:Name="Tabs">
+                <TabControl x:Name="Tabs" SelectedIndex="{Binding SelectedTabIndex}">
                     <!-- ── Connection ─────────────────────────────────────── -->
                     <TabItem x:Name="TabConnection" Header="Connection">
                         <StackPanel>
@@ -148,7 +165,10 @@
                                         <TextBlock Style="{StaticResource FieldLabel}">
                                             <Run Text="Server name" /><Run Text=" *" Foreground="{DynamicResource Danger}" />
                                         </TextBlock>
-                                        <TextBox x:Name="TxtServer" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Server name" />
+                                        <TextBox x:Name="TxtServer" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Server name"
+                                                 Text="{Binding Server, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=False}"
+                                                 Tag="{Binding ServerError}" />
+                                        <TextBlock Style="{StaticResource FieldError}" Text="{Binding ServerError}" />
                                         <TextBlock Style="{StaticResource FieldHint}"
                                                    Text="e.g. myserver.database.windows.net, localhost\SQLEXPRESS, or host,1433 for a custom port" />
 
@@ -163,28 +183,35 @@
                                                     <Run Text="Authentication" /><Run Text=" *" Foreground="{DynamicResource Danger}" />
                                                 </TextBlock>
                                                 <ComboBox x:Name="CmbAuthentication" AutomationProperties.Name="Authentication"
-                                                          SelectionChanged="CmbAuthentication_SelectionChanged">
-                                                    <ComboBoxItem Content="SQL Server Authentication" Tag="SqlServer" />
-                                                    <ComboBoxItem Content="Microsoft Entra MFA" Tag="EntraMfa" />
-                                                    <ComboBoxItem Content="Windows Authentication" Tag="Windows" />
-                                                </ComboBox>
+                                                          ItemsSource="{Binding AuthenticationChoices}" DisplayMemberPath="Text"
+                                                          SelectedValuePath="Value" SelectedValue="{Binding Authentication}" />
                                             </StackPanel>
-                                            <StackPanel x:Name="PanelUserName" Grid.Column="2">
+                                            <StackPanel x:Name="PanelUserName" Grid.Column="2"
+                                                        Visibility="{Binding ShowsUserName, Converter={StaticResource Shown}}">
                                                 <TextBlock x:Name="LblUserName" Style="{StaticResource FieldLabel}">
-                                                    <Run x:Name="RunUserNameText" Text="Login" /><Run x:Name="RunUserNameRequired" Text=" *" Foreground="{DynamicResource Danger}" />
+                                                    <Run x:Name="RunUserNameText" Text="{Binding UserNameLabel, Mode=OneWay}" /><Run
+                                                        x:Name="RunUserNameRequired" Text="{Binding UserNameRequiredMark, Mode=OneWay}" Foreground="{DynamicResource Danger}" />
                                                 </TextBlock>
-                                                <TextBox x:Name="TxtUserName" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Login" />
+                                                <TextBox x:Name="TxtUserName" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Login"
+                                                         Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=False}"
+                                                         Tag="{Binding UserNameError}" />
+                                                <TextBlock Style="{StaticResource FieldError}" Text="{Binding UserNameError}" />
                                                 <TextBlock x:Name="TxtUserNameHint" Style="{StaticResource FieldHint}"
+                                                           Visibility="{Binding ShowsUserNameHint, Converter={StaticResource Shown}}"
                                                            Text="Optional: your Entra account (user@domain.com) to pre-fill the sign-in prompt." />
                                             </StackPanel>
                                         </Grid>
 
-                                        <StackPanel x:Name="PanelPassword" Margin="0,14,0,0">
+                                        <StackPanel x:Name="PanelPassword" Margin="0,14,0,0"
+                                                    Visibility="{Binding ShowsPassword, Converter={StaticResource Shown}}">
                                             <TextBlock x:Name="LblPassword" Style="{StaticResource FieldLabel}">
                                                 <Run Text="Password" /><Run Text=" *" Foreground="{DynamicResource Danger}" />
                                             </TextBlock>
+                                            <!-- Not bound: the code-behind copies it to the view model as it's typed. -->
                                             <PasswordBox x:Name="TxtPassword" AutomationProperties.Name="Password" />
-                                            <CheckBox x:Name="ChkSavePassword" Content="Remember password" Margin="0,10,0,0" />
+                                            <TextBlock Style="{StaticResource FieldError}" Text="{Binding PasswordError}" />
+                                            <CheckBox x:Name="ChkSavePassword" Content="Remember password" Margin="0,10,0,0"
+                                                      IsChecked="{Binding SavePassword}" />
                                         </StackPanel>
                                     </StackPanel>
                                 </Grid>
@@ -210,20 +237,20 @@
                                             <StackPanel>
                                                 <TextBlock Text="Database name" Style="{StaticResource FieldLabel}" />
                                                 <ComboBox x:Name="CmbDatabase" IsEditable="True" AutomationProperties.Name="Database name"
-                                                          DropDownOpened="CmbDatabase_DropDownOpened" />
-                                                <TextBlock x:Name="TxtDatabaseHint" Style="{StaticResource FieldHint}"
-                                                           Text="Leave blank for the login's default database. Open the list to browse the server." />
+                                                          ItemsSource="{Binding Databases}"
+                                                          Text="{Binding Database, UpdateSourceTrigger=PropertyChanged}"
+                                                          IsDropDownOpen="{Binding IsDatabaseListOpen}" />
+                                                <TextBlock x:Name="TxtDatabaseHint" Style="{StaticResource FieldHint}" Text="{Binding DatabaseHint}" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="2">
                                                 <TextBlock Text="Encrypt" Style="{StaticResource FieldLabel}" />
-                                                <ComboBox x:Name="CmbEncrypt" AutomationProperties.Name="Encrypt">
-                                                    <ComboBoxItem Content="Mandatory" Tag="Mandatory" />
-                                                    <ComboBoxItem Content="Optional" Tag="Optional" />
-                                                    <ComboBoxItem Content="Strict (SQL Server 2022 and Azure SQL)" Tag="Strict" />
-                                                </ComboBox>
+                                                <ComboBox x:Name="CmbEncrypt" AutomationProperties.Name="Encrypt"
+                                                          ItemsSource="{Binding EncryptChoices}" DisplayMemberPath="Text"
+                                                          SelectedValuePath="Value" SelectedValue="{Binding Encrypt}" />
                                             </StackPanel>
                                         </Grid>
-                                        <CheckBox x:Name="ChkTrustServerCertificate" Content="Trust server certificate" Margin="0,12,0,0" />
+                                        <CheckBox x:Name="ChkTrustServerCertificate" Content="Trust server certificate" Margin="0,12,0,0"
+                                                  IsChecked="{Binding TrustServerCertificate}" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -241,7 +268,10 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="Connection name" Style="{StaticResource FieldLabel}" />
-                                        <TextBox x:Name="TxtConnectionName" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Connection name" />
+                                        <TextBox x:Name="TxtConnectionName" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Connection name"
+                                                 Text="{Binding Name, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=False}"
+                                                 Tag="{Binding NameError}" />
+                                        <TextBlock Style="{StaticResource FieldError}" Text="{Binding NameError}" />
                                         <TextBlock Style="{StaticResource FieldHint}"
                                                    Text="Shown in the sidebar connection selector, e.g. Production or UAT. Leave blank to use server / database." />
                                     </StackPanel>
@@ -257,7 +287,7 @@
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
                                     <DockPanel>
                                         <CheckBox x:Name="ChkMonitorInBackground" DockPanel.Dock="Right" Style="{StaticResource Switch}"
-                                                  AutomationProperties.Name="Monitor in background" />
+                                                  AutomationProperties.Name="Monitor in background" IsChecked="{Binding MonitorInBackground}" />
                                         <StackPanel>
                                             <TextBlock Text="Monitor in background" Style="{StaticResource RowLabel}" />
                                             <TextBlock Style="{StaticResource RowHelp}"
@@ -268,7 +298,7 @@
                                 <Border Style="{StaticResource SettingRow}">
                                     <DockPanel>
                                         <CheckBox x:Name="ChkNotify" DockPanel.Dock="Right" Style="{StaticResource Switch}"
-                                                  AutomationProperties.Name="Windows notifications for this connection" />
+                                                  AutomationProperties.Name="Windows notifications for this connection" IsChecked="{Binding Notifies}" />
                                         <StackPanel>
                                             <TextBlock Text="Windows notifications" Style="{StaticResource RowLabel}" />
                                             <TextBlock Style="{StaticResource RowHelp}"
@@ -280,13 +310,13 @@
                                     <StackPanel>
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" FontSize="12" VerticalAlignment="Top">
-                                                <Hyperlink Click="AlertsAndChat_Click" Foreground="{DynamicResource Accent}">Alerts &amp; chat →</Hyperlink>
+                                                <Hyperlink Command="{Binding AlertsAndChatCommand}" Foreground="{DynamicResource Accent}">Alerts &amp; chat →</Hyperlink>
                                             </TextBlock>
                                             <TextBlock Text="Chat channels" Style="{StaticResource RowLabel}" />
                                         </DockPanel>
                                         <TextBlock Style="{StaticResource RowHelp}"
                                                    Text="The Slack and Teams channels that post this connection's alerts. Set them up, and choose their connections, in Alerts &amp; chat." />
-                                        <ItemsControl x:Name="LstChannels" Margin="0,8,0,0" Focusable="False"
+                                        <ItemsControl x:Name="LstChannels" Margin="0,8,0,0" Focusable="False" ItemsSource="{Binding Channels}"
                                                       AutomationProperties.Name="Chat channels that post this connection's alerts">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
@@ -295,7 +325,8 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
-                                        <TextBlock x:Name="TxtNoChannels" Style="{StaticResource RowHelp}" Margin="0,8,0,0" Visibility="Collapsed"
+                                        <TextBlock x:Name="TxtNoChannels" Style="{StaticResource RowHelp}" Margin="0,8,0,0"
+                                                   Visibility="{Binding HasNoChannels, Converter={StaticResource Shown}}"
                                                    Text="None: no chat channel posts this connection's alerts." />
                                     </StackPanel>
                                 </Border>
@@ -311,7 +342,8 @@
                                 <TextBlock Text="Health thresholds"
                                            Foreground="{Binding (TextElement.Foreground), RelativeSource={RelativeSource AncestorType=ContentPresenter}}"
                                            FontWeight="{Binding (TextElement.FontWeight), RelativeSource={RelativeSource AncestorType=ContentPresenter}}" />
-                                <Border x:Name="OwnTag" Style="{StaticResource Chip}" Background="#333B82F6" Visibility="Collapsed">
+                                <Border x:Name="OwnTag" Style="{StaticResource Chip}" Background="#333B82F6"
+                                        Visibility="{Binding ShowsOwnTag, Converter={StaticResource Shown}}">
                                     <TextBlock Text="OWN" Style="{StaticResource ChipText}" />
                                 </Border>
                             </StackPanel>
@@ -321,12 +353,12 @@
                                 <DockPanel>
                                     <CheckBox x:Name="ChkCustomThresholds" DockPanel.Dock="Right" Style="{StaticResource Switch}"
                                               AutomationProperties.Name="Use its own health thresholds"
-                                              Checked="ChkCustomThresholds_Changed" Unchecked="ChkCustomThresholds_Changed" />
+                                              IsChecked="{Binding OwnThresholds, ValidatesOnNotifyDataErrors=False}" />
                                     <StackPanel>
                                         <TextBlock Text="Use its own health thresholds" Style="{StaticResource RowLabel}" />
                                         <TextBlock Style="{StaticResource RowHelp}">
-                                            <Run x:Name="RunOwnHelp" Text="Grade this connection's health dot on its own thresholds, e.g. for a server that always runs hot. Off: it uses the " /><Hyperlink
-                                                Click="DefaultThresholds_Click" Foreground="{DynamicResource Accent}">default thresholds</Hyperlink><Run Text="." />
+                                            <Run x:Name="RunOwnHelp" Text="{Binding OwnHelp, Mode=OneWay}" /><Hyperlink
+                                                Command="{Binding DefaultThresholdsCommand}" Foreground="{DynamicResource Accent}">default thresholds</Hyperlink><Run Text="." />
                                         </TextBlock>
                                     </StackPanel>
                                 </DockPanel>
@@ -336,16 +368,18 @@
                                     <DockPanel Margin="0,0,0,10">
                                         <TextBlock x:Name="TxtPreview" DockPanel.Dock="Right" FontSize="12" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"
-                                                   Visibility="Collapsed" />
+                                                   Text="{Binding Preview}" Visibility="{Binding Preview, Converter={StaticResource Shown}}" />
                                         <TextBlock Text="Checks" Style="{StaticResource CardTitle}" />
                                     </DockPanel>
-                                    <controls:HealthThresholdsEditor x:Name="ConnectionThresholds" />
+                                    <controls:HealthThresholdsEditor x:Name="ConnectionThresholds" DataContext="{Binding Thresholds}" />
+                                    <TextBlock x:Name="TxtThresholdsError" Style="{StaticResource FieldError}" Text="{Binding ThresholdsError}" Margin="0,10,0,0" />
                                     <DockPanel Margin="0,10,0,0">
-                                        <TextBlock x:Name="TxtResetThresholds" DockPanel.Dock="Right" FontSize="12">
-                                            <Hyperlink Click="ResetThresholds_Click" Foreground="{DynamicResource Accent}"
+                                        <TextBlock x:Name="TxtResetThresholds" DockPanel.Dock="Right" FontSize="12"
+                                                   Visibility="{Binding OwnThresholds, Converter={StaticResource Shown}}">
+                                            <Hyperlink Command="{Binding ResetThresholdsCommand}" Foreground="{DynamicResource Accent}"
                                                        ToolTip="Put the default thresholds back in the boxes">Reset to defaults</Hyperlink>
                                         </TextBlock>
-                                        <TextBlock x:Name="TxtThresholdsNote" Style="{StaticResource CardText}" Margin="0,0,16,0" />
+                                        <TextBlock x:Name="TxtThresholdsNote" Style="{StaticResource CardText}" Margin="0,0,16,0" Text="{Binding ThresholdsNote}" />
                                     </DockPanel>
                                 </StackPanel>
                             </Border>
@@ -367,10 +401,16 @@
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Connection timeout (s)" Style="{StaticResource FieldLabel}" />
                                     <TextBox x:Name="TxtConnectTimeout" Style="{StaticResource FieldTextBox}" Width="120" HorizontalAlignment="Left"
-                                             AutomationProperties.Name="Connection timeout in seconds" />
+                                             AutomationProperties.Name="Connection timeout in seconds"
+                                             Text="{Binding ConnectTimeout, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=False}"
+                                             Tag="{Binding ConnectTimeoutError}" />
+                                    <TextBlock Style="{StaticResource FieldError}" Text="{Binding ConnectTimeoutError}" />
                                     <TextBlock Text="Additional parameters" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
                                     <TextBox x:Name="TxtAdditionalParameters" Style="{StaticResource FieldTextBox}" FontFamily="Consolas"
-                                             AutomationProperties.Name="Additional parameters" />
+                                             AutomationProperties.Name="Additional parameters"
+                                             Text="{Binding AdditionalParameters, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=False}"
+                                             Tag="{Binding AdditionalParametersError}" />
+                                    <TextBlock Style="{StaticResource FieldError}" Text="{Binding AdditionalParametersError}" />
                                     <TextBlock Style="{StaticResource FieldHint}"
                                                Text="Extra connection string keywords, e.g. MultipleActiveResultSets=True;HostNameInCertificate=*.contoso.com" />
                                 </StackPanel>

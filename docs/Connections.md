@@ -33,7 +33,7 @@ A **connection** is a saved server and database that SqlVitals monitors. You can
 | **Save** | ✅ when how it connects changed | ✅ | |
 | **Save & make active** (before 0.54.0 *Save & Connect*) | ✅ when how it connects changed | ✅ | ✅ |
 
-A new connection, or a change to how it connects (server, sign-in, database, encryption, timeout, parameters), is checked against the server first and never saved if the check fails, so you can't end up with a broken entry. A new name, the Monitoring & alerts settings or thresholds save without the check. **Discard** puts back what's saved, and leaving the page with unsaved changes asks first.
+A new connection, or a change to how it connects (server, sign-in, database, encryption, timeout, parameters), is checked against the server first and never saved if the check fails, so you can't end up with a broken entry. A new name, the Monitoring & alerts settings or thresholds save without the check. Until every field can be saved (a server name, the login and password a SQL login needs, a whole number of seconds, a name no other connection has), **Save** is disabled and the bar says what's missing; from 0.79.7 a field you've typed in says it too. **Discard** puts back what's saved, and leaving the page with unsaved changes asks first.
 
 To delete a connection, open it and choose **⋯ → Remove connection…**. Its monitoring history stays in the history file until it ages out. See [Monitoring History Database](Monitoring-History-Database.md).
 
