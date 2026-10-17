@@ -1,11 +1,17 @@
 # Builds SqlVitals Setup for every pull request so reviewers can download and try the installer.
 # The release number comes from <Version> in SqlVitals/Desktop/SqlVitals.Desktop.csproj.
+# A draft PR runs the tests only; Setup is built once it's marked ready for review (#230).
 name: PR – Build SqlVitals Setup
 
+# A docs-only PR has nothing to test or build. LICENSE isn't ignored: Setup embeds it.
+# No required status check waits on this workflow, so a skipped run doesn't block a merge.
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
 
 permissions:
   contents: read
@@ -66,41 +72,51 @@ jobs:
           if ($id) { gh api -X PATCH "repos/$repo/issues/comments/$id" -F body=@artifacts/coverage/comment.md | Out-Null }
           else     { gh pr comment $env:PR --body-file artifacts/coverage/comment.md }
 
-      # Unsigned: signing secrets aren't available to pull requests (and never to forks).
-      - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}
+      - name: Draft, so no Setup
+        if: github.event.pull_request.draft
         shell: pwsh
-        run: ./SqlVitals/Installer/Build-Installer.ps1 -Configuration Release
+        run: |
+          "Draft PR: tests only. Setup is built when the PR is marked **Ready for review**." |
+            Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      # Unsigned: signing secrets aren't available to pull requests (and never to forks).
+      # No portable zip: it holds the same app as Setup, and only releases ship it (#230).
+      - name: Build SqlVitals Setup ${{ steps.version.outputs.version }}
+        if: ${{ !github.event.pull_request.draft }}
+        shell: pwsh
+        run: ./SqlVitals/Installer/Build-Installer.ps1 -Configuration Release -SkipPortable
 
       - name: Check output
+        if: ${{ !github.event.pull_request.draft }}
         shell: pwsh
         run: |
           $exe = "artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe"
-          $zip = "artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip"
           $collector = "artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip"
-          foreach ($file in $exe, $zip, $collector) {
+          foreach ($file in $exe, $collector) {
             if (-not (Test-Path $file)) { throw "Expected $file was not produced." }
           }
           $info    = Get-Item $exe
           $hash    = (Get-Content "$exe.sha256").Split(' ')[0]
-          $zipInfo = Get-Item $zip
-          $zipHash = (Get-Content "$zip.sha256").Split(' ')[0]
           $colInfo = Get-Item $collector
           $colHash = (Get-Content "$collector.sha256").Split(' ')[0]
           @(
             "### SqlVitals ${{ steps.version.outputs.version }}"
             ""
-            "| | Setup | Portable zip | Collector service |"
-            "|---|---|---|---|"
-            "| File | ``$($info.Name)`` | ``$($zipInfo.Name)`` | ``$($colInfo.Name)`` |"
-            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB | $([math]::Round($zipInfo.Length / 1MB, 1)) MB | $([math]::Round($colInfo.Length / 1MB, 1)) MB |"
-            "| SHA-256 | ``$hash`` | ``$zipHash`` | ``$colHash`` |"
+            "| | Setup | Collector service |"
+            "|---|---|---|"
+            "| File | ``$($info.Name)`` | ``$($colInfo.Name)`` |"
+            "| Size | $([math]::Round($info.Length / 1MB, 1)) MB | $([math]::Round($colInfo.Length / 1MB, 1)) MB |"
+            "| SHA-256 | ``$hash`` | ``$colHash`` |"
             ""
             "Commit ``${{ github.event.pull_request.head.sha }}``"
             ""
-            "Download them from **Artifacts** below. They are unsigned, so Windows SmartScreen may ask you to confirm (More info → Run anyway)."
+            "Download them from **Artifacts** below. They're kept for a few days only; re-run this workflow to build them again. They are unsigned, so Windows SmartScreen may ask you to confirm (More info → Run anyway)."
           ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
+      # Artifact storage is billed (#230), so a PR keeps only what a reviewer tries, for 3 days.
+      # The repository's retention setting caps this and can make it shorter.
       - name: Upload Setup artifact
+        if: ${{ !github.event.pull_request.draft }}
         uses: actions/upload-artifact@v4
         with:
           name: SqlVitals-Setup-${{ steps.version.outputs.version }}-pr${{ github.event.pull_request.number }}
@@ -108,21 +124,11 @@ jobs:
             artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe
             artifacts/SqlVitals-Setup-${{ steps.version.outputs.version }}.exe.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0   # the exe is already compressed
 
-      - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable-pr${{ github.event.pull_request.number }}
-          path: |
-            artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip
-            artifacts/SqlVitals-${{ steps.version.outputs.version }}-win-x64-portable.zip.sha256
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0   # the zip is already compressed
-
       - name: Upload collector artifact
+        if: ${{ !github.event.pull_request.draft }}
         uses: actions/upload-artifact@v4
         with:
           name: SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64-pr${{ github.event.pull_request.number }}
@@ -130,5 +136,5 @@ jobs:
             artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip
             artifacts/SqlVitals-Collector-${{ steps.version.outputs.version }}-win-x64.zip.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0   # the zip is already compressed

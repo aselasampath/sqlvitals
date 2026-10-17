@@ -80,6 +80,8 @@ jobs:
           "collector=$collector" >> $env:GITHUB_OUTPUT
           "collector_sha256=$((Get-Content "$collector.sha256").Split(' ')[0])" >> $env:GITHUB_OUTPUT
 
+      # The release keeps the files; these run copies only matter when the release can't take them
+      # (already published, see below), so a week is enough to notice. Storage is billed (#230).
       - name: Upload Setup artifact
         uses: actions/upload-artifact@v4
         with:
@@ -88,7 +90,7 @@ jobs:
             ${{ steps.output.outputs.exe }}
             ${{ steps.output.outputs.exe }}.sha256
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
           compression-level: 0   # the exe is already compressed
 
       - name: Upload portable artifact
@@ -99,7 +101,7 @@ jobs:
             ${{ steps.output.outputs.zip }}
             ${{ steps.output.outputs.zip }}.sha256
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
           compression-level: 0   # the zip is already compressed
 
       - name: Upload collector artifact
@@ -110,7 +112,7 @@ jobs:
             ${{ steps.output.outputs.collector }}
             ${{ steps.output.outputs.collector }}.sha256
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
           compression-level: 0   # the zip is already compressed
 
       # Releases in this repository are immutable once published, so the release is created as a
@@ -194,5 +196,5 @@ jobs:
             ""
             "Commit ``${{ github.sha }}`` · Release ${{ steps.release.outputs.url }}"
             ""
-            "${{ steps.release.outputs.status }} Setup and the portable zip are also under **Artifacts** below for 90 days."
+            "${{ steps.release.outputs.status }} Setup and the portable zip are also under **Artifacts** below for up to 7 days."
           ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
