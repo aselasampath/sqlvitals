@@ -105,9 +105,6 @@ public sealed class PageFactoryTests : IDisposable
         // The view model is the page's own: the one its verdict is bound to.
         Assert.Same(made.ViewModel, made.View.GetType().GetProperty("ViewModel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                                         .GetValue(made.View));
-        // Until its wave of #180, a page that reads in its code-behind loads through it.
-        if (made.View is ICodeBehindPage)
-            Assert.IsAssignableFrom<CodeBehindViewModel>(made.ViewModel);
     });
 
     [Fact]

@@ -120,6 +120,19 @@ public sealed class QuickSwitcherOverlayTests
         Assert.Same(button, switcher.FocusMovedTo);
     });
 
+    // #191: the tip followed only a change, so a switcher first opened over a page about every
+    // server (Alerts) showed it, as the XAML has it.
+    [Theory, MemberData(nameof(Themes))]
+    public void OverAPageAboutEveryServer_TheTipAboutKeepingThePage_IsHidden(string theme) => OnSta(theme, (switcher, host, _, _) =>
+    {
+        switcher.Open(_ => [], _ => null, keepsPage: false);
+        Assert.Equal(Visibility.Collapsed, switcher.TxtTip.Visibility);
+
+        switcher.Close(restoreFocus: false);
+        Open(switcher);
+        Assert.Equal(Visibility.Visible, switcher.TxtTip.Visibility);
+    });
+
     [Theory, MemberData(nameof(Themes))]
     public void EnterFromOutsideThePage_GivesTheKeyboardBack_AsThatStays(string theme) => OnSta(theme, (switcher, host, _, button) =>
     {

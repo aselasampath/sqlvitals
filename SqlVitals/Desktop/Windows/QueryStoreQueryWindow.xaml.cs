@@ -1,157 +1,78 @@
 using System.Globalization;
 using System.Windows;
-using System.Windows.Controls;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
-using SkiaSharp;
 using SqlVitals.Desktop.Helpers;
-using SqlVitals.Desktop.Pages;
-using SqlVitals.Desktop.Services;
-using SqlVitals.Engine.Models;
-using SqlVitals.Engine.QueryStore;
-using SqlVitals.Engine.Repositories;
+using SqlVitals.Desktop.ViewModels.Windows;
 
 namespace SqlVitals.Desktop.Windows;
 
 /// <summary>
-/// One Query Store query (#111, SSMS's Tracked Queries): its full text, a metric per interval with
-/// one line per plan and the forced plan marked, and its plans. Several can be open at once.
+/// One Query Store query (#111): its <see cref="QueryStoreQueryViewModel"/>, read once the window
+/// is on screen. The chart is drawn here, in the theme's colours: one line per plan, the forced
+/// plan's thicker.
 /// </summary>
 public partial class QueryStoreQueryWindow : Window
 {
-    private readonly IWaitStatsRepository _repo;
-    private readonly long                 _queryId;
-    private readonly QueryStorePeriod     _period;
-    private readonly QueryStoreStatus     _status;
-
-    private QueryStoreQueryDetails? _details;
-    private readonly bool _ready;
-
-    public QueryStoreQueryWindow(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status)
+    public QueryStoreQueryWindow(QueryStoreQueryViewModel viewModel)
     {
-        _repo    = repo;
-        _queryId = queryId;
-        _period  = period;
-        _status  = status;
+        ViewModel = viewModel;
+        DataContext = viewModel;
         InitializeComponent();
-
-        Title           = $"Query {queryId} · Query Store · {status.DatabaseName}";
-        TxtHeading.Text = $"Query {queryId}";
-
-        foreach (var m in QueryStoreMetrics.Available(status.Features.Sql2017Metrics))
-            CmbMetric.Items.Add(new ComboBoxItem
-            {
-                Content = m.Metric == QueryStoreMetric.Executions ? "Executions" : $"Avg {m.NameWithUnit}",
-                Tag     = m.Metric,
-            });
-        CmbMetric.SelectedIndex = QueryStoreMetrics.Available(status.Features.Sql2017Metrics)
-            .ToList().FindIndex(m => m.Metric == QueryStoreMetric.Duration);
-        _ready = true;
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(QueryStoreQueryViewModel.Chart))
+                DrawChart();
+        };
     }
 
-    private QueryStoreMetric SelectedMetric => (QueryStoreMetric)((ComboBoxItem)CmbMetric.SelectedItem).Tag;
+    internal QueryStoreQueryViewModel ViewModel { get; }
 
-    private async void Window_Loaded(object sender, RoutedEventArgs e)
-    {
-        TxtStatus.Text = "Loading…";
-        try
-        {
-            _details = await _repo.GetQueryStoreQueryDetailsAsync(_queryId, _period);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error($"QueryStore: reading query {_queryId} failed", ex);
-            TxtStatus.Text = ErrorStatus.Format(ex);
-            return;
-        }
+    private async void Window_Loaded(object sender, RoutedEventArgs e) => await ViewModel.LoadAsync();
 
-        if (_details.Query is not { } query)
-        {
-            TxtSubheading.Text = $"Query Store for {_status.DatabaseName} has no query {_queryId}. It may have been cleaned up, or the ID is from another database.";
-            TxtStatus.Text     = string.Empty;
-            return;
-        }
-
-        TxtSubheading.Text = $"{query.ObjectText} · {_status.DatabaseName} · {_period.Label}";
-        TxtQueryText.Text  = query.QueryText.Trim();
-        PlansGrid.ItemsSource = _details.Summaries;
-        var plans = _details.Intervals.Select(i => i.PlanId).Distinct().Count();
-        TxtStatus.Text = $"{plans:N0} {(plans == 1 ? "plan" : "plans")} used in {_period.Label.ToLower(CultureInfo.CurrentCulture)} · one point per Query Store interval";
-        DrawChart();
-    }
-
-    private void CmbMetric_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_ready)
-            DrawChart();
-    }
-
-    // One line per plan: the metric's average per execution in each interval. The forced plan's
-    // line is thicker, and "(forced)" in the legend.
     private void DrawChart()
     {
-        if (_details is not { Query: not null } details || CmbMetric.SelectedItem is null)
-            return;
-
-        if (details.Intervals.Count == 0)
-        {
-            Chart.Series = [];
-            TxtNoData.Text       = $"The query didn't run in {_period.Label.ToLower(CultureInfo.CurrentCulture)}.";
-            TxtNoData.Visibility = Visibility.Visible;
-            return;
-        }
-        TxtNoData.Visibility = Visibility.Collapsed;
-
-        var metric = SelectedMetric;
-        var info   = QueryStoreMetrics.Info(metric);
-        var forced = details.Plans.Where(p => p.IsForced).Select(p => p.PlanId).ToHashSet();
-
-        var series = details.Intervals
-            .GroupBy(i => i.PlanId)
-            .OrderBy(g => g.Key)
-            .Select((g, index) =>
+        var chart = ViewModel.Chart;
+        Chart.Series = chart.Lines
+            .Select(line =>
             {
-                var color    = ChartTheme.Series(index);
-                var isForced = forced.Contains(g.Key);
+                var color = ChartTheme.Series(line.Colour);
                 return (ISeries)new LineSeries<DateTimePoint>
                 {
-                    Values         = g.OrderBy(i => i.StartUtc).Select(i => new DateTimePoint(i.StartUtc.ToLocalTime(), i.Totals.Average(metric))).ToList(),
-                    Name           = isForced ? $"Plan {g.Key} (forced)" : $"Plan {g.Key}",
-                    Stroke         = new SolidColorPaint(color) { StrokeThickness = isForced ? 3.5f : 1.8f },
+                    Values         = line.Points,
+                    Name           = line.Name,
+                    Stroke         = new SolidColorPaint(color) { StrokeThickness = line.Emphasised ? 3.5f : 1.8f },
                     Fill           = null,
-                    GeometrySize   = isForced ? 8 : 5,
+                    GeometrySize   = line.Emphasised ? 8 : 5,
                     GeometryFill   = new SolidColorPaint(color),
                     GeometryStroke = null,
                     LineSmoothness = 0,
                 };
             })
             .ToList();
+        if (chart.Lines.Count == 0)
+            return;
 
-        var (fromUtc, toUtc) = _period.Resolve(DateTime.UtcNow);
-        var axisFormat = ConnectionHistory.AxisFormat(toUtc - fromUtc);
-        var first = details.Intervals.Min(i => i.StartUtc);
-
-        Chart.Series = series;
         // The legend names the plans, so it must read on the dark card.
         Chart.LegendTextPaint = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true };
         Chart.XAxes =
         [
-            new DateTimeAxis(TimeSpan.FromMinutes(1), dt => dt.ToString(axisFormat, CultureInfo.CurrentCulture))
+            new DateTimeAxis(TimeSpan.FromMinutes(1), dt => dt.ToString(chart.AxisFormat, CultureInfo.CurrentCulture))
             {
                 LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
                 SeparatorsPaint = new SolidColorPaint(ChartTheme.GridColor) { StrokeThickness = 1 },
                 TextSize        = 11,
-                MinLimit        = (fromUtc < first ? fromUtc : first).ToLocalTime().Ticks,
-                MaxLimit        = toUtc.ToLocalTime().Ticks,
+                MinLimit        = chart.From?.Ticks,
+                MaxLimit        = chart.To?.Ticks,
             },
         ];
         Chart.YAxes =
         [
             new Axis
             {
-                Name            = metric == QueryStoreMetric.Executions ? info.Name : $"Avg {info.NameWithUnit}",
+                Name            = chart.ValueName,
                 NamePaint       = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
                 NameTextSize    = 11,
                 LabelsPaint     = new SolidColorPaint(ChartTheme.AxisColor) { IsAntialias = true },
@@ -160,18 +81,5 @@ public partial class QueryStoreQueryWindow : Window
                 MinLimit        = 0,
             },
         ];
-    }
-
-    private void BtnCopyText_Click(object sender, RoutedEventArgs e)
-    {
-        if (_details?.Query is { } query)
-            ClipboardHelper.SetText(query.QueryText);
-    }
-
-    private async void ViewPlan_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: QueryStorePlanSummary plan } btn)
-            await BusyButton.WhileAsync(btn, () => QueryStorePlans.ShowAsync(_repo, CompositionRoot.Get<IDialogService>(), plan.PlanId, _queryId,
-                                                                              _details?.Query?.QueryText)).Reported("show the plan");
     }
 }

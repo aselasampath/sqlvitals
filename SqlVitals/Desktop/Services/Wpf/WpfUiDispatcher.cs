@@ -18,4 +18,7 @@ internal sealed class WpfUiDispatcher(Dispatcher dispatcher) : IUiDispatcher
         }
         return dispatcher.InvokeAsync(action).Task;
     }
+
+    public void Invoke(Action action, TimeSpan timeout) =>
+        dispatcher.Invoke(action, DispatcherPriority.Send, CancellationToken.None, timeout);
 }

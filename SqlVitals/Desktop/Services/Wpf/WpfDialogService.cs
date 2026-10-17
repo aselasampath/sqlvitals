@@ -1,4 +1,5 @@
 using System.Windows;
+using SqlVitals.Desktop.ViewModels.Windows;
 using SqlVitals.Desktop.Windows;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
@@ -10,9 +11,10 @@ namespace SqlVitals.Desktop.Services.Wpf;
 
 /// <summary>
 /// <see cref="IDialogService"/> with message boxes and the app's windows, each owned by the window
-/// in front (<see cref="OwnerWindow"/>), so it stays over it and closes with it.
+/// in front (<see cref="OwnerWindow"/>), so it stays over it and closes with it. Each window has
+/// its view model (#191), which copies and saves through the clipboard and file dialogs.
 /// </summary>
-internal sealed class WpfDialogService : IDialogService
+internal sealed class WpfDialogService(IClipboard clipboard, IFileDialogs files) : IDialogService
 {
     public bool Confirm(string message, string caption) =>
         Show(message, caption, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
@@ -33,7 +35,7 @@ internal sealed class WpfDialogService : IDialogService
 
     public void ShowSqlScript(SqlScript script, bool modal)
     {
-        var window = new SqlScriptWindow(script.Heading, script.Notice, script.Text, script.FileName) { Owner = OwnerWindow() };
+        var window = new SqlScriptWindow(new SqlScriptViewModel(script, clipboard, files, this)) { Owner = OwnerWindow() };
         if (modal)
             window.ShowDialog();
         else
@@ -42,14 +44,11 @@ internal sealed class WpfDialogService : IDialogService
 
     public void ShowQueryPlan(string? planXml, string? queryText, string? title = null)
     {
-        var window = new QueryExecutionPlanWindow(planXml, queryText) { Owner = OwnerWindow() };
-        if (title is not null)
-            window.Title = title;
-        window.Show();
+        new QueryExecutionPlanWindow(new QueryPlanViewModel(planXml, queryText, title, clipboard, files, this)) { Owner = OwnerWindow() }.Show();
     }
 
     public void ShowQueryStoreQuery(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status) =>
-        new QueryStoreQueryWindow(repo, queryId, period, status) { Owner = OwnerWindow() }.Show();
+        new QueryStoreQueryWindow(new QueryStoreQueryViewModel(repo, queryId, period, status, this, clipboard)) { Owner = OwnerWindow() }.Show();
 
     // A task dialog (WinForms, which the app has for its tray icon): two worded choices and
     // Don't ask again, which a message box can't do.

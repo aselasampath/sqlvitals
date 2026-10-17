@@ -23,6 +23,8 @@ internal sealed class FakeUiDispatcher : IUiDispatcher
         return Task.CompletedTask;
     }
 
+    public void Invoke(Action action, TimeSpan timeout) => action();
+
     /// <summary>Runs what was posted, in order, including what those post.</summary>
     public void RunPosted()
     {

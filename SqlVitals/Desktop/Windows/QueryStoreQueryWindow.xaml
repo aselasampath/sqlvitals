@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
-        Title="Query details"
+        Title="{Binding Title}"
         Width="1180" Height="820"
         MinWidth="700" MinHeight="500"
         Background="{DynamicResource BgDeep}"
@@ -42,9 +42,9 @@
 
         <!-- Query ID, object and period -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock x:Name="TxtHeading" Text="Query details" FontSize="18" FontWeight="SemiBold"
+            <TextBlock Text="{Binding Heading}" FontSize="18" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextPrimary}"/>
-            <TextBlock x:Name="TxtSubheading" Foreground="{DynamicResource TextMuted}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Subheading}" Foreground="{DynamicResource TextMuted}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>
         </StackPanel>
 
         <!-- The full statement -->
@@ -53,11 +53,11 @@
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                     <Button DockPanel.Dock="Right" Content="⧉ Copy" Style="{DynamicResource SecondaryButton}" Padding="10,2"
-                            Click="BtnCopyText_Click" ToolTip="Copy the whole statement."/>
+                            Command="{Binding CopyTextCommand}" ToolTip="Copy the whole statement."/>
                     <TextBlock Text="Query text" Foreground="{DynamicResource TextMuted}" FontSize="11" FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
                 </DockPanel>
-                <TextBox x:Name="TxtQueryText" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="150"
+                <TextBox Text="{Binding QueryText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="150"
                          VerticalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0"
                          Foreground="{DynamicResource TextPrimary}" FontFamily="Cascadia Code, Consolas, Courier New" FontSize="12"/>
             </DockPanel>
@@ -66,16 +66,16 @@
         <!-- Metric -->
         <WrapPanel Grid.Row="2" Margin="0,0,0,6">
             <TextBlock Text="Chart:" Style="{StaticResource Label}"/>
-            <ComboBox x:Name="CmbMetric" Width="150" Height="26" FontSize="11" Margin="0,0,16,0"
+            <ComboBox ItemsSource="{Binding Metrics}" DisplayMemberPath="Text" SelectedValuePath="Value"
+                      SelectedValue="{Binding Metric}" Width="150" Height="26" FontSize="11" Margin="0,0,16,0"
                       Background="{DynamicResource BgCard}" Foreground="{DynamicResource TextPrimary}"
                       BorderBrush="{DynamicResource Border}" VerticalContentAlignment="Center"
-                      SelectionChanged="CmbMetric_SelectionChanged"
                       ToolTip="Average per execution in each Query Store interval, one line per plan.">
                 <ComboBox.ItemContainerStyle>
                     <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
                 </ComboBox.ItemContainerStyle>
             </ComboBox>
-            <TextBlock x:Name="TxtStatus" Style="{StaticResource Label}"/>
+            <TextBlock Text="{Binding Status}" Style="{StaticResource Label}"/>
         </WrapPanel>
 
         <!-- One line per plan, one point per interval -->
@@ -83,15 +83,25 @@
                 CornerRadius="6" Padding="8">
             <Grid>
                 <lvc:CartesianChart x:Name="Chart" Background="Transparent" TooltipPosition="Top" LegendPosition="Bottom"/>
-                <TextBlock x:Name="TxtNoData" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="560"
+                <TextBlock Text="{Binding NoData}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="560"
                            Foreground="{DynamicResource TextMuted}" FontSize="14"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding NoData}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </Grid>
         </Border>
 
         <TextBlock Grid.Row="4" Text="Plans used in the period, and any forced plan" Foreground="{DynamicResource TextMuted}"
                    FontSize="11" FontWeight="SemiBold" Margin="0,10,0,4"/>
-        <DataGrid Grid.Row="5" x:Name="PlansGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+        <DataGrid Grid.Row="5" ItemsSource="{Binding Plans}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
                   SelectionMode="Single" MaxHeight="220" RowStyle="{StaticResource ForcedRow}">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Plan ID" Binding="{Binding PlanId}" Width="70" ElementStyle="{StaticResource Number}"/>
@@ -108,7 +118,8 @@
                 <DataGridTemplateColumn Header="" Width="85" CanUserSort="False">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Button Content="View Plan" Tag="{Binding}" Click="ViewPlan_Click" Style="{DynamicResource RefreshButton}"
+                            <Button Content="View Plan" Style="{DynamicResource RefreshButton}"
+                                    Command="{Binding DataContext.ViewPlanCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"
                                     Padding="8,2" FontSize="11" Margin="2,1"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

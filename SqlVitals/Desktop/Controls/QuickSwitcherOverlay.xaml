@@ -52,7 +52,7 @@
                                      Foreground="{DynamicResource TextPrimary}" CaretBrush="{DynamicResource TextPrimary}"
                                      SelectionBrush="{DynamicResource Accent}" VerticalContentAlignment="Center"
                                      AutomationProperties.Name="Search servers, pages and settings"
-                                     TextChanged="Query_TextChanged" PreviewKeyDown="Query_PreviewKeyDown" />
+                                     Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" PreviewKeyDown="Query_PreviewKeyDown" />
                         </Grid>
                     </DockPanel>
                 </Border>

@@ -210,7 +210,7 @@ public sealed class TopBarTests
         Assert.Equal("Close the menu", AutomationProperties.GetName(bar.BtnSidebar));
         Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
 
-        bar.BtnSidebar.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Click(bar.BtnSidebar);
         Assert.Equal(1, requested);
     });
 
@@ -321,7 +321,8 @@ public sealed class TopBarTests
     private static PageFreshness Live(bool paused) =>
         new(PageKind.Live, TimeSpan.FromSeconds(5), paused, AsOf: Now.DateTime.AddSeconds(-6));
 
-    private static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+    // Runs the button's command too, as a real click does (#191): a raised Click event doesn't.
+    private static void Click(ButtonBase button) => TemplateRolloutTests.Click(button);
 
     private static Color Color(FrameworkElement host, string key) => ((SolidColorBrush)host.FindResource(key)).Color;
 

@@ -9,4 +9,5 @@ namespace SqlVitals.Desktop.ViewModels;
 /// added to it moves the line without the chart being built again.
 /// </summary>
 /// <param name="Colour">The line's place in the chart's palette (<c>ChartTheme.Series</c>).</param>
-public sealed record TrendLine(string Name, ObservableCollection<DateTimePoint> Points, int Colour);
+/// <param name="Emphasised">Drawn thicker, with larger points: a Query Store query's forced plan (#191).</param>
+public sealed record TrendLine(string Name, ObservableCollection<DateTimePoint> Points, int Colour, bool Emphasised = false);

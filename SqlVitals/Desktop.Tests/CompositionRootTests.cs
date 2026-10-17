@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels.Shell;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.History;
 using SqlVitals.Engine.Repositories;
@@ -11,7 +12,7 @@ namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
 /// The composition root (#166): the app's own services come from the container, one each, and
-/// the main window with them; its <c>ILogger&lt;T&gt;</c> write the log file as <see cref="AppLog"/> did.
+/// the shell's view model (#191) and the main window with them; its <c>ILogger&lt;T&gt;</c> write the log file as <see cref="AppLog"/> did.
 /// </summary>
 /// <remarks>
 /// Monitoring and the history aren't resolved here: the real ones open %AppData%\SqlVitals\history.db.
@@ -31,6 +32,7 @@ public sealed class CompositionRootTests
         typeof(OverviewVisits),
         typeof(Func<IWaitStatsRepository, ExportService>),
         typeof(ILoggerFactory),
+        typeof(ShellViewModel),
         typeof(MainWindow),
     ];
 
@@ -38,7 +40,7 @@ public sealed class CompositionRootTests
     [MemberData(nameof(AppServices))]
     public void EachAppService_IsRegistered_OnceForTheApp(Type service)
     {
-        var registrations = new ServiceCollection().AddAppLog().AddUiServices().AddAppServices().AddPages().AddSingleton<MainWindow>();
+        var registrations = new ServiceCollection().AddAppLog().AddUiServices().AddAppServices().AddPages().AddShell().AddSingleton<MainWindow>();
 
         var registration = Assert.Single(registrations, d => d.ServiceType == service);
         Assert.Equal(ServiceLifetime.Singleton, registration.Lifetime);
@@ -48,9 +50,11 @@ public sealed class CompositionRootTests
     public void TheAppsContainer_IsCheckedAsItIsBuilt_TheMainWindowWithIt()
     {
         // ValidateOnBuild: every constructor's services, the main window's included, are registered.
-        var services = CompositionRoot.Build();
+        // Only the app adds the window (#191): the container itself doesn't refer to it.
+        var services = CompositionRoot.Build(s => s.AddSingleton<MainWindow>());
 
         Assert.True(services.GetRequiredService<IServiceProviderIsService>().IsService(typeof(MainWindow)));
+        Assert.False(CompositionRoot.Build().GetRequiredService<IServiceProviderIsService>().IsService(typeof(MainWindow)));
     }
 
     [Fact]
