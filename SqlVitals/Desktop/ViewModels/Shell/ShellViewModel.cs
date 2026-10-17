@@ -52,7 +52,6 @@ public sealed partial class ShellViewModel : ObservableObject
         _collectors   = collectors;
         _starter      = starter;
         _ui           = ui;
-        Repo          = repositories.Create(repositories.TargetFor(null, 0));
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         Sidebar.Version = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
@@ -106,6 +105,9 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>The window, which shows the pages; until then, nothing is shown.</summary>
     public void Attach(IPageHost host) => _host = host;
 
+    /// <summary>A window shows it: pages can be opened and reported on.</summary>
+    public bool IsAttached => !ReferenceEquals(_host, NoHost.Instance);
+
     // ── What the window hears ────────────────────────────────────────────────
 
     /// <summary>An alert started or turned critical on a connection that notifies: a Windows notification (#35).</summary>
@@ -131,9 +133,11 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>
     /// The active connection's repositories; replaced whenever it changes, so pages created after
-    /// that query the new server without restarting the app.
+    /// that query the new server without restarting the app. Built by <see cref="Start"/>.
     /// </summary>
-    public IWaitStatsRepository Repo { get; private set; }
+    public IWaitStatsRepository Repo => _repo ?? throw new InvalidOperationException("The shell hasn't started: call Start first.");
+
+    private IWaitStatsRepository? _repo;
 
     private bool _isConnectionConfigured;
 
@@ -170,7 +174,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
         // Pinned, collapsed or hidden (#142): as last chosen, collapsed in a narrow window.
         Sidebar.Restore(store.SidebarMode, windowWidth);
-        Repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
+        _repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
 
         // Every settings change goes to the activity log (#115); never a secret (see SettingsDiff).
         _settings.Changed += OnSettingsChanged;
@@ -321,7 +325,7 @@ public sealed partial class ShellViewModel : ObservableObject
         stopped.Dispose();
 
         var previous = Repo;
-        Repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
+        _repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
 
         // Best effort: a trace session started against the old connection shouldn't be
         // left running on that server.
@@ -405,6 +409,8 @@ public sealed partial class ShellViewModel : ObservableObject
     // The active connection is Azure SQL Database: checked after every switch.
     private bool _activeIsAzureSql;
 
+    private static readonly IReadOnlyDictionary<string, string> NoneUnavailable = new Dictionary<string, string>();
+
     private bool IsDisabled(string tag) => _activeIsAzureSql && PagesAzureSqlLacks.ContainsKey(tag);
 
     // The sidebar shows them disabled while the open server is the active one. Another server's
@@ -413,7 +419,8 @@ public sealed partial class ShellViewModel : ObservableObject
     private void ApplyPagesAzureSqlLacks()
     {
         var known = WorkspaceServer is null || WorkspaceServer == _activeConnectionId;
-        Sidebar.Unavailable = known && _activeIsAzureSql ? PagesAzureSqlLacks : new Dictionary<string, string>();
+        // One of two sets, so the sidebar only hears of it when it changes.
+        Sidebar.Unavailable = known && _activeIsAzureSql ? PagesAzureSqlLacks : NoneUnavailable;
     }
 
     // Disable those pages up front instead of letting the user hit a query error after navigating to one.
@@ -659,8 +666,8 @@ public sealed partial class ShellViewModel : ObservableObject
             // here with a live SynchronizationContext would deadlock. The budget covers a
             // cold connection to a remote server (Azure SQL routinely needs several
             // seconds) plus the DROP itself.
-            var repo = Repo;
-            Task.Run(() => repo.StopTraceAsync()).Wait(TimeSpan.FromSeconds(20));
+            if (_repo is { } repo)
+                Task.Run(() => repo.StopTraceAsync()).Wait(TimeSpan.FromSeconds(20));
         }
         catch
         {

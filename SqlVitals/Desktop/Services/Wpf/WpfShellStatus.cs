@@ -7,7 +7,7 @@ namespace SqlVitals.Desktop.Services.Wpf;
 /// <see cref="IShellStatus"/> on the shell's top bar (#191): every report is logged as before, and
 /// shown when it is about the page on screen. Before the window opens, only logged.
 /// </summary>
-/// <param name="window">The shell's view model, while its window is open.</param>
+/// <param name="window">The shell's view model, once its window shows it.</param>
 internal sealed class WpfShellStatus(Func<ShellViewModel?> window, ILogger<WpfShellStatus> log) : IShellStatus
 {
     public void ReportRead(object page, PageRead read) => window()?.ShowRead(page, read);

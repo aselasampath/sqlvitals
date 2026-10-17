@@ -79,7 +79,7 @@ public partial class MainWindow : Window, IPageHost
         // narrow window. The score in its server header opens the breakdown beside it (#36).
         Shell.ReturnFocusTo   = Bar.BtnSidebar;
         Shell.ScoreRequested += ShowScore;
-        SizeChanged += (_, e) => Shell.SetWindowWidth(e.NewSize.Width);
+        SizeChanged += (_, e) => shell.Sidebar.SetWindowWidth(e.NewSize.Width);
 
         _tray = new TrayIcon(settings);
         _tray.OpenRequested   += ShowFromTray;
@@ -356,13 +356,13 @@ public partial class MainWindow : Window, IPageHost
         if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
-            if (Switcher.IsOpen)
+            if (_shell.Switcher.IsOpen)
                 Switcher.Close(restoreFocus: true);
             else
                 _shell.OpenSwitcher();
             return;
         }
-        if (Switcher.IsOpen)
+        if (_shell.Switcher.IsOpen)
             return;
 
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
@@ -375,7 +375,7 @@ public partial class MainWindow : Window, IPageHost
         if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
-            Shell.Cycle();
+            _shell.Sidebar.Cycle();
             return;
         }
 
@@ -413,7 +413,7 @@ public partial class MainWindow : Window, IPageHost
     // box clearing its text, a grid cancelling an edit, a pop-up closing come first. Then focus mode (#148).
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None || Switcher.IsOpen)
+        if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None || _shell.Switcher.IsOpen)
             return;
         if (Details.Escape() || _shell.ExitFocus())
             e.Handled = true;
@@ -422,7 +422,7 @@ public partial class MainWindow : Window, IPageHost
     // The mouse's back and forward buttons.
     private async void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2) || Switcher.IsOpen)
+        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2) || _shell.Switcher.IsOpen)
             return;
         e.Handled = true;
         await _shell.GoBackOrForwardAsync(back: e.ChangedButton == MouseButton.XButton1);

@@ -54,18 +54,38 @@ public partial class TopBar : UserControl
         }
     }
 
-    // Each change, drawn; a change that raises several names is drawn on its last.
+    // Each change, drawn from the view model as it is now: it sets everything a change touches
+    // before it raises any of it. The breadcrumb is rebuilt, and a message read out, once: on
+    // Crumbs and Message, which are raised whenever they're shown again.
     private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
-            case nameof(TopBarViewModel.ForwardToolTip): ShowHistory(); break;
-            case nameof(TopBarViewModel.BreadcrumbText): ShowBreadcrumb(); break;
-            case nameof(TopBarViewModel.Freshness):      ShowContext(); break;
-            case nameof(TopBarViewModel.Message):        ShowMessage(); break;
-            case nameof(TopBarViewModel.SidebarBadge):   ShowSidebar(); break;
-            case nameof(TopBarViewModel.InFocus):        ShowFocus(); break;
-            case nameof(TopBarViewModel.DetailsOpen):    ShowDetailsOpen(); break;
+            case nameof(TopBarViewModel.BackTo) or nameof(TopBarViewModel.ForwardTo)
+              or nameof(TopBarViewModel.BackToolTip) or nameof(TopBarViewModel.ForwardToolTip):
+                ShowHistory();
+                break;
+            case nameof(TopBarViewModel.Crumbs):
+                ShowBreadcrumb();
+                break;
+            case nameof(TopBarViewModel.Freshness) or nameof(TopBarViewModel.CanPause) or nameof(TopBarViewModel.Database)
+              or nameof(TopBarViewModel.ShowsPause) or nameof(TopBarViewModel.ShowsRefresh) or nameof(TopBarViewModel.IsPaused):
+                ShowContext();
+                break;
+            case nameof(TopBarViewModel.Message):
+                ShowMessage();
+                break;
+            case nameof(TopBarViewModel.Sidebar) or nameof(TopBarViewModel.SidebarSlidOver) or nameof(TopBarViewModel.Alerts)
+              or nameof(TopBarViewModel.SidebarName) or nameof(TopBarViewModel.SidebarToolTip)
+              or nameof(TopBarViewModel.SidebarAutomationName) or nameof(TopBarViewModel.SidebarCounts) or nameof(TopBarViewModel.SidebarBadge):
+                ShowSidebar();
+                break;
+            case nameof(TopBarViewModel.InFocus):
+                ShowFocus();
+                break;
+            case nameof(TopBarViewModel.DetailsOpen) or nameof(TopBarViewModel.DetailsToolTip) or nameof(TopBarViewModel.DetailsName):
+                ShowDetailsOpen();
+                break;
         }
     }
 
@@ -74,45 +94,7 @@ public partial class TopBar : UserControl
 
     private DateTime Now => Clock.GetLocalNow().DateTime;
 
-    /// <inheritdoc cref="TopBarViewModel.PauseRequested"/>
-    public event Action<bool>? PauseRequested
-    {
-        add    => _model.PauseRequested += value;
-        remove => _model.PauseRequested -= value;
-    }
-
-    /// <inheritdoc cref="TopBarViewModel.CrumbRequested"/>
-    public event Action<Route>? CrumbRequested
-    {
-        add    => _model.CrumbRequested += value;
-        remove => _model.CrumbRequested -= value;
-    }
-
-    /// <inheritdoc cref="TopBarViewModel.ServerRequested"/>
-    public event Action<Guid>? ServerRequested
-    {
-        add    => _model.ServerRequested += value;
-        remove => _model.ServerRequested -= value;
-    }
-
-    /// <inheritdoc cref="TopBarViewModel.SidebarRequested"/>
-    public event Action? SidebarRequested
-    {
-        add    => _model.SidebarRequested += value;
-        remove => _model.SidebarRequested -= value;
-    }
-
-    /// <inheritdoc cref="TopBarViewModel.JumpRequested"/>
-    public event Action? JumpRequested
-    {
-        add    => _model.JumpRequested += value;
-        remove => _model.JumpRequested -= value;
-    }
-
-    // ── The sidebar's ☰ (#142) ───────────────────────────────────────────────
-
-    /// <inheritdoc cref="TopBarViewModel.ShowSidebar"/>
-    public void ShowSidebar(SidebarMode shown, bool slidOver, int alerts) => _model.ShowSidebar(shown, slidOver, alerts);
+    // ── What it draws ────────────────────────────────────────────────────────
 
     private void ShowSidebar()
     {
@@ -122,17 +104,11 @@ public partial class TopBar : UserControl
         AutomationProperties.SetName(BtnSidebar, _model.SidebarAutomationName);
     }
 
-    /// <summary>In focus mode the Focus button gives way to Exit focus (Esc).</summary>
-    public void ShowFocus(bool on) => _model.InFocus = on;
-
     private void ShowFocus()
     {
         BtnFocus.Visibility     = _model.InFocus ? Visibility.Collapsed : Visibility.Visible;
         BtnExitFocus.Visibility = _model.InFocus ? Visibility.Visible : Visibility.Collapsed;
     }
-
-    /// <summary>Says whether the details button opens or closes the drawer.</summary>
-    public void ShowDetailsOpen(bool open) => _model.DetailsOpen = open;
 
     private void ShowDetailsOpen()
     {
@@ -141,9 +117,6 @@ public partial class TopBar : UserControl
     }
 
     // ── Back and Forward ─────────────────────────────────────────────────────
-
-    /// <inheritdoc cref="TopBarViewModel.ShowHistory"/>
-    public void ShowHistory(string? back, string? forward) => _model.ShowHistory(back, forward);
 
     // Enabled by their commands.
     private void ShowHistory()
@@ -154,18 +127,10 @@ public partial class TopBar : UserControl
 
     // ── Breadcrumb ───────────────────────────────────────────────────────────
 
-    /// <summary>The breadcrumb's text, for tests and the window's own description of where it is.</summary>
-    internal string BreadcrumbText => _model.BreadcrumbText;
-
     // The breadcrumb on show, and its server part's health, which a new sample updates in place:
     // rebuilding the parts would take the keyboard focus off one.
     private IReadOnlyList<Crumb> _crumbs = [];
     private (Ellipse Dot, TextBlock Score, FrameworkElement Part, Crumb Crumb)? _serverPart;
-
-    /// <inheritdoc cref="TopBarViewModel.ShowBreadcrumb"/>
-    public void ShowBreadcrumb(IReadOnlyList<Crumb> crumbs, Func<Guid, ConnectionSelectorItem?> server,
-                               IReadOnlyList<ConnectionSelectorItem>? servers = null) =>
-        _model.ShowBreadcrumb(crumbs, server, servers);
 
     private void ShowBreadcrumb()
     {
@@ -307,16 +272,6 @@ public partial class TopBar : UserControl
 
     // ── Page context ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// A new page: the controls it hands to the bar (the previous page's go with it), then its
-    /// context as <see cref="ShowContext(PageFreshness?, bool, string?)"/>. The message is cleared.
-    /// </summary>
-    public void ShowPage(FrameworkElement? tools, PageFreshness? freshness, bool canPause, string? database)
-    {
-        ShowTools(tools);
-        _model.ShowPage(freshness, canPause, database);
-    }
-
     /// <summary>The controls a new page hands to the bar, taken out of its layout; the previous page's go.</summary>
     public void ShowTools(FrameworkElement? tools)
     {
@@ -328,9 +283,6 @@ public partial class TopBar : UserControl
         _tools = tools;
         ShowContext();
     }
-
-    /// <inheritdoc cref="TopBarViewModel.ShowContext"/>
-    public void ShowContext(PageFreshness? freshness, bool canPause, string? database) => _model.ShowContext(freshness, canPause, database);
 
     private void ShowContext()
     {
@@ -348,9 +300,6 @@ public partial class TopBar : UserControl
         var any = _model.Freshness is { Kind: not PageKind.None } || _tools is not null || database is not null;
         ContextPanel.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
     }
-
-    /// <summary>What the bar says now, for tests.</summary>
-    internal PageFreshness? Freshness => _model.Freshness;
 
     private void ShowFreshness()
     {
@@ -526,20 +475,7 @@ public partial class TopBar : UserControl
         AutomationProperties.SetName(BtnPause, name);
     }
 
-    /// <inheritdoc cref="TopBarViewModel.CanRefresh"/>
-    public bool CanRefresh
-    {
-        get => _model.CanRefresh;
-        set => _model.CanRefresh = value;
-    }
-
     // ── Messages ─────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// "Loading…", "Switched to PROD-SQL02.", or an error the page ran into, which used to be the
-    /// sidebar's status text. Null clears it.
-    /// </summary>
-    public void ShowMessage(string? text, bool isError = false) => _model.ShowMessage(text, isError);
 
     private void ShowMessage()
     {
@@ -555,11 +491,6 @@ public partial class TopBar : UserControl
         if (!string.IsNullOrEmpty(text) && UIElementAutomationPeer.FromElement(TxtMessage) is { } peer)
             peer.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
-
-    /// <summary>The message on show, for tests and for keeping an error when the page reports again.</summary>
-    public string Message => _model.Message;
-
-    public bool MessageIsError => _model.MessageIsError;
 
     // A toolbar to a screen reader, not a plain group.
     protected override AutomationPeer OnCreateAutomationPeer() => new TopBarAutomationPeer(this);

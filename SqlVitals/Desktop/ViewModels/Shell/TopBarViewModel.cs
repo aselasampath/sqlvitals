@@ -11,6 +11,10 @@ namespace SqlVitals.Desktop.ViewModels.Shell;
 /// (#142). The shell fills it in; its buttons ask the shell through the events. <c>TopBar</c> draws
 /// it, with the page's own controls and its layout in a narrow window.
 /// </summary>
+/// <remarks>
+/// Each <c>Show…</c> sets everything it changes before it raises any of it, so the bar can draw a
+/// group on any of its names.
+/// </remarks>
 public sealed partial class TopBarViewModel : ObservableObject
 {
     public event Action? BackRequested;
@@ -97,8 +101,9 @@ public sealed partial class TopBarViewModel : ObservableObject
         Crumbs   = crumbs;
         ServerOf = server;
         Servers  = servers ?? [];
-        OnPropertyChanged(nameof(Crumbs));
         OnPropertyChanged(nameof(BreadcrumbText));
+        // Raised every time: the bar shows the server's health again in place.
+        OnPropertyChanged(nameof(Crumbs));
     }
 
     /// <summary>A breadcrumb part that opens a page, or All servers in the server menu.</summary>

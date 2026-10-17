@@ -57,51 +57,9 @@ public partial class OverviewPage : Page, IPageContext
     private async void RangePicker_RangeChanged(object? sender, HistoryRange range) =>
         await ViewModel.ReportErrorsOf(ViewModel.PickRangeAsync(range));
 
-    // ── Where its links go: the window opens them ─────────────────────────────
+    // ── Its server ────────────────────────────────────────────────────────────
 
     public Guid ConnectionId => ViewModel.ConnectionId;
-
-    /// <inheritdoc cref="OverviewViewModel.OpenPageRequested"/>
-    public event Action<Guid, string>? OpenPageRequested
-    {
-        add    => ViewModel.OpenPageRequested += value;
-        remove => ViewModel.OpenPageRequested -= value;
-    }
-
-    /// <inheritdoc cref="OverviewViewModel.EvidenceRequested"/>
-    public event Action<Route>? EvidenceRequested
-    {
-        add    => ViewModel.EvidenceRequested += value;
-        remove => ViewModel.EvidenceRequested -= value;
-    }
-
-    /// <inheritdoc cref="OverviewViewModel.MakeActiveRequested"/>
-    public event Action<Guid>? MakeActiveRequested
-    {
-        add    => ViewModel.MakeActiveRequested += value;
-        remove => ViewModel.MakeActiveRequested -= value;
-    }
-
-    /// <inheritdoc cref="OverviewViewModel.EditRequested"/>
-    public event Action<Guid>? EditRequested
-    {
-        add    => ViewModel.EditRequested += value;
-        remove => ViewModel.EditRequested -= value;
-    }
-
-    /// <inheritdoc cref="OverviewViewModel.ThresholdsRequested"/>
-    public event Action<Guid>? ThresholdsRequested
-    {
-        add    => ViewModel.ThresholdsRequested += value;
-        remove => ViewModel.ThresholdsRequested -= value;
-    }
-
-    /// <inheritdoc cref="OverviewViewModel.AlertsRequested"/>
-    public event Action<Guid>? AlertsRequested
-    {
-        add    => ViewModel.AlertsRequested += value;
-        remove => ViewModel.AlertsRequested -= value;
-    }
 
     // ── The charts, in the theme's colours ────────────────────────────────────
 

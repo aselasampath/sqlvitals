@@ -152,7 +152,7 @@ public sealed class SettingsPageTests : IDisposable
         Assert.Equal("Connections, 3 saved", page.ViewModel.MenuItemFor(SettingsCategory.Connections).AutomationName);
 
         var shown = new List<SettingsCategory>();
-        page.CategoryShown += shown.Add;
+        page.ViewModel.CategoryShown += shown.Add;
         TemplateRolloutTests.Click(MenuButton(page, "Alerts"));
         UiThread.Layout(page, 1200, 900);
 
@@ -406,7 +406,7 @@ public sealed class SettingsPageTests : IDisposable
         var editor = Editor(page);
         editor.Name = "Quiet 2";
         bool? couldLeave = null;
-        _onApply = async () => couldLeave = await page.TryLeaveAsync();
+        _onApply = async () => couldLeave = await page.ViewModel.TryLeaveAsync();
 
         Assert.True(Await(editor.SaveAsync(connect: true)), editor.Status.Text);
 
@@ -487,7 +487,7 @@ public sealed class SettingsPageTests : IDisposable
         editor.Name = "Renamed";
 
         _dialogs.SaveAnswer = DialogAnswer.Cancel;
-        Assert.False(Await(page.TryLeaveAsync()));
+        Assert.False(Await(page.ViewModel.TryLeaveAsync()));
 
         // A click on another category that the user takes back: the menu shows Connections again.
         TemplateRolloutTests.Click(MenuButton(page, "Alerts"));
@@ -899,7 +899,7 @@ public sealed class SettingsPageTests : IDisposable
         var page = Open(new SettingsLocation(SettingsCategory.Appearance));
         var view = Assert.IsType<AppearanceCategory>(page.Shown);
         var themeChanged = 0;
-        page.ThemeChanged += () => themeChanged++;
+        page.ViewModel.ThemeChanged += () => themeChanged++;
         Assert.Equal("🌙  Dark", view.BtnThemeToggle.Content);
 
         TemplateRolloutTests.Click(view.BtnThemeToggle);

@@ -56,7 +56,6 @@ public sealed partial class QueryStoreQueryViewModel : ObservableObject
 
     /// <summary>The whole statement.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(CopyTextCommand))]
     private string _queryText = string.Empty;
 
     /// <summary>Loading, how many plans it used, or what went wrong.</summary>
@@ -72,9 +71,9 @@ public sealed partial class QueryStoreQueryViewModel : ObservableObject
 
     partial void OnMetricChanged(QueryStoreMetric value) => ShowChart();
 
-    /// <summary>The plans used in the period, and any forced plan.</summary>
+    /// <summary>The plans used in the period, and any forced plan, each with its View Plan.</summary>
     [ObservableProperty]
-    private IReadOnlyList<QueryStorePlanSummary> _plans = [];
+    private IReadOnlyList<QueryStorePlanRow> _plans = [];
 
     /// <summary>One line per plan, one point per interval; the forced plan's line emphasised.</summary>
     [ObservableProperty]
@@ -99,6 +98,8 @@ public sealed partial class QueryStoreQueryViewModel : ObservableObject
             Status = ErrorStatus.Format(ex);
             return;
         }
+        // Copy follows whether there is a query, whatever its text.
+        CopyTextCommand.NotifyCanExecuteChanged();
 
         if (_details.Query is not { } query)
         {
@@ -109,7 +110,7 @@ public sealed partial class QueryStoreQueryViewModel : ObservableObject
 
         Subheading = $"{query.ObjectText} · {_store.DatabaseName} · {_period.Label}";
         QueryText  = query.QueryText.Trim();
-        Plans      = _details.Summaries;
+        Plans      = _details.Summaries.Select(plan => new QueryStorePlanRow(plan, ViewPlanAsync)).ToList();
         var plans = _details.Intervals.Select(i => i.PlanId).Distinct().Count();
         Status = $"{plans:N0} {(plans == 1 ? "plan" : "plans")} used in {_period.Label.ToLower(CultureInfo.CurrentCulture)} · one point per Query Store interval";
         ShowChart();
@@ -157,8 +158,6 @@ public sealed partial class QueryStoreQueryViewModel : ObservableObject
 
     private bool HasText() => _details?.Query is not null;
 
-    /// <summary>A plan's View Plan: drawn in the plan window; a failure says why.</summary>
-    [RelayCommand]
-    private Task ViewPlan(QueryStorePlanSummary? plan) =>
-        plan is null ? Task.CompletedTask : QueryStorePlans.ShowAsync(_repo, _dialogs, plan.PlanId, _queryId, _details?.Query?.QueryText);
+    // A plan's View Plan: drawn in the plan window; a failure says why.
+    private Task ViewPlanAsync(long planId) => QueryStorePlans.ShowAsync(_repo, _dialogs, planId, _queryId, _details?.Query?.QueryText);
 }

@@ -44,23 +44,26 @@ public static class CompositionRoot
     public static T Get<T>() where T : notnull => Services.GetRequiredService<T>();
 
     /// <summary>Builds the app's services and makes them the ones <see cref="Get{T}"/> returns.</summary>
-    /// <param name="window">Adds the main window, which only the app refers to.</param>
-    internal static IServiceProvider Start(Func<IServiceCollection, IServiceCollection> window)
+    /// <param name="configure">Adds what only the app refers to: the main window.</param>
+    internal static IServiceProvider Start(Action<IServiceCollection> configure)
     {
         lock (Gate)
-            return _services = Build(window);
+            return _services = Build(configure);
     }
 
     /// <summary>A new container with every service of the app's, checked as it is built.</summary>
-    /// <param name="window">Adds the main window, as the app does; none without it.</param>
-    public static IServiceProvider Build(Func<IServiceCollection, IServiceCollection>? window = null) =>
-        (window ?? (s => s))(new ServiceCollection()
+    /// <param name="configure">Adds to the services before they are built, as the app adds the main window.</param>
+    public static IServiceProvider Build(Action<IServiceCollection>? configure = null)
+    {
+        var services = new ServiceCollection()
             .AddAppLog()
             .AddUiServices()
             .AddAppServices()
             .AddPages()
-            .AddShell())
-            .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+            .AddShell();
+        configure?.Invoke(services);
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+    }
 
     /// <summary>The shell's view model (#191): the window's logic, with its top bar, sidebar and quick switcher.</summary>
     public static IServiceCollection AddShell(this IServiceCollection services) =>
@@ -73,16 +76,17 @@ public static class CompositionRoot
             .AddSingleton<IClipboard, WpfClipboard>()
             .AddSingleton<IFileDialogs, WpfFileDialogs>()
             .AddSingleton<IThemeService>(_ => new WpfThemeService(() => Application.Current?.Resources))
-            .AddSingleton<INavigator>(_ => new ShellNavigator(OpenShell))
+            .AddSingleton<INavigator>(s => new ShellNavigator(() => AttachedShell(s)))
             // The application's thread: where the app is built, which is the UI thread.
             .AddSingleton<IUiDispatcher>(_ => new WpfUiDispatcher(Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher))
             // The top bar, and the pages' timed refresh (#183).
-            .AddSingleton<IShellStatus>(s => new WpfShellStatus(OpenShell, s.GetRequiredService<ILogger<WpfShellStatus>>()))
+            .AddSingleton<IShellStatus>(s => new WpfShellStatus(() => AttachedShell(s), s.GetRequiredService<ILogger<WpfShellStatus>>()))
             .AddSingleton(TimeProvider.System)
             .AddSingleton<IRefreshScheduler, RefreshScheduler>();
 
-    // The shell's view model while the app's main window shows it: its DataContext (#191).
-    private static ShellViewModel? OpenShell() => Application.Current?.MainWindow?.DataContext as ShellViewModel;
+    // The shell's view model once a window shows it (#191); none before, or in a container without it.
+    private static ShellViewModel? AttachedShell(IServiceProvider services) =>
+        services.GetService<ShellViewModel>() is { IsAttached: true } shell ? shell : null;
 
     /// <summary><c>ILogger&lt;T&gt;</c> on the log file, through the same factory as <see cref="AppLog"/> (#166).</summary>
     public static IServiceCollection AddAppLog(this IServiceCollection services) =>

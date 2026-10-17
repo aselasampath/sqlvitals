@@ -118,9 +118,19 @@
                 <DataGridTemplateColumn Header="" Width="85" CanUserSort="False">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Button Content="View Plan" Style="{DynamicResource RefreshButton}"
-                                    Command="{Binding DataContext.ViewPlanCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"
-                                    Padding="8,2" FontSize="11" Margin="2,1"/>
+                            <!-- Each plan's own command: only this button is greyed, with "…", while its plan is read. -->
+                            <Button Command="{Binding ViewPlanCommand}" Padding="8,2" FontSize="11" Margin="2,1">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource RefreshButton}">
+                                        <Setter Property="Content" Value="View Plan"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ViewPlanCommand.IsRunning}" Value="True">
+                                                <Setter Property="Content" Value="…"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>

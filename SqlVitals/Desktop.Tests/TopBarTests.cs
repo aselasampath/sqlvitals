@@ -32,7 +32,7 @@ public sealed class TopBarTests
     [Theory, MemberData(nameof(Themes))]
     public void Live_ShowsTheBadge_TheInterval_AsOf_AndPause(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        bar.ShowPage(new TimeRangePicker(), Live(paused: false), canPause: true, database: null);
+        ShowPage(bar, new TimeRangePicker(), Live(paused: false), canPause: true, database: null);
         Layout(host);
 
         Assert.Equal("Live", bar.TxtBadge.Text);
@@ -52,10 +52,10 @@ public sealed class TopBarTests
     public void Live_Paused_OffersResume_AndRefresh(string theme) => OnSta(theme, (bar, host, _) =>
     {
         var requests = new List<bool>();
-        bar.PauseRequested += requests.Add;
-        bar.ShowPage(null, Live(paused: false), canPause: true, database: null);
+        bar.ViewModel.PauseRequested += requests.Add;
+        ShowPage(bar, null, Live(paused: false), canPause: true, database: null);
         Click(bar.BtnPause);
-        bar.ShowContext(Live(paused: true), canPause: true, database: null);
+        bar.ViewModel.ShowContext(Live(paused: true), canPause: true, database: null);
         Layout(host);
 
         Assert.Equal("Paused", bar.TxtBadge.Text);
@@ -71,8 +71,8 @@ public sealed class TopBarTests
     [Theory, MemberData(nameof(Themes))]
     public void Snapshot_ShowsWhenItWasTaken_TheDatabase_AndRefresh(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        bar.ShowPage(null, new PageFreshness(PageKind.Snapshot, Taken: Now.DateTime.AddMinutes(-2)), canPause: false, database: "SalesDb");
-        bar.CanRefresh = true;
+        ShowPage(bar, null, new PageFreshness(PageKind.Snapshot, Taken: Now.DateTime.AddMinutes(-2)), canPause: false, database: "SalesDb");
+        bar.ViewModel.CanRefresh = true;
         Layout(host);
 
         Assert.Equal("Snapshot", bar.TxtBadge.Text);
@@ -90,7 +90,7 @@ public sealed class TopBarTests
     [Theory, MemberData(nameof(Themes))]
     public void Snapshot_TurnsAmber_AfterFifteenMinutes(string theme) => OnSta(theme, (bar, host, clock) =>
     {
-        bar.ShowPage(null, new PageFreshness(PageKind.Snapshot, Taken: Now.DateTime.AddMinutes(-14)), canPause: false, database: null);
+        ShowPage(bar, null, new PageFreshness(PageKind.Snapshot, Taken: Now.DateTime.AddMinutes(-14)), canPause: false, database: null);
         Assert.Equal("Taken 13:48:36 · 14 min ago", bar.TxtDetail.Text);
         Assert.Equal(Color(host, "TextMuted"), Brush(bar.TxtDetail.Foreground));
 
@@ -111,7 +111,7 @@ public sealed class TopBarTests
     [Theory, MemberData(nameof(Themes))]
     public void History_ShowsItsWindow_AndWhereTheDataEnds(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        bar.ShowPage(null, new PageFreshness(PageKind.History, Window: "Last 24 hours", CompareWith: "the 7 days before",
+        ShowPage(bar, null, new PageFreshness(PageKind.History, Window: "Last 24 hours", CompareWith: "the 7 days before",
                                               DataTo: Now.DateTime.AddMinutes(-7)),
                      canPause: false, database: "SalesDb");
         Layout(host);
@@ -127,7 +127,7 @@ public sealed class TopBarTests
     [Theory, MemberData(nameof(Themes))]
     public void APageWithNoKind_HasNoContext(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        bar.ShowPage(null, new PageFreshness(PageKind.None), canPause: false, database: null);
+        ShowPage(bar, null, new PageFreshness(PageKind.None), canPause: false, database: null);
         Layout(host);
 
         Assert.Equal(Visibility.Collapsed, bar.ContextPanel.Visibility);
@@ -137,26 +137,26 @@ public sealed class TopBarTests
     [Theory, MemberData(nameof(Themes))]
     public void AnError_ShowsInTheBar_UntilCleared(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        bar.ShowPage(null, new PageFreshness(PageKind.Snapshot, Taken: Now.DateTime), canPause: false, database: null);
-        bar.ShowMessage("Error [WaitStatsRepository.GetBackupsAsync]: Timeout expired", isError: true);
+        ShowPage(bar, null, new PageFreshness(PageKind.Snapshot, Taken: Now.DateTime), canPause: false, database: null);
+        bar.ViewModel.ShowMessage("Error [WaitStatsRepository.GetBackupsAsync]: Timeout expired", isError: true);
         Layout(host);
 
-        Assert.True(bar.MessageIsError);
+        Assert.True(bar.ViewModel.MessageIsError);
         Assert.Equal(Visibility.Visible, bar.TxtMessage.Visibility);
         Assert.Equal(Color(host, "Danger"), Brush(bar.TxtMessage.Foreground));
         Assert.Equal("Error: Error [WaitStatsRepository.GetBackupsAsync]: Timeout expired", AutomationProperties.GetName(bar.TxtMessage));
         Render(host, theme, "error");
 
         // The next page starts without it.
-        bar.ShowPage(null, new PageFreshness(PageKind.Snapshot), canPause: false, database: null);
-        Assert.False(bar.MessageIsError);
+        ShowPage(bar, null, new PageFreshness(PageKind.Snapshot), canPause: false, database: null);
+        Assert.False(bar.ViewModel.MessageIsError);
         Assert.Equal(Visibility.Collapsed, bar.TxtMessage.Visibility);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void TheBar_IsAToolbar_AndEveryButtonHasAName(string theme) => OnSta(theme, (bar, host, _) =>
     {
-        bar.ShowPage(null, Live(paused: false), canPause: true, database: "SalesDb");
+        ShowPage(bar, null, Live(paused: false), canPause: true, database: "SalesDb");
         Layout(host);
 
         var peer = UIElementAutomationPeer.CreatePeerForElement(bar);
@@ -172,7 +172,7 @@ public sealed class TopBarTests
         Assert.Equal("Jump to a server, page or setting", AutomationProperties.GetName(bar.BtnJump));
         Assert.Equal("Jump to a server, page or setting (Ctrl+K)", bar.BtnJump.ToolTip);
         var jumps = 0;
-        bar.JumpRequested += () => jumps++;
+        bar.ViewModel.JumpRequested += () => jumps++;
         Click(bar.BtnJump);
         Assert.Equal(1, jumps);
         Assert.False(bar.BtnAskAi.IsEnabled);
@@ -183,22 +183,22 @@ public sealed class TopBarTests
     public void TheSidebarButton_SaysWhatItDoesNext_AndCountsAlertsWhileTheSidebarIsHidden(string theme) => OnSta(theme, (bar, host, _) =>
     {
         var requested = 0;
-        bar.SidebarRequested += () => requested++;
-        bar.ShowPage(null, Live(paused: false), canPause: true, database: null);
+        bar.ViewModel.SidebarRequested += () => requested++;
+        ShowPage(bar, null, Live(paused: false), canPause: true, database: null);
         Layout(host);
 
-        bar.ShowSidebar(SidebarMode.Pinned, slidOver: false, alerts: 2);
+        bar.ViewModel.ShowSidebar(SidebarMode.Pinned, slidOver: false, alerts: 2);
         Assert.Equal("Collapse the menu", AutomationProperties.GetName(bar.BtnSidebar));
         Assert.Equal("Collapse the menu to icons (Ctrl+B)", bar.BtnSidebar.ToolTip);
         // The sidebar shows the count itself.
         Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
 
-        bar.ShowSidebar(SidebarMode.Collapsed, slidOver: false, alerts: 2);
+        bar.ViewModel.ShowSidebar(SidebarMode.Collapsed, slidOver: false, alerts: 2);
         Assert.Equal("Hide the menu", AutomationProperties.GetName(bar.BtnSidebar));
         Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
 
         // Hidden: the count moves onto ☰, in words too.
-        bar.ShowSidebar(SidebarMode.Hidden, slidOver: false, alerts: 2);
+        bar.ViewModel.ShowSidebar(SidebarMode.Hidden, slidOver: false, alerts: 2);
         Layout(host);
         Assert.Equal(Visibility.Visible, bar.SidebarBadge.Visibility);
         Assert.Equal("2", bar.TxtSidebarBadge.Text);
@@ -206,7 +206,7 @@ public sealed class TopBarTests
         Assert.Equal("Show the menu over the page. Ctrl+B pins it open.\n2 active alerts", bar.BtnSidebar.ToolTip);
         Render(host, theme, "hidden-sidebar-alerts");
 
-        bar.ShowSidebar(SidebarMode.Hidden, slidOver: true, alerts: 0);
+        bar.ViewModel.ShowSidebar(SidebarMode.Hidden, slidOver: true, alerts: 0);
         Assert.Equal("Close the menu", AutomationProperties.GetName(bar.BtnSidebar));
         Assert.Equal(Visibility.Collapsed, bar.SidebarBadge.Visibility);
 
@@ -219,14 +219,14 @@ public sealed class TopBarTests
     {
         var opened   = new List<Route>();
         var switched = new List<Guid>();
-        bar.CrumbRequested  += opened.Add;
-        bar.ServerRequested += switched.Add;
-        bar.ShowPage(null, Live(paused: false), canPause: true, database: null);
+        bar.ViewModel.CrumbRequested  += opened.Add;
+        bar.ViewModel.ServerRequested += switched.Add;
+        ShowPage(bar, null, Live(paused: false), canPause: true, database: null);
         Layout(host);
 
         var parts = UiThread.Find<Button>(bar.Crumbs).ToList();
         Assert.Equal(["All servers", "PROD-SQL01. Switch server", "Activity now"], parts.Select(AutomationProperties.GetName));
-        Assert.Equal("All servers › PROD-SQL01 › Activity now › Deadlocks", bar.BreadcrumbText);
+        Assert.Equal("All servers › PROD-SQL01 › Activity now › Deadlocks", bar.ViewModel.BreadcrumbText);
         // The server's health dot.
         Assert.Single(UiThread.Find<System.Windows.Shapes.Ellipse>(bar.Crumbs));
 
@@ -250,7 +250,7 @@ public sealed class TopBarTests
 
         // A new sample for the server updates its part in place: a part with the keyboard focus keeps it.
         var server = new ConnectionSelectorItem(new ConnectionSettings { Id = Prod, Server = "prod", Name = "PROD-SQL01" });
-        bar.ShowBreadcrumb(Breadcrumb.For(new Route("Deadlocks", ConnectionId: Prod), id => id == Prod ? "PROD-SQL01" : null),
+        bar.ViewModel.ShowBreadcrumb(Breadcrumb.For(new Route("Deadlocks", ConnectionId: Prod), id => id == Prod ? "PROD-SQL01" : null),
                            id => id == Prod ? server : null, [server]);
         Assert.Equal(parts, UiThread.Find<Button>(bar.Crumbs));
 
@@ -264,7 +264,7 @@ public sealed class TopBarTests
         var tools = new StackPanel { Orientation = Orientation.Horizontal };
         tools.Children.Add(new TimeRangePicker());
         tools.Children.Add(new ComboBox { Width = 110, Height = 26 });
-        bar.ShowPage(tools, Live(paused: false), canPause: true, database: null);
+        ShowPage(bar, tools, Live(paused: false), canPause: true, database: null);
         Layout(host, 820);
         Render(host, "DarkTheme", "narrow");
 
@@ -299,7 +299,7 @@ public sealed class TopBarTests
         var tools = new StackPanel { Orientation = Orientation.Horizontal };
         tools.Children.Add(new TimeRangePicker());
         tools.Children.Add(new ComboBox { Width = 110, Height = 26 });
-        bar.ShowPage(tools, Live(paused: false), canPause: true, database: "SalesDb");
+        ShowPage(bar, tools, Live(paused: false), canPause: true, database: "SalesDb");
 
         foreach (var width in Enumerable.Range(0, 31).Select(i => 600.0 + i * 20).Concat(Enumerable.Range(0, 31).Select(i => 1200.0 - i * 20)))
         {
@@ -320,6 +320,13 @@ public sealed class TopBarTests
 
     private static PageFreshness Live(bool paused) =>
         new(PageKind.Live, TimeSpan.FromSeconds(5), paused, AsOf: Now.DateTime.AddSeconds(-6));
+
+    // A new page, as the shell shows one: its controls in the bar, then its context.
+    private static void ShowPage(TopBar bar, FrameworkElement? tools, PageFreshness? freshness, bool canPause, string? database)
+    {
+        bar.ShowTools(tools);
+        bar.ViewModel.ShowPage(freshness, canPause, database);
+    }
 
     // Runs the button's command too, as a real click does (#191): a raised Click event doesn't.
     private static void Click(ButtonBase button) => TemplateRolloutTests.Click(button);
@@ -366,8 +373,8 @@ public sealed class TopBarTests
                 var server = new ConnectionSelectorItem(new ConnectionSettings { Id = Prod, Server = "prod", Name = "PROD-SQL01" });
                 var route  = new Route("Deadlocks", ConnectionId: Prod);
                 var uat    = new ConnectionSelectorItem(new ConnectionSettings { Id = Uat, Server = "uat", Name = "UAT" });
-                bar.ShowBreadcrumb(Breadcrumb.For(route, id => id == Prod ? "PROD-SQL01" : null), id => id == Prod ? server : null, [server, uat]);
-                bar.ShowHistory("Live Metrics · PROD-SQL01", null);
+                bar.ViewModel.ShowBreadcrumb(Breadcrumb.For(route, id => id == Prod ? "PROD-SQL01" : null), id => id == Prod ? server : null, [server, uat]);
+                bar.ViewModel.ShowHistory("Live Metrics · PROD-SQL01", null);
 
                 test(bar, host, clock);
             }

@@ -108,7 +108,8 @@ The window's logic is `ViewModels/Shell/ShellViewModel`, the window's `DataConte
 - **What needs a window stays in `MainWindow`:** the tray icon, the window's placement and focus mode's full screen, coming back when a second copy starts (`ShowFromTray`, which `App` calls), and the keys that work anywhere in it (Ctrl+K, Ctrl+B, F5, F11, Ctrl+J, Esc, Back and Forward), which call the shell.
 - **The controls keep layout, pointer and keyboard.** The top bar giving way in a narrow window, the sidebar's hover delays, slide animation and where the keyboard goes, and the switcher keeping the keyboard in its box are the controls' own; what they show is their view model's, and their buttons are its commands.
 - **The SQL script, query plan and Query Store query windows** have view models in `ViewModels/Windows/`, made by `IDialogService` as it opens them. What only the window can do is handed to it: the plan's diagram rendered to a PNG (`QueryPlanViewModel.RenderDiagram`), the Query Store query's chart drawn in theme colours from a `TrendChart`.
-- **`INavigator` and `IShellStatus`** reach the shell through the main window's `DataContext`, so before the window opens, or in a test without one, they do nothing.
+- **`INavigator` and `IShellStatus`** reach the shell in the container once a window has attached it (`ShellViewModel.IsAttached`), so before the window opens, or in a test without one, they do nothing.
+- **The controls take their view model** through a `ViewModel` property, set once by the window; they have no events or methods that only pass through to it, so what drives them is the view model.
 
 ### The page lifecycle
 

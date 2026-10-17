@@ -195,6 +195,47 @@ public sealed class ShellViewModelTests : IDisposable
         Assert.Empty(shell.Sidebar.Unavailable);
     });
 
+    // Code review: a new empty set on every navigation made the sidebar restyle its buttons each time.
+    [Fact]
+    public void TheSidebarHearsOfThePagesAServerLacks_OnlyWhenThatChanges() => OnDispatcher.Run(() =>
+    {
+        _repositories.Azure.Add("prod-b");
+        var shell = Started(_a, _b);
+        var raised = 0;
+        shell.Sidebar.PropertyChanged += (_, e) => raised += e.PropertyName == nameof(SidebarViewModel.Unavailable) ? 1 : 0;
+
+        UiThread.Wait(shell.OpenPageAsync("Processes", _a.Id));
+        UiThread.Wait(shell.OpenPageAsync("Waits", _a.Id));
+        Assert.Equal(0, raised);
+
+        UiThread.Wait(shell.OpenPageAsync("Waits", _b.Id));
+        UiThread.Wait(shell.OpenPageAsync("Processes", _b.Id));
+        Assert.Equal(1, raised);
+    });
+
+    // Code review: the constructor built a repository Start threw away, and one that Shutdown would
+    // have stopped a trace on, waiting up to 20 s, had the shell never started.
+    [Fact]
+    public void BeforeAWindowAttachesAndStartsIt_TheShellReadsNothing_AndShutsDownWithout() => OnDispatcher.Run(() =>
+    {
+        Directory.CreateDirectory(_dir);
+        _settings = new ConnectionSettingsService(_dir);
+        var monitoring = new MonitoringManager(new HistoryWriter(Path.Combine(_dir, "history.db"), (_, _) => { }),
+                                               (_, _) => new FakeRepository { Unreachable = true });
+        var shell = new ShellViewModel(new PageFactory(this), _dialogs, _settings, monitoring,
+                                       new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }),
+                                       _repositories, new CollectorLink(new FakeCollectorControl(_dir), _settings, _ui, TimeProvider.System),
+                                       new DirectWatchStarter(monitoring), _ui);
+
+        Assert.False(shell.IsAttached);
+        Assert.Throws<InvalidOperationException>(() => shell.Repo);
+        shell.Shutdown(Engine.Monitoring.WatchStop.AppExit);
+        Assert.Empty(_repositories.Created);
+
+        shell.Attach(_host);
+        Assert.True(shell.IsAttached);
+    });
+
     // ── What the page on screen reports ──────────────────────────────────
 
     [Fact]

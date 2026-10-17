@@ -39,27 +39,6 @@ public partial class SettingsPage : Page, IPageContext
     // The app's own settings, not a view of a server's data: no badge in the top bar (#140).
     public PageKind Kind => PageKind.None;
 
-    /// <inheritdoc cref="SettingsViewModel.ServerRequested"/>
-    public event Action<Guid>? ServerRequested
-    {
-        add    => ViewModel.ServerRequested += value;
-        remove => ViewModel.ServerRequested -= value;
-    }
-
-    /// <inheritdoc cref="SettingsViewModel.ThemeChanged"/>
-    public event Action? ThemeChanged
-    {
-        add    => ViewModel.ThemeChanged += value;
-        remove => ViewModel.ThemeChanged -= value;
-    }
-
-    /// <inheritdoc cref="SettingsViewModel.CategoryShown"/>
-    public event Action<SettingsCategory>? CategoryShown
-    {
-        add    => ViewModel.CategoryShown += value;
-        remove => ViewModel.CategoryShown -= value;
-    }
-
     /// <summary>The category on screen.</summary>
     public SettingsCategory Category => ViewModel.Category;
 
@@ -72,9 +51,6 @@ public partial class SettingsPage : Page, IPageContext
     /// <summary>Connections' view, once it has been opened.</summary>
     internal ConnectionsCategory? Connections =>
         ViewModel.Connections is { } model ? _views.GetValueOrDefault(model) as ConnectionsCategory : null;
-
-    /// <inheritdoc cref="SettingsViewModel.TryLeaveAsync"/>
-    public Task<bool> TryLeaveAsync() => ViewModel.TryLeaveAsync();
 
     /// <inheritdoc cref="SettingsViewModel.OpenAsync"/>
     public Task OpenAsync(SettingsLocation location) => ViewModel.OpenAsync(location);

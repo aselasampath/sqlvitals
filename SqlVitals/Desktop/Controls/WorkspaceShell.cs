@@ -91,7 +91,7 @@ public sealed class WorkspaceShell : Grid
         Menu.MonitorToggleRequested += () => _model.ToggleMonitoring();
         Rail.PageRequested  += PickPage;
         Rail.ScoreRequested += () => ScoreRequested?.Invoke(Rail.ServerMark);
-        Rail.PinRequested   += () => Choose(SidebarMode.Pinned);
+        Rail.PinRequested   += () => _model.Choose(SidebarMode.Pinned);
         Rail.GroupRequested += (id, keyboard) => OpenFlyout(id, byHover: false, focus: keyboard);
         foreach (var group in NavMenu.Groups)
         {
@@ -180,41 +180,8 @@ public sealed class WorkspaceShell : Grid
     /// <summary>Where the keyboard focus goes back to when the slid-in sidebar closes: the top bar's ☰.</summary>
     public UIElement? ReturnFocusTo { get; set; }
 
-    /// <inheritdoc cref="SidebarViewModel.PageRequested"/>
-    public event Action<string>? PageRequested
-    {
-        add    => _model.PageRequested += value;
-        remove => _model.PageRequested -= value;
-    }
-
     /// <summary>The server's score was clicked: show what lowered it beside the element.</summary>
     public event Action<FrameworkElement>? ScoreRequested;
-
-    /// <inheritdoc cref="SidebarViewModel.MonitorToggleRequested"/>
-    public event Action? MonitorToggleRequested
-    {
-        add    => _model.MonitorToggleRequested += value;
-        remove => _model.MonitorToggleRequested -= value;
-    }
-
-    /// <inheritdoc cref="SidebarViewModel.ModeChosen"/>
-    public event Action<SidebarMode>? ModeChosen
-    {
-        add    => _model.ModeChosen += value;
-        remove => _model.ModeChosen -= value;
-    }
-
-    /// <summary>The state on screen changed, or the hidden sidebar slid in or out.</summary>
-    public event Action? ModeShown;
-
-    /// <summary>The state on screen.</summary>
-    public SidebarMode Shown => _model.Shown;
-
-    /// <summary>The state the user chose, which <see cref="Shown"/> is unless the window is narrow.</summary>
-    public SidebarMode Saved => _model.Saved;
-
-    /// <summary>The hidden sidebar is slid in over the page.</summary>
-    public bool IsSlidOver => _model.IsSlidOver;
 
     /// <summary>A group's fly-out beside the collapsed sidebar, while one is open.</summary>
     internal NavFlyout? Flyout { get; private set; }
@@ -227,28 +194,6 @@ public sealed class WorkspaceShell : Grid
 
     // ── The state ────────────────────────────────────────────────────────────
 
-    /// <inheritdoc cref="SidebarViewModel.Restore"/>
-    public void Restore(SidebarMode saved, double windowWidth) => _model.Restore(saved, windowWidth);
-
-    /// <inheritdoc cref="SidebarViewModel.InFocus"/>
-    public bool InFocus
-    {
-        get => _model.InFocus;
-        set => _model.InFocus = value;
-    }
-
-    /// <inheritdoc cref="SidebarViewModel.SetWindowWidth"/>
-    public void SetWindowWidth(double width) => _model.SetWindowWidth(width);
-
-    /// <inheritdoc cref="SidebarViewModel.Cycle"/>
-    public void Cycle() => _model.Cycle();
-
-    /// <inheritdoc cref="SidebarViewModel.ToggleFromBar"/>
-    public void ToggleFromBar() => _model.ToggleFromBar();
-
-    /// <inheritdoc cref="SidebarViewModel.Choose"/>
-    public void Choose(SidebarMode mode) => _model.Choose(mode);
-
     // The state on screen changed; the view model has slid the hidden sidebar out first.
     private void ApplyMode()
     {
@@ -257,7 +202,7 @@ public sealed class WorkspaceShell : Grid
         StopLeave();
         CloseFlyout(focusIcon: false);
 
-        var shown = Shown;
+        var shown = _model.Shown;
         _sidebarColumn.Width = new GridLength(SidebarLayout.WidthOf(shown));
         _pinned.Visibility = shown == SidebarMode.Pinned    ? Visibility.Visible : Visibility.Collapsed;
         _rail.Visibility   = shown == SidebarMode.Collapsed ? Visibility.Visible : Visibility.Collapsed;
@@ -267,26 +212,23 @@ public sealed class WorkspaceShell : Grid
         // The keyboard was in the sidebar as it went: on to ☰, rather than lost.
         if (focusWasIn && ReturnFocusTo is not null)
             MoveFocus(ReturnFocusTo);
-        ModeShown?.Invoke();
     }
 
     // Collapse when pinned; pin when slid in.
     private void ShowPinButton()
     {
-        var pin = IsSlidOver;
+        var pin = _model.IsSlidOver;
         PinButton.Content = pin ? "\uE718" : "\uE77A";
         PinButton.ToolTip = pin ? "Pin the menu open (Ctrl+B)" : "Collapse the menu to icons (Ctrl+B)";
         AutomationProperties.SetName(PinButton, pin ? "Pin the menu open" : "Collapse the menu to icons");
     }
 
     private void PinButton_Click(object sender, RoutedEventArgs e) =>
-        Choose(IsSlidOver ? SidebarMode.Pinned : SidebarMode.Collapsed);
+        _model.Choose(_model.IsSlidOver ? SidebarMode.Pinned : SidebarMode.Collapsed);
 
     // ── What the sidebar shows, in each state ────────────────────────────────
 
-    /// <summary>The open server's header and pages, or none; see <see cref="NavSidebar.ShowServer"/>.</summary>
-    public void ShowServer(ConnectionSelectorItem? server) => _model.ShowServer(server);
-
+    // The open server's header and pages, or none; see NavSidebar.ShowServer.
     private void ShowServer()
     {
         var server = _model.Server;
@@ -295,9 +237,6 @@ public sealed class WorkspaceShell : Grid
         if (server is null)
             CloseFlyout(focusIcon: false);
     }
-
-    /// <summary>The page on screen; see <see cref="NavSidebar.Highlight"/>.</summary>
-    public void Highlight(string? tag) => _model.Current = tag;
 
     // The pinned sidebar's groups: the one the view model has open.
     private void ShowOpenGroup()
@@ -349,7 +288,7 @@ public sealed class WorkspaceShell : Grid
     {
         CancelHover();
         StopLeave();
-        if (Shown != SidebarMode.Collapsed)
+        if (_model.Shown != SidebarMode.Collapsed)
             return;
 
         if (Flyout?.GroupId == groupId)
@@ -372,7 +311,7 @@ public sealed class WorkspaceShell : Grid
         var group  = NavMenu.Groups.First(g => g.Id == groupId);
         var flyout = new NavFlyout(group, _model.Current, Menu.Button);
         flyout.PageRequested  += PickPage;
-        flyout.PinRequested   += () => Choose(SidebarMode.Pinned);
+        flyout.PinRequested   += () => _model.Choose(SidebarMode.Pinned);
         flyout.CloseRequested += () => CloseFlyout(focusIcon: true);
         flyout.MouseEnter     += (_, _) => StopLeave();
         flyout.MouseLeave     += (_, _) =>
@@ -467,7 +406,6 @@ public sealed class WorkspaceShell : Grid
             _pinned.UpdateLayout();
             MoveFocus(Menu.Button(NavMenu.Global[0].Tag));
         }
-        ModeShown?.Invoke();
     }
 
     /// <summary>Slides the hidden sidebar out again, if it is in; the keyboard goes back to ☰.</summary>
@@ -487,13 +425,12 @@ public sealed class WorkspaceShell : Grid
         Panel.SetZIndex(_pinned, 0);
         _pinned.Effect = null;
         KeyboardNavigation.SetTabNavigation(_pinned, KeyboardNavigationMode.Continue);
-        _pinned.Visibility = Shown == SidebarMode.Pinned ? Visibility.Visible : Visibility.Collapsed;
-        _edge.Visibility   = Shown == SidebarMode.Hidden ? Visibility.Visible : Visibility.Collapsed;
+        _pinned.Visibility = _model.Shown == SidebarMode.Pinned ? Visibility.Visible : Visibility.Collapsed;
+        _edge.Visibility   = _model.Shown == SidebarMode.Hidden ? Visibility.Visible : Visibility.Collapsed;
         ShowPinButton();
 
         if ((_model.SlideByKeyboard || focusWasIn) && ReturnFocusTo is not null)
             MoveFocus(ReturnFocusTo);
-        ModeShown?.Invoke();
     }
 
     // ── Closing: Esc, a click outside, the pointer leaving ───────────────────
@@ -512,7 +449,7 @@ public sealed class WorkspaceShell : Grid
             else if (!Rail.Groups.Any(g => IsWithin(source, g)))
                 CloseFlyout(focusIcon: false);
         }
-        if (IsSlidOver)
+        if (_model.IsSlidOver)
         {
             if (IsWithin(source, _pinned))
                 _slideByHover = false;
@@ -531,7 +468,7 @@ public sealed class WorkspaceShell : Grid
             CloseFlyout(focusIcon: _flyoutHasKeyboard || flyout.IsKeyboardFocusWithin);
             e.Handled = true;
         }
-        else if (IsSlidOver)
+        else if (_model.IsSlidOver)
         {
             CloseSlideOver(returnFocus: true);
             e.Handled = true;
@@ -643,7 +580,7 @@ public sealed class WorkspaceShell : Grid
         border.MouseEnter += (_, _) => StopLeave();
         border.MouseLeave += (_, _) =>
         {
-            if (IsSlidOver && _slideByHover)
+            if (_model.IsSlidOver && _slideByHover)
                 Leave(() => CloseSlideOver(returnFocus: false));
         };
         return border;

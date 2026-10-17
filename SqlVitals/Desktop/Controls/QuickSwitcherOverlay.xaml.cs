@@ -83,17 +83,8 @@ public partial class QuickSwitcherOverlay : UserControl
         }
     }
 
-    /// <inheritdoc cref="QuickSwitcherViewModel.OpenRequested"/>
-    public event Action<Route, bool>? OpenRequested
-    {
-        add    => _model.OpenRequested += value;
-        remove => _model.OpenRequested -= value;
-    }
-
     /// <summary>What holds the page: focus in it doesn't survive another page being opened.</summary>
     public UIElement? PageHost { get; set; }
-
-    public bool IsOpen => _model.IsOpen;
 
     /// <summary>Where the keyboard is; off screen, in tests, there is no keyboard focus to read.</summary>
     internal Func<IInputElement?> FocusedElement { get; set; } = () => Keyboard.FocusedElement;
@@ -101,19 +92,7 @@ public partial class QuickSwitcherOverlay : UserControl
     /// <summary>The element the switcher last moved the keyboard focus to; for tests, where nothing is on screen.</summary>
     internal UIElement? FocusMovedTo { get; private set; }
 
-    /// <summary>The results on show.</summary>
-    internal IReadOnlyList<SwitcherSection> Sections => _model.Sections;
-
-    /// <summary>The results that can be opened, in the order ↓ goes.</summary>
-    internal IReadOnlyList<SwitcherItem> Openable => _model.Openable;
-
-    internal SwitcherItem? Selected => _model.Selected;
-
     internal TextBox SearchBox => Query;
-
-    /// <inheritdoc cref="QuickSwitcherViewModel.Open"/>
-    public void Open(Func<string, IReadOnlyList<SwitcherSection>> search, Func<Guid, ConnectionSelectorItem?> server, bool keepsPage) =>
-        _model.Open(search, server, keepsPage);
 
     /// <summary>Closes it, if it is open.</summary>
     /// <param name="restoreFocus">Give the keyboard back to where it was when it opened.</param>
@@ -280,8 +259,8 @@ public partial class QuickSwitcherOverlay : UserControl
         AutomationProperties.SetName(row, Spoken(item, server));
         if (item.CanOpen)
         {
-            row.MouseEnter += (_, _) => { if (Selected != item) row.Background = Tint("TextPrimaryColor", 0x14); };
-            row.MouseLeave += (_, _) => { if (Selected != item) row.Background = Brushes.Transparent; };
+            row.MouseEnter += (_, _) => { if (_model.Selected != item) row.Background = Tint("TextPrimaryColor", 0x14); };
+            row.MouseLeave += (_, _) => { if (_model.Selected != item) row.Background = Brushes.Transparent; };
             row.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
@@ -370,7 +349,7 @@ public partial class QuickSwitcherOverlay : UserControl
                 _model.Move(-1);
                 break;
             case System.Windows.Input.Key.Enter:
-                if (Selected is { } item)
+                if (_model.Selected is { } item)
                     Pick(item);
                 break;
             case System.Windows.Input.Key.Escape:

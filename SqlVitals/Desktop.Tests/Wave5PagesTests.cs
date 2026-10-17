@@ -124,7 +124,7 @@ public sealed class Wave5PagesTests : IDisposable
 
             // "+ Add a connection" asks for Settings.
             var adds = 0;
-            page.AddConnectionRequested += () => adds++;
+            page.ViewModel.AddConnectionRequested += () => adds++;
             TemplateRolloutTests.Click(UiThread.Find<Button>(page).Single(b => Equals(b.Content, "+ Add a connection")));
             Assert.Equal(1, adds);
         });

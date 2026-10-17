@@ -7,7 +7,7 @@ namespace SqlVitals.Desktop.Services.Wpf;
 /// <see cref="INavigator"/> through the shell's navigator (#139, #191). Before the window opens,
 /// or in a test without one, it does nothing.
 /// </summary>
-/// <param name="shell">The shell's view model, while its window is open.</param>
+/// <param name="shell">The shell's view model, once its window shows it.</param>
 internal sealed class ShellNavigator(Func<ShellViewModel?> shell) : INavigator
 {
     public Task GoToAsync(string tag, Guid? serverId = null)

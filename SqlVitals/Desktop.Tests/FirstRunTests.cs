@@ -72,7 +72,7 @@ public sealed class FirstRunTests : IDisposable
             Theme = new FakeThemeService(),
         };
         var page = new SettingsPage(new SettingsViewModel(context, location));
-        page.ServerRequested += _opened.Add;
+        page.ViewModel.ServerRequested += _opened.Add;
         UiThread.Layout(page, 1200, 900);
         return page;
     }
@@ -318,7 +318,7 @@ public sealed class FirstRunTests : IDisposable
         var page = Open(SettingsLocation.FirstRunFlow);
         page.FirstRun!.Editor.TxtServer.Text = "sql01";
 
-        Assert.False(UiThreadResult(page.TryLeaveAsync()));
+        Assert.False(UiThreadResult(page.ViewModel.TryLeaveAsync()));
         Assert.Single(_dialogs.Shown);
     });
 

@@ -182,20 +182,47 @@ public sealed class WindowViewModelTests : IDisposable
         Assert.Contains("Timeout expired.", failed.Status, StringComparison.Ordinal);
     }
 
+    // Code review: one View Plan shared by every row greyed them all while one plan was read, and
+    // the button pressed no longer said it was busy, as BusyButton had.
     [Fact]
-    public void ViewPlan_OpensThePlanWindow_WithTheQuerysText()
+    public async Task ViewPlan_OpensThePlanWindow_AndOnlyThatPlansButtonIsBusyMeanwhile()
     {
+        var read = new TaskCompletionSource<string?>();
         var repo = new FakeRepository
         {
-            GetQueryStoreQueryDetailsAsync = (_, _) => Task.FromResult(Details(Interval(0, 7, 1, 1))),
-            GetQueryStorePlanAsync         = _ => Task.FromResult<string?>(PlanXml),
+            GetQueryStoreQueryDetailsAsync = (_, _) => Task.FromResult(Details(Interval(0, 7, 1, 1), Interval(0, 9, 1, 1))),
+            GetQueryStorePlanAsync         = _ => read.Task,
         };
         var model = new QueryStoreQueryViewModel(repo, 42, QueryStorePeriod.Last24Hours, new QueryStoreStatus("SalesDb", null, QueryStoreFeatures.None),
                                                  _dialogs, _clipboard);
+        await model.LoadAsync();
+        var forced = model.Plans.Single(p => p.PlanId == 7);
+        var other  = model.Plans.Single(p => p.PlanId == 9);
+        Assert.True(forced.IsForced);
 
-        model.ViewPlanCommand.Execute(new QueryStorePlanSummary(7, null, null, 1, 1, 1, 1, 0, true, 0, null));
+        var opening = forced.ViewPlanCommand.ExecuteAsync(null);
+        Assert.True(forced.ViewPlanCommand.IsRunning);
+        Assert.False(forced.ViewPlanCommand.CanExecute(null));
+        Assert.True(other.ViewPlanCommand.CanExecute(null));
 
+        read.SetResult(PlanXml);
+        await opening;
+        Assert.False(forced.ViewPlanCommand.IsRunning);
         Assert.Equal("Plan: Execution plan · Query Store plan 7 · query 42", Assert.Single(_dialogs.Shown));
+    }
+
+    // Code review: Copy was only checked again when the trimmed text changed, so a query whose
+    // text trims to nothing left it disabled.
+    [Fact]
+    public async Task Copy_FollowsWhetherThereIsAQuery_WhateverItsText()
+    {
+        var model = Query((_, _) => Task.FromResult(new QueryStoreQueryDetails(new QueryStoreQueryInfo(42, 0, null, "   "), [], [])));
+        Assert.False(model.CopyTextCommand.CanExecute(null));
+
+        await model.LoadAsync();
+
+        Assert.Equal(string.Empty, model.QueryText);
+        Assert.True(model.CopyTextCommand.CanExecute(null));
     }
 
     // ── The windows over them ────────────────────────────────────────────
