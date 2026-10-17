@@ -52,10 +52,8 @@ public static class PageRegistrations
             .AddPage("SpTrace",          (s, a) => new SpTracePage(new SpTraceViewModel(a.Repo, a.Repo, Dialogs(s)), Settings(s)), p => p.ViewModel)
             .AddPage("Export",           (s, a) => new ExportPage(new ExportViewModel(s.GetRequiredService<Func<IWaitStatsRepository, ExportService>>()(a.Repo), Dialogs(s),
                                                                                 s.GetRequiredService<IFileDialogs>(), Time(s)), Settings(s)), p => p.ViewModel)
-            .AddPage("Settings",         (s, a) => new SettingsPage(Settings(s), Monitoring(s), s.GetRequiredService<ChatNotificationService>(),
-                                                                    a.ApplyConnections!, a.Route.Settings, a.SettingsMessage,
-                                                                    s.GetRequiredService<CollectorLink>(), s.GetService<PermissionChecker>(),
-                                                                    s.GetRequiredService<IWatchStarter>(), s.GetRequiredService<IClipboard>()), p => p.ViewModel);
+            .AddPage("Settings",         (s, a) => new SettingsPage(new SettingsViewModel(SettingsOf(s, a), a.Route.Settings, a.SettingsMessage)),
+                                                                    p => p.ViewModel);
 
     // What the pages share, from the container (#166).
     private static ConnectionSettingsService Settings(IServiceProvider s) => s.GetRequiredService<ConnectionSettingsService>();
@@ -65,6 +63,16 @@ public static class PageRegistrations
     private static TimeProvider Time(IServiceProvider s) => s.GetRequiredService<TimeProvider>();
     private static IUiDispatcher Ui(IServiceProvider s) => s.GetRequiredService<IUiDispatcher>();
     private static IWatchStarter Starter(IServiceProvider s) => s.GetRequiredService<IWatchStarter>();
+
+    // What Settings' categories need (#190).
+    private static SettingsContext SettingsOf(IServiceProvider s, PageArgs a) =>
+        new(Settings(s), Monitoring(s), s.GetRequiredService<ChatNotificationService>(), a.ApplyConnections!, Dialogs(s),
+            s.GetRequiredService<CollectorLink>(), s.GetService<PermissionChecker>(), Starter(s), s.GetRequiredService<IClipboard>())
+        {
+            Ui        = Ui(s),
+            Scheduler = s.GetRequiredService<IRefreshScheduler>(),
+            Theme     = s.GetRequiredService<IThemeService>(),
+        };
 
     // The open connection's history of samples, on pages that chart it.
     private static ConnectionHistory? History(IServiceProvider s, PageArgs a) => Monitoring(s).HistoryFor(a.ConnectionId);

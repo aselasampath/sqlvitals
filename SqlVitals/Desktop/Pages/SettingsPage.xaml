@@ -1,13 +1,18 @@
 <Page x:Class="SqlVitals.Desktop.Pages.SettingsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
+      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
       Background="{StaticResource BgDeep}"
       FontFamily="Segoe UI"
       Title="Settings">
 
     <Page.Resources>
+        <helpers:Shown x:Key="Shown" />
+
         <!-- A category in the side menu: a radio button, so the keyboard moves between them and a
-             screen reader says which one is selected. -->
+             screen reader says which one is selected. It shows the category on screen and asks to
+             open its own; Settings' view model may stay where it is. -->
         <Style x:Key="MenuItem" TargetType="RadioButton">
             <Setter Property="GroupName" Value="SettingsCategories" />
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
@@ -38,6 +43,42 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- "SERVERS", then its categories -->
+        <DataTemplate x:Key="MenuGroup" DataType="{x:Type vm:SettingsMenuGroup}">
+            <StackPanel>
+                <TextBlock Text="{Binding Heading}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMuted}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="12,16,0,4" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsFirst}" Value="True">
+                                    <Setter Property="Margin" Value="12,6,0,4" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <ItemsControl ItemsSource="{Binding Items}" Focusable="False" KeyboardNavigation.TabNavigation="Continue">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:SettingsMenuItem}">
+                            <RadioButton Style="{StaticResource MenuItem}" IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                         Command="{Binding Open}" CommandParameter="{Binding Category}"
+                                         AutomationProperties.Name="{Binding AutomationName}">
+                                <RadioButton.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding Open}" CommandParameter="{Binding Category}" />
+                                </RadioButton.InputBindings>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                               Visibility="{Binding Count, Converter={StaticResource Shown}}" />
+                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </RadioButton>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
     </Page.Resources>
 
     <Grid>
@@ -46,27 +87,29 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Side menu: the groups and categories in Services/SettingsNav.cs, built in code -->
+        <!-- Side menu: the groups and categories in Services/SettingsNav.cs -->
         <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="12,22,12,12">
                     <TextBlock Text="Settings" Foreground="{StaticResource TextPrimary}" FontSize="20" FontWeight="SemiBold"
                                Margin="12,0,0,10" />
-                    <StackPanel x:Name="Menu" AutomationProperties.Name="Settings categories"
-                                KeyboardNavigation.DirectionalNavigation="Contained"
-                                KeyboardNavigation.TabNavigation="Once" />
+                    <ItemsControl x:Name="Menu" AutomationProperties.Name="Settings categories" Focusable="False"
+                                  ItemsSource="{Binding Groups}" ItemTemplate="{StaticResource MenuGroup}"
+                                  KeyboardNavigation.DirectionalNavigation="Contained"
+                                  KeyboardNavigation.TabNavigation="Once" />
                 </StackPanel>
             </ScrollViewer>
         </Border>
 
         <!-- The category, and above it a message from elsewhere ("Switched to UAT.", a password prompt) -->
         <DockPanel Grid.Column="1">
-            <Border x:Name="Banner" DockPanel.Dock="Top" Visibility="Collapsed" Margin="32,16,32,0" Padding="14,10"
+            <Border x:Name="Banner" DockPanel.Dock="Top" Margin="32,16,32,0" Padding="14,10"
+                    Visibility="{Binding Message, Converter={StaticResource Shown}}"
                     CornerRadius="8" Background="#1A7C3AED" BorderBrush="{StaticResource AccentLight}" BorderThickness="1">
                 <DockPanel>
                     <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource SecondaryButton}" Padding="8,2"
-                            VerticalAlignment="Top" Click="CloseBanner_Click" AutomationProperties.Name="Close the message" />
-                    <TextBlock x:Name="TxtBanner" Foreground="{StaticResource TextPrimary}" FontSize="12" TextWrapping="Wrap"
+                            VerticalAlignment="Top" Command="{Binding CloseMessageCommand}" AutomationProperties.Name="Close the message" />
+                    <TextBlock x:Name="TxtBanner" Text="{Binding Message}" Foreground="{StaticResource TextPrimary}" FontSize="12" TextWrapping="Wrap"
                                VerticalAlignment="Center" Margin="0,0,12,0" />
                 </DockPanel>
             </Border>
@@ -74,6 +117,7 @@
         </DockPanel>
 
         <!-- First run (#177): over the whole page while no connection is saved -->
-        <ContentControl x:Name="FlowHost" Grid.ColumnSpan="2" Focusable="False" Visibility="Collapsed" />
+        <ContentControl x:Name="FlowHost" Grid.ColumnSpan="2" Focusable="False"
+                        Visibility="{Binding FirstRun, Converter={StaticResource Shown}}" />
     </Grid>
 </Page>

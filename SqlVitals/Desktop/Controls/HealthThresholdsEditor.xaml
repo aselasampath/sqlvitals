@@ -1,9 +1,82 @@
 <UserControl x:Class="SqlVitals.Desktop.Controls.HealthThresholdsEditor"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
              FontFamily="Segoe UI">
+    <UserControl.Resources>
+        <helpers:HealthBrush x:Key="HealthBrush" />
+        <BooleanToVisibilityConverter x:Key="Shown" />
+
+        <!-- A warning, critical or weight box, bound to its ThresholdField: an accent border while it
+             differs from the default, flat while the table is read-only. -->
+        <Style x:Key="ThresholdBox" TargetType="TextBox">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="6,0,6,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource BgDeep}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Text" Value="{Binding Text, UpdateSourceTrigger=PropertyChanged}" />
+            <Setter Property="ToolTip" Value="{Binding ToolTip}" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEdited}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+                    <Setter Property="BorderThickness" Value="2" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                    <Setter Property="IsReadOnly" Value="True" />
+                    <Setter Property="Focusable" Value="False" />
+                    <Setter Property="Background" Value="Transparent" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- "off" through a blank threshold box, which is what blank means. -->
+        <Style x:Key="OffHint" TargetType="TextBlock">
+            <Setter Property="Text" Value="off" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="Visibility" Value="{Binding ShowsOff, Converter={StaticResource Shown}}" />
+        </Style>
+
+        <!-- Points: in the grade's colour and bold when the check loses some. -->
+        <Style x:Key="Points" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Text" Value="{Binding PointsText}" />
+            <Setter Property="ToolTip" Value="{Binding PointsToolTip}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LosesPoints}" Value="True">
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                    <Setter Property="Foreground" Value="{Binding Grade, Converter={StaticResource HealthBrush}}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Now" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Text" Value="{Binding NowText}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LosesPoints}" Value="True">
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
     <!-- The Checks table of the health score breakdown (#130), with Warning and Critical as boxes (#131):
-         a row per HealthIndicator, built in code from HealthThresholds.Indicators. -->
+         a row per HealthIndicator, built in code from the view model's rows (#190). -->
     <Grid x:Name="GridRows">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" MinWidth="170" />

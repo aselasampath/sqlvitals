@@ -2,21 +2,21 @@
              x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:settings="clr-namespace:SqlVitals.Desktop.Pages.Settings"
+             xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+             xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
              x:Name="Root" FontFamily="Segoe UI">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/SqlVitals.Desktop;component/Pages/Settings/SettingsStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <BooleanToVisibilityConverter x:Key="HeartbeatStepsShown" />
         </ResourceDictionary>
     </UserControl.Resources>
 
     <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="32,24,32,24" MaxWidth="900" HorizontalAlignment="Stretch">
             <TextBlock Text="Alerts &amp; chat" Style="{StaticResource PageTitle}" />
-            <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+            <TextBlock x:Name="TxtSubtitle" Text="{Binding Subtitle, Mode=OneTime}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
 
             <!-- Alerts -->
             <Border Style="{StaticResource SettingsCard}">
@@ -28,7 +28,8 @@
                         <DockPanel>
                             <ComboBox x:Name="CmbAlertSamples" DockPanel.Dock="Right" Width="160" VerticalAlignment="Center"
                                       AutomationProperties.Name="Samples in a row before an alert starts"
-                                      SelectionChanged="AlertSetting_Changed" />
+                                      ItemsSource="{Binding AlertSampleChoices}" DisplayMemberPath="Text"
+                                      SelectedValuePath="Value" SelectedValue="{Binding AlertSamples}" />
                             <StackPanel>
                                 <TextBlock Text="Raise an alert after" Style="{StaticResource RowLabel}" />
                                 <TextBlock Style="{StaticResource RowHelp}"
@@ -39,18 +40,38 @@
                     <Border Style="{StaticResource SettingRow}">
                         <StackPanel>
                             <DockPanel>
+                                <!-- Shows the setting; a click asks the view model, which puts it back if it couldn't save. -->
                                 <CheckBox x:Name="ChkNotifications" DockPanel.Dock="Right" Style="{StaticResource Switch}"
-                                          AutomationProperties.Name="Windows notifications" Click="ChkNotifications_Click" />
+                                          AutomationProperties.Name="Windows notifications"
+                                          IsChecked="{Binding Notifications, Mode=OneWay}" IsEnabled="{Binding CanNotify}"
+                                          Command="{Binding ToggleNotificationsCommand}" />
                                 <StackPanel>
                                     <TextBlock Text="Windows notifications" Style="{StaticResource RowLabel}" />
                                     <TextBlock Style="{StaticResource RowHelp}"
                                                Text="When an alert starts or turns critical; clicking one opens the Alerts page for that connection. Off mutes every connection, on unmutes them all. Mute a single connection on its Monitoring &amp; alerts tab, or from the SqlVitals icon's menu in the notification area. Windows' own Do Not Disturb and notification settings still apply." />
                                 </StackPanel>
                             </DockPanel>
-                            <TextBlock x:Name="TxtMuted" Style="{StaticResource RowHelp}" Margin="0,8,0,0" Visibility="Collapsed" />
+                            <!-- "Muted: A, B", each a link to its Monitoring & alerts tab -->
+                            <WrapPanel x:Name="MutedLine" Margin="0,8,24,0" Visibility="{Binding MutedText, Converter={StaticResource Shown}}">
+                                <TextBlock x:Name="TxtMuted" Text="{Binding MutedText}" Style="{StaticResource RowHelp}" Margin="0" />
+                                <ItemsControl x:Name="MutedLinks" ItemsSource="{Binding Muted}" Focusable="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:MutedConnection}">
+                                            <TextBlock Style="{StaticResource RowHelp}" Margin="0">
+                                                <Hyperlink Command="{Binding Open}" Foreground="{DynamicResource Accent}" ToolTip="Open its Monitoring &amp; alerts tab"
+                                                           AutomationProperties.Name="{Binding AutomationName}"><Run Text="{Binding Name, Mode=OneWay}" /></Hyperlink><Run
+                                                    Text="{Binding Separator, Mode=OneWay}" />
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
-                    <TextBlock x:Name="TxtAlertsStatus" Style="{StaticResource Status}" />
+                    <controls:StatusText x:Name="TxtAlertsStatus" Style="{StaticResource Status}" Line="{Binding AlertsStatus}" />
                 </StackPanel>
             </Border>
 
@@ -59,7 +80,7 @@
                 <StackPanel>
                     <DockPanel Margin="0,0,0,10">
                         <Button x:Name="BtnAddChatChannel" DockPanel.Dock="Right" VerticalAlignment="Top"
-                                Style="{StaticResource RefreshButton}" Click="BtnAddChatChannel_Click" Content="+  Add channel" />
+                                Style="{StaticResource RefreshButton}" Command="{Binding AddChannelCommand}" Content="+  Add channel" />
                         <StackPanel>
                             <TextBlock Text="Chat channels" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource CardText}" Margin="0,3,16,0"
@@ -76,30 +97,34 @@
                                    Text="⚠  Alerts stop when this PC sleeps, shuts down, or SqlVitals is closed: nothing is watched while it isn't running. Each channel is told when SqlVitals stops watching and when it starts again, but if the PC loses power or SqlVitals is ended by force, there's no message. A quiet channel doesn't mean the servers are fine." />
                     </Border>
 
-                    <TextBlock x:Name="TxtChatChannelsDropped" Visibility="Collapsed"
+                    <TextBlock x:Name="TxtChatChannelsDropped" Visibility="{Binding ChannelsDropped, Converter={StaticResource Shown}}"
                                Foreground="{DynamicResource Warning}" FontSize="11" FontWeight="SemiBold"
                                TextWrapping="Wrap" Margin="0,0,0,8"
                                Text="⚠  SqlVitals couldn't read the chat channels saved in its settings on this PC or Windows account, so they were removed. Add them again." />
-                    <TextBlock x:Name="TxtNoChatChannels" Style="{StaticResource RowHelp}" Visibility="Collapsed"
+                    <TextBlock x:Name="TxtNoChatChannels" Style="{StaticResource RowHelp}"
+                               Visibility="{Binding HasChannels, Converter={StaticResource Shown}, ConverterParameter=Not}"
                                Text="No chat channels yet. Click Add channel to set one up." />
 
                     <!-- A card per channel, two a row -->
-                    <ItemsControl x:Name="ChannelCards" Focusable="False" AutomationProperties.Name="Chat channels">
+                    <ItemsControl x:Name="ChannelCards" Focusable="False" AutomationProperties.Name="Chat channels"
+                                  ItemsSource="{Binding Channels}" Visibility="{Binding HasChannels, Converter={StaticResource Shown}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel ItemWidth="{Binding ChannelWidth, ElementName=Root}" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type settings:ChatChannelCard}">
+                            <DataTemplate DataType="{x:Type vm:ChatChannelCard}">
                                 <Border Margin="0,0,12,12" Padding="14,12" CornerRadius="8" BorderThickness="1"
                                         BorderBrush="{DynamicResource Border}" AutomationProperties.Name="{Binding AutomationName}">
                                     <DockPanel>
                                         <DockPanel DockPanel.Dock="Top">
-                                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Background="{Binding LabelTint}">
+                                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}"
+                                                    Background="{Binding Level, Converter={StaticResource HealthBrush}, ConverterParameter=Tint}">
                                                 <TextBlock Text="{Binding Label}" Style="{StaticResource ChipText}" />
                                             </Border>
-                                            <Ellipse Width="9" Height="9" Fill="{Binding Dot}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <Ellipse Width="9" Height="9" Fill="{Binding Level, Converter={StaticResource HealthBrush}}"
+                                                     Margin="0,0,8,0" VerticalAlignment="Center" />
                                             <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                        Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" ToolTip="{Binding Name}" />
                                         </DockPanel>
@@ -109,10 +134,10 @@
                                                 Padding="0,8,0,0" Margin="0,6,0,0">
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                                 <Button Content="Send test" Style="{StaticResource SecondaryButton}" Padding="12,4"
-                                                        Click="SendTest_Click" AutomationProperties.Name="{Binding TestName}"
+                                                        Command="{Binding SendTestCommand}" AutomationProperties.Name="{Binding TestName}"
                                                         ToolTip="Post a test message to this channel, as it's saved" />
                                                 <Button Content="Edit" Style="{StaticResource SecondaryButton}" Padding="12,4" Margin="8,0,0,0"
-                                                        BorderBrush="{DynamicResource AccentLight}" Click="EditChannel_Click"
+                                                        BorderBrush="{DynamicResource AccentLight}" Command="{Binding EditCommand}"
                                                         AutomationProperties.Name="{Binding EditName}" />
                                             </StackPanel>
                                         </Border>
@@ -129,8 +154,18 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                            <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}" FontSize="11"
-                                                       TextWrapping="Wrap" Margin="0,2,0,0" />
+                                            <TextBlock Text="{Binding StatusText}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource HealthNone}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFailing}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource HealthCritical}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </StackPanel>
                                     </DockPanel>
                                 </Border>
@@ -138,8 +173,9 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Add or edit a channel (as before #131) -->
-                    <Border x:Name="ChatChannelForm" Visibility="Collapsed" Margin="0,4,12,0"
+                    <!-- Add or edit a channel (as before #131); its DataContext the form while it's open -->
+                    <Border x:Name="ChatChannelForm" DataContext="{Binding Form}" Margin="0,4,12,0"
+                            Visibility="{Binding DataContext.Form, ElementName=Root, Converter={StaticResource Shown}}"
                             BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="16,14">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -160,12 +196,13 @@
                                 <RowDefinition Height="Auto" />  <!-- 10 Buttons -->
                             </Grid.RowDefinitions>
 
-                            <TextBlock x:Name="TxtChatFormTitle" Grid.ColumnSpan="2" Text="New channel" Style="{StaticResource CardTitle}"
+                            <TextBlock x:Name="TxtChatFormTitle" Grid.ColumnSpan="2" Text="{Binding Title}" Style="{StaticResource CardTitle}"
                                        Margin="0,0,0,12" />
 
                             <TextBlock Grid.Row="1" Text="Name" Style="{StaticResource FieldLabel}" Margin="0,8,12,0" />
                             <StackPanel Grid.Row="1" Grid.Column="1">
-                                <TextBox x:Name="TxtChatName" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Channel name" />
+                                <TextBox x:Name="TxtChatName" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Channel name"
+                                         Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="What you call it, e.g. DBA team (Teams). Shown here, in the activity log and in the app log." />
                             </StackPanel>
@@ -173,15 +210,16 @@
                             <TextBlock Grid.Row="2" Text="Webhook URL" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
                             <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,12,0,0">
                                 <!-- A saved URL stays out of every control until Show is pressed. -->
-                                <DockPanel x:Name="PnlChatUrlMasked" Visibility="Collapsed">
+                                <DockPanel x:Name="PnlChatUrlMasked" Visibility="{Binding IsUrlShown, Converter={StaticResource Shown}, ConverterParameter=Not}">
                                     <Button x:Name="BtnShowChatUrl" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}"
-                                            Padding="12,5" Margin="8,0,0,0" Click="BtnShowChatUrl_Click"
+                                            Padding="12,5" Margin="8,0,0,0" Command="{Binding ShowUrlCommand}"
                                             ToolTip="Show the whole URL, to check or change it" Content="Show" />
-                                    <TextBlock x:Name="TxtChatUrlMasked" VerticalAlignment="Center"
+                                    <TextBlock x:Name="TxtChatUrlMasked" Text="{Binding MaskedUrl}" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis" />
                                 </DockPanel>
                                 <TextBox x:Name="TxtChatUrl" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Webhook URL"
-                                         TextChanged="TxtChatUrl_TextChanged" />
+                                         Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding IsUrlShown, Converter={StaticResource Shown}}" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="Slack: an Incoming Webhook URL, starting https://hooks.slack.com/services/. Teams: the URL of a workflow made from the template &quot;Post to a channel when a webhook request is received&quot;. Anyone who has the URL can post to the channel, so treat it like a password." />
                             </StackPanel>
@@ -189,23 +227,22 @@
                             <TextBlock Grid.Row="3" Text="Service" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
                             <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,12,0,0">
                                 <ComboBox x:Name="CmbChatService" Width="200" HorizontalAlignment="Left" AutomationProperties.Name="Chat service"
-                                          SelectionChanged="Heartbeat_Changed">
-                                    <ComboBoxItem Content="Slack" Tag="Slack" />
-                                    <ComboBoxItem Content="Microsoft Teams" Tag="Teams" />
-                                </ComboBox>
+                                          ItemsSource="{Binding ServiceChoices}" DisplayMemberPath="Text"
+                                          SelectedValuePath="Value" SelectedValue="{Binding Service}" />
                                 <TextBlock Style="{StaticResource FieldHint}" Text="Picked from the URL when SqlVitals recognises it." />
                             </StackPanel>
 
                             <TextBlock Grid.Row="4" Text="Connections" Style="{StaticResource FieldLabel}" Margin="0,14,12,0" />
                             <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,12,0,0">
-                                <RadioButton x:Name="RadChatAllConnections" GroupName="ChatConnections" IsChecked="True"
-                                             Content="All monitored connections" Checked="ChatConnectionsChoice_Changed" />
-                                <RadioButton x:Name="RadChatChosenConnections" GroupName="ChatConnections" Margin="0,4,0,0"
-                                             Content="Only these:" Checked="ChatConnectionsChoice_Changed" />
-                                <ItemsControl x:Name="LstChatConnections" Margin="20,4,0,0" IsEnabled="False"
+                                <RadioButton x:Name="RadChatAllConnections"
+                                             Content="All monitored connections" IsChecked="{Binding AllConnections}" />
+                                <RadioButton x:Name="RadChatChosenConnections" Margin="0,4,0,0"
+                                             Content="Only these:" IsChecked="{Binding OnlyChosen}" />
+                                <ItemsControl x:Name="LstChatConnections" Margin="20,4,0,0" IsEnabled="{Binding OnlyChosen}"
+                                              ItemsSource="{Binding Connections}"
                                               AutomationProperties.Name="Connections this channel posts for">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
+                                        <DataTemplate DataType="{x:Type vm:ChatConnectionItem}">
                                             <CheckBox IsChecked="{Binding Chosen, Mode=TwoWay}" Margin="0,0,0,4"
                                                       AutomationProperties.Name="{Binding Name, Mode=OneWay}">
                                                 <TextBlock Text="{Binding Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
@@ -219,13 +256,12 @@
 
                             <TextBlock Grid.Row="5" Text="Post" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
                             <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,12,0,0">
-                                <ComboBox x:Name="CmbChatPost" Width="200" HorizontalAlignment="Left" AutomationProperties.Name="Which alerts to post">
-                                    <ComboBoxItem Content="Warnings and critical" />
-                                    <ComboBoxItem Content="Critical only" />
-                                </ComboBox>
+                                <ComboBox x:Name="CmbChatPost" Width="200" HorizontalAlignment="Left" AutomationProperties.Name="Which alerts to post"
+                                          ItemsSource="{Binding PostChoices}" DisplayMemberPath="Text"
+                                          SelectedValuePath="Value" SelectedValue="{Binding CriticalOnly}" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="A message is posted when an alert starts or turns critical. On Critical only, a warning that turns critical is posted as a new critical alert." />
-                                <CheckBox x:Name="ChkChatPostEnds" Content="Also post when an alert ends" IsChecked="True" Margin="0,10,0,0" />
+                                <CheckBox x:Name="ChkChatPostEnds" Content="Also post when an alert ends" IsChecked="{Binding PostEnds}" Margin="0,10,0,0" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="Back to normal, for the alerts this channel was told about. When SqlVitals stops or starts watching a server, the channel is told either way, with the alerts still active." />
                             </StackPanel>
@@ -235,9 +271,10 @@
                             <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,12,0,0">
                                 <StackPanel Orientation="Horizontal">
                                     <ComboBox x:Name="CmbHeartbeat" Width="200" AutomationProperties.Name="Heartbeat schedule"
-                                              SelectionChanged="Heartbeat_Changed" />
-                                    <ComboBox x:Name="CmbHeartbeatAt" Width="96" Margin="8,0,0,0" Visibility="Collapsed"
-                                              AutomationProperties.Name="Heartbeat time" SelectionChanged="Heartbeat_Changed" />
+                                              ItemsSource="{Binding HeartbeatChoices}" SelectedIndex="{Binding HeartbeatIndex}" />
+                                    <ComboBox x:Name="CmbHeartbeatAt" Width="96" Margin="8,0,0,0" AutomationProperties.Name="Heartbeat time"
+                                              ItemsSource="{Binding HeartbeatAtChoices}" SelectedIndex="{Binding HeartbeatAtIndex}"
+                                              Visibility="{Binding ShowsHeartbeatAt, Converter={StaticResource Shown}}" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="A short &quot;💓 SqlVitals heartbeat&quot; message: SqlVitals is still running, and which of this channel's servers it's watching, at these times on this PC's clock. Set up an alert for when one doesn't arrive, and a quiet channel really means the servers are fine." />
@@ -246,53 +283,57 @@
                             <TextBlock Grid.Row="7" Text="Heartbeat ping URL" Style="{StaticResource FieldLabel}" Margin="0,20,12,0" />
                             <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,12,0,0">
                                 <!-- A secret too: out of every control until the webhook's Show is pressed, which shows both. -->
-                                <TextBlock x:Name="TxtPingUrlMasked" Visibility="Collapsed" VerticalAlignment="Center"
+                                <TextBlock x:Name="TxtPingUrlMasked" Text="{Binding MaskedPingUrl}" VerticalAlignment="Center"
+                                           Visibility="{Binding IsPingUrlShown, Converter={StaticResource Shown}, ConverterParameter=Not}"
                                            Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                <TextBox x:Name="TxtPingUrl" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Heartbeat ping URL" />
+                                <TextBox x:Name="TxtPingUrl" Style="{StaticResource FieldTextBox}" AutomationProperties.Name="Heartbeat ping URL"
+                                         Text="{Binding PingUrl, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding IsPingUrlShown, Converter={StaticResource Shown}}" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="Optional. A dead man's switch check (Healthchecks.io, Cronitor or Better Stack) that each heartbeat also calls while SqlVitals is watching a server. The service alerts the channel when the calls stop. It's the only way to get that alert in Slack. Stored encrypted, like the webhook." />
                                 <!-- View-only: shows the steps, which are kept up to date with the form. -->
-                                <CheckBox x:Name="ChkHeartbeatSteps" Margin="0,10,0,0"
+                                <CheckBox x:Name="ChkHeartbeatSteps" Margin="0,10,0,0" IsChecked="{Binding StepsShown}"
                                           Content="Show how to get an alert when a heartbeat is missing" />
                                 <Border x:Name="PnlHeartbeatSteps" Margin="0,8,0,0" Padding="10,8"
                                         BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6"
-                                        Visibility="{Binding IsChecked, ElementName=ChkHeartbeatSteps, Converter={StaticResource HeartbeatStepsShown}}">
+                                        Visibility="{Binding StepsShown, Converter={StaticResource Shown}}">
                                     <StackPanel>
                                         <!-- Read-only, so the steps and the expression can be selected as well as copied. -->
                                         <TextBox x:Name="TxtHeartbeatSteps" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
                                                  Background="Transparent" Foreground="{DynamicResource TextPrimary}" FontSize="11"
+                                                 Text="{Binding HeartbeatSteps, Mode=OneWay}"
                                                  AutomationProperties.Name="Heartbeat setup steps" />
                                         <Button x:Name="BtnCopyHeartbeatSteps" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"
-                                                Padding="12,4" Margin="0,8,0,0" Content="Copy steps"
-                                                Command="{Binding CopyHeartbeatSteps, ElementName=Root}" />
+                                                Padding="12,4" Margin="0,8,0,0" Content="Copy steps" Command="{Binding CopyStepsCommand}" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
 
                             <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,12,0,0">
-                                <CheckBox x:Name="ChkChatEnabled" Content="On" IsChecked="True" />
+                                <CheckBox x:Name="ChkChatEnabled" Content="On" IsChecked="{Binding Enabled}" />
                                 <TextBlock Style="{StaticResource FieldHint}"
                                            Text="Turn off to pause the channel without removing it. A test message can still be sent." />
                             </StackPanel>
 
-                            <TextBlock x:Name="TxtChatFormMessage" Grid.Row="9" Grid.ColumnSpan="2"
-                                       FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed" />
+                            <controls:StatusText x:Name="TxtChatFormMessage" Grid.Row="9" Grid.ColumnSpan="2" Style="{StaticResource Status}"
+                                       Line="{Binding Message}" Margin="0,10,0,0" />
 
                             <DockPanel Grid.Row="10" Grid.ColumnSpan="2" Margin="0,14,0,0">
                                 <Button x:Name="BtnRemoveChatChannel" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}"
-                                        Padding="14,6" Click="BtnRemoveChatChannel_Click" Foreground="{DynamicResource Danger}"
-                                        Content="Remove channel…" />
+                                        Padding="14,6" Command="{Binding DataContext.RemoveChannelCommand, ElementName=Root}"
+                                        Visibility="{Binding CanRemove, Converter={StaticResource Shown}}"
+                                        Foreground="{DynamicResource Danger}" Content="Remove channel…" />
                                 <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="BtnSaveChatChannel" Style="{StaticResource RefreshButton}"
-                                            Padding="14,6" Margin="0,0,8,0" Click="BtnSaveChatChannel_Click" Content="Save channel" />
-                                    <Button x:Name="BtnCancelChatChannel" Style="{StaticResource SecondaryButton}"
-                                            Padding="14,6" Click="BtnCancelChatChannel_Click" Content="Close" />
+                                    <Button x:Name="BtnSaveChatChannel" Style="{StaticResource RefreshButton}" Padding="14,6" Margin="0,0,8,0"
+                                            Command="{Binding DataContext.SaveChannelCommand, ElementName=Root}" Content="Save channel" />
+                                    <Button x:Name="BtnCancelChatChannel" Style="{StaticResource SecondaryButton}" Padding="14,6"
+                                            Command="{Binding DataContext.CloseChannelCommand, ElementName=Root}" Content="Close" />
                                 </StackPanel>
                             </DockPanel>
                         </Grid>
                     </Border>
 
-                    <TextBlock x:Name="TxtChatStatus" Style="{StaticResource Status}" />
+                    <controls:StatusText x:Name="TxtChatStatus" Style="{StaticResource Status}" Line="{Binding ChatStatus}" />
                 </StackPanel>
             </Border>
         </StackPanel>

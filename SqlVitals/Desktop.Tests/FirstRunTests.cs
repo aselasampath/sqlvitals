@@ -8,6 +8,7 @@ using SqlVitals.Desktop.Pages.Settings;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Activity;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
@@ -18,17 +19,18 @@ using SqlVitals.Engine.Repositories;
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
-/// The first-run flow (#177) and a card's Check permissions, as WPF builds them off screen. The
-/// permission check is a fake: no server is contacted, and Connect's save is played by saving the
-/// connection and telling the flow, since saving signs in first.
+/// The first-run flow (#177) and a card's Check permissions, as WPF builds them off screen, bound to
+/// their view models (#190). The permission check is a fake: no server is contacted, and Connect's
+/// save is played by saving the connection and telling the flow, since saving signs in first.
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class FirstRunTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
     private readonly FakeClipboard _clipboard = new();
     private readonly RecordingStarter _starter = new();
     private readonly List<Guid> _opened = new();
-    private readonly List<string> _asked = new();
+    private readonly FakeDialogService _dialogs = new();
     private readonly List<ConnectionSettings> _checked = new();
 
     private MonitoringManager?         _monitoring;
@@ -36,9 +38,6 @@ public sealed class FirstRunTests : IDisposable
 
     // What the fake check answers; a bare login on SQL Server unless a test says otherwise.
     private Func<PermissionProbe> _answer = () => Bare();
-
-    // What the next question is answered with.
-    private MessageBoxResult _reply = MessageBoxResult.Cancel;
 
     private static PermissionProbe Bare(int edition = 3) =>
         new(edition, "CONTOSO\\svc_vitals", "svc_vitals", "Sales", LoginIsOwn: true, ServerState: false, AnyDefinition: false,
@@ -67,15 +66,12 @@ public sealed class FirstRunTests : IDisposable
         _monitoring.Sync(_settings.Load(), ActivitySources.AutomaticAtStartup);
         var chat = new ChatNotificationService(new NoSender(), "DBA-PC01", _ => { });
 
-        var page = new SettingsPage(_settings, _monitoring, chat, _ => Task.CompletedTask, location,
-                                    checkPermissions: Check, starter: _starter, clipboard: _clipboard)
+        var context = new SettingsContext(_settings, _monitoring, chat, _ => Task.CompletedTask, _dialogs,
+                                          checkPermissions: Check, starter: _starter, clipboard: _clipboard)
         {
-            Prompt = (text, _, _, _) =>
-            {
-                _asked.Add(text);
-                return _reply;
-            },
+            Theme = new FakeThemeService(),
         };
+        var page = new SettingsPage(new SettingsViewModel(context, location));
         page.ServerRequested += _opened.Add;
         UiThread.Layout(page, 1200, 900);
         return page;
@@ -93,7 +89,7 @@ public sealed class FirstRunTests : IDisposable
         var conn = Conn("Sales DB");
         _settings!.Upsert(conn);
         _settings.SetActive(conn.Id, ActivitySources.Settings);
-        flow.Connected(conn.Id);
+        flow.ViewModel.Connected(conn.Id);
         return conn;
     }
 
@@ -108,13 +104,14 @@ public sealed class FirstRunTests : IDisposable
         var page = Open(SettingsLocation.FirstRunFlow);
 
         var flow = Assert.IsType<FirstRunFlow>(page.FirstRun);
-        Assert.Equal(FirstRunStep.Connect, flow.Step);
-        Assert.True(flow.Editor.IsNew);
+        Assert.Equal(FirstRunStep.Connect, flow.ViewModel.Step);
+        Assert.True(flow.Editor.ViewModel.IsNew);
         Assert.Equal(Visibility.Visible, page.FlowHost.Visibility);
         // No way back to the cards, and no Save & make active: Save & continue is the way on.
         Assert.Equal(Visibility.Collapsed, flow.Editor.Crumb.Visibility);
         Assert.Equal(Visibility.Collapsed, flow.Editor.BtnSaveAndConnect.Visibility);
-        Assert.Equal("Save & continue", flow.Editor.BtnSave.Content);
+        Assert.Equal(Visibility.Collapsed, flow.Editor.BtnSave.Visibility);
+        Assert.Equal("Save & continue", flow.Editor.BtnSaveAndContinue.Content);
         Assert.Contains("Save & continue", flow.Editor.TxtLine.Text, StringComparison.Ordinal);
         Assert.Equal("Step 1 of 3: Connect", System.Windows.Automation.AutomationProperties.GetName(flow.Steps));
     });
@@ -126,7 +123,7 @@ public sealed class FirstRunTests : IDisposable
 
         Assert.Null(page.FirstRun);
         Assert.Equal(Visibility.Collapsed, page.FlowHost.Visibility);
-        Assert.Single(page.Connections!.CardsShown);
+        Assert.Single(page.ViewModel.Connections!.Cards);
     });
 
     [Fact]
@@ -146,7 +143,7 @@ public sealed class FirstRunTests : IDisposable
         var flow = page.FirstRun!;
 
         var conn = Connect(flow);
-        Assert.Equal(FirstRunStep.Check, flow.Step);
+        Assert.Equal(FirstRunStep.Check, flow.ViewModel.Step);
         var model = flow.Check!.Model;
         WaitForCheck(model);
         UiThread.Layout(page, 1200, 900);
@@ -244,11 +241,11 @@ public sealed class FirstRunTests : IDisposable
         WaitForCheck(flow.Check!.Model);
 
         flow.BtnNext.Command.Execute(null);
-        Assert.Equal(FirstRunStep.Start, flow.Step);
+        Assert.Equal(FirstRunStep.Start, flow.ViewModel.Step);
         Assert.True(flow.ChkStartMonitoring.IsChecked);
         Assert.Equal("Open Sales DB's Overview  ›", flow.BtnFinish.Content);
 
-        UiThread.Wait(flow.FinishAsync());
+        UiThread.Wait(flow.ViewModel.FinishAsync());
 
         Assert.Equal((conn.Id, ActivitySources.FirstRun), Assert.Single(_starter.Started));
         Assert.Equal(conn.Id, Assert.Single(_opened));
@@ -262,10 +259,10 @@ public sealed class FirstRunTests : IDisposable
         var page = Open(SettingsLocation.FirstRunFlow);
         var flow = page.FirstRun!;
         var conn = Connect(flow);
-        flow.Show(FirstRunStep.Start);
+        flow.ViewModel.Show(FirstRunStep.Start);
         flow.ChkStartMonitoring.IsChecked = false;
 
-        UiThread.Wait(flow.FinishAsync());
+        UiThread.Wait(flow.ViewModel.FinishAsync());
 
         Assert.Empty(_starter.Started);
         Assert.Equal(conn.Id, Assert.Single(_opened));
@@ -278,9 +275,9 @@ public sealed class FirstRunTests : IDisposable
     {
         var page = Open(SettingsLocation.FirstRunFlow);
 
-        UiThread.Wait(page.FirstRun!.SkipAsync());
+        UiThread.Wait(page.FirstRun!.ViewModel.SkipAsync());
 
-        Assert.Empty(_asked);
+        Assert.Empty(_dialogs.Shown);
         Assert.Null(page.FirstRun);
         Assert.Equal(Visibility.Visible, page.Connections!.EmptyState.Visibility);
     });
@@ -292,13 +289,13 @@ public sealed class FirstRunTests : IDisposable
         var flow = page.FirstRun!;
         flow.Editor.TxtServer.Text = "sql01";
 
-        UiThread.Wait(flow.SkipAsync());
+        UiThread.Wait(flow.ViewModel.SkipAsync());
 
-        Assert.Single(_asked);
+        Assert.Single(_dialogs.Shown);
         Assert.Same(flow, page.FirstRun);
 
-        _reply = MessageBoxResult.No;
-        UiThread.Wait(flow.SkipAsync());
+        _dialogs.SaveAnswer = DialogAnswer.No;
+        UiThread.Wait(flow.ViewModel.SkipAsync());
         Assert.Null(page.FirstRun);
     });
 
@@ -308,10 +305,10 @@ public sealed class FirstRunTests : IDisposable
         var page = Open(SettingsLocation.FirstRunFlow);
         Connect(page.FirstRun!);
 
-        UiThread.Wait(page.FirstRun!.SkipAsync());
+        UiThread.Wait(page.FirstRun!.ViewModel.SkipAsync());
 
         Assert.Null(page.FirstRun);
-        Assert.Single(page.Connections!.CardsShown);
+        Assert.Single(page.ViewModel.Connections!.Cards);
         Assert.Empty(_opened);
     });
 
@@ -322,7 +319,7 @@ public sealed class FirstRunTests : IDisposable
         page.FirstRun!.Editor.TxtServer.Text = "sql01";
 
         Assert.False(UiThreadResult(page.TryLeaveAsync()));
-        Assert.Single(_asked);
+        Assert.Single(_dialogs.Shown);
     });
 
     // ── Check permissions on a card ──────────────────────────────────────────
@@ -333,8 +330,8 @@ public sealed class FirstRunTests : IDisposable
         var conn = Conn("Sales DB");
         var page = Open(new SettingsLocation(SettingsCategory.Connections), conn);
         var connections = page.Connections!;
-        var card = Assert.Single(connections.CardsShown);
-        Assert.Equal(Visibility.Visible, card.CheckPermissionsVisibility);
+        var card = Assert.Single(connections.ViewModel.Cards);
+        Assert.True(card.CanCheckPermissions);
         Assert.Equal("Check the permissions of Sales DB", card.CheckPermissionsName);
 
         card.CheckPermissionsCommand!.Execute(null);
@@ -346,7 +343,8 @@ public sealed class FirstRunTests : IDisposable
         Assert.Equal("Permissions of Sales DB", check.TxtTitle.Text);
         Assert.Equal("4 of 4 permissions are missing.", check.Check.Model.Status);
 
-        check.BackCommand.Execute(null);
+        Assert.Same(check.ViewModel.BackCommand, check.LnkBack.Command);
+        check.ViewModel.BackCommand.Execute(null);
         Assert.Null(connections.Permissions);
         Assert.Equal(Visibility.Visible, connections.ListView.Visibility);
     });
@@ -355,10 +353,10 @@ public sealed class FirstRunTests : IDisposable
     public void WithoutAChecker_TheCardHasNoCheckPermissions() => UiThread.Run(() =>
     {
         var item = new ConnectionCardItem(Engine.Settings.ConnectionCard.From(
-            ConnectionsCategory.InputFor(Conn("A"), new ConnectionStore(), new MonitoringManager(
+            ViewModels.Settings.ConnectionsCategoryViewModel.InputFor(Conn("A"), new ConnectionStore(), new MonitoringManager(
                 new HistoryWriter(Path.Combine(_dir, "h.db"), (_, _) => { }), (_, _) => new FakeRepository()))));
 
-        Assert.Equal(Visibility.Collapsed, item.CheckPermissionsVisibility);
+        Assert.False(item.CanCheckPermissions);
     });
 
     // ── The pages each permission affects are the sidebar's ──────────────────
@@ -381,6 +379,7 @@ public sealed class FirstRunTests : IDisposable
     public void EachStep_Renders(string theme) => UiThread.Run(() =>
     {
         using var themed = Themed(theme);
+        using var errors = BindingErrors.Watch();
         _answer = () => Everything() with { AnyDefinition = false, MsdbReadable = new HashSet<string>(PermissionCheck.BackupTables) };
         var page = Open(SettingsLocation.FirstRunFlow);
         var flow = page.FirstRun!;
@@ -402,10 +401,11 @@ public sealed class FirstRunTests : IDisposable
         Assert.Equal(Brush("Success"), ((SolidColorBrush)granted.Foreground).Color);
         Assert.Equal(Brush("Warning"), ((SolidColorBrush)flow.Check.TxtStatus.Foreground).Color);
 
-        flow.Show(FirstRunStep.Start);
+        flow.ViewModel.Show(FirstRunStep.Start);
         UiThread.Layout(page, 1200, 900);
         Render(page, theme, "3-start");
         Assert.True(flow.BtnFinish.ActualWidth > 0);
+        errors.AssertNone();
     });
 
     [Theory]
@@ -413,15 +413,17 @@ public sealed class FirstRunTests : IDisposable
     public void TheCardsCheck_Renders(string theme) => UiThread.Run(() =>
     {
         using var themed = Themed(theme);
+        using var errors = BindingErrors.Watch();
         var page = Open(new SettingsLocation(SettingsCategory.Connections), Conn("Sales DB"));
         UiThread.Layout(page, 1200, 900);
         Render(page, theme, "cards");
 
-        page.Connections!.CardsShown[0].CheckPermissionsCommand!.Execute(null);
-        WaitForCheck(page.Connections.Permissions!.Check.Model);
+        page.ViewModel.Connections!.Cards[0].CheckPermissionsCommand!.Execute(null);
+        WaitForCheck(page.Connections!.Permissions!.Check.Model);
         UiThread.Layout(page, 1200, 900);
         Render(page, theme, "card-check");
         Assert.True(page.Connections.Permissions.Check.TxtScript.ActualHeight > 0);
+        errors.AssertNone();
     });
 
     private static Color Brush(string key) => ((SolidColorBrush)Application.Current.Resources[key]).Color;

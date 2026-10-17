@@ -20,19 +20,8 @@ public sealed class MvvmGuardTests
     /// <summary>Page code that reads through a repository itself: none since #189 moved the last pages' reads.</summary>
     private static readonly string[] RepositoryReferencesAllowed = [];
 
-    /// <summary>How many <c>Click=</c> each page's XAML has.</summary>
-    private static readonly Dictionary<string, int> ClicksAllowed = new()
-    {
-        ["Pages/Settings/ActivityCategory.xaml"]         = 1,
-        ["Pages/Settings/AlertsCategory.xaml"]           = 8,
-        ["Pages/Settings/AppearanceCategory.xaml"]       = 1,
-        ["Pages/Settings/ConnectionEditor.xaml"]         = 11,
-        ["Pages/Settings/ConnectionsCategory.xaml"]      = 4,
-        ["Pages/Settings/MonitoringCategory.xaml"]       = 2,
-        ["Pages/Settings/NotificationAreaCategory.xaml"] = 1,
-        ["Pages/Settings/ThresholdsCategory.xaml"]       = 3,
-        ["Pages/SettingsPage.xaml"]                      = 1,
-    };
+    /// <summary>How many <c>Click=</c> each page's XAML has: none since #190 bound Settings' buttons to commands.</summary>
+    private static readonly Dictionary<string, int> ClicksAllowed = new();
 
     /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. None since #189's wave.</summary>
     private static readonly string[] CodeBehindPagesAllowed = [];

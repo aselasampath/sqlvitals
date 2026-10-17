@@ -1,42 +1,26 @@
 using System.Windows.Controls;
-using System.Windows.Input;
-using SqlVitals.Desktop.Helpers;
-using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Settings;
 
 namespace SqlVitals.Desktop.Pages.Settings;
 
 /// <summary>
-/// A connection's Check permissions (#177), opened from its card in Settings → Connections: the
-/// same check as the first-run flow's, started as it opens.
+/// A connection's Check permissions (#177), opened from its card in Settings → Connections, bound to
+/// its <see cref="ConnectionPermissionsViewModel"/> (#190). Leaving it stops a check still running.
 /// </summary>
 internal partial class ConnectionPermissions : UserControl
 {
-    public ConnectionPermissions(ConnectionSettings connection, PermissionChecker check, IClipboard clipboard)
+    public ConnectionPermissions(ConnectionPermissionsViewModel model)
     {
-        Check = new PermissionCheckView(new PermissionCheckViewModel(token => check(connection, token), clipboard, connection.DisplayName));
-        // Bound with ElementName before InitializeComponent: it doesn't change.
-        BackCommand = new RelayCommand(() =>
-        {
-            Check.Model.Cancel();
-            Closed?.Invoke();
-        });
+        ViewModel   = model;
+        DataContext = model;
         InitializeComponent();
 
-        ConnectionId  = connection.Id;
-        RunName.Text  = connection.DisplayName;
-        TxtTitle.Text = $"Permissions of {connection.DisplayName}";
-        TxtLine.Text  = $"{connection.Server.Trim()} / {connection.DatabaseLabel} · {connection.AuthenticationLabel}";
+        Check = new PermissionCheckView(model.Check);
         CheckHost.Content = Check;
-        Unloaded += (_, _) => Check.Model.Cancel();
+        Unloaded += (_, _) => model.Check.Cancel();
     }
 
-    /// <summary>"← Connections".</summary>
-    public event Action? Closed;
-
-    public ICommand BackCommand { get; }
-
-    public Guid ConnectionId { get; }
+    public ConnectionPermissionsViewModel ViewModel { get; }
 
     public PermissionCheckView Check { get; }
 }

@@ -1,4 +1,4 @@
-using SqlVitals.Desktop.Pages.Settings;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Tests;

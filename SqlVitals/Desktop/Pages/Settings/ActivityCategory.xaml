@@ -15,7 +15,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="32,24,32,24" MaxWidth="1100" HorizontalAlignment="Stretch">
             <TextBlock Text="Activity log &amp; diagnostics" Style="{StaticResource PageTitle}" />
-            <TextBlock x:Name="TxtSubtitle" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
+            <TextBlock x:Name="TxtSubtitle" Text="{Binding Subtitle, Mode=OneTime}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,16" />
 
             <!-- Activity log (#115) -->
             <Border Style="{StaticResource SettingsCard}">
@@ -32,13 +32,13 @@
                 <StackPanel>
                     <DockPanel>
                         <Button x:Name="BtnOpenLogFolder" DockPanel.Dock="Right" VerticalAlignment="Center"
-                                Style="{StaticResource SecondaryButton}" Content="Open log folder" Click="OpenLogFolder_Click" />
+                                Style="{StaticResource SecondaryButton}" Content="Open log folder" Command="{Binding OpenLogFolderCommand}" />
                         <StackPanel>
                             <TextBlock Text="Diagnostics" Style="{StaticResource RowLabel}" />
-                            <TextBlock x:Name="TxtLogInfo" Style="{StaticResource RowHelp}" />
+                            <TextBlock x:Name="TxtLogInfo" Text="{Binding LogInfo, Mode=OneTime}" Style="{StaticResource RowHelp}" />
                         </StackPanel>
                     </DockPanel>
-                    <TextBlock x:Name="TxtLogStatus" Style="{StaticResource Status}" />
+                    <controls:StatusText x:Name="TxtLogStatus" Style="{StaticResource Status}" Line="{Binding LogStatus}" />
                 </StackPanel>
             </Border>
         </StackPanel>
