@@ -55,6 +55,9 @@ public partial class App : System.Windows.Application
             SessionEndingReason = args.ReasonSessionEnding;
         };
 
+        // An empty grid's "Loading…" in the light theme App.xaml starts with (#117); a theme switch makes it again.
+        Controls.LoadingPlaceholder.UseTheme(Resources);
+
         // The app's services (#182, #166), before anything asks; the main window is one of them,
         // which only the app refers to (#191).
         var services = Services.CompositionRoot.Start(s => s.AddSingleton<MainWindow>());

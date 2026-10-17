@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.ViewModels;
@@ -25,9 +26,16 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     [ObservableProperty]
     private PageVerdict? _verdict;
 
-    /// <summary>"Loading…", "Refreshing…", the last error as one line, or null when it read.</summary>
+    /// <summary>The last error as one line, or null when it read. The loading bar says it is reading (#117).</summary>
     [ObservableProperty]
     private string? _status;
+
+    /// <summary>
+    /// Whether it has read anything yet (#117): its empty grids say "Loading…" during its first read,
+    /// and its verdict that a stopped one read nothing. The page factory hands it to the page.
+    /// </summary>
+    [ObservableProperty]
+    private PageLoadState _loadState;
 
     /// <summary>Reading now: Refresh waits for it.</summary>
     [ObservableProperty]
@@ -47,6 +55,9 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
 
     private const string NoCountdown = "--";
 
+    /// <summary>The countdown while the page reads (#117): its timed reads show no loading bar.</summary>
+    internal const string ReadingNow = "⟳";
+
     private IShellStatus? _shell;
     private IRefreshScheduler? _scheduler;
     private TimeSpan? _refreshInterval;
@@ -60,6 +71,13 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     private PageLifetime? _lifetime;
     private Task _reading = Task.CompletedTask;
     private bool _shown;
+
+    // The read in progress: why it reads, what the loading bar shows of it (#117), and whether the
+    // bar's Stop was pressed on it. It has read once (or failed to): its first read is over.
+    private PageRead _runRead;
+    private IReading _barRead = NoReading.Instance;
+    private CancellationTokenSource? _stopped;
+    private bool _hasRead;
 
     protected PageViewModel() =>
         RefreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsBusy);
@@ -293,6 +311,44 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     /// <summary>Puts back what <see cref="SaveState"/> kept, before the page loads.</summary>
     public virtual void RestoreState(object state) { }
 
+    /// <summary>
+    /// The longest one of the page's queries may run, for a page whose reads set their own limit
+    /// (<see cref="ExtendedQueries"/>): the loading bar says when it gives up (#117). Null when each
+    /// has the Command timeout.
+    /// </summary>
+    protected virtual TimeSpan? LongestQuery => null;
+
+    /// <summary>The limit of the reads that set a longer one of their own: a large Query Store, the plan cache, system_health's files.</summary>
+    protected static readonly TimeSpan ExtendedQueries = TimeSpan.FromSeconds(SqlTarget.ExtendedCommandTimeoutSeconds);
+
+    /// <summary>
+    /// The loading bar's Stop (#117): what the page is reading stops, on the server too, its other
+    /// reads (a tab, its code-behind's) with it. What it shows stays, and nothing is reported as an error.
+    /// </summary>
+    public void StopReading()
+    {
+        if (_run is { IsCancellationRequested: false } run)
+        {
+            _stopped = run;
+            run.Cancel();
+        }
+        if (_shown)
+            _lifetime?.Restart();
+    }
+
+    /// <summary>
+    /// A part of the page read on its own, on request (a tab, the fragmentation with new criteria):
+    /// the loading bar says <paramref name="doing"/> while the user waits (#117), and its Stop runs
+    /// <paramref name="stop"/>, which cancels that read alone. Not for a part read within the page's
+    /// own read, which the bar already shows.
+    /// </summary>
+    /// <param name="doing">"Checking fragmentation".</param>
+    /// <param name="done">Said to a screen reader when it read: "Fragmentation checked".</param>
+    /// <returns><see cref="IReading.Done"/> when it read; disposed however it went.</returns>
+    protected IReading ShowReading(string doing, string done, Action stop) =>
+        _shell?.ReportReading(this, new ReadingRequest(PageRead.Refresh, doing, done, LongestQuery, stop))
+        ?? NoReading.Instance;
+
     /// <summary>The page couldn't read: the verdict says so. A page whose code-behind says so itself does nothing here.</summary>
     protected virtual void ShowLoadError(Exception exception) => ShowError("this page's data", exception);
 
@@ -312,27 +368,59 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
     private Task ReadAsync(PageRead read)
     {
         if (IsBusy)
+        {
+            // Refresh while a timed read runs waits for it: the loading bar shows it from now on.
+            if (read != PageRead.Timed && _runRead == PageRead.Timed)
+            {
+                _runRead = read;
+                _barRead = ReportReading(read);
+            }
             return _reading;
+        }
         var reading = RunAsync(read);
         if (!reading.IsCompleted)
             _reading = reading;
         return reading;
     }
 
+    // The loading bar shows an opened page's read and a Refresh, never a timed one (#117).
+    private IReading ReportReading(PageRead read) =>
+        read == PageRead.Timed || _shell is null
+            ? NoReading.Instance
+            : _shell.ReportReading(this, new ReadingRequest(read, LongestQuery: LongestQuery, Stop: StopReading));
+
     private async Task RunAsync(PageRead read)
     {
         using var run = new CancellationTokenSource();
-        _run   = run;
-        IsBusy = true;
-        Status = read == PageRead.Load ? "Loading…" : read == PageRead.Refresh ? "Refreshing…" : Status;
+        _run     = run;
+        _runRead = read;
+        IsBusy   = true;
+        _barRead = ReportReading(read);
+        // A timed read after a failed first one says nothing: it shows no loading bar either.
+        if (!_hasRead && read != PageRead.Timed)
+            LoadState = PageLoadState.Loading;
+        ShowCountdown();
         try
         {
             await LoadAsync(read, run.Token);
             if (!run.IsCancellationRequested)
             {
-                Status = null;
-                _shell?.ReportRead(this, read);
+                Status    = null;
+                _hasRead  = true;
+                LoadState = PageLoadState.Ready;
+                _barRead.Done();
+                _shell?.ReportRead(this, _runRead);
             }
+            else if (ReferenceEquals(_stopped, run))
+            {
+                // Stopped, and a part of it that says nothing when cancelled (a tab) returned: stopped all the same.
+                ShowStopped();
+            }
+        }
+        catch (Exception) when (ReferenceEquals(_stopped, run))
+        {
+            // Stopped from the loading bar: what is on screen stays, and the shell says it stopped.
+            ShowStopped();
         }
         catch (OperationCanceledException) when (run.IsCancellationRequested)
         {
@@ -347,15 +435,30 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         catch (Exception ex)
         {
             Status = ErrorStatus.Format(ex);
+            // The verdict says why; Refresh reads again, "Loading…" again meanwhile.
+            if (!_hasRead)
+                LoadState = PageLoadState.Ready;
             ShowLoadError(ex);
-            _shell?.ReportError(this, Tag, ex, read);
+            _shell?.ReportError(this, Tag, ex, _runRead);
         }
         finally
         {
+            _barRead.Dispose();
+            _barRead = NoReading.Instance;
             if (ReferenceEquals(_run, run))
                 _run = null;
+            if (ReferenceEquals(_stopped, run))
+                _stopped = null;
             IsBusy = false;
+            ShowCountdown();
         }
+    }
+
+    // Stop from the loading bar ended the read: a first one has read nothing.
+    private void ShowStopped()
+    {
+        if (!_hasRead)
+            LoadState = PageLoadState.Stopped;
     }
 
     // The timer runs while the page is shown, has an interval and isn't paused; so does its countdown.
@@ -369,17 +472,22 @@ public abstract partial class PageViewModel : ObservableObject, IRefreshable
         _countdownTick = _schedule is not null && _showsCountdown && _refreshInterval > Second
             ? _scheduler!.Every(Second, ShowCountdownAsync)
             : null;
-        Countdown = _schedule is null ? NoCountdown : CountdownText(_schedule.Remaining);
+        ShowCountdown();
     }
 
     private static readonly TimeSpan Second = TimeSpan.FromSeconds(1);
 
     private Task ShowCountdownAsync()
     {
-        if (_schedule is { } schedule)
-            Countdown = CountdownText(schedule.Remaining);
+        ShowCountdown();
         return Task.CompletedTask;
     }
+
+    // "12s" to the next timed read, ⟳ while one runs (#117), "--" while nothing is timed.
+    private void ShowCountdown() =>
+        Countdown = _schedule is not { } schedule ? NoCountdown
+                  : IsBusy && _countdownTick is not null ? ReadingNow
+                  : CountdownText(schedule.Remaining);
 
     /// <summary>"12s" under a minute, "1:05" from one; whole seconds, rounded up, so it reaches 0s as it reads.</summary>
     internal static string CountdownText(TimeSpan left)

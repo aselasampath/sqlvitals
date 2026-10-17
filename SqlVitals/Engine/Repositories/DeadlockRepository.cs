@@ -12,7 +12,7 @@ namespace SqlVitals.Engine.Repositories;
 public class DeadlockRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IDeadlockRepository
 {
     // Reading the event files goes through every rollover file system_health keeps.
-    private const int FileReadTimeoutSec = 120;
+    private const int FileReadTimeoutSec = SqlTarget.ExtendedCommandTimeoutSeconds;
 
     internal static readonly string TargetsSql = SqlScripts.Get("Deadlock/Targets");
 

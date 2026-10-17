@@ -60,6 +60,9 @@ public sealed partial class PlanCacheHealthViewModel(IPlanCacheHealthRepository 
     /// <summary>A row to scroll into view: the verdict's Show it selected it.</summary>
     public event Action<object>? ShowRow;
 
+    // The plan cache's largest queries have a longer limit of their own.
+    protected override TimeSpan? LongestQuery => ExtendedQueries;
+
     protected override async Task LoadAsync(CancellationToken cancel)
     {
         // The checks, and at the same time the plans converting implicitly for their tab (#178).

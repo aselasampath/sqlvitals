@@ -1,5 +1,7 @@
 using System.Windows.Controls;
+using System.Windows.Data;
 using Microsoft.Extensions.DependencyInjection;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Repositories;
 
@@ -47,6 +49,9 @@ public sealed class PageFactory(IServiceProvider services, IShellStatus shell, I
         var page = registration.Create(services, args with { Repo = new LifetimeRepository(args.Repo, () => lifetime.Token) });
         page.ViewModel.Connect(tag, shell, scheduler, lifetime);
         page.View.DataContext = page.ViewModel;
+        // Its empty grids and its verdict say "Loading…" until it has read (#117).
+        page.View.SetBinding(LoadingPlaceholder.StateProperty,
+            new Binding(nameof(PageViewModel.LoadState)) { Source = page.ViewModel, Mode = BindingMode.OneWay });
         return page;
     }
 }

@@ -241,7 +241,7 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
     internal const string MinFragField = nameof(MinFragText), MinPagesField = nameof(MinPagesText),
                           ReorganizeField = nameof(ReorganizeText), RebuildField = nameof(RebuildText);
 
-    /// <summary>"12 indexes with ≥ 10% fragmentation and ≥ 1,000 pages · updated 09:41:12", "Loading…", or what's wrong.</summary>
+    /// <summary>"12 indexes with ≥ 10% fragmentation and ≥ 1,000 pages · updated 09:41:12", or what's wrong. The loading bar says it is checking (#117).</summary>
     [ObservableProperty]
     private string _fragmentationStatus = string.Empty;
 
@@ -310,11 +310,14 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
     private bool CanRefreshFragmentation() => !ReadingFragmentation;
 
     // The page's own read is cancelled when the page is left; a failure is said in the status only.
+    // The loading bar says it is checking, and its Stop stops only this read (#117).
     private async Task ReadFragmentationOnItsOwnAsync(double minFrag, long minPages)
     {
+        using var reading = ShowReading("Checking fragmentation", "Fragmentation checked", StopFragmentation);
         try
         {
             await ReadFragmentationAsync(minFrag, minPages, CancellationToken.None);
+            reading.Done();
         }
         catch (Exception ex)
         {
@@ -326,6 +329,15 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
     // Cancels the fragmentation read before: another read of it, or leaving the page.
     private CancellationTokenSource? _fragmentationRead;
 
+    // The loading bar's Stop was pressed on the fragmentation read in progress.
+    private bool _fragmentationStopped;
+
+    private void StopFragmentation()
+    {
+        _fragmentationStopped = true;
+        _fragmentationRead?.Cancel();
+    }
+
     /// <summary>
     /// Reads only the fragmentation: the other tabs don't depend on these criteria, so they keep
     /// their rows. Says how it went in the status, and throws what failed for the caller.
@@ -334,9 +346,9 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
     {
         _fragmentationRead?.Cancel();
         using var read = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-        _fragmentationRead   = read;
-        ReadingFragmentation = true;
-        SetFragmentationStatus("Loading…", isError: false);
+        _fragmentationRead    = read;
+        _fragmentationStopped = false;
+        ReadingFragmentation  = true;
         try
         {
             var rows = (await repo.GetIndexFragmentationAsync(minFrag, minPages, read.Token)).ToList();
@@ -349,6 +361,11 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
                 $"{rows.Count:N0} index{(rows.Count == 1 ? "" : "es")} with ≥ {minFrag:0.##}% fragmentation " +
                 $"and ≥ {minPages:N0} pages · updated {_time.GetLocalNow():HH:mm:ss}",
                 isError: false);
+        }
+        catch (OperationCanceledException) when (_fragmentationStopped && ReferenceEquals(_fragmentationRead, read))
+        {
+            SetFragmentationStatus("Stopped — the grid still shows the previous results.", isError: false);
+            throw;
         }
         catch (Exception ex) when (!read.IsCancellationRequested)
         {

@@ -43,6 +43,7 @@ public partial class MainWindow : Window, IPageHost
         Bar.ViewModel      = shell.TopBar;
         Shell.ViewModel    = shell.Sidebar;
         Switcher.ViewModel = shell.Switcher;
+        Loading.ViewModel  = shell.LoadingBar;
         shell.Attach(this);
         shell.PropertyChanged += OnShellChanged;
 

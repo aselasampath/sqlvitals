@@ -28,7 +28,12 @@ public sealed class PageShell : Decorator
 
     public static readonly DependencyProperty VerdictProperty =
         DependencyProperty.Register(nameof(Verdict), typeof(PageVerdict), typeof(PageShell),
-            new PropertyMetadata(null, (d, e) => ((PageShell)d).VerdictView.Show((PageVerdict?)e.NewValue)));
+            new PropertyMetadata(null, (d, e) =>
+            {
+                var shell = (PageShell)d;
+                shell.VerdictView.Show((PageVerdict?)e.NewValue);
+                shell.ShowPlaceholder();
+            }));
 
     private readonly TextBlock   _title   = new() { Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, FontSize = 20 };
     // A ContentControl, not a ContentPresenter: the page's buttons are its logical children from the
@@ -36,6 +41,13 @@ public sealed class PageShell : Decorator
     private readonly ContentControl _actions = new() { VerticalAlignment = VerticalAlignment.Center, Focusable = false, IsTabStop = false };
     private readonly StackPanel  _sections = new();
     private readonly Border      _detail  = new();
+    // Where the verdict will be, until the page has read (#117): "Loading…", or why nothing was read.
+    private readonly Border      _placeholder = new()
+    {
+        CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Padding = new Thickness(14, 12, 14, 12),
+        Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed,
+    };
+    private readonly TextBlock   _placeholderText = new() { FontSize = 13, TextWrapping = TextWrapping.Wrap };
     private ISectionFolds? _folds;
     private string _pageKey = string.Empty;
 
@@ -52,16 +64,23 @@ public sealed class PageShell : Decorator
         VerdictView = new VerdictView();
         VerdictView.FoldChanged += folded => Remember(VerdictKey, folded);
 
+        _placeholder.SetResourceReference(Border.BackgroundProperty, "BgCard");
+        _placeholder.SetResourceReference(Border.BorderBrushProperty, "Border");
+        _placeholderText.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
+        _placeholder.Child = _placeholderText;
+
         var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(VerdictView, 1);
+        Grid.SetRow(_placeholder, 1);
         Grid.SetRow(_sections, 2);
         Grid.SetRow(_detail, 3);
         grid.Children.Add(header);
         grid.Children.Add(VerdictView);
+        grid.Children.Add(_placeholder);
         grid.Children.Add(_sections);
         grid.Children.Add(_detail);
         Child = grid;
@@ -121,6 +140,17 @@ public sealed class PageShell : Decorator
     }
 
     public VerdictView VerdictView { get; }
+
+    /// <summary>What the verdict's place says before the page has read; empty once it has, or once it has a verdict.</summary>
+    internal string PlaceholderText => _placeholder.Visibility == Visibility.Visible ? _placeholderText.Text : string.Empty;
+
+    // Before the page has read anything (#117): there is no verdict yet, so its place says why.
+    internal void ShowPlaceholder()
+    {
+        var text = Verdict is null ? LoadingPlaceholder.VerdictText(LoadingPlaceholder.GetState(this)) : null;
+        _placeholderText.Text   = text ?? string.Empty;
+        _placeholder.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     private void Sections_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {

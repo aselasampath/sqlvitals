@@ -160,6 +160,8 @@ public sealed class QueryStoreViewModelTests : IDisposable
         await model.TabLoaded;
         Assert.Equal("Error: Timeout expired.", model.VariationStatus);
         Assert.DoesNotContain(_shell.Reports, r => r.StartsWith("Error", StringComparison.Ordinal));   // the page read
+        // The loading bar went, without "read" (#117).
+        Assert.Equal("Reading High Variation ended", _shell.Readings[^1]);
 
         fail = false;
         model.SelectedTab = (int)QueryStoreViewModel.Tab.Top;
@@ -184,6 +186,8 @@ public sealed class QueryStoreViewModelTests : IDisposable
         model.SelectedTab = (int)QueryStoreViewModel.Tab.Forced;
         await model.TabLoaded;
         Assert.Equal(1, Reads());
+        // Within the page's read, the bar shows the page; opened on its own, the tab (#117).
+        Assert.Equal(["Load", "Load done", "Reading Forced Plans", "Reading Forced Plans done"], _shell.Readings);
         Assert.Equal("1 forced plan as they are now, 1 failing · executions and avg duration for last 24 hours", model.ForcedStatus);
         Assert.True(model.ShowsHints);
         Assert.Single(model.HintRows);
@@ -192,6 +196,37 @@ public sealed class QueryStoreViewModelTests : IDisposable
         await model.TabLoaded;
         Assert.Equal(2, Reads());   // the tab on screen, at once
         Assert.Equal("Last hour", model.PeriodLabel);
+    }
+
+    // Code review: Stop on a tab read on its own cancelled the whole page; now it cancels that tab's read alone.
+    [Fact]
+    public async Task StoppingATabsRead_StopsThatReadAlone_AndTheTabIsReadAgainWhenOpened()
+    {
+        var repo    = Repo();
+        var read    = repo.GetQueryStoreForcedPlansAsync!;
+        var pending = new TaskCompletionSource<QueryStoreForcedPlans>();
+        repo.GetQueryStoreForcedPlansAsync = p => pending is { } gate ? gate.Task : read(p);
+        var model = Connected(repo);
+        await Opened(model);
+
+        model.SelectedTab = (int)QueryStoreViewModel.Tab.Forced;
+        var token = repo.Tokens[nameof(FakeRepository.GetQueryStoreForcedPlansAsync)];
+        Assert.Equal("Reading Forced Plans", _shell.Readings[^1]);
+        _shell.Stops[^1]!();
+        Assert.True(token.IsCancellationRequested);
+        pending.SetCanceled(token);
+        await model.TabLoaded;
+
+        Assert.Equal("Reading Forced Plans ended", _shell.Readings[^1]);
+        Assert.DoesNotContain(_shell.Reports, r => r.StartsWith("Error", StringComparison.Ordinal));
+        Assert.Empty(model.ForcedRows);
+
+        // Opened again, it reads again.
+        pending = null!;
+        model.SelectedTab = (int)QueryStoreViewModel.Tab.Top;
+        model.SelectedTab = (int)QueryStoreViewModel.Tab.Forced;
+        await model.TabLoaded;
+        Assert.Single(model.ForcedRows);
     }
 
     [Fact]

@@ -71,6 +71,9 @@ public sealed partial class ResourceQueriesViewModel(IResourceQueryRepository re
     private bool _focused;
     private DateTime? _cpuSinceUtc;
 
+    // The plan cache's queries have a longer limit of their own.
+    protected override TimeSpan? LongestQuery => ExtendedQueries;
+
     protected override async Task LoadAsync(CancellationToken cancel)
     {
         _read = true;

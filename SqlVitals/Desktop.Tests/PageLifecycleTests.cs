@@ -30,6 +30,10 @@ public sealed class PageLifecycleTests
             set => base.RefreshInterval = value;
         }
 
+        public void ShowCountdown() => ShowsCountdown = true;
+
+        public IReading ShowPart(string doing, Action stop) => ShowReading(doing, doing + " read", stop);
+
         protected override async Task LoadAsync(CancellationToken cancel)
         {
             Loads++;
@@ -40,10 +44,10 @@ public sealed class PageLifecycleTests
         }
     }
 
-    private TestViewModel Connected(IRefreshScheduler? scheduler = null)
+    private TestViewModel Connected(IRefreshScheduler? scheduler = null, PageLifetime? lifetime = null)
     {
         var model = new TestViewModel();
-        model.Connect("Test", _shell, scheduler ?? new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
+        model.Connect("Test", _shell, scheduler ?? new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()), lifetime);
         return model;
     }
 
@@ -58,7 +62,8 @@ public sealed class PageLifecycleTests
         var first  = model.RefreshAsync();
         Assert.True(model.IsBusy);
         Assert.False(model.RefreshCommand.CanExecute(null));
-        Assert.Equal("Refreshing…", model.Status);
+        // The loading bar says it is refreshing (#117), not the page.
+        Assert.Null(model.Status);
 
         var second = model.RefreshAsync();
         var third  = model.RefreshCommand.ExecuteAsync(null);
@@ -85,11 +90,13 @@ public sealed class PageLifecycleTests
         model.Gate = new TaskCompletionSource();
 
         var opening = model.OnNavigatedToAsync();
-        Assert.Equal("Loading…", model.Status);
+        Assert.Null(model.Status);
+        Assert.Equal(["Load"], _shell.Readings);
         model.Gate.SetResult();
         await opening;
 
         Assert.Equal(["Read Load"], _shell.Reports);
+        Assert.Equal(["Load", "Load done"], _shell.Readings);
         Assert.Same(model, _shell.From.Single());
         Assert.Equal("Test", model.Tag);
     }
@@ -156,6 +163,177 @@ public sealed class PageLifecycleTests
         await model.RefreshAsync();
         Assert.Equal("Read Refresh", _shell.Reports[^1]);
         Assert.Null(model.Status);
+    }
+
+    // ── The loading bar (#117) ───────────────────────────────────────────
+
+    [Fact]
+    public async Task UntilItHasRead_ItsGridsSayLoading_AndAFailureOrTheNextReadDoesnt()
+    {
+        var model = Connected();
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+
+        model.Gate = new TaskCompletionSource();
+        var opening = model.OnNavigatedToAsync();
+        Assert.Equal(PageLoadState.Loading, model.LoadState);
+        model.Read = () => throw new InvalidOperationException("Timeout expired.");
+        model.Gate.SetResult();
+        await opening;
+        // Failed: the verdict says why, and an empty grid says nothing more.
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+
+        // Refresh tries again: "Loading…" again meanwhile, as nothing has been read yet.
+        model.Gate = new TaskCompletionSource();
+        model.Read = () => { };
+        var refreshing = model.RefreshAsync();
+        Assert.Equal(PageLoadState.Loading, model.LoadState);
+        model.Gate.SetResult();
+        await refreshing;
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+
+        // Once read, a Refresh keeps what is on screen.
+        model.Gate = new TaskCompletionSource();
+        refreshing = model.RefreshAsync();
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+        model.Gate.SetResult();
+        await refreshing;
+    }
+
+    [Fact]
+    public async Task Stop_CancelsTheRead_AndEveryOtherOfThePage_KeepsWhatItShows_AndReportsNoError()
+    {
+        using var lifetime = new PageLifetime();
+        var model = Connected(lifetime: lifetime);
+        model.Read = () => model.Verdict = new PageVerdict(VerdictLevel.Ok, "Nothing wrong");
+        await model.OnNavigatedToAsync();
+        var verdict = model.Verdict;
+
+        model.Gate = new TaskCompletionSource();
+        var refreshing = model.RefreshAsync();
+        var otherRead  = lifetime.Token;
+        _shell.Stops[^1]!();
+        await refreshing;
+
+        Assert.True(model.LastToken.IsCancellationRequested);
+        // A read of the page's own beside it (a tab, its code-behind's) stops too, and it can read again.
+        Assert.True(otherRead.IsCancellationRequested);
+        Assert.False(lifetime.Token.IsCancellationRequested);
+        Assert.Equal(["Read Load"], _shell.Reports);
+        Assert.Equal(["Load", "Load done", "Refresh", "Refresh ended"], _shell.Readings);
+        Assert.Same(verdict, model.Verdict);
+        Assert.Null(model.Status);
+        Assert.False(model.IsBusy);
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+
+        // Refresh reads again.
+        model.Gate = null;
+        await model.RefreshAsync();
+        Assert.Equal("Read Refresh", _shell.Reports[^1]);
+    }
+
+    [Fact]
+    public async Task AFirstLoadStopped_HasReadNothing_UntilRefreshReads()
+    {
+        var model = Connected();
+        model.Gate = new TaskCompletionSource();
+        var opening = model.OnNavigatedToAsync();
+        model.StopReading();
+        await opening;
+
+        Assert.Equal(PageLoadState.Stopped, model.LoadState);
+        Assert.Null(model.Verdict);
+        Assert.Empty(_shell.Reports);
+
+        model.Gate = null;
+        await model.RefreshAsync();
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+    }
+
+    // Code review: Query Store's tab read swallows the cancellation and returns, which counted as read.
+    [Fact]
+    public async Task AReadThatReturns_AfterStop_IsStoppedAllTheSame()
+    {
+        var model = Connected();
+        model.Gate = new TaskCompletionSource();
+        model.ListensToToken = false;
+        var opening = model.OnNavigatedToAsync();
+        model.StopReading();
+        model.Gate.SetResult();
+        await opening;
+
+        Assert.Empty(_shell.Reports);
+        Assert.Equal(["Load", "Load ended"], _shell.Readings);
+        Assert.Equal(PageLoadState.Stopped, model.LoadState);
+    }
+
+    // Code review: a failed first read left every timed read after it saying "Loading…" again.
+    [Fact]
+    public async Task AfterAFailedFirstRead_ATimedReadDoesntSayLoading()
+    {
+        var time  = new FakeTimeProviderAt();
+        var ui    = new FakeUiDispatcher();
+        var model = Connected(new RefreshScheduler(time, ui));
+        model.RefreshInterval = Interval;
+        model.Read = () => throw new InvalidOperationException("Timeout expired.");
+        await model.OnNavigatedToAsync();
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+
+        model.Gate = new TaskCompletionSource();
+        time.Advance(Interval);
+        ui.RunPosted();
+        Assert.True(model.IsBusy);
+        Assert.Equal(PageLoadState.Ready, model.LoadState);
+        model.Gate.SetResult();
+        await WhenIdle(model);
+    }
+
+    [Fact]
+    public async Task ATimedRead_ShowsNoBar_ItsCountdownSaysItIsReading_AndRefreshShowsTheBarFromThen()
+    {
+        var time  = new FakeTimeProviderAt();
+        var ui    = new FakeUiDispatcher();
+        var model = Connected(new RefreshScheduler(time, ui));
+        model.RefreshInterval = Interval;
+        model.ShowCountdown();
+        await model.OnNavigatedToAsync();
+        Assert.Equal("30s", model.Countdown);
+
+        model.Gate = new TaskCompletionSource();
+        time.Advance(Interval);
+        ui.RunPosted();
+        Assert.True(model.IsBusy);
+        Assert.Equal(PageViewModel.ReadingNow, model.Countdown);
+        Assert.Equal(["Load", "Load done"], _shell.Readings);
+
+        // The countdown's own tick doesn't take ⟳ away while it reads.
+        time.Advance(TimeSpan.FromSeconds(1));
+        ui.RunPosted();
+        Assert.Equal(PageViewModel.ReadingNow, model.Countdown);
+
+        // Refresh waits for it, and the bar shows it from now on, Stop included.
+        var refreshing = model.RefreshAsync();
+        Assert.Equal(["Load", "Load done", "Refresh"], _shell.Readings);
+        Assert.NotNull(_shell.Stops[^1]);
+        model.Gate.SetResult();
+        await refreshing;
+        Assert.Equal(["Load", "Load done", "Refresh", "Refresh done"], _shell.Readings);
+        Assert.Equal(["Read Load", "Read Refresh"], _shell.Reports);
+        Assert.Equal("29s", model.Countdown);
+    }
+
+    [Fact]
+    public async Task APartReadOnItsOwn_IsShownWithItsOwnWords_AndStopsWhatItIsGiven()
+    {
+        var model   = Connected();
+        var stopped = false;
+        using (var reading = model.ShowPart("Checking fragmentation", () => stopped = true))
+        {
+            Assert.Equal(["Checking fragmentation"], _shell.Readings);
+            _shell.Stops[^1]!();
+            Assert.True(stopped);
+            reading.Done();
+        }
+        Assert.Equal(["Checking fragmentation", "Checking fragmentation done"], _shell.Readings);
     }
 
     // ── Timed refresh, paused and resumed ────────────────────────────────

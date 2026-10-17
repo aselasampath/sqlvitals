@@ -8,6 +8,7 @@ using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Loading;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
 
@@ -41,7 +42,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public ShellViewModel(IPageFactory pages, IDialogService dialogs, ConnectionSettingsService settings, MonitoringManager monitoring,
                           ChatNotificationService chat, IRepositoryFactory repositories, CollectorLink collectors,
-                          IWatchStarter starter, IUiDispatcher ui)
+                          IWatchStarter starter, IUiDispatcher ui, TimeProvider time, IRefreshScheduler scheduler)
     {
         _pages        = pages;
         _dialogs      = dialogs;
@@ -52,6 +53,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _collectors   = collectors;
         _starter      = starter;
         _ui           = ui;
+        LoadingBar    = new LoadingBarViewModel(time, scheduler);
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         Sidebar.Version = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
@@ -71,6 +73,7 @@ public sealed partial class ShellViewModel : ObservableObject
         TopBar.SidebarRequested  += Sidebar.ToggleFromBar;
         TopBar.JumpRequested     += OpenSwitcher;
         TopBar.FocusRequested    += ToggleFocus;
+        LoadingBar.Stopped       += OnReadStopped;
 
         // A page opened as a new visit from the sidebar: on the server whose pages are shown, switching to it if need be.
         Sidebar.PageRequested          += async tag => await Reported(NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar), "open the page");
@@ -101,6 +104,9 @@ public sealed partial class ShellViewModel : ObservableObject
     public SidebarViewModel Sidebar { get; } = new();
 
     public QuickSwitcherViewModel Switcher { get; } = new();
+
+    /// <summary>The loading bar over the top of the page area (#117).</summary>
+    public LoadingBarViewModel LoadingBar { get; }
 
     /// <summary>The window, which shows the pages; until then, nothing is shown.</summary>
     public void Attach(IPageHost host) => _host = host;
@@ -140,6 +146,9 @@ public sealed partial class ShellViewModel : ObservableObject
     private IWaitStatsRepository? _repo;
 
     private bool _isConnectionConfigured;
+
+    // Each query's time limit on the active connection (Settings → Command timeout), for the loading bar (#117).
+    private int _commandTimeoutSeconds = SqlTarget.DefaultCommandTimeoutSeconds;
 
     // The shell's own reads of the active connection (its edition); a switch cancels them (#167).
     // A page's reads end with the page (PageLifetime).
@@ -288,6 +297,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
         var target = _repositories.TargetFor(active, commandTimeoutSeconds);
         _isConnectionConfigured = !string.IsNullOrWhiteSpace(target.ConnectionString);
+        _commandTimeoutSeconds  = target.CommandTimeoutSeconds;
         return _repositories.Create(target);
     }
 
@@ -318,6 +328,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         // Anything still loading was queried against the previous database.
         _loadVersion++;
+        LoadingBar.Clear();
         _model?.OnNavigatedFrom();
         var stopped = _connectionWork;
         _connectionWork = new CancellationTokenSource();
@@ -429,12 +440,46 @@ public sealed partial class ShellViewModel : ObservableObject
         _activeIsAzureSql = false;
         if (_isConnectionConfigured)
         {
+            // The first query on a server connects to it: the loading bar says so (#117).
+            using var connecting = LoadingBar.Begin(Connecting(), stop: null, dims: false);
             var cancel = _connectionWork.Token;
-            try { _activeIsAzureSql = await Repo.IsAzureSqlDatabaseAsync(cancel); }
+            try
+            {
+                _activeIsAzureSql = await Repo.IsAzureSqlDatabaseAsync(cancel);
+                connecting.Done();
+            }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested) { return; /* switched meanwhile: the new server's check decides */ }
             catch { /* Edition check failed (e.g. server unreachable): leave the pages enabled. */ }
         }
         ApplyPagesAzureSqlLacks();
+    }
+
+    // "Connecting to Sales-Prod…": until the timeout its connection string has. With Entra MFA a
+    // Microsoft sign-in may be waiting for the user, which no timeout limits. A connection from
+    // appsettings.json only is "the server".
+    private Wait Connecting()
+    {
+        if (Item(_activeConnectionId)?.Settings is not { } connection)
+            return new Wait("Connecting to the server", "Connected");
+        var name = connection.DisplayName;
+        if (connection.Authentication == SqlAuthMode.EntraMfa)
+            return new Wait($"Connecting to {name}", $"Connected to {name}", Note: "complete the Microsoft sign-in if prompted");
+        return new Wait($"Connecting to {name}", $"Connected to {name}", ConnectLimit(connection));
+    }
+
+    // What SqlClient waits for the server: the connection string's timeout, its additional
+    // parameters included; unknown when the string can't be read.
+    private static WaitLimit? ConnectLimit(ConnectionSettings connection)
+    {
+        try
+        {
+            var seconds = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connection.ConnectionString).ConnectTimeout;
+            return seconds > 0 ? new WaitLimit(TimeSpan.FromSeconds(seconds), WaitLimitKind.Whole) : null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 
     // ── Saved servers and their health ───────────────────────────────────────
@@ -787,6 +832,44 @@ public sealed partial class ShellViewModel : ObservableObject
                 "Data Error");
     }
 
+    /// <summary>
+    /// The page on screen began to read something the user waits on: the loading bar shows it
+    /// (#117). Timed reads, and reads of a page no longer on screen, show nothing.
+    /// </summary>
+    public IReading BeginReading(object page, ReadingRequest request)
+    {
+        if (request.Read == PageRead.Timed || !IsOnScreen(page) || _model is SettingsViewModel)
+            return NoReading.Instance;
+
+        var name   = PageName(_history.Current?.Tag) ?? "the page";
+        var ofPage = request.Doing is null;
+        var doing  = request.Doing ?? (request.Read == PageRead.Load ? $"Loading {name}" : $"Refreshing {name}");
+        var done   = request.Done ?? (ofPage ? $"{name} loaded" : null);
+        var wait   = new Wait(doing, done, QueryLimit(request.LongestQuery));
+        // A Refresh of the page dims what it shows until the new rows arrive; a part read on its own doesn't.
+        return LoadingBar.Begin(wait, request.Stop, dims: ofPage && request.Read == PageRead.Refresh, ofPage);
+    }
+
+    // "each query gives up after 30 s (Settings → Command timeout)", or at most a read's own longer limit.
+    private WaitLimit QueryLimit(TimeSpan? longestQuery)
+    {
+        var command = TimeSpan.FromSeconds(_commandTimeoutSeconds);
+        return longestQuery is { } longest
+            ? new WaitLimit(longest > command ? longest : command, WaitLimitKind.EachQueryAtMost)
+            : new WaitLimit(command, WaitLimitKind.EachQuery, "Settings → Command timeout");
+    }
+
+    // Stop on the loading bar ended a read: what is on screen stays, the top bar says so, and a live
+    // page whose own read it was pauses, so the same slow read doesn't start again a few seconds later.
+    private void OnReadStopped(LoadingBarViewModel.StoppedWait stopped)
+    {
+        var after = LoadingIndicator.Waited(stopped.Waited);
+        AppLog.Info($"{_history.Current?.Tag}: \"{stopped.Wait.Doing}\" stopped from the loading bar after {after}");
+        TopBar.ShowMessage($"Stopped after {after}. Refresh to read again.");
+        if (stopped.OfPage && _shown?.Context is { CanPause: true, IsPaused: false })
+            PausePage(true);
+    }
+
     /// <summary>The page's kind, window or pause changed.</summary>
     public void ShowContextOf(object page)
     {
@@ -1048,8 +1131,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
         // The view model reports how it went (ShowRead, ShowError), and never throws.
         var version = _loadVersion;
+        // The loading bar says it is refreshing (#117); what went wrong last time no longer stands.
         TopBar.CanRefresh = false;
-        TopBar.ShowMessage("Refreshing…");
+        TopBar.ShowMessage(null);
         await model.RefreshCommand.ExecuteAsync(null);
         if (version == _loadVersion)
             TopBar.CanRefresh = true;
@@ -1222,6 +1306,8 @@ public sealed partial class ShellViewModel : ObservableObject
             return;
 
         var version = ++_loadVersion;
+        // The page left was cancelled: its loading bar goes, and the new page's shows (#117).
+        LoadingBar.Clear();
         _model?.OnNavigatedFrom();
         _model = null;
         var tag = route.Tag;
@@ -1305,7 +1391,6 @@ public sealed partial class ShellViewModel : ObservableObject
         // The view model loads it and reports how it went (ShowRead, ShowError): once the user has
         // moved on (another page or another database) it was cancelled, and says nothing.
         TopBar.CanRefresh = false;
-        TopBar.ShowMessage("Loading…");
         await model.OnNavigatedToAsync();
         if (version == _loadVersion)
         {

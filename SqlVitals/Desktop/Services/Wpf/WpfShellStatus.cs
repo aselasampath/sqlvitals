@@ -27,4 +27,7 @@ internal sealed class WpfShellStatus(Func<ShellViewModel?> window, ILogger<WpfSh
     }
 
     public void ReportContextChanged(object page) => window()?.ShowContextOf(page);
+
+    public IReading ReportReading(object page, ReadingRequest request) =>
+        window()?.BeginReading(page, request) ?? NoReading.Instance;
 }

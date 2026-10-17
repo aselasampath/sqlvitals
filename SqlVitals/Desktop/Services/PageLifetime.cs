@@ -26,5 +26,12 @@ public sealed class PageLifetime : IDisposable
     /// <summary>The page was left: whatever it is reading stops.</summary>
     public void End() => _current.Cancel();
 
+    /// <summary>The loading bar's Stop (#117): whatever the page is reading stops, and it may read again.</summary>
+    public void Restart()
+    {
+        End();
+        Begin();
+    }
+
     public void Dispose() => _current.Dispose();
 }

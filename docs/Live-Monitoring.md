@@ -97,7 +97,7 @@ Special cases:
 
 ### Grid view
 
-Press **Grid** to see one row per session, **grouped by [login](Glossary.md)**, so you can see at once which login has the most sessions, the blocked ones, or the heaviest load. It's the same snapshot as the map: switching doesn't query the server again, and **Auto-refresh**, the interval and the countdown drive both views.
+Press **Grid** to see one row per session, **grouped by [login](Glossary.md)**, so you can see at once which login has the most sessions, the blocked ones, or the heaviest load. It's the same snapshot as the map: switching doesn't query the server again, and **Auto-refresh**, the interval and the countdown drive both views. From 0.80.0 the countdown shows **⟳** while it reads; an auto-refresh shows no loading bar.
 
 **The group header** shows the login and a summary of its sessions, for example:
 

@@ -25,9 +25,24 @@
             <controls:FocusBannerView x:Name="FocusBar" DockPanel.Dock="Top" />
             <!-- The page, and the selected row's details beside it or over it (#147). -->
             <controls:DrawerHost x:Name="Details">
-                <Frame x:Name="MainFrame"
-                       NavigationUIVisibility="Hidden"
-                       Background="{DynamicResource BgDeep}" />
+                <Grid>
+                    <!-- Dimmed while a Refresh reads what it shows again (#117). -->
+                    <Frame x:Name="MainFrame"
+                           NavigationUIVisibility="Hidden"
+                           Background="{DynamicResource BgDeep}">
+                        <Frame.Style>
+                            <Style TargetType="Frame">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding LoadingBar.DimsPage}" Value="True">
+                                        <Setter Property="Opacity" Value="0.6" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Frame.Style>
+                    </Frame>
+                    <!-- What SqlVitals is waiting on, over the top of the page (#117). -->
+                    <controls:LoadingBar x:Name="Loading" Panel.ZIndex="10" />
+                </Grid>
             </controls:DrawerHost>
         </DockPanel>
 

@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Services.Wpf;
 using SqlVitals.Desktop.Tests.Fakes;
@@ -8,6 +9,7 @@ using SqlVitals.Desktop.ViewModels.Shell;
 using SqlVitals.Engine.ChatNotifications;
 using SqlVitals.Engine.Errors;
 using SqlVitals.Engine.History;
+using SqlVitals.Engine.Loading;
 using SqlVitals.Engine.Repositories;
 
 namespace SqlVitals.Desktop.Tests;
@@ -23,6 +25,7 @@ public sealed class ShellViewModelTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
     private readonly FakeUiDispatcher _ui = new();
+    private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 10, 17, 9, 0, 0, TimeSpan.Zero));
     private readonly FakeDialogService _dialogs = new();
     private readonly FakePageHost _host = new();
     private readonly Repositories _repositories = new();
@@ -64,7 +67,7 @@ public sealed class ShellViewModelTests : IDisposable
         _shell = new ShellViewModel(_pages, _dialogs, _settings, monitoring,
                                     new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }),
                                     _repositories, new CollectorLink(new FakeCollectorControl(_dir), _settings, _ui, TimeProvider.System),
-                                    new DirectWatchStarter(monitoring), _ui);
+                                    new DirectWatchStarter(monitoring), _ui, _time, new RefreshScheduler(_time, _ui));
         _shell.Attach(_host);
         _shell.Start(windowWidth: 1320);
         UiThread.Wait(_shell.OpenFirstPageAsync());
@@ -72,6 +75,18 @@ public sealed class ShellViewModelTests : IDisposable
     }
 
     private string Breadcrumb => _shell!.TopBar.BreadcrumbText;
+
+    // What every page made from now on waits for before it has read; null reads at once.
+    private TaskCompletionSource? _gate;
+
+    // The clock moves on, and what fell due on it runs.
+    private void Step(TimeSpan time)
+    {
+        _time.Advance(time);
+        _ui.RunPosted();
+    }
+
+    private void Step(double seconds) => Step(TimeSpan.FromSeconds(seconds));
 
     private StubPage Page => (StubPage)_shell!.CurrentPage!;
 
@@ -225,7 +240,7 @@ public sealed class ShellViewModelTests : IDisposable
         var shell = new ShellViewModel(new PageFactory(this), _dialogs, _settings, monitoring,
                                        new ChatNotificationService(new HttpWebhookSender(), "DBA-PC01", _ => { }),
                                        _repositories, new CollectorLink(new FakeCollectorControl(_dir), _settings, _ui, TimeProvider.System),
-                                       new DirectWatchStarter(monitoring), _ui);
+                                       new DirectWatchStarter(monitoring), _ui, _time, new RefreshScheduler(_time, _ui));
 
         Assert.False(shell.IsAttached);
         Assert.Throws<InvalidOperationException>(() => shell.Repo);
@@ -273,7 +288,14 @@ public sealed class ShellViewModelTests : IDisposable
 
         shell.TopBar.RefreshCommand.Execute(null);
         Assert.False(shell.TopBar.CanRefresh);
-        Assert.Equal("Refreshing…", shell.TopBar.Message);
+        // The loading bar says it is refreshing (#117), once it has taken long enough to say.
+        Assert.Equal(string.Empty, shell.TopBar.Message);
+        Assert.False(shell.LoadingBar.IsShown);
+        Step(LoadingIndicator.ShowAfter);
+        Assert.True(shell.LoadingBar.IsShown);
+        Assert.Equal("Refreshing Processes…", shell.LoadingBar.Text);
+        Assert.True(shell.LoadingBar.CanStop);
+        Assert.True(shell.LoadingBar.DimsPage);
 
         page.Gate.SetResult();
         UiThread.WaitUntil(() => shell.TopBar.CanRefresh);
@@ -281,6 +303,135 @@ public sealed class ShellViewModelTests : IDisposable
         Assert.Equal(string.Empty, shell.TopBar.Message);
         Assert.Equal(PageKind.Snapshot, shell.TopBar.Freshness!.Kind);
         Assert.NotNull(shell.TopBar.Freshness.Taken);
+        Assert.Equal("Processes loaded", shell.LoadingBar.Announcement);
+        // Shown, it stays its shortest time, without Stop, and the new rows aren't dimmed.
+        Assert.False(shell.LoadingBar.CanStop);
+        Assert.False(shell.LoadingBar.DimsPage);
+        Step(LoadingIndicator.ShownAtLeast);
+        Assert.False(shell.LoadingBar.IsShown);
+    });
+
+    // ── The loading bar (#117) ───────────────────────────────────────────
+
+    [Fact]
+    public void AnotherPageOpened_DuringASlowLoad_TakesTheBar_AndTheOldLoadEndingChangesNothing() => OnDispatcher.Run(() =>
+    {
+        var shell = Started(_a);
+        _gate = new TaskCompletionSource();
+        var opening = shell.OpenPageAsync("Backups");
+        Step(TimeSpan.FromSeconds(4));
+        Assert.Equal("Loading Backups… 4 s", shell.LoadingBar.Text);
+        Assert.Equal("Loading Backups", shell.LoadingBar.Announcement);
+        var backups = Page;
+
+        _gate = null;
+        UiThread.Wait(shell.OpenPageAsync("Waits"));
+        UiThread.Wait(opening);
+        // Backups was cancelled and its bar went at once; Waits read straight away and showed none.
+        Assert.True(backups.Cancelled);
+        Assert.False(shell.LoadingBar.IsShown);
+
+        var waits = Page;
+        waits.Gate = new TaskCompletionSource();
+        var refreshing = waits.RefreshAsync();
+        Step(LoadingIndicator.ShowAfter);
+        Assert.Equal("Refreshing Waits…", shell.LoadingBar.Text);
+        // A late report from the page left doesn't touch it.
+        shell.ShowRead(backups, PageRead.Load);
+        Assert.Equal("Refreshing Waits…", shell.LoadingBar.Text);
+        waits.Gate.SetResult();
+        UiThread.Wait(refreshing);
+    });
+
+    [Fact]
+    public void After10Seconds_TheBarSaysWhenEachQueryGivesUp_FromTheSettings() => OnDispatcher.Run(() =>
+    {
+        var shell = Started(_a);
+        _gate = new TaskCompletionSource();
+        var opening = shell.OpenPageAsync("Backups");
+
+        Step(TimeSpan.FromSeconds(12));
+        Assert.Equal("Loading Backups… 12 s · each query gives up after 30 s (Settings → Command timeout)", shell.LoadingBar.Text);
+        _gate.SetResult();
+        UiThread.Wait(opening);
+    });
+
+    [Fact]
+    public void Stop_CancelsTheRead_KeepsThePage_SaysSo_AndPausesALivePage() => OnDispatcher.Run(() =>
+    {
+        _host.Context = new FakePageContext { Kind = PageKind.Live, CanPause = true };
+        var shell = Started(_a);
+        UiThread.Wait(shell.OpenPageAsync("Processes"));
+        var page = Page;
+        page.Gate = new TaskCompletionSource();
+
+        var refreshing = page.RefreshAsync();
+        Step(TimeSpan.FromSeconds(14));
+        shell.LoadingBar.StopCommand.Execute(null);
+        UiThread.Wait(refreshing);
+
+        Assert.True(page.Cancelled);
+        Assert.Same(page, shell.CurrentPage);
+        Assert.Equal("Stopped after 14 s. Refresh to read again.", shell.TopBar.Message);
+        Assert.False(shell.TopBar.MessageIsError);
+        Assert.Empty(_dialogs.Shown);
+        Assert.True(_host.Context.IsPaused);
+        Assert.True(shell.TopBar.IsPaused);
+        Assert.Equal(PageLoadState.Ready, page.LoadState);
+    });
+
+    // Code review: Stop on a part of the page paused the whole live page.
+    [Fact]
+    public void Stop_OnAPartReadOnItsOwn_StopsOnlyThat_AndTheLivePageCarriesOn() => OnDispatcher.Run(() =>
+    {
+        _host.Context = new FakePageContext { Kind = PageKind.Live, CanPause = true };
+        var shell = Started(_a);
+        UiThread.Wait(shell.OpenPageAsync("Processes"));
+        var stopped = 0;
+        using var part = Page.Part("Reading the queries waiting on Lock", () => stopped++);
+
+        Step(2);
+        Assert.Equal("Reading the queries waiting on Lock…", shell.LoadingBar.Text);
+        shell.LoadingBar.StopCommand.Execute(null);
+        part.Dispose();
+
+        Assert.Equal(1, stopped);
+        Assert.Equal("Stopped after 2 s. Refresh to read again.", shell.TopBar.Message);
+        Assert.False(_host.Context.IsPaused);
+    });
+
+    [Fact]
+    public void ConnectingWithEntraMfa_AsksForTheSignIn_WithoutALimit() => OnDispatcher.Run(() =>
+    {
+        var mfa = Conn("prod-c", "PROD-C");
+        mfa.Authentication = SqlAuthMode.EntraMfa;
+        mfa.UserName = "dba@example.com";
+        var shell = Started(_a, mfa);
+        _repositories.EditionGate = new TaskCompletionSource();
+
+        var opening = shell.OpenPageAsync("Processes", mfa.Id);
+        Step(12);
+        Assert.Equal("Connecting to PROD-C… 12 s · complete the Microsoft sign-in if prompted", shell.LoadingBar.Text);
+
+        _repositories.EditionGate.SetResult();
+        UiThread.Wait(opening);
+    });
+
+    [Fact]
+    public void SwitchingServer_SaysItIsConnecting_UntilTheServerAnswers() => OnDispatcher.Run(() =>
+    {
+        var shell = Started(_a, _b);
+        _repositories.EditionGate = new TaskCompletionSource();
+
+        var opening = shell.OpenPageAsync("Processes", _b.Id);
+        Step(TimeSpan.FromSeconds(11));
+        Assert.Equal("Connecting to PROD-B… 11 s · gives up after 30 s", shell.LoadingBar.Text);
+        Assert.False(shell.LoadingBar.CanStop);
+
+        _repositories.EditionGate.SetResult();
+        UiThread.Wait(opening);
+        Assert.Equal("Processes", shell.Current!.Tag);
+        Assert.False(shell.LoadingBar.IsShown);
     });
 
     [Fact]
@@ -420,12 +571,26 @@ public sealed class ShellViewModelTests : IDisposable
         public int Loads;
         public object? Kept, Restored;
         public TaskCompletionSource? Gate;
+        public bool Cancelled;
 
-        protected override Task LoadAsync(CancellationToken cancel)
+        protected override async Task LoadAsync(CancellationToken cancel)
         {
             Loads++;
-            return Gate?.Task ?? Task.CompletedTask;
+            if (Gate is not { } gate)
+                return;
+            try
+            {
+                await gate.Task.WaitAsync(cancel);
+            }
+            catch (OperationCanceledException)
+            {
+                Cancelled = true;
+                throw;
+            }
         }
+
+        /// <summary>A part of the page read on its own, as Query Store's tabs are.</summary>
+        public IReading Part(string doing, Action stop) => ShowReading(doing, doing + " read", stop);
 
         public override object? SaveState() => Kept;
 
@@ -445,7 +610,7 @@ public sealed class ShellViewModelTests : IDisposable
         public PageInstance Create(string tag, PageArgs args)
         {
             Made.Add(args);
-            var model = new StubPage();
+            var model = new StubPage { Gate = test._gate };
             model.Connect(tag, new WpfShellStatus(() => test._shell, NullLogger<WpfShellStatus>.Instance),
                           new RefreshScheduler(TimeProvider.System, test._ui));
             return new PageInstance(null!, model);
@@ -457,6 +622,9 @@ public sealed class ShellViewModelTests : IDisposable
     {
         public HashSet<string> Azure { get; } = [];
 
+        /// <summary>What the edition check waits for, as connecting to a slow server would; null answers at once.</summary>
+        public TaskCompletionSource? EditionGate { get; set; }
+
         /// <summary>The connection string of each repository made, in order.</summary>
         public List<string> Created { get; } = [];
 
@@ -467,7 +635,15 @@ public sealed class ShellViewModelTests : IDisposable
         {
             Created.Add(target.ConnectionString);
             var server = target.ConnectionString.Replace("Server=", string.Empty, StringComparison.Ordinal);
-            return new FakeRepository { IsAzureSqlDatabaseAsync = () => Task.FromResult(Azure.Contains(server)) };
+            return new FakeRepository
+            {
+                IsAzureSqlDatabaseAsync = async () =>
+                {
+                    if (EditionGate is { } gate)
+                        await gate.Task;
+                    return Azure.Contains(server);
+                },
+            };
         }
     }
 }

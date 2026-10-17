@@ -24,6 +24,8 @@ internal sealed class WpfThemeService(Func<ResourceDictionary?> resources) : ITh
             : "pack://application:,,,/SqlVitals.Desktop;component/Styles/LightTheme.xaml");
         target.MergedDictionaries.Clear();
         target.MergedDictionaries.Add(new ResourceDictionary { Source = uri });
+        // The one brush a theme can't hold: an empty grid's "Loading…" (#117), in the new colours.
+        Controls.LoadingPlaceholder.UseTheme(target);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 }

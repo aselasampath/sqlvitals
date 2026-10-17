@@ -44,9 +44,9 @@ public class PlanCacheHealthRepository(SqlTarget target, ServerCapabilitiesCache
         // The summary and multi-plan queries are the page: if they fail, it fails.
         // The rest are optional sections (see Optional).
         var summaryRows   = await Q(conn, summarySql,   cancellationToken, commandTimeout: 60);
-        var multiPlanRows = await Q(conn, multiPlanSql, cancellationToken, commandTimeout: 120);
+        var multiPlanRows = await Q(conn, multiPlanSql, cancellationToken, commandTimeout: SqlTarget.ExtendedCommandTimeoutSeconds);
 
-        var keyLookupRows   = await Optional(Q(conn, keyLookupSql,   cancellationToken, commandTimeout: 120));
+        var keyLookupRows   = await Optional(Q(conn, keyLookupSql,   cancellationToken, commandTimeout: SqlTarget.ExtendedCommandTimeoutSeconds));
         var cardinalityRows = await Optional(Q(conn, CardinalitySql, cancellationToken, commandTimeout: 30));
         var skewRows        = await Optional(Q(conn, SkewSql,        cancellationToken, commandTimeout: 30));
         var planGuideRows   = await Optional(Q(conn, planGuidesSql,  cancellationToken, commandTimeout: 15));

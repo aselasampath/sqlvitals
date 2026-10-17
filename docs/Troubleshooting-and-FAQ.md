@@ -63,8 +63,19 @@ Closing only hides it. Right-click its icon in the notification area → **Exit*
 
 ## Screens and data
 
+**A page takes a long time to load.**
+From 0.80.0, a thin bar moves across the top of the page while SqlVitals waits on the server for more than a moment. The line under it says what it's waiting for: *Loading Backups…*, *Checking fragmentation…*, *Connecting to Sales-Prod…*.
+
+- **After 3 seconds** it adds how long it has waited: *Loading Index Health… 7 s*.
+- **After 10 seconds** it also says when each query gives up: *… 12 s · each query gives up after 30 s (Settings → Command timeout)*. That's the **Command timeout** (**Settings → Monitoring & history**, 30 s by default). Query Store, Query Regressions, Plan Cache Health, Resource Queries and reading the Deadlocks event files allow some of their queries up to 2 minutes instead, so the line says *at most 2 min*. Connecting gives up after the connection's own timeout, on its **Advanced** tab.
+- **Stop** cancels what the page is reading, on the server too. What's on screen stays, the top bar says *Stopped after 14 s. Refresh to read again.*, and a live page pauses so the same slow read doesn't start again a few seconds later (**Resume** or **Refresh** reads again).
+- A page reading for the first time says **Loading…** in its empty grids, so an empty grid always means there are no rows. On **Refresh**, the rows on screen stay, dimmed, until the new ones arrive.
+- Timed refreshes (Processes, File I/O, Agent Jobs, Live charts…) don't show the bar. Their countdown shows **⟳** while they read.
+
+The bar only shows the wait; it doesn't make the server any faster. If a page often waits, see the next question.
+
 **A screen says a query timed out.**
-Large servers can take longer than 30 seconds on heavy screens (Index Health, Implicit Conversions, Plan Cache Health). Raise **Settings → Monitoring & history → Command timeout**.
+Large servers can take longer than 30 seconds on heavy screens (Index Health, Implicit Conversions, Plan Cache Health). Raise **Settings → Monitoring & history → Command timeout**. The loading bar says which limit a page's queries have.
 
 **Query Store says "Query Store is off for *database*".**
 Query Store is off for the connected database. Each tab shows the statement to copy, `ALTER DATABASE [YourDb] SET QUERY_STORE = ON;`; run it yourself or ask your DBA. [Query Regressions](Query-Regressions.md) falls back to monitoring history in the meantime.
