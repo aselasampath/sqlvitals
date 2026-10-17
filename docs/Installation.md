@@ -62,16 +62,16 @@ Every installer is built by GitHub Actions from the repository's code, never on 
 | Source | When it's built | Where to download it | Kept for |
 |---|---|---|---|
 | **Release** (recommended) | When a version is tagged, e.g. `v0.34.2` | [Releases](https://github.com/aselasampath/sqlvitals/releases) → the version → **Assets**. No GitHub account needed. | Always |
-| **Release run artifact** | Same build as the release | *Actions* → *Release – Build and publish SqlVitals Setup* → the run → **Artifacts** → `SqlVitals-Setup-<version>` or `SqlVitals-<version>-win-x64-portable`. Needs a GitHub sign-in. | 90 days |
-| **Pull request** | Every push to a PR to `main` | See below | 14 days |
+| **Release run artifact** | Same build as the release | *Actions* → *Release – Build and publish SqlVitals Setup* → the run → **Artifacts** → `SqlVitals-Setup-<version>` or `SqlVitals-<version>-win-x64-portable`. Needs a GitHub sign-in. | Up to 7 days |
+| **Pull request** | Every push to a PR to `main` that's ready for review (not a draft) and changes more than docs | See below | Up to 3 days |
 
-If a release shows only *Source code* under **Assets** (as 0.34.0 does), its Setup is in that release's run artifacts. 0.34.2 has the same features, with Setup attached.
+Run artifacts are kept briefly because GitHub bills their storage. The repository's retention limit can make that shorter still. 0.34.0 shows only *Source code* under **Assets** and its run artifacts have expired, so use 0.34.2: it has the same features, with Setup attached.
 
 ## Get the latest version
 
 A release is published each time a version is tagged, and it can lag behind the code on `main`. To get the newest features before a release:
 
-- **From a pull request:** every PR to `main` builds an installer. Open the PR's *Checks* → the *Build Setup* run → **Artifacts** → `SqlVitals-Setup-<version>-pr<N>` or `SqlVitals-<version>-win-x64-portable-pr<N>` (kept for 14 days).
+- **From a pull request:** a PR to `main` builds an installer once it's ready for review (drafts and docs-only PRs don't). Open the PR's *Checks* → the *Build Setup* run → **Artifacts** → `SqlVitals-Setup-<version>-pr<N>` (kept for up to 3 days; if it has expired, re-run the workflow). PRs don't build the portable zip; for that, take a release or build it yourself.
 - **Build it yourself:** see [Building and Contributing](Building-and-Contributing.md#build-the-installer).
 
 ## Upgrade, repair or uninstall

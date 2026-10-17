@@ -77,7 +77,7 @@ Start-Process "SqlVitals\Desktop\bin\Debug\net10.0-windows\SqlVitals.Desktop.exe
 
 ```text
 SqlVitals.slnx
-.github/workflows/pr-setup.yml   CI: tests + coverage + Setup build on every PR to main
+.github/workflows/pr-setup.yml   CI: tests + coverage on every PR to main, + Setup build once it's ready for review
 .github/workflows/release.yml    Release: tag vX.Y.Z → tests, Setup build, GitHub Release
 .github/workflows/sql-integration.yml   The repositories' SQL against SQL Server 2017–2025 (Linux containers)
 .github/scripts/Test-WithCoverage.ps1   Both workflows' test step: tests, coverlet, ReportGenerator
@@ -114,18 +114,22 @@ The script publishes `SqlVitals.Desktop` **self-contained** for win-x64 and zips
 
 ## CI
 
-`.github/workflows/pr-setup.yml` runs on every pull request to `main` (opened, pushed to, reopened, ready for review) on `windows-latest`:
+`.github/workflows/pr-setup.yml` runs on every pull request to `main` (opened, pushed to, reopened, ready for review) on `windows-latest`, unless the PR changes only `docs/` and `.md` files:
 
 1. Reads the version from the Desktop `.csproj`.
 2. Runs `Installer.Tests`, `Engine.Tests`, then `Desktop.Tests` (Release) with coverlet, through `.github/scripts/Test-WithCoverage.ps1`. A build warning fails this step.
 3. Posts the coverage, line and branch per assembly, as a comment on the PR, and updates that same comment on every later run. The run summary lists every class. Nothing fails on a low number yet.
-4. Builds an **unsigned** Setup and portable zip with `Build-Installer.ps1`.
+4. Builds an **unsigned** Setup and collector zip with `Build-Installer.ps1 -SkipPortable`. The portable zip holds the same app as Setup, so PRs don't build it; releases do.
 5. Posts the file names, sizes, SHA-256 hashes and commit to the run summary.
-6. Uploads `SqlVitals-Setup-<version>-pr<N>` and `SqlVitals-<version>-win-x64-portable-pr<N>` as artifacts, kept for **14 days** (Actions tab → run → *Artifacts*).
+6. Uploads `SqlVitals-Setup-<version>-pr<N>` and `SqlVitals-Collector-<version>-win-x64-pr<N>` as artifacts, kept for up to **3 days** (Actions tab → run → *Artifacts*). Once they expire, re-run the workflow to build them again.
+
+Steps 4–6 wait until the PR is ready for review: a **draft** PR runs the tests only, so pushing to a draft to try something in CI doesn't build Setup each time. Marking it *Ready for review* starts a full run.
 
 A new push cancels the build still running for the previous one. PR builds are unsigned, so Windows SmartScreen may ask to confirm (*More info → Run anyway*).
 
-`.github/workflows/sql-integration.yml` (#46) runs on the same pull requests, on pushes to `main` and on version tags, on `ubuntu-latest`: one job per SQL Server version, **2017, 2019, 2022 and 2025**, each with that version's container (Developer edition, Agent on) as a service, running `Engine.IntegrationTests` (see [Against a real SQL Server](#against-a-real-sql-server)). A version's failure doesn't cancel the others, and its test results are uploaded as an artifact. Each job takes about a minute and a half.
+`.github/workflows/sql-integration.yml` (#46) runs on `ubuntu-latest`: one job per SQL Server version, **2017, 2019, 2022 and 2025**, each with that version's container (Developer edition, Agent on) as a service, running `Engine.IntegrationTests` (see [Against a real SQL Server](#against-a-real-sql-server)). It runs on pull requests and pushes to `main` that change `SqlVitals/Engine/`, `SqlVitals/Engine.IntegrationTests/`, `Directory.Build.props`, `.editorconfig` or the workflow itself. A change elsewhere can't change the SQL, so it skips the run. Version tags don't run it either, because a tag points at a commit `main` has already tested. It also runs every Monday on `main`, to catch what changes without a commit: a new cumulative update in the `:<version>-latest` images, or a new .NET SDK whose analyzers add a warning. To run it by hand, for example before a release, use *Actions → SQL Server integration tests → Run workflow* or `gh workflow run sql-integration.yml`. A version's failure doesn't cancel the others, and its test results are uploaded as an artifact (kept up to 3 days). Each job takes about a minute.
+
+**Artifact storage is billed** even though the runners are free for a public repository, so artifacts are kept only as long as they're useful. The repository's own limit (*Settings → Actions → General → Artifact and log retention*) caps the days set in the workflows. None of these checks is a required status check, so a workflow that skips a PR doesn't block its merge. If one becomes required, replace its `paths` filter with a job that always reports a result, or the PR waits forever.
 
 ## Release a new version
 
@@ -149,7 +153,7 @@ What the workflow does:
 1. Checks that the tag is `v` + `<Version>`. If it isn't, it stops before building anything, so the tag, the Setup file name and the version in *Settings → Apps* always agree.
 2. Runs `Installer.Tests`, `Engine.Tests` and `Desktop.Tests` (Release) with coverage, which goes to the run summary.
 3. Builds Setup and the portable zip with `Build-Installer.ps1`.
-4. Uploads `SqlVitals-Setup-<version>` (the `.exe` and `.sha256`) and `SqlVitals-<version>-win-x64-portable` (the `.zip` and `.sha256`) as run artifacts, kept for **90 days**.
+4. Uploads `SqlVitals-Setup-<version>` (the `.exe` and `.sha256`) and `SqlVitals-<version>-win-x64-portable` (the `.zip` and `.sha256`) as run artifacts, kept for up to **7 days**. The release itself keeps the files; the run's copies only matter when the release can't take them (see the table below).
 5. Creates the GitHub Release **as a draft**, titled *SqlVitals &lt;version&gt;*, with install and portable sections (each with its SHA-256) followed by notes generated from the PRs merged since the previous tag. It attaches all four files and checks that each arrived at full size.
 6. Publishes the release. A tag with a suffix, such as `v1.0.0-beta.1`, becomes a **pre-release**. Otherwise the release becomes *Latest*.
 
@@ -160,7 +164,7 @@ What the workflow does:
 | *Tag vX doesn't match &lt;Version&gt;* | Delete the tag (`git push origin :refs/tags/vX; git tag -d vX`), then either bump `<Version>` or tag the right number. |
 | Tests or the build failed | Fix on `main` in a PR, delete the tag as above, then tag the new merge commit. |
 | Failed after the draft was created (e.g. a network error) | Re-run the workflow (*Re-run all jobs*). The draft is reused: its files are uploaded again, checked, and it is published. If the problem is in the code, delete the draft on the Releases page and the tag, fix it, and tag again. |
-| The tag already has a published release (e.g. published from the GitHub web page) | The release can't be changed, so it has no Setup. The workflow says so in the run summary, and Setup is still in the run's **Artifacts** for 90 days. The tag of an immutable release can't be reused, so to put Setup on a release, bump `<Version>` (e.g. `0.34.0` → `0.34.1`) and push the new tag with `git`. |
+| The tag already has a published release (e.g. published from the GitHub web page) | The release can't be changed, so it has no Setup. The workflow says so in the run summary, and Setup is still in the run's **Artifacts** for 7 days (fewer if the repository's retention limit is lower). The tag of an immutable release can't be reused, so to put Setup on a release, bump `<Version>` (e.g. `0.34.0` → `0.34.1`) and push the new tag with `git`. |
 
 Releases are **unsigned** for now. Code signing and an in-app update check are tracked in [#49](https://github.com/aselasampath/sqlvitals/issues/49).
 

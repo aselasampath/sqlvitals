@@ -4,13 +4,32 @@
 # one version, or returns a column of another type than the code reads, fails here.
 name: SQL Server integration tests
 
+# Only a change the SQL can feel runs it (#230): the engine, these tests, the build rules (a new
+# warning fails the build) or this file. Keep the two paths lists the same. No version tags: a tag
+# points at a commit main has just tested. workflow_dispatch runs it on demand, e.g. before tagging
+# a release. The weekly run catches what changes without a commit: a new CU in the :<version>-latest
+# images, or a new 10.0.x SDK whose analyzers add a warning.
+# No required status check waits on this workflow, so a skipped run doesn't block a merge.
 on:
+  schedule:
+    - cron: '17 3 * * 1'   # Mondays 03:17 UTC
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'SqlVitals/Engine/**'
+      - 'SqlVitals/Engine.IntegrationTests/**'
+      - 'Directory.Build.props'
+      - '.editorconfig'
+      - '.github/workflows/sql-integration.yml'
   push:
     branches: [main]
-    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+    paths:
+      - 'SqlVitals/Engine/**'
+      - 'SqlVitals/Engine.IntegrationTests/**'
+      - 'Directory.Build.props'
+      - '.editorconfig'
+      - '.github/workflows/sql-integration.yml'
   workflow_dispatch:
 
 permissions:
@@ -73,4 +92,4 @@ jobs:
         with:
           name: sql-integration-${{ matrix.sql }}
           path: artifacts/sql-integration
-          retention-days: 14
+          retention-days: 3

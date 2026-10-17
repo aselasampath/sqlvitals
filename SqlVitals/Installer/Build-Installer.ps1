@@ -21,6 +21,10 @@
 .PARAMETER CertificateThumbprint
     Thumbprint of a code-signing certificate in the current user's store. Omit for unsigned dev builds.
 
+.PARAMETER SkipPortable
+    Don't build the portable zip (step 2). PR builds pass it: they upload Setup only, and the zip
+    holds the same app (#230).
+
 .EXAMPLE
     .\SqlVitals\Installer\Build-Installer.ps1
 .EXAMPLE
@@ -30,7 +34,8 @@
 param(
     [string] $Configuration = 'Release',
     [string] $CertificateThumbprint,
-    [string] $TimestampUrl = 'http://timestamp.digicert.com'
+    [string] $TimestampUrl = 'http://timestamp.digicert.com',
+    [switch] $SkipPortable
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,20 +94,25 @@ Invoke-Sign (Get-ChildItem $publishDir -File | Where-Object { $_.Name -like 'Sql
 
 # ── 2. Portable zip ───────────────────────────────────────────────────────────
 # The zip holds one SqlVitals-<version> folder, so unzipping never scatters files.
-Write-Host '==> Zipping portable app' -ForegroundColor Cyan
+# Removed first even when skipped, so an older build's zip never passes for this one.
 $portableName = "SqlVitals-$version"
-$portableRoot = Join-Path $portableDir $portableName
-New-Item -ItemType Directory -Force $portableDir | Out-Null
-Copy-Item $publishDir $portableRoot -Recurse
+$portableZip  = Join-Path $artifacts "$portableName-win-x64-portable.zip"
+foreach ($file in @($portableZip, "$portableZip.sha256")) {
+    if (Test-Path $file) { Remove-Item $file -Force }
+}
+if (-not $SkipPortable) {
+    Write-Host '==> Zipping portable app' -ForegroundColor Cyan
+    $portableRoot = Join-Path $portableDir $portableName
+    New-Item -ItemType Directory -Force $portableDir | Out-Null
+    Copy-Item $publishDir $portableRoot -Recurse
 
-$portableZip = Join-Path $artifacts "$portableName-win-x64-portable.zip"
-if (Test-Path $portableZip) { Remove-Item $portableZip -Force }
-[System.IO.Compression.ZipFile]::CreateFromDirectory($portableRoot, $portableZip,
-    [System.IO.Compression.CompressionLevel]::Optimal, $true)
-Remove-Item $portableDir -Recurse -Force
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($portableRoot, $portableZip,
+        [System.IO.Compression.CompressionLevel]::Optimal, $true)
+    Remove-Item $portableDir -Recurse -Force
 
-$portableHash = (Get-FileHash $portableZip -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -Path "$portableZip.sha256" -Value "$portableHash  $(Split-Path $portableZip -Leaf)" -Encoding ascii
+    $portableHash = (Get-FileHash $portableZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    Set-Content -Path "$portableZip.sha256" -Value "$portableHash  $(Split-Path $portableZip -Leaf)" -Encoding ascii
+}
 
 # ── 3. Manifest ───────────────────────────────────────────────────────────────
 Write-Host '==> Writing manifest' -ForegroundColor Cyan
@@ -171,8 +181,10 @@ Set-Content -Path "$setupExe.sha256" -Value "$setupHash  $(Split-Path $setupExe 
 Write-Host ''
 Write-Host "Done: $setupExe" -ForegroundColor Green
 Write-Host "SHA-256: $setupHash"
-Write-Host "Done: $portableZip" -ForegroundColor Green
-Write-Host "SHA-256: $portableHash"
+if (-not $SkipPortable) {
+    Write-Host "Done: $portableZip" -ForegroundColor Green
+    Write-Host "SHA-256: $portableHash"
+}
 Write-Host "Done: $collectorZip" -ForegroundColor Green
 Write-Host "SHA-256: $collectorHash"
 if (-not $CertificateThumbprint) {
