@@ -13,6 +13,12 @@ public sealed record SqlTarget(string ConnectionString, int CommandTimeoutSecond
     /// <summary>A query's time limit when nothing sets one.</summary>
     public const int DefaultCommandTimeoutSeconds = 30;
 
+    /// <summary>
+    /// The time limit of the few reads that set their own, whatever the setting: a large Query Store,
+    /// the plan cache, system_health's files. The loading bar says it (#117).
+    /// </summary>
+    public const int ExtendedCommandTimeoutSeconds = 120;
+
     /// <summary>The Extended Events session SP Trace creates, when nothing names another.</summary>
     public const string DefaultTraceSessionName = "SqlVitals_SpTrace";
 

@@ -42,7 +42,7 @@ public class ResourceQueryRepository(SqlTarget target, ServerCapabilitiesCache? 
         using var conn = CreateConnection();
         // These queries scan dm_exec_query_stats and fetch plans, which can be slow.
         // Increase timeout to 2 minutes to avoid timeouts on busy servers.
-        const int extendedTimeout = 120;
+        const int extendedTimeout = SqlTarget.ExtendedCommandTimeoutSeconds;
 
         var byReads = (await Q(conn, readsSql, cancellationToken, p, extendedTimeout)).Select(r => Map(r));
         var byCpu = (await Q(conn, cpuSql, cancellationToken, p, extendedTimeout)).Select(r => Map(r));

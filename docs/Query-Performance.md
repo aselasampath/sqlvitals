@@ -83,7 +83,7 @@ Each check gives a one-line reason and, with **⧉ Copy fix**, the `ALTER DATABA
 
 **Period** picks what every tab but Forced Plans reads: *Last hour*, *Last 24 hours* (the default), *Last 7 days*, *Last 30 days* or *Custom* (a start and end on this PC's clock; **Show** or Enter applies it). Beside it the page says how far back Query Store's data goes, e.g. *Query Store has data from 2 Sep 14:00*. A period that starts earlier shows only what exists.
 
-The tab on screen is read when the page opens. Another tab is read the first time you open it, and again after **Refresh** or a new period, so opening the page costs no more than before. A tab being read says *Loading…*; the other tabs and the rest of the app stay usable.
+The tab on screen is read when the page opens. Another tab is read the first time you open it, and again after **Refresh** or a new period, so opening the page costs no more than before. While a tab is read, the loading bar at the top of the page says so (*Reading Top Queries…*, with **Stop**; from 0.80.0), and its status line keeps describing the rows on screen until the new ones arrive; the other tabs and the rest of the app stay usable.
 
 If Query Store is off, every tab says *Query Store is off for **database*** with the `ALTER DATABASE … SET QUERY_STORE = ON;` statement to copy, instead of an empty grid.
 

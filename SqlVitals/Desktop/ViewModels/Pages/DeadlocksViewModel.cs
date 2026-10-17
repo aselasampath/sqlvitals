@@ -98,6 +98,9 @@ public sealed partial class DeadlocksViewModel(IDeadlockRepository repo, IDialog
     /// <summary>A deadlock to show: a pattern's Open newest selected it. The view scrolls to it.</summary>
     public event Action<DeadlockReport>? ShowRow;
 
+    // Reading system_health's files has a longer limit of its own.
+    protected override TimeSpan? LongestQuery => ExtendedQueries;
+
     protected override async Task LoadAsync(CancellationToken cancel)
     {
         if (_history is null)

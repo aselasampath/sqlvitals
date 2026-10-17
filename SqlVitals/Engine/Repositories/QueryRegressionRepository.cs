@@ -9,7 +9,7 @@ public partial class QueryRegressionRepository(SqlTarget target, ServerCapabilit
 {
     // Reads every runtime-stats row of a week or more, which can take a while on a busy
     // database with a large Query Store.
-    private const int ExtendedTimeoutSec = 120;
+    private const int ExtendedTimeoutSec = SqlTarget.ExtendedCommandTimeoutSeconds;
 
     public async Task<QueryStoreRegressionStats> GetQueryStoreRegressionStatsAsync(RegressionWindows windows, CancellationToken cancellationToken = default)
     {

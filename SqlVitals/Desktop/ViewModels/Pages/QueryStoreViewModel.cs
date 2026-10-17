@@ -148,7 +148,7 @@ public sealed partial class QueryStoreViewModel : PageViewModel
         }
 
         Array.Fill(_tabCurrent, false);
-        await LoadTabAsync((Tab)SelectedTab);
+        await LoadTabAsync((Tab)SelectedTab, cancel);
     }
 
     // Only the settings read throws: a tab's failure stays in its status line.
@@ -169,9 +169,25 @@ public sealed partial class QueryStoreViewModel : PageViewModel
 
     // Reads one tab. A read that finishes after a newer one started is dropped; an error shows in
     // the tab's status line, so the rest of the page and the other tabs carry on.
-    private Task LoadTabAsync(Tab tab) => TabLoaded = ReadTabAsync(tab);
+    // Within the page's read (<paramref name="pageRead"/>), the loading bar shows the page and its
+    // Stop stops both. On its own (opened, a new period or ranking), the bar says so, and its Stop
+    // stops that read alone (#117).
+    private Task LoadTabAsync(Tab tab, CancellationToken? pageRead = null) => TabLoaded = ReadTabAsync(tab, pageRead);
 
-    private async Task ReadTabAsync(Tab tab)
+    /// <summary>A tab as its header says it: "Top Queries".</summary>
+    internal static string TabName(Tab tab) => tab switch
+    {
+        Tab.Top       => "Top Queries",
+        Tab.OverTime  => "Over Time",
+        Tab.Variation => "High Variation",
+        Tab.Waits     => "Waits",
+        _             => "Forced Plans",
+    };
+
+    // Up to 30 days of a large Query Store: its reads have a longer limit of their own.
+    protected override TimeSpan? LongestQuery => ExtendedQueries;
+
+    private async Task ReadTabAsync(Tab tab, CancellationToken? pageRead)
     {
         if (_storeStatus is not { } status)
             return;
@@ -187,16 +203,21 @@ public sealed partial class QueryStoreViewModel : PageViewModel
             return;
         }
 
-        SetTabStatus(tab, "Loading…");
+        // The status line keeps describing the rows on screen until the new ones arrive.
+        using var own     = pageRead is null ? new CancellationTokenSource() : null;
+        using var reading = own is null ? NoReading.Instance : ShowReading($"Reading {TabName(tab)}", $"{TabName(tab)} read", own.Cancel);
         try
         {
-            var show = await ReadAsync(tab, status);
+            var show = await ReadAsync(tab, status, pageRead ?? own!.Token);
             if (version == _tabVersion[(int)tab])
+            {
                 show();
+                reading.Done();
+            }
         }
         catch (OperationCanceledException)
         {
-            // Left: nothing on screen is about it any more. Read again when shown, unless a newer read has.
+            // Left, or stopped: what is on screen stays. Read again when shown, unless a newer read has.
             if (version == _tabVersion[(int)tab])
                 _tabCurrent[(int)tab] = false;
         }
@@ -212,13 +233,13 @@ public sealed partial class QueryStoreViewModel : PageViewModel
     }
 
     // Reads a tab's data and returns what puts it on screen.
-    private Task<Action> ReadAsync(Tab tab, QueryStoreStatus status) => tab switch
+    private Task<Action> ReadAsync(Tab tab, QueryStoreStatus status, CancellationToken cancel) => tab switch
     {
-        Tab.Top       => ReadTopQueriesAsync(),
-        Tab.OverTime  => ReadOverTimeAsync(status),
-        Tab.Variation => ReadVariationAsync(),
-        Tab.Waits     => ReadWaitsAsync(status),
-        _             => ReadForcedPlansAsync(),
+        Tab.Top       => ReadTopQueriesAsync(cancel),
+        Tab.OverTime  => ReadOverTimeAsync(status, cancel),
+        Tab.Variation => ReadVariationAsync(cancel),
+        Tab.Waits     => ReadWaitsAsync(status, cancel),
+        _             => ReadForcedPlansAsync(cancel),
     };
 
     private void SetTabStatus(Tab tab, string text)
@@ -573,10 +594,10 @@ public sealed partial class QueryStoreViewModel : PageViewModel
 
     [ObservableProperty] private QueryStoreQueryRow? _selectedTopRow;
 
-    private async Task<Action> ReadTopQueriesAsync()
+    private async Task<Action> ReadTopQueriesAsync(CancellationToken cancel)
     {
         var (metric, statistic, top) = (SelectedRank, SelectedStatistic, SelectedTop);
-        var rows = await _repo.GetQueryStoreTopQueriesAsync(_period, metric, statistic, top);
+        var rows = await _repo.GetQueryStoreTopQueriesAsync(_period, metric, statistic, top, cancel);
         return () =>
         {
             TopMetricHeader = QueryStoreMetrics.ColumnHeader(metric, statistic);
@@ -657,12 +678,12 @@ public sealed partial class QueryStoreViewModel : PageViewModel
     /// <param name="Colour">Its place in the chart palette.</param>
     public sealed record OverTimeChart(string Name, IReadOnlyList<DateTimePoint> Points, int Colour);
 
-    private async Task<Action> ReadOverTimeAsync(QueryStoreStatus status)
+    private async Task<Action> ReadOverTimeAsync(QueryStoreStatus status, CancellationToken cancel)
     {
         var period = _period;
         var slot   = QueryStoreTimeSlots.SlotLength(period.Length, status.Health!.IntervalLengthMin);
         var origin = QueryStoreTimeSlots.Origin(slot, _time.GetLocalNow().Offset);
-        var rows   = await _repo.GetQueryStoreOverTimeAsync(period, slot, origin);
+        var rows   = await _repo.GetQueryStoreOverTimeAsync(period, slot, origin, cancel);
         return () =>
         {
             _slots = rows.Rows;
@@ -790,10 +811,10 @@ public sealed partial class QueryStoreViewModel : PageViewModel
     [ObservableProperty] private Notice? _variationNotice;
     [ObservableProperty] private QueryStoreVariationRow? _selectedVariationRow;
 
-    private async Task<Action> ReadVariationAsync()
+    private async Task<Action> ReadVariationAsync(CancellationToken cancel)
     {
         var metric = SelectedVariationMetric;
-        var rows = await _repo.GetQueryStoreHighVariationAsync(_period, metric, QueryStoreMetrics.MinVariationExecutions, VariationTop);
+        var rows = await _repo.GetQueryStoreHighVariationAsync(_period, metric, QueryStoreMetrics.MinVariationExecutions, VariationTop, cancel);
         return () =>
         {
             VariationMetric      = QueryStoreMetrics.Info(metric);
@@ -839,7 +860,7 @@ public sealed partial class QueryStoreViewModel : PageViewModel
     /// <summary>The latest read of a wait category's queries; for tests.</summary>
     internal Task WaitQueriesLoaded { get; private set; } = Task.CompletedTask;
 
-    private async Task<Action> ReadWaitsAsync(QueryStoreStatus status)
+    private async Task<Action> ReadWaitsAsync(QueryStoreStatus status, CancellationToken cancel)
     {
         if (!status.Features.WaitStats)
             return () =>
@@ -849,7 +870,7 @@ public sealed partial class QueryStoreViewModel : PageViewModel
                 ClearTab(Tab.Waits);
             };
 
-        var rows = await _repo.GetQueryStoreWaitCategoriesAsync(_period);
+        var rows = await _repo.GetQueryStoreWaitCategoriesAsync(_period, cancel);
         return () =>
         {
             var captureOff = status.Health?.WaitStatsCaptureMode == "OFF";
@@ -881,18 +902,22 @@ public sealed partial class QueryStoreViewModel : PageViewModel
     {
         var version = ++_waitQueriesVersion;
         var period  = _period;
-        WaitQueriesHeader = $"Top queries waiting on {bar.Category.Name}: loading…";
+        // The header keeps naming the queries on screen until the new ones arrive; the bar says what it
+        // reads, and its Stop stops this read alone (#117).
+        using var own     = new CancellationTokenSource();
+        using var reading = ShowReading($"Reading the queries waiting on {bar.Category.Name}", $"Queries waiting on {bar.Category.Name} read", own.Cancel);
         try
         {
-            var rows = await _repo.GetQueryStoreWaitQueriesAsync(period, bar.Category.Category, WaitQueriesTop);
+            var rows = await _repo.GetQueryStoreWaitQueriesAsync(period, bar.Category.Category, WaitQueriesTop, own.Token);
             if (version != _waitQueriesVersion)
                 return;
             Refill(WaitQueryRows, rows.Rows, SelectedWaitQueryRow, r => SelectedWaitQueryRow = r);
             WaitQueriesHeader    = rows.Unavailable ?? $"Top queries waiting on {bar.Category.Name} · {period.Label}";
+            reading.Done();
         }
         catch (OperationCanceledException)
         {
-            // Left: nothing to say.
+            // Left, or stopped: nothing to say.
         }
         catch (Exception ex)
         {
@@ -918,9 +943,9 @@ public sealed partial class QueryStoreViewModel : PageViewModel
     [ObservableProperty] private Notice? _hintsNotice;
     [ObservableProperty] private QueryStoreHint? _selectedHintRow;
 
-    private async Task<Action> ReadForcedPlansAsync()
+    private async Task<Action> ReadForcedPlansAsync(CancellationToken cancel)
     {
-        var forced = await _repo.GetQueryStoreForcedPlansAsync(_period);
+        var forced = await _repo.GetQueryStoreForcedPlansAsync(_period, cancel);
         return () =>
         {
             ForcedNotice      = NoticeOf(forced.Plans);

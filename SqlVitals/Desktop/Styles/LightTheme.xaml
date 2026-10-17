@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
+                    xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- ── Colours ─────────────────────────────────────────────────── -->
@@ -473,6 +474,16 @@
         <Setter Property="HeadersVisibility"        Value="Column" />
         <!-- Right-click Copy / Copy with headers / Export to CSV on every grid -->
         <Setter Property="helpers:DataGridExport.IsEnabled" Value="True" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="HasItems" Value="False" />
+                    <Condition Property="controls:LoadingPlaceholder.State" Value="Loading" />
+                </MultiTrigger.Conditions>
+                <!-- "Loading…" where the first row will be (#117): LoadingPlaceholder.UseTheme makes it, since a theme holds no elements. -->
+                <Setter Property="Background" Value="{DynamicResource GridLoadingBackground}" />
+            </MultiTrigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="DataGridColumnHeader">

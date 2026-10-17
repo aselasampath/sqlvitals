@@ -1,0 +1,43 @@
+<UserControl x:Class="SqlVitals.Desktop.Controls.LoadingBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             VerticalAlignment="Top" Focusable="False" IsTabStop="False">
+    <!-- The loading bar (#117), over the top of the page area so the page doesn't move as it comes
+         and goes: a thin moving stripe, and under it what SqlVitals is waiting on, with Stop. Only
+         the line under it takes the mouse; the page around it stays usable. -->
+    <Grid>
+        <Border x:Name="Track" Height="3" VerticalAlignment="Top" ClipToBounds="True" Visibility="Collapsed"
+                IsHitTestVisible="False">
+            <Border.Background>
+                <SolidColorBrush Color="{DynamicResource AccentColor}" Opacity="0.18"/>
+            </Border.Background>
+            <Rectangle x:Name="Stripe" HorizontalAlignment="Left" Width="160" Fill="{DynamicResource Accent}">
+                <Rectangle.RenderTransform>
+                    <TranslateTransform x:Name="StripeShift"/>
+                </Rectangle.RenderTransform>
+            </Rectangle>
+        </Border>
+
+        <Border x:Name="Line" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="16,10,16,0"
+                Padding="12,4,5,4" CornerRadius="15" BorderThickness="1" Visibility="Collapsed"
+                Background="{DynamicResource BgCard}">
+            <Border.BorderBrush>
+                <SolidColorBrush Color="{DynamicResource AccentColor}" Opacity="0.45"/>
+            </Border.BorderBrush>
+            <DockPanel>
+                <Button x:Name="BtnStop" DockPanel.Dock="Right" Content="Stop" Margin="10,0,0,0" Padding="10,2"
+                        Style="{DynamicResource SecondaryButton}" Command="{Binding StopCommand}" Visibility="Collapsed"
+                        ToolTip="Stop reading. What is on screen stays; Refresh (F5) reads again."
+                        AutomationProperties.Name="Stop loading"/>
+                <TextBlock x:Name="TxtLoading" Text="{Binding Text}" VerticalAlignment="Center" FontSize="12"
+                           Margin="0,3,0,3" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </Border>
+
+        <!-- What a screen reader hears: as the bar shows, and as it goes. Not the line itself,
+             whose seconds would be read out every second. -->
+        <TextBlock x:Name="TxtAnnounce" Width="1" Height="1" Opacity="0" IsHitTestVisible="False"
+                   HorizontalAlignment="Left" VerticalAlignment="Top"
+                   AutomationProperties.LiveSetting="Polite"/>
+    </Grid>
+</UserControl>

@@ -167,6 +167,9 @@ public sealed partial class QueryRegressionsViewModel : PageViewModel
     /// <summary>A query to show: the verdict's Show its plans selected it. The view scrolls to it and opens the drawer.</summary>
     public event Action<QueryRegression>? ShowRow;
 
+    // A week or more of runtime stats: its reads have a longer limit of their own.
+    protected override TimeSpan? LongestQuery => ExtendedQueries;
+
     protected override async Task LoadAsync(CancellationToken cancel)
     {
         _read = true;

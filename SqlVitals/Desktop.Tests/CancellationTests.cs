@@ -116,20 +116,24 @@ public sealed class CancellationTests : IDisposable
     [Fact]
     public void APageShownAgain_ReadsWithANewToken() => UiThread.Run(() =>
     {
-        // A read beside the load gets the page's lifetime as its token (a load passes its own, linked to it).
-        var repo = QueryStoreOn();
-        repo.GetQueryStoreHighVariationAsync = (_, _, _, _) => Task.FromException<QueryStoreRows<QueryStoreVariationRow>>(new InvalidOperationException("Not now."));
+        // A read beside the load (a tab opened, with its own token since #117) is bound to the
+        // page's lifetime too: leaving cancels it while it runs.
+        var repo    = QueryStoreOn();
+        var pending = new TaskCompletionSource<QueryStoreRows<QueryStoreVariationRow>>();
+        repo.GetQueryStoreHighVariationAsync = (_, _, _, _) => pending.Task;
         var made  = Factory().Create("QueryStore", new PageArgs(new Route("QueryStore"), repo));
         var model = (QueryStoreViewModel)made.ViewModel;
 
         UiThread.Wait(model.OnNavigatedToAsync());
         model.SelectedTab = (int)QueryStoreViewModel.Tab.Variation;
-        UiThread.Wait(model.TabLoaded);
         var first = repo.Tokens[nameof(FakeRepository.GetQueryStoreHighVariationAsync)];
         model.OnNavigatedFrom();
-        UiThread.Wait(model.OnNavigatedToAsync());   // reads the tab on screen again
-
         Assert.True(first.IsCancellationRequested);
+        pending.SetCanceled(first);
+        UiThread.Wait(model.TabLoaded);
+
+        repo.GetQueryStoreHighVariationAsync = (_, _, _, _) => Task.FromException<QueryStoreRows<QueryStoreVariationRow>>(new InvalidOperationException("Not now."));
+        UiThread.Wait(model.OnNavigatedToAsync());   // reads the tab on screen again
         Assert.False(repo.Tokens[nameof(FakeRepository.GetQueryStoreHighVariationAsync)].IsCancellationRequested);
     });
 

@@ -16,7 +16,7 @@ namespace SqlVitals.Engine.Repositories;
 public class QueryStoreRepository(SqlTarget target, ServerCapabilitiesCache? capabilities = null) : BaseRepository(target, capabilities), IQueryStoreRepository
 {
     // Up to 30 days of a large Query Store can take a while, as on Query Regressions.
-    private const int ExtendedTimeoutSec = 120;
+    private const int ExtendedTimeoutSec = SqlTarget.ExtendedCommandTimeoutSeconds;
 
     // Invalid column name (207) or object name (208): something this version lacks.
     private static readonly int[] MissingObjectErrors = [207, 208];

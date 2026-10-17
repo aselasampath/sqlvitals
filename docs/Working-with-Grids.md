@@ -63,6 +63,12 @@ Good to know:
 - **Choices that start something aren't brought back:** a trace, auto-refresh or *Start* stays as the screen sets it up when it opens. A tab and a selected row *are* brought back, so a screen that reads more when you open a tab or select a row (Query Store's tabs, Agent Jobs' and Backups' history) reads it again.
 - The last 50 screens are remembered, until SqlVitals closes.
 
+## Loading or empty
+
+From 0.80.0, while a page reads for the first time, its empty grids say **Loading…** where the first row will be, and so does the place where its verdict will be. Once it has read, an empty grid means there are no rows. A first read stopped from the loading bar leaves the verdict's place saying nothing was read; press **Refresh** (F5).
+
+On **Refresh**, the rows stay on screen, dimmed, until the new ones replace them, with your sort, filter and selection as they were. See [A page takes a long time to load](Troubleshooting-and-FAQ.md#screens-and-data).
+
 ## Copy and export
 
 **Right-click any grid**:

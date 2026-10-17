@@ -171,6 +171,8 @@ public sealed class IndexHealthViewModelTests
         Assert.Equal([(10d, 1000L), (30d, 5000L)], asked);
         Assert.Single(model.Fragmentation);
         Assert.Equal(["Read Load"], shell.Reports);   // its own read isn't the page's
+        // The loading bar says what it reads, in its own words (#117).
+        Assert.Equal(["Load", "Load done", "Checking fragmentation", "Checking fragmentation done"], shell.Readings);
 
         // A box that can't be used: said, its box named, and nothing read.
         string? invalid = null;
@@ -226,6 +228,43 @@ public sealed class IndexHealthViewModelTests
         reads[3].SetCanceled(token);
         await again;
         Assert.Equal(["IX_Refreshed"], model.Fragmentation.Select(f => f.IndexName));
+    }
+
+    [Fact]
+    public async Task StoppingItsOwnRead_StopsOnlyThat_KeepsTheRows_AndSaysSo()
+    {
+        var reads = new List<TaskCompletionSource<IEnumerable<IndexFragmentation>>>();
+        var repo  = Repo();
+        repo.GetIndexFragmentationAsync = (_, _) =>
+        {
+            var done = new TaskCompletionSource<IEnumerable<IndexFragmentation>>();
+            reads.Add(done);
+            return done.Task;
+        };
+        var (model, shell, _) = Connected(repo);
+        var shown = model.OnNavigatedToAsync();
+        reads[0].SetResult([Frag("IX_A", 50)]);
+        await shown;
+
+        var own   = model.RefreshFragmentationCommand.ExecuteAsync(null);
+        var token = repo.Tokens[nameof(FakeRepository.GetIndexFragmentationAsync)];
+        shell.Stops[^1]!();
+        Assert.True(token.IsCancellationRequested);
+        reads[1].SetCanceled(token);
+        await own;
+
+        Assert.Equal("Stopped — the grid still shows the previous results.", model.FragmentationStatus);
+        Assert.False(model.FragmentationFailed);
+        Assert.False(model.ReadingFragmentation);
+        Assert.Equal(["IX_A"], model.Fragmentation.Select(f => f.IndexName));
+        Assert.Equal(["Read Load"], shell.Reports);
+        Assert.Equal("Checking fragmentation ended", shell.Readings[^1]);
+
+        // The next check reads as usual.
+        var next = model.RefreshFragmentationCommand.ExecuteAsync(null);
+        reads[2].SetResult([Frag("IX_B", 50)]);
+        await next;
+        Assert.StartsWith("1 index with ", model.FragmentationStatus);
     }
 
     [Fact]

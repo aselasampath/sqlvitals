@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SqlVitals.Desktop.Tests;
@@ -190,6 +191,23 @@ public sealed class MvvmGuardTests
             .OfType<BaseObjectCreationExpressionSyntax>()
             .Where(n => m.Model.GetTypeInfo(n).Type is { Name: "DispatcherTimer" })
             .Select(n => new Offence(m.File, n.GetLocation().GetLineSpan().StartLinePosition.Line + 1, "DispatcherTimer", "new DispatcherTimer")))
+            .ToList();
+
+    // ── The loading bar says a page is loading (#117) ────────────────────
+
+    [Fact]
+    public void Pages_DontSayLoadingThemselves() =>
+        Fail(LoadingTextOffences(),
+             "A page's view model says \"Loading…\" itself: the loading bar says it (ShowReading for a part read on its own), " +
+             "and an empty grid says it during the first read (LoadState):");
+
+    // Its words in a string or an interpolated string; a page's own "Reading the backup history from msdb…" says more and stays.
+    private static List<Offence> LoadingTextOffences() =>
+        Models("ViewModels/").Where(m => m.File.StartsWith("ViewModels/Pages/", StringComparison.Ordinal) || m.File == "ViewModels/PageViewModel.cs")
+            .SelectMany(m => m.Model.SyntaxTree.GetRoot().DescendantTokens()
+                .Where(t => t.IsKind(SyntaxKind.StringLiteralToken) || t.IsKind(SyntaxKind.InterpolatedStringTextToken))
+                .Where(t => t.ValueText.Contains("loading…", StringComparison.OrdinalIgnoreCase))
+                .Select(t => new Offence(m.File, t.GetLocation().GetLineSpan().StartLinePosition.Line + 1, "Loading…", t.Text)))
             .ToList();
 
     // ── Where view models live ───────────────────────────────────────────
