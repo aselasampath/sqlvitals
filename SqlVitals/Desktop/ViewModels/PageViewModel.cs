@@ -16,9 +16,8 @@ namespace SqlVitals.Desktop.ViewModels;
 /// (<see cref="IShellStatus"/>) and in the verdict.
 /// </summary>
 /// <remarks>
-/// Each page's view model derives from it, one file each under <c>ViewModels/Pages</c> (#181). A page
-/// whose code-behind still reads derives from <see cref="CodeBehindViewModel"/> until its wave of #180
-/// moves the reading here.
+/// Each page's view model derives from it, one file each under <c>ViewModels/Pages</c> (#181); every
+/// page reads through its view model since #189.
 /// </remarks>
 public abstract partial class PageViewModel : ObservableObject, IRefreshable
 {

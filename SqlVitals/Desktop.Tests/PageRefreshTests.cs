@@ -9,9 +9,9 @@ using SqlVitals.Engine.Models;
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
-/// A code-behind page's timed reads on its view model (#169): no timer of its own, one read at a
-/// time with Refresh and its own Read again, a failure reported once, its Start/Stop and the top
-/// bar's Pause the view model's, and its countdown the view model's.
+/// A page's timed reads on its view model (#169): no timer of its own, one read at a time with
+/// Refresh and its own Read again, a failure reported once, its Start/Stop and the top bar's Pause
+/// the view model's, and its countdown the view model's.
 /// </summary>
 public sealed class PageRefreshTests : IDisposable
 {
@@ -102,9 +102,21 @@ public sealed class PageRefreshTests : IDisposable
         Assert.Equal(1, _ui.Pending);
     }
 
-    private sealed class CountingViewModel : CodeBehindViewModel
+    /// <summary>A page's view model that reads on a timer, counting its reads.</summary>
+    private class CountingViewModel : PageViewModel
     {
         public int Loads;
+
+        /// <summary>How often it reads on its own while shown and not paused; with its countdown or without.</summary>
+        public void ReadEvery(TimeSpan? interval, bool countdown = false)
+        {
+            ShowsCountdown  = countdown;
+            RefreshInterval = interval;
+        }
+
+        public void ReadSoon(TimeSpan delay) => RefreshSoon(delay);
+
+        public void TickWhileShown(TimeSpan every, Action tick) => WhileShownEvery(every, tick);
 
         protected override Task LoadAsync(CancellationToken cancel)
         {
@@ -115,32 +127,32 @@ public sealed class PageRefreshTests : IDisposable
 
     // ── Timed reads, read soon, read again, view ticks ───────────────────
 
-    /// <summary>A code-behind page whose timed read is narrower than its Refresh, as SP Trace's poll is.</summary>
-    private sealed class TwoReadsPage : ICodeBehindPage
+    /// <summary>A view model whose timed read is narrower than its Refresh, as SP Trace's poll is.</summary>
+    private sealed class TwoReadsViewModel : CountingViewModel
     {
         public int Refreshes, Timed;
         public TaskCompletionSource? Gate;
 
-        public Task RefreshAsync()
+        protected override Task LoadAsync(CancellationToken cancel)
         {
             Refreshes++;
             return Gate?.Task ?? Task.CompletedTask;
         }
 
-        public Task ReadTimedAsync()
+        protected override Task LoadAsync(PageRead read, CancellationToken cancel)
         {
+            if (read != PageRead.Timed)
+                return LoadAsync(cancel);
             Timed++;
             return Task.CompletedTask;
         }
     }
 
-    private sealed class PlainViewModel : CodeBehindViewModel;
-
-    private (TwoReadsPage Page, PlainViewModel Model) TwoReads()
+    // The view model twice: as the page that counts its reads, and as the model that schedules them.
+    private (TwoReadsViewModel Page, TwoReadsViewModel Model) TwoReads()
     {
-        var page  = new TwoReadsPage();
-        var model = Connect(page, new PlainViewModel(), "Test");
-        return (page, model);
+        var model = Connected(new TwoReadsViewModel(), "Test");
+        return (model, model);
     }
 
     [Fact]
@@ -352,13 +364,6 @@ public sealed class PageRefreshTests : IDisposable
         Assert.Equal(2, reads);
     });
 
-    // The page as the page factory makes it, on this test's clock.
-    private T Connect<T>(ICodeBehindPage page, T model, string tag) where T : CodeBehindViewModel
-    {
-        model.LoadThrough(page);
-        model.Connect(tag, _shell, new RefreshScheduler(_time, _ui));
-        return model;
-    }
 
     // A page on its view model (#186), as the page factory makes it, on this test's clock.
     private T Connected<T>(T model, string tag) where T : PageViewModel

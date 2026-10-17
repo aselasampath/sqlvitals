@@ -36,16 +36,16 @@ public sealed class QuickSwitcherOverlayTests
     [Theory, MemberData(nameof(Themes))]
     public void Opening_ShowsTheRecentRoutes_WithTheKeyboardInTheBox_AndTheFirstSelected(string theme) => OnSta(theme, (switcher, host, page, _) =>
     {
-        Assert.False(switcher.IsOpen);
+        Assert.False(switcher.ViewModel.IsOpen);
         Open(switcher);
 
-        Assert.True(switcher.IsOpen);
+        Assert.True(switcher.ViewModel.IsOpen);
         Assert.Same(switcher.SearchBox, switcher.FocusMovedTo);
-        var recent = Assert.Single(switcher.Sections);
+        var recent = Assert.Single(switcher.ViewModel.Sections);
         Assert.Equal(SwitcherGroup.Recent, recent.Group);
         // The page on screen isn't listed.
         Assert.Equal(["Overview · PROD-SQL01", "Waits · PROD-SQL01", "All servers"], recent.Items.Select(i => i.Text));
-        Assert.Same(recent.Items[0], switcher.Selected);
+        Assert.Same(recent.Items[0], switcher.ViewModel.Selected);
         Assert.Equal(Visibility.Visible, switcher.TxtPrompt.Visibility);
         // Inside a server's workspace: the footer says how to keep the page on another.
         Assert.Equal(Visibility.Visible, switcher.TxtTip.Visibility);
@@ -57,14 +57,14 @@ public sealed class QuickSwitcherOverlayTests
     {
         Route? opened = null;
         bool? intoPage = null;
-        switcher.OpenRequested += (route, into) => (opened, intoPage) = (route, into);
+        switcher.ViewModel.OpenRequested += (route, into) => (opened, intoPage) = (route, into);
         Open(switcher, focused: page.Child);
 
         switcher.SearchBox.Text = "temp";
         Layout(host);
         Assert.Equal(Visibility.Collapsed, switcher.TxtPrompt.Visibility);
-        Assert.Equal(["On PROD-SQL01", "Same page on another server"], switcher.Sections.Take(2).Select(s => s.Title));
-        Assert.Equal("TempDB", switcher.Selected!.Text);
+        Assert.Equal(["On PROD-SQL01", "Same page on another server"], switcher.ViewModel.Sections.Take(2).Select(s => s.Title));
+        Assert.Equal("TempDB", switcher.ViewModel.Selected!.Text);
 
         // The headings in capitals, read out as written; each row read out with its health.
         var headings = switcher.Results.Children.OfType<TextBlock>().ToList();
@@ -72,12 +72,12 @@ public sealed class QuickSwitcherOverlayTests
         Assert.Equal("On PROD-SQL01", AutomationProperties.GetName(headings[0]));
         var rows = switcher.Results.Children.OfType<Border>().ToList();
         Assert.Contains(rows, r => AutomationProperties.GetName(r) == "TempDB on PROD-SQL02, prod-sql02, health score 96");
-        Assert.Equal("TempDB, Resources, 1 of " + switcher.Openable.Count, AutomationProperties.GetName(switcher.TxtAnnounce));
+        Assert.Equal("TempDB, Resources, 1 of " + switcher.ViewModel.Openable.Count, AutomationProperties.GetName(switcher.TxtAnnounce));
         Render(host, theme, "2-temp");
 
         Assert.True(PressKey(switcher.SearchBox, Key.Enter));
         Assert.Equal(new Route("TempDb", ConnectionId: Prod01.Settings.Id), opened);
-        Assert.False(switcher.IsOpen);
+        Assert.False(switcher.ViewModel.IsOpen);
         // The keyboard was in the page, which is replaced: it goes into the new one, not back.
         Assert.True(intoPage);
         Assert.Same(switcher.SearchBox, switcher.FocusMovedTo);
@@ -88,20 +88,20 @@ public sealed class QuickSwitcherOverlayTests
     {
         Open(switcher);
         switcher.SearchBox.Text = "waits";
-        var openable = switcher.Openable;
+        var openable = switcher.ViewModel.Openable;
         Assert.True(openable.Count >= 3);
-        Assert.Same(openable[0], switcher.Selected);
+        Assert.Same(openable[0], switcher.ViewModel.Selected);
 
         Assert.True(PressKey(switcher.SearchBox, Key.Down));
-        Assert.Same(openable[1], switcher.Selected);
+        Assert.Same(openable[1], switcher.ViewModel.Selected);
         Assert.True(PressKey(switcher.SearchBox, Key.Up));
         Assert.True(PressKey(switcher.SearchBox, Key.Up));
-        Assert.Same(openable[^1], switcher.Selected);
+        Assert.Same(openable[^1], switcher.ViewModel.Selected);
         Assert.True(PressKey(switcher.SearchBox, Key.Down));
-        Assert.Same(openable[0], switcher.Selected);
+        Assert.Same(openable[0], switcher.ViewModel.Selected);
 
         Assert.True(PressKey(switcher.SearchBox, Key.Tab));
-        Assert.True(switcher.IsOpen);
+        Assert.True(switcher.ViewModel.IsOpen);
         // Other keys are the box's own.
         Assert.False(PressKey(switcher.SearchBox, Key.Left));
     });
@@ -110,21 +110,34 @@ public sealed class QuickSwitcherOverlayTests
     public void Esc_Closes_AndGivesTheKeyboardBackToWhereItWas(string theme) => OnSta(theme, (switcher, host, _, button) =>
     {
         var opened = 0;
-        switcher.OpenRequested += (_, _) => opened++;
+        switcher.ViewModel.OpenRequested += (_, _) => opened++;
         Open(switcher, focused: button);
         switcher.SearchBox.Text = "proc";
 
         Assert.True(PressKey(switcher.SearchBox, Key.Escape));
-        Assert.False(switcher.IsOpen);
+        Assert.False(switcher.ViewModel.IsOpen);
         Assert.Equal(0, opened);
         Assert.Same(button, switcher.FocusMovedTo);
+    });
+
+    // #191: the tip followed only a change, so a switcher first opened over a page about every
+    // server (Alerts) showed it, as the XAML has it.
+    [Theory, MemberData(nameof(Themes))]
+    public void OverAPageAboutEveryServer_TheTipAboutKeepingThePage_IsHidden(string theme) => OnSta(theme, (switcher, host, _, _) =>
+    {
+        switcher.ViewModel.Open(_ => [], _ => null, keepsPage: false);
+        Assert.Equal(Visibility.Collapsed, switcher.TxtTip.Visibility);
+
+        switcher.Close(restoreFocus: false);
+        Open(switcher);
+        Assert.Equal(Visibility.Visible, switcher.TxtTip.Visibility);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void EnterFromOutsideThePage_GivesTheKeyboardBack_AsThatStays(string theme) => OnSta(theme, (switcher, host, _, button) =>
     {
         bool? intoPage = null;
-        switcher.OpenRequested += (_, into) => intoPage = into;
+        switcher.ViewModel.OpenRequested += (_, into) => intoPage = into;
         Open(switcher, focused: button);
         switcher.SearchBox.Text = "deadlocks";
 
@@ -137,17 +150,17 @@ public sealed class QuickSwitcherOverlayTests
     public void APageTheServerLacks_IsListedWithItsReason_AndTheSelectionStepsOverIt(string theme) => OnSta(theme, (switcher, host, _, _) =>
     {
         Route? opened = null;
-        switcher.OpenRequested += (route, _) => opened = route;
+        switcher.ViewModel.OpenRequested += (route, _) => opened = route;
         Open(switcher, azure: true);
         switcher.SearchBox.Text = "agent";
         Layout(host);
 
-        var jobs = switcher.Sections[0].Items[0];
+        var jobs = switcher.ViewModel.Sections[0].Items[0];
         Assert.Equal("Agent Jobs", jobs.Text);
         Assert.False(jobs.CanOpen);
-        Assert.DoesNotContain(jobs, switcher.Openable);
+        Assert.DoesNotContain(jobs, switcher.ViewModel.Openable);
         // Agent Jobs on another server is the first that can be opened.
-        Assert.Equal("Agent Jobs on PROD-SQL02", switcher.Selected!.Text);
+        Assert.Equal("Agent Jobs on PROD-SQL02", switcher.ViewModel.Selected!.Text);
 
         var row = switcher.Results.Children.OfType<Border>().First();
         Assert.Contains(UiThread.Find<TextBlock>(row), t => t.Text == AgentReason);
@@ -157,29 +170,29 @@ public sealed class QuickSwitcherOverlayTests
         // A click on it does nothing.
         row.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
         Assert.Null(opened);
-        Assert.True(switcher.IsOpen);
+        Assert.True(switcher.ViewModel.IsOpen);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void AClickOnAResult_OpensIt_AndAClickOutsideTheBox_Closes(string theme) => OnSta(theme, (switcher, host, _, button) =>
     {
         Route? opened = null;
-        switcher.OpenRequested += (route, _) => opened = route;
+        switcher.ViewModel.OpenRequested += (route, _) => opened = route;
         Open(switcher, focused: button);
         switcher.SearchBox.Text = "prod-sql02";
 
         // Inside the box: stays open.
         PressMouse(switcher.Card);
-        Assert.True(switcher.IsOpen);
+        Assert.True(switcher.ViewModel.IsOpen);
 
         var row = switcher.Results.Children.OfType<Border>().First();
         row.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
         Assert.Equal(new Route("Processes", ConnectionId: Prod02.Settings.Id), opened);
-        Assert.False(switcher.IsOpen);
+        Assert.False(switcher.ViewModel.IsOpen);
 
         Open(switcher, focused: button);
         PressMouse(switcher.Backdrop);
-        Assert.False(switcher.IsOpen);
+        Assert.False(switcher.ViewModel.IsOpen);
         Assert.Same(button, switcher.FocusMovedTo);
     });
 
@@ -189,13 +202,13 @@ public sealed class QuickSwitcherOverlayTests
         Open(switcher);
         switcher.SearchBox.Text = "zzzzqq";
         Layout(host);
-        Assert.Empty(switcher.Sections);
-        Assert.Null(switcher.Selected);
+        Assert.Empty(switcher.ViewModel.Sections);
+        Assert.Null(switcher.ViewModel.Selected);
         Assert.Equal(Visibility.Visible, switcher.TxtEmpty.Visibility);
         Assert.Equal("No server, page or setting matches “zzzzqq”.", switcher.TxtEmpty.Text);
         // Enter does nothing.
         Assert.True(PressKey(switcher.SearchBox, Key.Enter));
-        Assert.True(switcher.IsOpen);
+        Assert.True(switcher.ViewModel.IsOpen);
         Render(host, theme, "4-nothing");
     });
 
@@ -215,7 +228,7 @@ public sealed class QuickSwitcherOverlayTests
             Unavailable = (tag, server) => azure && tag == "AgentJobs" && server == id ? AgentReason : null,
         };
         switcher.FocusedElement = () => focused;
-        switcher.Open(text => QuickSwitcher.Search(text, scope), server => servers.FirstOrDefault(s => s.Settings.Id == server), keepsPage: true);
+        switcher.ViewModel.Open(text => QuickSwitcher.Search(text, scope), server => servers.FirstOrDefault(s => s.Settings.Id == server), keepsPage: true);
     }
 
     private static ConnectionSelectorItem Server(string name, string host, int score, HealthLevel level)

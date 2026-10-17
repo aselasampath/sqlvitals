@@ -77,7 +77,7 @@ Tracing a busy server isn't free, so SP Trace:
 
 ### Under the hood
 
-**Event session lifecycle.** The session is named `SqlVitals_SpTrace` (`TraceSettings:SessionName`), uses a `ring_buffer` target, and is **created on Start and dropped on Stop**. It's also dropped when you navigate away and when the app exits (hiding the window to the notification area doesn't count). `MainWindow.OnClosing`, on a real exit, calls `SpTracePage.PrepareForShutdown()` to stop the poll timer, then waits up to 20 s for the drop. Any session left by a crash is dropped by name before the next one is created. Nothing is left running on the server.
+**Event session lifecycle.** The session is named `SqlVitals_SpTrace` (`TraceSettings:SessionName`), uses a `ring_buffer` target, and is **created on Start and dropped on Stop**. It's also dropped when you navigate away and when the app exits (hiding the window to the notification area doesn't count). On a real exit `MainWindow.OnClosing` calls `ShellViewModel.Shutdown`, which calls `SpTraceViewModel.PrepareForShutdown()` to stop the poll timer, then waits up to 20 s for the drop. Any session left by a crash is dropped by name before the next one is created. Nothing is left running on the server.
 
 **Two events are captured**, because how the caller is written decides which one fires:
 

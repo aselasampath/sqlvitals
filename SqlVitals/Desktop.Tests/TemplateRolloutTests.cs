@@ -659,7 +659,7 @@ public sealed class TemplateRolloutTests : IDisposable
         {
             Press(page.Shell.VerdictView, 0);   // Start Trace
             await Task.Delay(50);
-            page.PrepareForShutdown();   // no timed poll during the test: one read, below
+            page.ViewModel.PrepareForShutdown();   // no timed poll during the test: one read, below
             await page.ViewModel.RefreshAsync();
         }, "sp-trace.png", () =>
         {

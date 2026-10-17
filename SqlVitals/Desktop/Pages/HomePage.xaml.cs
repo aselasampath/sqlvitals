@@ -7,7 +7,6 @@ using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.ViewModels.Pages;
-using SqlVitals.Engine.Alerts;
 
 namespace SqlVitals.Desktop.Pages;
 
@@ -54,34 +53,6 @@ public partial class HomePage : Page, IPageContext
             if (e.PropertyName == nameof(HomeViewModel.Breakdown))
                 ShowBreakdown();
         };
-    }
-
-    /// <inheritdoc cref="HomeViewModel.OpenRequested"/>
-    public event Action<Guid>? OpenRequested
-    {
-        add    => ViewModel.OpenRequested += value;
-        remove => ViewModel.OpenRequested -= value;
-    }
-
-    /// <inheritdoc cref="HomeViewModel.InvestigateRequested"/>
-    public event Action<Alert>? InvestigateRequested
-    {
-        add    => ViewModel.InvestigateRequested += value;
-        remove => ViewModel.InvestigateRequested -= value;
-    }
-
-    /// <inheritdoc cref="HomeViewModel.AddConnectionRequested"/>
-    public event Action? AddConnectionRequested
-    {
-        add    => ViewModel.AddConnectionRequested += value;
-        remove => ViewModel.AddConnectionRequested -= value;
-    }
-
-    /// <inheritdoc cref="HomeViewModel.EditRequested"/>
-    public event Action<Guid>? EditRequested
-    {
-        add    => ViewModel.EditRequested += value;
-        remove => ViewModel.EditRequested -= value;
     }
 
     /// <summary>The width of a tile's slot, gap included, so the tiles fill the row.</summary>

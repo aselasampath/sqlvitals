@@ -2,92 +2,28 @@ using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
-using SqlVitals.Engine.Activity;
-using SqlVitals.Engine.Alerts;
-using SqlVitals.Engine.ChatNotifications;
-using SqlVitals.Engine.Errors;
-using SqlVitals.Engine.History;
-using SqlVitals.Engine.Monitoring;
-using SqlVitals.Engine.Repositories;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
-using SqlVitals.Desktop.ViewModels;
+using SqlVitals.Desktop.ViewModels.Shell;
+using SqlVitals.Engine.Activity;
+using SqlVitals.Engine.Alerts;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop;
 
-[SuppressMessage("Design", "CA1001", Justification = "A Window isn't IDisposable; OnClosing disposes _tray, Monitoring, Chat and the connection's work")]
-public partial class MainWindow : Window
+/// <summary>
+/// The app's window. Its logic is the <see cref="ShellViewModel"/> (#191), its DataContext, with the
+/// top bar, the sidebar and the quick switcher; the window keeps what needs a window: the page in
+/// its frame (<see cref="IPageHost"/>), the tray icon, its placement and focus mode's full screen,
+/// coming back when a second copy starts, and the keys that work anywhere in it.
+/// </summary>
+[SuppressMessage("Design", "CA1001", Justification = "A Window isn't IDisposable; OnClosing disposes _tray")]
+public partial class MainWindow : Window, IPageHost
 {
-    // Replaced whenever the active connection changes, so pages created after that point
-    // query the new server without restarting the app.
-    internal IWaitStatsRepository Repo { get; private set; }
-    internal readonly ConnectionSettingsService SettingsService;
-    private bool _isConnectionConfigured;
-
-    // The window's own reads of the active connection (its edition); a switch cancels them (#167).
-    // A page's reads end with the page (PageLifetime).
-    private CancellationTokenSource _connectionWork = new();
-
-    // Identifies the connection Repo was built from, so re-reading the store only swaps the
-    // repository when the active connection (or its details) actually changed.
-    private Guid? _activeConnectionId;
-    private string _activeFingerprint = string.Empty;
-
-    // The pages visited, for Back and Forward; its current route is the page on screen, reopened
-    // against the new database after a switch (#139).
-    private readonly NavigationHistory _history = new();
-
-    // How each recent route's page was being looked at, put back when it's opened again (#139).
-    private readonly RouteStates<ViewState> _viewStates = new();
-
-    // What each recent route's view model kept, put back on the new one (#183).
-    private readonly RouteStates<object> _modelStates = new();
-
-    // The routes opened this session, most recent first, for the quick switcher (#144).
-    private readonly RecentRoutes _recent = new();
-
-    // Set from Back or Forward until the move is recorded, so a second press doesn't pick the
-    // same target from a history that hasn't moved yet.
-    private bool _historyMovePending;
-
-    // The page shown for the current route, and whether it has finished loading: one left
-    // before then hasn't had its saved view state put back yet, so that state is kept.
-    private Page? _page;
-    private bool  _pageLoaded;
-
-    // The page's view model (#183): it loads, refreshes and reports; left, it is cancelled.
-    private PageViewModel? _model;
-
-    // Makes each page with its view model (#183).
-    private readonly IPageFactory _pages;
-
-    // When the page on screen last loaded, refreshed or reported an update: a snapshot's "Taken",
-    // a live page's "As of" (#140). Null until its first load finishes.
-    private DateTime? _updatedAt;
-
-    // The Settings category last opened, so Settings opens on it again this session (#131).
-    private SettingsCategory _settingsCategory = SettingsCategory.Connections;
-
-    // Bumped on every navigation and connection switch. A page load that finishes after
-    // either has happened belongs to a previous database, so its result is discarded.
-    private int _loadVersion;
-
-
-    // Messages and the app's windows (#182).
-    private readonly IDialogService _dialogs;
-
-    // Background live-metrics collection for the active and every monitored connection.
-    internal readonly MonitoringManager Monitoring;
-
-    // The Slack and Teams channels in Settings → Alerts & chat (#108).
-    internal readonly ChatNotificationService Chat;
-
-    // Builds the active connection's repositories (#166).
-    private readonly IRepositoryFactory _repositories;
-    private List<ConnectionSelectorItem> _selectorItems = new();
+    private readonly ShellViewModel _shell;
+    private readonly ConnectionSettingsService _settings;
 
     // The notification-area icon: Windows notifications for alerts, and the way back to the
     // window while it's hidden (#35).
@@ -96,29 +32,19 @@ public partial class MainWindow : Window
     // What restoring from the tray goes back to: normal or maximized.
     private WindowState _restoreState = WindowState.Normal;
 
-    // The collector service (#172): the servers it watches are left to it, and Start asks whether
-    // it should watch one.
-    private readonly CollectorLink _collectors;
-    private readonly IWatchStarter _starter;
-
-    /// <summary>The app's window, made by the container (#166) with the services it starts and stops.</summary>
-    public MainWindow(IPageFactory pages, IDialogService dialogs, ConnectionSettingsService settings, MonitoringManager monitoring,
-                      ChatNotificationService chat, IRepositoryFactory repositories, CollectorLink collectors,
-                      IWatchStarter starter)
+    /// <summary>The app's window, made by the container (#166) with the shell it shows.</summary>
+    public MainWindow(ShellViewModel shell, ConnectionSettingsService settings)
     {
-        _collectors     = collectors;
-        _starter        = starter;
-        _pages          = pages;
-        _dialogs        = dialogs;
-        SettingsService = settings;
-        Monitoring      = monitoring;
-        Chat            = chat;
-        _repositories   = repositories;
+        _shell    = shell;
+        _settings = settings;
+        DataContext = shell;
         InitializeComponent();
 
-        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        Title = $"SqlVitals v{version?.Major}.{version?.Minor}.{version?.Build}";
-        Shell.VersionText.Text = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
+        Bar.ViewModel      = shell.TopBar;
+        Shell.ViewModel    = shell.Sidebar;
+        Switcher.ViewModel = shell.Switcher;
+        shell.Attach(this);
+        shell.PropertyChanged += OnShellChanged;
 
         // Pages are recreated on each navigation, but the Frame journal would otherwise keep
         // the old instances — and the mouse Back button could bring back a page still showing
@@ -129,40 +55,53 @@ public partial class MainWindow : Window
                 MainFrame.RemoveBackEntry();
         };
 
-        Bar.BackRequested     += async () => await Reported(GoAsync(back: true), "go back or forward");
-        Bar.ForwardRequested  += async () => await Reported(GoAsync(back: false), "go back or forward");
-        Bar.RefreshRequested  += async () => await Reported(RefreshPageAsync(), "refresh the page");
-        Bar.PauseRequested    += PausePage;
-        Bar.CrumbRequested    += async route => await Reported(OpenAsync(route, settingsMessage: null, _history.Visit), "open the page");
-        Bar.ServerRequested   += async id => await Reported(SwitchServerAsync(id), "switch server");
-        Bar.DatabaseRequested += async () =>
-        {
-            if (_activeConnectionId is { } id)
-                await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id)), "open the page");
-        };
-
-        // Ctrl+K, or the bar's search button (#144). What it opens goes through the navigator, so
-        // Back returns; the keyboard goes into the new page if it was in the one replaced, unless
-        // something else has taken it while the page loaded.
-        Bar.JumpRequested += OpenSwitcher;
+        // The quick switcher (#144): a menu the sidebar has open, and the score, close first; the
+        // keyboard goes into the page it opened if it was in the one replaced, unless something
+        // else has taken it while the page loaded.
         Switcher.PageHost = MainFrame;
-        Switcher.OpenRequested += async (route, intoPage) =>
+        shell.SwitcherOpening += () =>
         {
-            await Reported(OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.QuickSwitcher), "open the page");
-            if (intoPage && (Keyboard.FocusedElement is not DependencyObject focused || ReferenceEquals(focused, this) || Switcher.IsAncestorOf(focused)))
+            Shell.CloseFlyout(focusIcon: false);
+            ScorePopup.IsOpen = false;
+        };
+        shell.FocusIntoPageRequested += () =>
+        {
+            if (Keyboard.FocusedElement is not DependencyObject focused || ReferenceEquals(focused, this) || Switcher.IsAncestorOf(focused))
                 MainFrame.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
         };
 
         // A page opened as an alert's evidence (#145): Show all clears its filter where it is, and the
         // banner's history link opens the page that charts the alert's window.
-        FocusBar.ShowAllRequested += ShowAllEvidence;
-        FocusBar.HistoryRequested += async () =>
-        {
-            if (_history.Current is { } current && EvidenceRoutes.History(current) is { } history)
-                await Reported(OpenAsync(history, settingsMessage: null, _history.Visit, ActivitySources.Sidebar), "open the page");
-        };
+        FocusBar.ShowAllRequested += shell.ShowAllEvidence;
+        FocusBar.HistoryRequested += async () => await shell.OpenEvidenceHistoryAsync();
 
-        var store  = SettingsService.Load();
+        // The sidebar (#142): ☰ and Ctrl+B change it, and give the keyboard back to ☰; collapsed in a
+        // narrow window. The score in its server header opens the breakdown beside it (#36).
+        Shell.ReturnFocusTo   = Bar.BtnSidebar;
+        Shell.ScoreRequested += ShowScore;
+        SizeChanged += (_, e) => shell.Sidebar.SetWindowWidth(e.NewSize.Width);
+
+        _tray = new TrayIcon(settings);
+        _tray.OpenRequested   += ShowFromTray;
+        // The tray menu's Alerts opens every server's; a notification opens its server's workspace (#141).
+        _tray.AlertsRequested += async connectionId =>
+        {
+            ShowFromTray();
+            await shell.OpenAlertsAsync(connectionId);
+        };
+        // A notification about one alert opens its evidence (#145).
+        _tray.EvidenceRequested += async alert =>
+        {
+            ShowFromTray();
+            await shell.InvestigateAsync(alert, ActivitySources.Notification);
+        };
+        _tray.ExitRequested     += ExitApp;
+        _tray.StartAllRequested += shell.StartAll;
+        _tray.StopAllRequested  += shell.StopAll;
+        shell.AlertNotified += OnAlertNotified;
+        shell.Informed      += OnInformed;
+
+        var store = shell.Start(Width);
 
         // Every grid's density, as chosen in Settings → Appearance (#148).
         if (Application.Current is { } app)
@@ -171,199 +110,98 @@ public partial class MainWindow : Window
         // The details drawer (#147): pinned or floating and its width as last left; closed at start.
         Details.Layout = new DrawerLayout(store.DrawerPinned, store.DrawerWidth);
         Details.PreferencesChanged += SaveDrawer;
-        Details.StateChanged       += () => Bar.ShowDetailsOpen(Details.State != DrawerState.Closed);
-        Bar.DetailsRequested       += Details.Toggle;
-        Bar.FocusRequested         += ToggleFocus;
-        var active = store.Active;
-        BuildSidebar(store);
-        Repo = BuildRepository(active, store.CommandTimeoutSeconds);
-
-        _tray = new TrayIcon(SettingsService);
-        _tray.OpenRequested   += ShowFromTray;
-        // The tray menu's Alerts opens every server's; a notification opens its server's workspace (#141).
-        _tray.AlertsRequested += async connectionId =>
-        {
-            ShowFromTray();
-            if (connectionId is { } id && Item(id) is not null)
-                await Reported(NavigateTo("Overview", serverId: id), "open the page");
-            else
-                await Reported(NavigateTo("Alerts", alertsConnectionId: connectionId), "open the page");
-        };
-        // A notification about one alert opens its evidence (#145).
-        _tray.EvidenceRequested += async alert =>
-        {
-            ShowFromTray();
-            await Reported(OpenEvidenceAsync(alert, ActivitySources.Notification), "open the alert's evidence");
-        };
-        _tray.ExitRequested   += ExitApp;
-        _tray.StartAllRequested += () => Monitoring.StartAll(ActivitySources.TrayMenu);
-        _tray.StopAllRequested  += () => Monitoring.StopAll(ActivitySources.TrayMenu);
-
-        // Every settings change goes to the activity log (#115); never a secret (see SettingsDiff).
-        SettingsService.Changed += rows =>
-        {
-            foreach (var row in rows)
-                Monitoring.Log(row);
-
-            // Chat channels, and the connection names their messages use, apply from the next
-            // alert, and the Backups page's RPO from the backups check's next read (#174). Only reads.
-            var saved = SettingsService.Load();
-            Chat.Apply(saved);
-            Monitoring.ApplyBackupRpo(saved);
-            // The collector service watching some of these servers counts against the same RPO.
-            if (rows.Any(r => r.Setting?.StartsWith("Backup RPO", StringComparison.Ordinal) == true))
-                _ = Reported(_collectors.ApplyBackupRpoAsync(saved.BackupRpo, saved.Connections.Select(c => c.Id).ToList()),
-                             "give the collector service the backup RPO");
-            // How query text is kept (#175): from the next texts read, here and in the service.
-            if (rows.Any(r => r.Setting == SettingsActivity.QueryTextSetting))
-            {
-                Monitoring.ApplyHistorySettings(saved);
-                _ = Reported(_collectors.ApplyQueryTextStorageAsync(saved.QueryTextStorage, saved.Connections.Select(c => c.Id).ToList()),
-                             "give the collector service the query text setting");
-            }
-        };
-
-        Chat.Apply(store);
-        Chat.StartedFailing += OnChatChannelFailing;
-        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
-        if (store.ChatChannelsDropped)
-            _tray.Inform("Chat channels were removed",
-                "SqlVitals couldn't read its Slack and Teams channels on this PC or Windows account, so alerts " +
-                "can't be posted to them. Add them again in Settings → Alerts & chat.");
-
-        Monitoring.SessionStateChanged += OnMonitoringStateChanged;
-        Monitoring.MonitoringChanged   += OnMonitoringChanged;
-        // What the collector service watches, the app stops collecting and reads from its history (#172).
-        _collectors.Changed += () =>
-        {
-            var view = _collectors.View;
-            Monitoring.SetWatchedElsewhere(view.Watches, view.Texts, view.Sources);
-        };
-        _collectors.Start();
-        Monitoring.AlertsChanged       += OnAlertsChanged;
-        // Separate from the Windows notification: muting a connection doesn't stop its channels (#121).
-        Monitoring.AlertsRaised        += Chat.OnAlertsRaised;
-        Monitoring.AllStopped          += Chat.OnAllStopped;
-        // "Stopped watching" and "watching again" (#170); before the first Sync, which starts some.
-        Monitoring.WatchingChanged     += Chat.OnWatchingChanged;
-        SyncConnections(store, ActivitySources.AutomaticAtStartup);
+        Details.StateChanged       += () => shell.TopBar.DetailsOpen = Details.State != DrawerState.Closed;
+        shell.DetailsRequested     += Details.Toggle;
 
         // An installation from before #175 kept query text in full: its user chooses once, when
         // the window is first on screen (not while it starts in the tray).
-        if (!store.QueryTextChoiceAsked)
+        if (shell.AsksQueryTextStorage)
             ContentRendered += AskQueryTextStorageOnce;
 
-        Loaded += async (_, _) =>
+        Loaded += async (_, _) => await shell.OpenFirstPageAsync();
+    }
+
+    // What the shell says that needs the window: focus mode, the evidence banner, the score, the tray icon.
+    private void OnShellChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
         {
-            if (!_isConnectionConfigured)
-            {
-                // First run, or the active connection was removed: send the user to Settings
-                // instead of letting every page fail against an empty connection string. With
-                // nothing saved, the first-run flow: connect, check permissions, start (#177).
-                await Reported(store.Connections.Count == 0
-                    ? NavigateTo("Settings", settingsLocation: SettingsLocation.FirstRunFlow)
-                    : NavigateTo("Settings", "No server is open. Open one from All servers, or add a new connection.",
-                                 new SettingsLocation(SettingsCategory.Connections)), "open the page");
-                return;
-            }
-
-            if (active is { NeedsPassword: true })
-            {
-                // "Remember password" was off last session, so every query would fail the login.
-                await Reported(NavigateTo("Settings", PasswordPrompt(active), SettingsLocation.Connection(active.Id)), "open the page");
-                return;
-            }
-
-            await Reported(DisablePagesAzureSqlLacksAsync(), "check the server's edition");
-            await Reported(OpenAsync(StartRoute(store), settingsMessage: null, _history.Visit), "open the page");
-        };
+            case nameof(ShellViewModel.InFocus):
+                if (_shell.InFocus) EnterFullScreen();
+                else                LeaveFullScreen();
+                break;
+            case nameof(ShellViewModel.FocusBanner):
+                FocusBar.Show(_shell.FocusBanner.Text, _shell.FocusBanner.ShowAll);
+                break;
+            case nameof(ShellViewModel.Score) when _shell.Score is { } score:
+                ScoreBreakdown.Show(score.Name, score.Score, score.NoScore, score.Paused);
+                break;
+            case nameof(ShellViewModel.ActiveAlerts):
+                _tray.ShowActiveAlerts(_shell.ActiveAlerts);
+                break;
+            case nameof(ShellViewModel.MonitoredCount):
+                _tray.ShowMonitoring(_shell.MonitoredCount);
+                break;
+        }
     }
 
-    /// <summary>
-    /// Where SqlVitals opens (#141): the page open when it last closed, inside the server it was
-    /// inside. A server's page made its server the active connection, so it opens on that. Before
-    /// anything was saved, Home with more than one server (#130), the server's Overview with one (#143).
-    /// </summary>
-    private Route StartRoute(ConnectionStore store)
+    // ── The page (IPageHost) ──────────────────────────────────────────────────
+
+    // The page on screen, and how each recent route's page was being looked at, put back when it's opened again (#139).
+    private Page? _page;
+    private readonly RouteStates<ViewState> _viewStates = new();
+
+    public ShownPage Show(PageInstance page, PageFocus? focus)
     {
-        // A connection from appsettings.json only has no Overview: Live charts, as before.
-        if (store.LastPage is not { } tag)
-            return RouteFor(store.Connections.Count >= 2 ? "Home" : _activeConnectionId is null ? "LiveMetrics" : "Overview");
-        if (tag == "Overview")
-            return store.LastServerId is { } id && store.Connections.Any(c => c.Id == id) ? Workspace.Overview(id) : RouteFor("Home");
-        return RouteFor(tag);
+        var view = page.View;
+        System.Diagnostics.Debug.Assert(PageCatalog.Types.GetValueOrDefault(page.ViewModel.Tag) == view.GetType(),
+                                        $"PageCatalog says \"{page.ViewModel.Tag}\" opens another type than {view.GetType().Name}.");
+
+        // A banner hidden on the page left shows again on the next page opened as evidence.
+        FocusBar.NewPage();
+
+        // The page's own controls (a time range picker) go into the top bar before it loads; the
+        // previous page's go (#140).
+        var context = view as IPageContext;
+        FrameworkElement? tools = null;
+        try { tools = context?.TakeBarTools(); }
+        catch (Exception ex) { AppLog.Error($"{page.ViewModel.Tag}: could not move its controls to the top bar", ex); }
+
+        // Opened as evidence (#145): filtered to the problem, or set to the alert's window, from its
+        // first load on.
+        var focusPage = view as IFocusPage;
+        if (focus is not null && focusPage is not null)
+        {
+            try { focusPage.ShowFocus(focus); }
+            catch (Exception ex) { AppLog.Error($"{page.ViewModel.Tag}: could not apply its filter", ex); }
+        }
+
+        MainFrame.Navigate(view);
+        _page = view;
+        ShowDetailsOf(view);
+        Bar.ShowTools(tools);
+        return new ShownPage(context, focusPage);
     }
 
-    // ── Sidebar and the server workspace (#124, #141) ─────────────────────────
-
-    // The pinned sidebar's buttons, built from NavMenu with the shell, before anything can update one.
-    private NavSidebar _sidebar = null!;
-
-    private void BuildSidebar(ConnectionStore store)
+    public void KeepViewState(Route route)
     {
-        _sidebar = Shell.Menu;
-        // A server's page opens on the server whose pages are shown, switching to it if need be.
-        Shell.PageRequested          += async tag => await Reported(NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar), "open the page");
-        Shell.ScoreRequested         += ShowWorkspaceScore;
-        Shell.MonitorToggleRequested += ToggleWorkspaceMonitoring;
-
-        // Pinned, collapsed or hidden (#142): as last chosen, collapsed in a narrow window. ☰ and
-        // Ctrl+B change it, and the top bar's ☰ says what it does next.
-        Shell.ReturnFocusTo = Bar.BtnSidebar;
-        Shell.ModeShown    += ShowSidebarState;
-        Shell.ModeChosen   += SaveSidebarMode;
-        Bar.SidebarRequested += Shell.ToggleFromBar;
-        Shell.Restore(store.SidebarMode, Width);
-        SizeChanged += (_, e) => Shell.SetWindowWidth(e.NewSize.Width);
+        if (_page is not null)
+            _viewStates.Save(route, ViewState.Capture(_page, _viewStates.Get(route)));
     }
 
-    private void ShowSidebarState() =>
-        Bar.ShowSidebar(Shell.Shown, Shell.IsSlidOver, Monitoring.ActiveAlerts.Count);
-
-    // ── Focus mode (#148) ─────────────────────────────────────────────────────
-
-    // The window as it was before focus mode; null when not in it.
-    private WindowPlacement? _beforeFocus;
-
-    internal bool InFocus => _beforeFocus is not null;
-
-    // F11, the Focus button, or Exit focus.
-    private void ToggleFocus()
+    public void RestoreViewState(Route route, bool scrolling)
     {
-        if (InFocus) ExitFocus();
-        else         EnterFocus();
-    }
-
-    // Full screen without the sidebar; a floating drawer closes, a pinned one stays. The top bar stays,
-    // with Exit focus. Nothing is saved: the sidebar's chosen state is kept to come back to.
-    private void EnterFocus()
-    {
-        if (InFocus)
+        if (_page is not { } page || _viewStates.Get(route) is not { } state)
             return;
-        _beforeFocus = WindowPlacement.Capture(this);
-        Shell.InFocus = true;
-        if (Details.State == DrawerState.Floating)
-            Details.Close();
-        _beforeFocus.FullScreen().ApplyTo(this);
-        Bar.ShowFocus(true);
-    }
-
-    // Back to the window and the sidebar as they were.
-    private void ExitFocus()
-    {
-        if (_beforeFocus is not { } before)
-            return;
-        _beforeFocus  = null;
-        Shell.InFocus = false;
-        before.ApplyTo(this);
-        Bar.ShowFocus(false);
-    }
-
-    // Layout preferences: saved, but not in the activity log.
-    private void SaveDrawer(bool pinned, double width)
-    {
-        try { SettingsService.SetDrawer(pinned, width); }
-        catch (Exception ex) { AppLog.Error("Details drawer: could not save whether it is pinned, or its width", ex); }
+        try
+        {
+            if (scrolling) state.RestoreScrolling(page);
+            else           state.Restore(page);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error($"{route.Tag}: could not put back the view state", ex);
+        }
     }
 
     // ── The details drawer (#147) ─────────────────────────────────────────────
@@ -390,325 +228,54 @@ public partial class MainWindow : Window
             Details.Open();
     }
 
-    // A layout preference: saved, but not in the activity log (see SettingsActivity).
-    private void SaveSidebarMode(SidebarMode mode)
+    // A layout preference: saved, but not in the activity log.
+    private void SaveDrawer(bool pinned, double width)
     {
-        // Pinned from the menu slid in over a focus-mode page: the user wants it, so focus ends.
-        ExitFocus();
-        try { SettingsService.SetSidebarMode(mode); }
-        catch (Exception ex) { AppLog.Error("Sidebar: could not save whether it is pinned, collapsed or hidden", ex); }
-    }
-
-    /// <summary>
-    /// The server whose workspace is open: the one the page on screen is inside. Null on a page
-    /// about every server (Home, Alerts, Settings).
-    /// </summary>
-    private Guid? WorkspaceServer => _history.Current is { } route ? Workspace.ServerOf(route) : null;
-
-    private ConnectionSelectorItem? Item(Guid? id) => id is null ? null : _selectorItems.FirstOrDefault(i => i.Settings.Id == id);
-
-    // The sidebar's server part follows the page: its server's header and pages, or how to open one.
-    private void ShowWorkspace()
-    {
-        Shell.ShowServer(Item(WorkspaceServer));
-        ApplyPagesAzureSqlLacks();
-    }
-
-    // Start or Stop in the server header: the same as ▶ / ■ on its Home tile.
-    private void ToggleWorkspaceMonitoring()
-    {
-        if (WorkspaceServer is not { } id)
-            return;
-        if (Monitoring.IsMonitoring(id))
-            Monitoring.Stop(id, ActivitySources.Sidebar);
-        else
-            _ = _starter.StartAsync(id, ActivitySources.Sidebar);   // reports its own errors
-    }
-
-    // Another server from the breadcrumb's menu: the same page there, or its Overview if it
-    // hasn't got it (see OpenAsync). Settings is opened to ask for a password that isn't saved.
-    private async System.Threading.Tasks.Task SwitchServerAsync(Guid server)
-    {
-        if (_history.Current is { } current)
-            await OpenAsync(Workspace.OnServer(current, server), settingsMessage: null, _history.Visit, ActivitySources.ServerMenu);
-    }
-
-    // The page on screen and its server, opened again at the next start. Not in the activity log.
-    // Settings isn't: it is visited, not worked in, and a first run starts there.
-    private void RememberPage(Route shown)
-    {
-        if (shown.Tag == "Settings")
-            return;
-        try { SettingsService.SetLastPage(shown.Tag, Workspace.ServerOf(shown)); }
-        catch (Exception ex) { AppLog.Error("Sidebar: could not save the page on screen", ex); }
-    }
-
-    private static string PasswordPrompt(ConnectionSettings conn) =>
-        $"Enter the password for {conn.UserName} on {conn.Server} (\"{conn.DisplayName}\"), then click Save & make active.";
-
-    private static string Fingerprint(ConnectionSettings? conn, int commandTimeoutSeconds) =>
-        RepositoryFactory.Fingerprint(conn, commandTimeoutSeconds);
-
-    // Builds the repository the pages use, from appsettings.json overlaid with the active connection.
-    private IWaitStatsRepository BuildRepository(ConnectionSettings? active, int commandTimeoutSeconds)
-    {
-        _activeConnectionId = active?.Id;
-        _activeFingerprint  = Fingerprint(active, commandTimeoutSeconds);
-
-        var target = _repositories.TargetFor(active, commandTimeoutSeconds);
-        _isConnectionConfigured = !string.IsNullOrWhiteSpace(target.ConnectionString);
-        return _repositories.Create(target);
-    }
-
-    /// <summary>
-    /// Re-reads the saved connections after Settings changed them. Swaps in a new repository
-    /// when the active connection changed, refreshes the server header, and optionally opens the
-    /// dashboard — so connection changes apply without restarting the app.
-    /// </summary>
-    internal async System.Threading.Tasks.Task ApplySavedConnectionsAsync(bool navigateToDashboard)
-    {
-        var store = SettingsService.Load();
-        SyncConnections(store, ActivitySources.Settings);
-
-        if (Fingerprint(store.Active, store.CommandTimeoutSeconds) != _activeFingerprint)
-            await SwapRepositoryAsync(store);
-
-        // A connection renamed or removed: the breadcrumb and Back and Forward follow (#139), and
-        // the database the page reads (#140).
-        UpdateHistoryButtons();
-        ShowPageContext();
-
-        // "Save & make active": the server's Overview (#143).
-        if (navigateToDashboard)
-            await NavigateTo("Overview");
-    }
-
-    private async System.Threading.Tasks.Task SwapRepositoryAsync(ConnectionStore store)
-    {
-        // Anything still loading was queried against the previous database.
-        _loadVersion++;
-        _model?.OnNavigatedFrom();
-        var stopped = _connectionWork;
-        _connectionWork = new CancellationTokenSource();
-        stopped.Cancel();
-        stopped.Dispose();
-
-        var previous = Repo;
-        Repo = BuildRepository(store.Active, store.CommandTimeoutSeconds);
-
-        // Best effort: a trace session started against the old connection shouldn't be
-        // left running on that server.
-        _ = System.Threading.Tasks.Task.Run(async () =>
-        {
-            try { await previous.StopTraceAsync(); } catch { /* old server may be unreachable */ }
-        });
-
-        await DisablePagesAzureSqlLacksAsync();
-
-        // Back to a page this server doesn't have is skipped (#139).
-        UpdateHistoryButtons();
-    }
-
-    // ── Saved servers ─────────────────────────────────────────────────────────
-
-    // Brings monitoring, the server header and the breadcrumb's menu in line with the saved
-    // connections. The source says why, for the activity log rows of any connection that starts or stops.
-    private void SyncConnections(ConnectionStore store, string source)
-    {
-        Monitoring.Sync(store, source);
-        RefreshServers(store);
-    }
-
-    private void RefreshServers(ConnectionStore store)
-    {
-        _selectorItems = store.Connections
-            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .Select(c => new ConnectionSelectorItem(c))
-            .ToList();
-        foreach (var item in _selectorItems)
-            item.UpdateHealth(Monitoring);
-        ShowWorkspace();
-    }
-
-    private void OnAlertsChanged(Guid connectionId, IReadOnlyList<AlertChange> changes)
-    {
-        UpdateAlertsButton();
-
-        // Only an alert starting or turning critical notifies; the settings are only read then.
-        if (!changes.Any(c => c.Kind is AlertChangeKind.Started or AlertChangeKind.Escalated))
-            return;
-
-        var store = SettingsService.Load();
-        if (!store.NotifiesFor(connectionId))
-            return;
-
-        var name = store.Connections.FirstOrDefault(c => c.Id == connectionId)?.DisplayName ?? "a deleted connection";
-        if (AlertNotification.From(connectionId, name, changes) is { } notification)
-            _tray.Notify(notification);
-    }
-
-    // Alerts with a count while any monitored connection has an active alert; the tray icon says the same.
-    private void UpdateAlertsButton()
-    {
-        var active = Monitoring.ActiveAlerts;
-        _tray.ShowActiveAlerts(active);
-        Shell.SetCount("Alerts", active.Count, active.Count switch
-        {
-            0     => NavMenu.AlertsToolTip,
-            1     => "1 active alert",
-            var n => $"{n} active alerts",
-        });
-        // On ☰ while the sidebar is hidden.
-        ShowSidebarState();
-    }
-
-    // Monitoring started or stopped somewhere: the tray says whether anything is monitored.
-    private void OnMonitoringChanged()
-    {
-        _tray.ShowMonitoring(Monitoring.MonitoredCount);
-        UpdateAlertsButton();
-    }
-
-    private void OnMonitoringStateChanged(Guid connectionId)
-    {
-        var item = _selectorItems.FirstOrDefault(i => i.Settings.Id == connectionId);
-        if (item is null)
-            return;
-
-        item.UpdateHealth(Monitoring);
-        // The server header (#141) and the breadcrumb's server part (#140) show its health and score.
-        if (connectionId == WorkspaceServer)
-            Shell.ShowServer(item);
-        if (_history.Current is { } current && (connectionId == WorkspaceServer || connectionId == current.AlertsConnectionId))
-            UpdateBreadcrumb();
-        if (_scorePopupConnectionId == connectionId)
-            ShowScoreBreakdown(item);
+        try { _settings.SetDrawer(pinned, width); }
+        catch (Exception ex) { AppLog.Error("Details drawer: could not save whether it is pinned, or its width", ex); }
     }
 
     // ── Health score (#36) ────────────────────────────────────────────────────
 
-    // The connection whose breakdown is open beside the sidebar; kept current as samples arrive.
-    private Guid? _scorePopupConnectionId;
-
     // The score in the server header, or under its dot in the collapsed sidebar, opens its breakdown beside it.
-    private void ShowWorkspaceScore(FrameworkElement anchor)
+    private void ShowScore(FrameworkElement anchor)
     {
-        if (Item(WorkspaceServer) is not { } item)
+        if (!_shell.ShowWorkspaceScore())
             return;
-
-        _scorePopupConnectionId    = item.Settings.Id;
-        ShowScoreBreakdown(item);
         ScorePopup.PlacementTarget = anchor;
         ScorePopup.IsOpen          = true;
     }
 
-    private void ShowScoreBreakdown(ConnectionSelectorItem item)
+    private void ScorePopup_Closed(object? sender, EventArgs e) => _shell.CloseScore();
+
+    // ── Focus mode (#148) ─────────────────────────────────────────────────────
+
+    // The window as it was before focus mode; null when not in it.
+    private WindowPlacement? _beforeFocus;
+
+    // Full screen; a floating drawer closes, a pinned one stays.
+    private void EnterFullScreen()
     {
-        var session = Monitoring.Get(item.Settings.Id);
-        ScoreBreakdown.Show(item.DisplayName, item.Score,
-                            session is null ? Monitoring.NotMonitoredReason(item.Settings.Id) : session.HealthText,
-                            paused: session is { IsRunning: false });
+        _beforeFocus = WindowPlacement.Capture(this);
+        if (Details.State == DrawerState.Floating)
+            Details.Close();
+        _beforeFocus.FullScreen().ApplyTo(this);
     }
 
-    private void ScorePopup_Closed(object? sender, EventArgs e) => _scorePopupConnectionId = null;
-
-    /// <summary>
-    /// Makes a saved connection the active one: every server page then queries it. Opening one of
-    /// a server's pages does this (#141).
-    /// False when it couldn't: its password isn't saved (Settings is opened to ask for it), or the
-    /// change couldn't be saved (the status bar says why).
-    /// </summary>
-    /// <param name="source">Where the user switched, for the activity log.</param>
-    private async System.Threading.Tasks.Task<bool> SwitchToAsync(Guid connectionId, string source)
+    // Back to the window as it was.
+    private void LeaveFullScreen()
     {
-        if (connectionId == _activeConnectionId)
-            return true;
-
-        var store  = SettingsService.Load();
-        var target = store.Connections.FirstOrDefault(c => c.Id == connectionId);
-        if (target is null)
-            return false;
-
-        if (target.NeedsPassword)
-        {
-            // Switching would only fail the login: ask for the password first.
-            await NavigateTo("Settings", PasswordPrompt(target), SettingsLocation.Connection(target.Id));
-            return false;
-        }
-
-        try
-        {
-            SettingsService.SetActive(target.Id, source);
-        }
-        catch (Exception ex)
-        {
-            Bar.ShowMessage($"Could not switch: {ConnectionSettingsService.RedactSecrets(ex.Message)}", isError: true);
-            return false;
-        }
-
-        store = SettingsService.Load();
-        SyncConnections(store, source);
-        await SwapRepositoryAsync(store);
-        return true;
-    }
-
-    // Pages Azure SQL Database has nothing for (see the wiki's Server Impact and Permissions →
-    // Compatibility), with the reason shown on their button.
-    private static readonly (string Tag, string Reason)[] PagesAzureSqlLacks =
-    [
-        // TempDB file-level reporting relies on sys.master_files, which Azure SQL Database doesn't expose.
-        ("TempDb",    "Not available on Azure SQL Database (sys.master_files is not accessible)"),
-        // There is no SQL Server Agent, so msdb has no jobs (#39).
-        ("AgentJobs", "Not available on Azure SQL Database, which has no SQL Server Agent. Elastic Jobs run scheduled work there."),
-        // Azure takes the backups itself and records none in msdb (#40).
-        ("Backups",   "Not available on Azure SQL Database, which backs up every database itself; the Azure portal shows its restore points."),
-        // No sysadmin role, sa login or TRUSTWORTHY setting, and the logins are in the logical server's master (#43).
-        ("SecurityAudit", "Not available on Azure SQL Database, which has no sysadmin role, sa login or TRUSTWORTHY setting; its logins are in the logical server's master database."),
-    ];
-
-    // Their buttons' own tooltips, to put back on a server that has them.
-    private readonly Dictionary<string, object?> _ownToolTips = new();
-
-    // The active connection is Azure SQL Database: checked after every switch.
-    private bool _activeIsAzureSql;
-
-    private bool IsDisabled(string tag) => _activeIsAzureSql && PagesAzureSqlLacks.Any(p => p.Tag == tag);
-
-    // The sidebar shows them disabled while the open server is the active one. Another server's
-    // edition is only known once it is switched to, by opening one of its pages; one it lacks then
-    // opens its Overview instead (see OpenAsync).
-    private void ApplyPagesAzureSqlLacks()
-    {
-        var known = WorkspaceServer is null || WorkspaceServer == _activeConnectionId;
-        foreach (var (tag, reason) in PagesAzureSqlLacks)
-        {
-            var button = _sidebar.Button(tag);
-            if (!_ownToolTips.ContainsKey(tag))
-                _ownToolTips[tag] = button.ToolTip;
-            var disabled = known && IsDisabled(tag);
-            button.IsEnabled = !disabled;
-            button.ToolTip   = disabled ? reason : _ownToolTips[tag];
-            ToolTipService.SetShowOnDisabled(button, true);
-        }
-    }
-
-    // Disable those pages up front instead of letting the user hit a query error after navigating to one.
-    private async System.Threading.Tasks.Task DisablePagesAzureSqlLacksAsync()
-    {
-        _activeIsAzureSql = false;
-        if (_isConnectionConfigured)
-        {
-            var cancel = _connectionWork.Token;
-            try { _activeIsAzureSql = await Repo.IsAzureSqlDatabaseAsync(cancel); }
-            catch (OperationCanceledException) when (cancel.IsCancellationRequested) { return; /* switched meanwhile: the new server's check decides */ }
-            catch { /* Edition check failed (e.g. server unreachable): leave the pages enabled. */ }
-        }
-        ApplyPagesAzureSqlLacks();
+        if (_beforeFocus is not { } before)
+            return;
+        _beforeFocus = null;
+        before.ApplyTo(this);
     }
 
     // ── Notification area (#35) ───────────────────────────────────────────────
 
-    private bool KeepRunningInTray => SettingsService.Load().KeepRunningInTray;
+    private void OnAlertNotified(AlertNotification notification) => _tray.Notify(notification);
+
+    private void OnInformed(string title, string text, bool warning) => _tray.Inform(title, text, warning);
 
     protected override void OnStateChanged(EventArgs e)
     {
@@ -716,23 +283,14 @@ public partial class MainWindow : Window
 
         if (WindowState != WindowState.Minimized)
             _restoreState = WindowState;
-        else if (KeepRunningInTray)
+        else if (_shell.KeepRunningInTray)
             HideToTray();
     }
 
     private void AskQueryTextStorageOnce(object? sender, EventArgs e)
     {
         ContentRendered -= AskQueryTextStorageOnce;
-        try
-        {
-            // Closed without a choice keeps it as it was: in full. Either way it isn't asked again.
-            var choice = _dialogs.AskQueryTextStorage() ?? QueryTextStorage.Full;
-            SettingsService.SetQueryTextStorage(choice, ActivitySources.Settings);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Could not save how query text is kept", ex);
-        }
+        _shell.AskQueryTextStorage();
     }
 
     // Monitoring, history and alerts carry on; only the window goes. Windows it owns (a plan or
@@ -740,18 +298,8 @@ public partial class MainWindow : Window
     private void HideToTray()
     {
         Hide();
-
-        var store = SettingsService.Load();
-        if (store.TrayHintShown)
-            return;
-
-        _tray.Inform("SqlVitals is still running",
-            (Monitoring.MonitoredCount > 0
-                ? "Monitoring carries on and alerts still notify you. "
-                : "Nothing is being monitored; start it from the icon's menu. ") +
-            "Click the SqlVitals icon here to open it, or right-click it and choose Exit to quit.");
-        try { SettingsService.SetTrayHintShown(); }
-        catch (Exception ex) { AppLog.Error("Tray: could not save that the hint was shown", ex); }
+        if (_shell.TrayHint() is { } hint)
+            _tray.Inform("SqlVitals is still running", hint);
     }
 
     /// <summary>Brings the window back from the tray (or from behind other windows) as it was.</summary>
@@ -763,42 +311,6 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    /// <summary>How long the PC's sleep waits for the chat channels' "stopped watching" (#170).</summary>
-    private static readonly TimeSpan SleepTime = TimeSpan.FromSeconds(2);
-
-    // Raised on a SystemEvents thread; OnResumed is thread-safe, the rest runs on the UI thread.
-    // Going to sleep waits here, holding Windows back up to SleepTime, so the channels hear that
-    // nothing is watched before the network goes; what isn't sent goes when the PC wakes.
-    private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
-    {
-        try
-        {
-            if (e.Mode == Microsoft.Win32.PowerModes.Suspend)
-            {
-                var waited = System.Diagnostics.Stopwatch.StartNew();
-                Dispatcher.Invoke(Chat.OnGoingToSleep, DispatcherPriority.Send, CancellationToken.None, SleepTime);
-                var left = SleepTime - waited.Elapsed;
-                if (left > TimeSpan.Zero)
-                    Chat.WhenIdleAsync().Wait(left);
-            }
-            else if (e.Mode == Microsoft.Win32.PowerModes.Resume)
-            {
-                Chat.OnResumed();
-                Dispatcher.BeginInvoke(Chat.OnWokeUp);
-            }
-        }
-        catch (Exception ex)
-        {
-            // Nothing here may stop the PC sleeping, or reach SystemEvents' thread.
-            AppLog.Error("Chat: couldn't tell the channels the PC is sleeping or waking", ex);
-        }
-    }
-
-    // Once each time a chat channel starts failing, even while the window is hidden, and whatever
-    // connections are muted: it's about the channel (#122).
-    private void OnChatChannelFailing(Guid channelId, string text) =>
-        _tray.Inform(ChannelStatus.FailingTitle, text, warning: true);
-
     // Exit in the tray menu: quit for real, with the usual clean-up in OnClosing.
     private void ExitApp()
     {
@@ -806,417 +318,34 @@ public partial class MainWindow : Window
         Close();
     }
 
-    // Last line of defence for the live SP trace: SP Trace's view model drops its event session
-    // when the user navigates away, but exiting while that page is open doesn't navigate away.
-    // Without this the session keeps collecting on the monitored server after the app is gone.
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         // Closing the window only hides it, unless the user asked to exit or Windows is ending
         // the session.
-        if (!((App)Application.Current).IsExiting && KeepRunningInTray)
+        if (!((App)Application.Current).IsExiting && _shell.KeepRunningInTray)
         {
             e.Cancel = true;
             HideToTray();
             return;
         }
 
-        // A status report still queued for the UI thread mustn't reach the disposed icon.
-        Chat.StartedFailing -= OnChatChannelFailing;
+        // A notification still to come mustn't reach the disposed icon.
+        _shell.AlertNotified -= OnAlertNotified;
+        _shell.Informed      -= OnInformed;
         _tray.Dispose();
-        // A static event: it would keep this window alive.
-        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
 
-        // Background collectors hold no server-side state; just stop them polling. Each chat
-        // channel gets one "stopped watching" message, saying why and naming the alerts still
-        // active, which sends while the history is flushed; then whatever is still waiting gets
-        // the rest of a few seconds (#123, #170). Closing to the notification area doesn't come here.
-        var exitStarted = System.Diagnostics.Stopwatch.StartNew();
-        Chat.BeginExit(((App)Application.Current).SessionEndingReason switch
+        // Why, for the chat channels' "stopped watching" (#170).
+        _shell.Shutdown(((App)Application.Current).SessionEndingReason switch
         {
             ReasonSessionEnding.Shutdown => WatchStop.WindowsShutdown,
             ReasonSessionEnding.Logoff   => WatchStop.WindowsSignOut,
             _                            => WatchStop.AppExit,
         });
-        _collectors.Dispose();
-        Monitoring.Dispose();
-        Chat.Shutdown(ChatNotificationService.ExitTime - exitStarted.Elapsed);
-        Chat.Dispose();
-        _connectionWork.Cancel();
-        _connectionWork.Dispose();
-
-        try
-        {
-            // Stop the page's poll timer first. Each poll holds the trace repository's gate
-            // for a full server round trip, so leaving it running eats the budget below and
-            // the session survives the app — which is what it did before this call existed.
-            if (MainFrame.Content is SpTracePage tracePage)
-                tracePage.PrepareForShutdown();
-
-            // Task.Run keeps the await continuations off the UI thread — blocking on them
-            // here with a live SynchronizationContext would deadlock. The budget covers a
-            // cold connection to a remote server (Azure SQL routinely needs several
-            // seconds) plus the DROP itself.
-            System.Threading.Tasks.Task.Run(() => Repo.StopTraceAsync())
-                .Wait(TimeSpan.FromSeconds(20));
-        }
-        catch
-        {
-            // Shutting down regardless. A session left behind is dropped by name on the
-            // next Start Trace.
-        }
 
         base.OnClosing(e);
     }
 
-    // ── What the page on screen reports (IShellStatus, #183, #166) ────────────
-    // Timed refreshes report through the top bar rather than a message box, which would pop up
-    // again on every tick while the server stays unreachable (#140). A page the user has left no
-    // longer owns the bar, so only its log entry is kept.
-
-    // The page on screen, or its view model: a report from any other is only logged.
-    private bool IsOnScreen(object page) => ReferenceEquals(page, _page) || ReferenceEquals(page, _model);
-
-    /// <summary>The page read: opened or refreshed, the top bar's message goes; on its own, only an error does.</summary>
-    internal void ShowRead(object page, PageRead read)
-    {
-        if (!IsOnScreen(page))
-            return;
-        _updatedAt = DateTime.Now;
-        if (read != PageRead.Timed || Bar.MessageIsError)
-            Bar.ShowMessage(null);
-        ShowPageContext();
-    }
-
-    /// <summary>The page couldn't read: the error on the top bar, and in a message box when it was just opened.</summary>
-    internal void ShowError(object page, Exception error, PageRead read)
-    {
-        if (!IsOnScreen(page))
-            return;
-        Bar.ShowMessage(ErrorStatus.Format(error), isError: true);
-        if (read == PageRead.Load)
-            _dialogs.Warn(
-                FormatErrorDetail(error) + "\n\nIf the server details are wrong, update the connection in Settings — no restart needed.",
-                "Data Error");
-    }
-
-    /// <summary>
-    /// Awaits what one of the window's events started (a page to open, Back, a server to switch to),
-    /// and reports what it throws (#169): on the top bar, and in the log. Its handlers await this.
-    /// </summary>
-    /// <param name="what">What failed, as the top bar says it: "open the page".</param>
-    [ReportsItsErrors]
-    private async System.Threading.Tasks.Task Reported(System.Threading.Tasks.Task work, string what)
-    {
-        try
-        {
-            await work;
-        }
-        catch (OperationCanceledException)
-        {
-            // Another move or switch replaced it: nothing to say.
-        }
-        catch (Exception ex)
-        {
-            ShowFailure(what, ex);
-        }
-    }
-
-    /// <inheritdoc cref="Reported(System.Threading.Tasks.Task, string)"/>
-    /// <returns>Its result, or the default after a failure.</returns>
-    [ReportsItsErrors]
-    private async System.Threading.Tasks.Task<T?> Reported<T>(System.Threading.Tasks.Task<T> work, string what)
-    {
-        try
-        {
-            return await work;
-        }
-        catch (OperationCanceledException)
-        {
-            return default;
-        }
-        catch (Exception ex)
-        {
-            ShowFailure(what, ex);
-            return default;
-        }
-    }
-
-    private void ShowFailure(string what, Exception ex)
-    {
-        AppLog.Error($"Could not {what}", ex);
-        Bar.ShowMessage($"Could not {what}: {ConnectionSettingsService.RedactSecrets(ex.Message)}", isError: true);
-    }
-
-    /// <summary>The page's kind, window or pause changed.</summary>
-    internal void ShowContextOf(object page)
-    {
-        if (IsOnScreen(page))
-            ShowPageContext();
-    }
-
-    // Returns the full message for the MessageBox, with the searchable tag on its own line.
-    private static string FormatErrorDetail(Exception ex)
-    {
-        if (ex is WaitStatsException wse)
-        {
-            var sqlNote = wse.SqlErrorNumber != 0 ? $"\nSQL error number: {wse.SqlErrorNumber}" : string.Empty;
-            // A failure SqlVitals tells apart says what it was, and a missing permission the GRANT that fixes it (#167).
-            var explained = wse.Failure.Explanation is { } plain ? $"{plain}\n\n" : string.Empty;
-            var fix = wse.FixScript is { } script ? $"\n\nA DBA can fix it once with:\n{script}" : string.Empty;
-            return ConnectionSettingsService.RedactSecrets(
-                $"Error tag:  {wse.ErrorTag}{sqlNote}\n\n{explained}{ex.InnerException?.Message ?? ex.Message}{fix}\n\nSearch the codebase for \"{wse.ErrorTag}\" to locate the originating query.");
-        }
-        return ConnectionSettingsService.RedactSecrets(ex.Message);
-    }
-
-    // ── Home and a server's Overview (#130, #143) ─────────────────────────────
-
-    // The links out of a page the factory made (#183) that lead to the window: Home's tiles, an
-    // Overview's links, Settings'.
-    private void Wire(Page page)
-    {
-        switch (page)
-        {
-            case HomePage home:         Wire(home); break;
-            case OverviewPage overview: Wire(overview); break;
-            case SettingsPage settings: Wire(settings); break;
-        }
-    }
-
-    private void Wire(HomePage page)
-    {
-        page.OpenRequested          += async id => await Reported(NavigateTo("Overview", serverId: id), "open the page");
-        page.InvestigateRequested   += async alert => await Reported(OpenEvidenceAsync(alert, ActivitySources.Home), "open the alert's evidence");
-        page.AddConnectionRequested += async () => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.NewConnectionPage), "open the page");
-        page.EditRequested          += async id => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id)), "open the page");
-    }
-
-    private void Wire(OverviewPage page)
-    {
-        page.EditRequested       += async id => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id)), "open the page");
-        page.ThresholdsRequested += async id => await Reported(NavigateTo("Settings", settingsLocation: SettingsLocation.Connection(id, ConnectionTab.Thresholds)), "open the page");
-        page.AlertsRequested     += async id => await Reported(NavigateTo("Alerts", alertsConnectionId: id), "open the page");
-        page.MakeActiveRequested += async id =>
-        {
-            if (await Reported(SwitchToAsync(id, ActivitySources.Overview), "switch server"))
-                Bar.ShowMessage($"Switched to \"{SettingsService.Load().Connections.FirstOrDefault(c => c.Id == id)?.DisplayName}\".");
-        };
-        // A page about the server: Deadlocks, Live charts, the rest of "Since you last looked"… It
-        // queries the active connection, so opening it makes this one active (see OpenAsync).
-        page.OpenPageRequested += async (id, tag) => await Reported(NavigateTo(tag, serverId: id, switchSource: ActivitySources.Overview), "open the page");
-        // An alert's or a check's evidence, filtered and set to its time (#145).
-        page.EvidenceRequested += async route => await Reported(OpenAsync(route, settingsMessage: null, _history.Visit, ActivitySources.Overview), "open the page");
-    }
-
-    // ── An alert's evidence (#145) ────────────────────────────────────────────
-
-    /// <summary>
-    /// Opens an alert's evidence: its page on its server, filtered to the problem and set to its
-    /// time, through the navigator so Back returns. The alert as it stands now: one a notification
-    /// was about may have ended since. A deleted connection's alert has no server: Alerts instead.
-    /// </summary>
-    internal async System.Threading.Tasks.Task OpenEvidenceAsync(Alert alert, string source)
-    {
-        if (Item(alert.ConnectionId) is null)
-        {
-            await NavigateTo("Alerts");
-            Bar.ShowMessage("That alert's connection has been removed, so there is no server to look at.");
-            return;
-        }
-        await OpenAsync(EvidenceRoutes.ForAlert(await LatestAsync(alert)), settingsMessage: null, _history.Visit, source);
-    }
-
-    private async System.Threading.Tasks.Task<Alert> LatestAsync(Alert alert)
-    {
-        if (Monitoring.ActiveAlerts.FirstOrDefault(a => a.Id == alert.Id) is { } active)
-            return active;
-        if (!alert.IsActive)
-            return alert;
-
-        // Not active any more: the history has its end.
-        try
-        {
-            var reader = Monitoring.HistoryReader;
-            var stored = await System.Threading.Tasks.Task.Run(() =>
-                reader.ReadAlerts(alert.ConnectionId, alert.StartedUtc.AddMinutes(-1), DateTime.UtcNow.AddMinutes(1)));
-            return stored.Select(s => s.Alert).FirstOrDefault(a => a.Id == alert.Id) ?? alert;
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Evidence: could not read the alert's end from the history", ex);
-            return alert;
-        }
-    }
-
-    // Show all: the page clears its filter where it is, and the history keeps it unfiltered, so
-    // Back and Forward return to it as it is now.
-    private void ShowAllEvidence()
-    {
-        if (_history.Current is not { Focus: not null } current)
-            return;
-        if (_page is IFocusPage page)
-        {
-            try { page.ClearFocus(); }
-            catch (Exception ex) { AppLog.Error($"{current.Tag}: could not clear its filter", ex); }
-        }
-        _history.ReplaceCurrent(EvidenceRoutes.Unfocused(current));
-        UpdateHistoryButtons();
-        ShowFocusBanner();
-    }
-
-    // "Opened from alert" over a page opened as evidence; nothing over any other.
-    private void ShowFocusBanner()
-    {
-        var focus = _history.Current?.Focus;
-        var page  = _page as IFocusPage;
-        var text  = focus is null ? null
-            : FocusBanner.For(focus, page?.FocusNote, page?.ShowsWindow == true, PageName(focus.HistoryTag), DateTime.Today);
-        FocusBar.Show(text, page?.ShowAllText);
-    }
-
-    // The server's clock from UTC, from its latest sample; null when it isn't being sampled (see ServerClock).
-    private TimeSpan? ServerOffset(Guid? connectionId) =>
-        connectionId is { } id && Monitoring.Get(id) is { Samples.Count: > 0, LastSuccess: { } last } session
-            ? SqlVitals.Engine.Home.ServerClock.Offset(session.Samples[^1].Time, last.ToUniversalTime())
-            : null;
-
-    private static string? PageName(string? tag) =>
-        tag is null ? null : NavMenu.AllPages.FirstOrDefault(p => p.Tag == tag)?.Label;
-
-    /// <summary>
-    /// Opens another page of the same server with a filter, for links between pages that carry it
-    /// (#145): a session on Processes' Waiting view, a query on Query Store.
-    /// </summary>
-    /// <param name="fromPage">The page the link is on, as its banner names it.</param>
-    internal System.Threading.Tasks.Task OpenLinkAsync(string tag, FocusFilter filter, string fromPage) =>
-        OpenAsync(EvidenceRoutes.Link(tag, _history.Current?.ConnectionId ?? _activeConnectionId, filter, fromPage),
-                  settingsMessage: null, _history.Visit, ActivitySources.Page(fromPage));
-
-    // Settings (#131): links out of it come back here, and switching theme opens it again.
-    private void Wire(SettingsPage page)
-    {
-        page.CategoryShown   += category => _settingsCategory = category;
-        page.ServerRequested += async id => await Reported(NavigateTo("Overview", serverId: id), "open the page");
-        page.ThemeChanged    += async () => await Reported(NavigateTo("Settings", settingsLocation: new SettingsLocation(SettingsCategory.Appearance)), "open the page");
-    }
-
-    /// <summary>Opens another page, as its sidebar button would; for links between pages (<see cref="INavigator"/>).</summary>
-    /// <param name="serverId">The server a page is about; null for the active connection.</param>
-    internal System.Threading.Tasks.Task OpenPageAsync(string tag, Guid? serverId = null) => NavigateTo(tag, serverId: serverId);
-
-    // ── Quick switcher (#144) ─────────────────────────────────────────────────
-
-    // Over everything else: a menu the sidebar has open closes first.
-    private void OpenSwitcher()
-    {
-        Shell.CloseFlyout(focusIcon: false);
-        Shell.CloseSlideOver(returnFocus: false);
-        ScorePopup.IsOpen = false;
-
-        var scope = SwitcherScope();
-        Switcher.Open(text => QuickSwitcher.Search(text, scope), id => Item(id),
-                      keepsPage: WorkspaceServer is not null && _selectorItems.Count > 1);
-    }
-
-    // What the switcher searches: the open server's pages (the active one's on a page about every
-    // server, as the sidebar would open them), the saved servers, and the recent routes still available.
-    private SwitcherScope SwitcherScope()
-    {
-        var isAvailable = Availability();
-        return new SwitcherScope(
-            _history.Current,
-            WorkspaceServer ?? _activeConnectionId,
-            _selectorItems.Select(i => new SwitcherServer(i.Settings.Id, i.DisplayName, i.Server)).ToList(),
-            _recent.Items.Where(isAvailable).ToList())
-        {
-            // Only the active server's edition is known; another's pages it lacks open its Overview.
-            Unavailable = (tag, server) =>
-                server == _activeConnectionId && IsDisabled(tag) ? PagesAzureSqlLacks.First(p => p.Tag == tag).Reason : null,
-        };
-    }
-
-    // ── Top bar (#140) ────────────────────────────────────────────────────────
-
-    // Refresh in the top bar, or F5: the page on screen reads again.
-    private async System.Threading.Tasks.Task RefreshPageAsync()
-    {
-        if (_model is not { } model || !Bar.CanRefresh)
-            return;
-
-        // The view model reports how it went (ShowRead, ShowError), and never throws.
-        var version = _loadVersion;
-        Bar.CanRefresh = false;
-        Bar.ShowMessage("Refreshing…");
-        await model.RefreshCommand.ExecuteAsync(null);
-        if (version == _loadVersion)
-            Bar.CanRefresh = true;
-    }
-
-    // Pause or Resume in the top bar, for a live page that can.
-    private void PausePage(bool pause)
-    {
-        if (_page is not IPageContext { CanPause: true } context)
-            return;
-        try
-        {
-            context.SetPaused(pause);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error($"{_history.Current?.Tag}: could not {(pause ? "pause" : "resume")}", ex);
-        }
-        ShowPageContext();
-    }
-
-    // What the top bar says about the page on screen: its kind and freshness, Pause, and the
-    // database it reads. Nothing before the first page.
-    private void ShowPageContext()
-    {
-        if (_page is not IPageContext context)
-        {
-            Bar.ShowContext(null, canPause: false, database: null);
-            ShowFocusBanner();
-            return;
-        }
-        Bar.ShowContext(Freshness(context), context.CanPause, DatabaseOf(context));
-        // What a page opened as evidence shows changes as it reads (#145).
-        ShowFocusBanner();
-    }
-
-    private PageFreshness Freshness(IPageContext page) => page.Kind switch
-    {
-        PageKind.Live     => new(PageKind.Live, page.LiveInterval, page.IsPaused, AsOf: _updatedAt),
-        PageKind.Snapshot => new(PageKind.Snapshot, Taken: _updatedAt),
-        PageKind.History  => new(PageKind.History, Window: page.HistoryWindow, CompareWith: page.CompareWith, DataTo: page.DataTo),
-        _                 => new(PageKind.None),
-    };
-
-    // The active connection's database, as Settings has it, on a page that reads it; null
-    // for a connection from appsettings.json only, whose database isn't known here.
-    private string? DatabaseOf(IPageContext page) =>
-        page.UsesDatabase ? _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DatabaseLabel : null;
-
-    // ── Navigation (#139) ─────────────────────────────────────────────────────
-
-    /// <summary>Opens a page as a new visit: the sidebar, a link, the tray, a Home tile.</summary>
-    /// <param name="settingsMessage">Shown at the top of Settings.</param>
-    /// <param name="settingsLocation">Where Settings opens (#131); the category last used when null.</param>
-    /// <param name="serverId">The server a page is about (#141): an Overview's, or the connection a
-    /// server's page queries; null for the active connection.</param>
-    /// <param name="switchSource">Why, in the activity log, if opening it switches the active connection.</param>
-    private System.Threading.Tasks.Task NavigateTo(string tag, string? settingsMessage = null, SettingsLocation? settingsLocation = null,
-                                                   Guid? alertsConnectionId = null, Guid? serverId = null,
-                                                   string switchSource = ActivitySources.Sidebar) =>
-        OpenAsync(RouteFor(tag, settingsLocation, alertsConnectionId, serverId), settingsMessage, _history.Visit, switchSource);
-
-    // A server's page queries the server it's opened on, the active connection by default; a page
-    // about every connection, or one by id, queries none.
-    private Route RouteFor(string tag, SettingsLocation? settingsLocation = null, Guid? alertsConnectionId = null, Guid? serverId = null) =>
-        new(tag,
-            ConnectionId:       Route.IsGlobal(tag) ? null : serverId ?? _activeConnectionId,
-            ServerId:           tag == "Overview" ? serverId ?? _activeConnectionId : null,
-            AlertsConnectionId: tag == "Alerts" ? alertsConnectionId : null,
-            Settings:           tag == "Settings" ? settingsLocation : null);
+    // ── Keys ──────────────────────────────────────────────────────────────────
 
     // Alt+← / Alt+→ and the keyboard's own Back and Forward keys, before the Frame's built-in
     // journal commands see them (its journal is kept empty). F5 refreshes the page (#140), rather
@@ -1227,26 +356,26 @@ public partial class MainWindow : Window
         if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
-            if (Switcher.IsOpen)
+            if (_shell.Switcher.IsOpen)
                 Switcher.Close(restoreFocus: true);
             else
-                OpenSwitcher();
+                _shell.OpenSwitcher();
             return;
         }
-        if (Switcher.IsOpen)
+        if (_shell.Switcher.IsOpen)
             return;
 
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;
-            await Reported(RefreshPageAsync(), "refresh the page");
+            await _shell.RefreshAsync();
             return;
         }
 
         if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
-            Shell.Cycle();
+            _shell.Sidebar.Cycle();
             return;
         }
 
@@ -1254,7 +383,7 @@ public partial class MainWindow : Window
         if (e.Key == Key.F11 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;
-            ToggleFocus();
+            _shell.ToggleFocus();
             return;
         }
 
@@ -1277,274 +406,25 @@ public partial class MainWindow : Window
         if (back is null)
             return;
         e.Handled = true;
-        await Reported(GoAsync(back.Value), "go back or forward");
+        await _shell.GoBackOrForwardAsync(back.Value);
     }
 
     // Esc closes a floating details drawer (#147), once nothing in the page has used it: a filter
-    // box clearing its text, a grid cancelling an edit, a pop-up closing come first.
+    // box clearing its text, a grid cancelling an edit, a pop-up closing come first. Then focus mode (#148).
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None || Switcher.IsOpen)
+        if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None || _shell.Switcher.IsOpen)
             return;
-        // A floating drawer first, then focus mode (#148).
-        if (Details.Escape())
+        if (Details.Escape() || _shell.ExitFocus())
             e.Handled = true;
-        else if (InFocus)
-        {
-            ExitFocus();
-            e.Handled = true;
-        }
     }
 
     // The mouse's back and forward buttons.
     private async void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2) || Switcher.IsOpen)
+        if (e.ChangedButton is not (MouseButton.XButton1 or MouseButton.XButton2) || _shell.Switcher.IsOpen)
             return;
         e.Handled = true;
-        await Reported(GoAsync(back: e.ChangedButton == MouseButton.XButton1), "go back or forward");
+        await _shell.GoBackOrForwardAsync(back: e.ChangedButton == MouseButton.XButton1);
     }
-
-    /// <summary>
-    /// Back or Forward to the nearest route still available, switching to its connection first
-    /// when it's another server's page. Routes skipped on the way are dropped from the history.
-    /// </summary>
-    internal async System.Threading.Tasks.Task GoAsync(bool back)
-    {
-        if (_historyMovePending)
-            return;
-
-        var isAvailable = Availability();
-        var target = back ? _history.PeekBack(isAvailable) : _history.PeekForward(isAvailable);
-        if (target is null)
-            return;
-
-        _historyMovePending = true;
-        try
-        {
-            await OpenAsync(target, settingsMessage: null, shown =>
-            {
-                if (back) _history.CommitBack(target, shown);
-                else      _history.CommitForward(target, shown);
-                _historyMovePending = false;
-            });
-        }
-        finally
-        {
-            // Also when the move was refused: Settings kept the user, or the switch failed.
-            _historyMovePending = false;
-            UpdateHistoryButtons();
-        }
-    }
-
-    /// <summary>
-    /// Shows a route: asks Settings first if it has unsaved changes, switches to the route's
-    /// connection if it's another one's, builds the page, records the move with
-    /// <paramref name="record"/>, loads it, and puts back how it was being looked at.
-    /// </summary>
-    /// <param name="record">Records the route actually shown in the history, before the page loads.</param>
-    /// <param name="switchSource">Why, in the activity log, if the route's connection becomes the active one.</param>
-    private async System.Threading.Tasks.Task OpenAsync(Route route, string? settingsMessage, Action<Route> record,
-                                                        string switchSource = ActivitySources.BackOrForward)
-    {
-        // A page merged into another (#178), as a saved setting or an old link may still name it.
-        route = NavMenu.Current(route);
-
-        // A connection's page, or the default thresholds, may hold unsaved changes: ask first, and
-        // stay when the user says so (#131). The page navigated to, as the Frame shows it a moment later.
-        if (_page is SettingsPage leaving && !await leaving.TryLeaveAsync())
-            return;
-
-        // A notification opening a page while the quick switcher is open: the page it was opened over goes.
-        Switcher.Close(restoreFocus: false);
-
-        SaveViewState();
-
-        // Another server's page (from its workspace, the server menu, or Back): that server becomes
-        // the active one. Without its saved password, Settings opens to ask for it.
-        if (route.ConnectionId is { } connectionId && connectionId != _activeConnectionId &&
-            !await SwitchToAsync(connectionId, switchSource))
-            return;
-
-        var version = ++_loadVersion;
-        _model?.OnNavigatedFrom();
-        _model = null;
-        var tag = route.Tag;
-        var settingsLocation = route.Settings;
-
-        // An Overview needs its server; without one, Home lists them all.
-        if (tag == "Overview" && route.ServerId is null)
-            tag = "Home";
-
-        // Without a connection every data page would just fail — point the user at Settings.
-        // Alerts only reads the local history, and a notification can lead there with none active.
-        // Home and a server's details only read the sessions and the history too (#130).
-        if (!_isConnectionConfigured && !Route.IsGlobal(tag))
-        {
-            tag = "Settings";
-            settingsMessage ??= SettingsService.Load().Connections.Count == 0
-                ? "No SQL Server connection is configured yet. Click + New connection to add one, then Save & make active."
-                : "No server is open. Open one from All servers, or add a new connection.";
-            settingsLocation ??= new SettingsLocation(SettingsCategory.Connections);
-        }
-
-        // A page this server doesn't have, e.g. Agent Jobs on an Azure SQL Database just switched
-        // to: its Overview instead (#141).
-        var shown = Workspace.Available(tag == route.Tag ? route : RouteFor(tag, settingsLocation), IsDisabled, _activeConnectionId);
-        tag = shown.Tag;
-        record(shown);
-        _recent.Add(shown);
-        UpdateHistoryButtons();
-        ShowWorkspace();
-        RememberPage(shown);
-
-        // Highlight the page's button, and open its group.
-        System.Diagnostics.Debug.Assert(_sidebar.HasPage(tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
-        Shell.Highlight(tag);
-
-        // A banner hidden on the page left shows again on the next page opened as evidence.
-        FocusBar.NewPage();
-
-        var activeName = _selectorItems.FirstOrDefault(i => i.Settings.Id == _activeConnectionId)?.DisplayName;
-        // An unknown tag (one remembered from an older version) opens Live Metrics, as it always has.
-        var made = _pages.Create(PageCatalog.Types.ContainsKey(tag) ? tag : "LiveMetrics",
-            new PageArgs(tag == "Settings" ? shown with { Settings = settingsLocation ?? new SettingsLocation(_settingsCategory) } : shown, Repo)
-            {
-                ConnectionId     = _activeConnectionId,
-                ConnectionName   = activeName,
-                ServerOffset     = ServerOffset(_activeConnectionId),
-                ApplyConnections = ApplySavedConnectionsAsync,
-                SettingsMessage  = settingsMessage,
-            });
-        Wire(made.View);
-
-        // Settings reads nothing on Refresh, and keeps its own place (#131).
-        if (made.View is SettingsPage settings)
-        {
-            MainFrame.Navigate(settings);
-            _page      = settings;
-            _model     = made.ViewModel;
-            _updatedAt = null;
-            ShowFocusBanner();
-            ShowDetailsOf(settings);
-            Bar.ShowPage(tools: null, Freshness(settings), canPause: false, database: null);
-            Bar.CanRefresh = false;
-            if (!_isConnectionConfigured)
-                Bar.ShowMessage("Not connected");
-            return;
-        }
-
-        var page  = made.View;
-        var model = made.ViewModel;
-        System.Diagnostics.Debug.Assert(PageCatalog.Types.GetValueOrDefault(tag) == page.GetType() || !PageCatalog.Types.ContainsKey(tag),
-                                        $"PageCatalog says \"{tag}\" opens another type than {page.GetType().Name}.");
-
-        // The page's own controls (a time range picker) go into the top bar before it loads, with
-        // its kind; the previous page's go (#140).
-        var context = (IPageContext)page;
-        FrameworkElement? tools = null;
-        try { tools = context.TakeBarTools(); }
-        catch (Exception ex) { AppLog.Error($"{tag}: could not move its controls to the top bar", ex); }
-
-        // Opened as evidence (#145): filtered to the problem, or set to the alert's window, from its
-        // first load on.
-        if (shown.Focus is { } focus && page is IFocusPage focusPage)
-        {
-            try { focusPage.ShowFocus(focus); }
-            catch (Exception ex) { AppLog.Error($"{tag}: could not apply its filter", ex); }
-        }
-
-        MainFrame.Navigate(page);
-        _page       = page;
-        _model      = model;
-        _pageLoaded = false;
-        _updatedAt  = null;
-        ShowDetailsOf(page);
-        Bar.ShowPage(tools, Freshness(context), context.CanPause, DatabaseOf(context));
-        ShowFocusBanner();
-
-        // How the page was left last time: its tab now, each grid's sort, filter and selection
-        // as its rows arrive, so the page loads straight into it (#139).
-        var viewState = _viewStates.Get(shown);
-        if (viewState is not null)
-            RestoreViewState(() => viewState.Restore(page));
-        if (_modelStates.Get(shown) is { } modelState)
-            RestoreViewState(() => model.RestoreState(modelState));
-
-        // The view model loads it and reports how it went (ShowRead, ShowError): once the user has
-        // moved on (another page or another database) it was cancelled, and says nothing.
-        Bar.CanRefresh = false;
-        Bar.ShowMessage("Loading…");
-        await model.OnNavigatedToAsync();
-        if (version == _loadVersion)
-        {
-            Bar.CanRefresh = true;
-
-            // Loaded or not, the page is as long as it will be: scroll it back.
-            _pageLoaded = true;
-            if (viewState is not null)
-                RestoreViewState(() => viewState.RestoreScrolling(page));
-        }
-    }
-
-    // Keeps how the page on screen is being looked at, for when its route is opened again.
-    // Settings keeps its own place (#131); a page left before it loaded keeps what it had.
-    private void SaveViewState()
-    {
-        if (_history.Current is not { } current || _page is null or SettingsPage || !_pageLoaded)
-            return;
-
-        try
-        {
-            _viewStates.Save(current, ViewState.Capture(_page, _viewStates.Get(current)));
-            // What the view model keeps (#183): a converted page's tab or filter.
-            if (_model?.SaveState() is { } modelState)
-                _modelStates.Save(current, modelState);
-        }
-        catch (Exception ex)
-        {
-            // Losing a page's sort or scroll position isn't worth stopping the navigation for.
-            AppLog.Error($"{current.Tag}: could not keep the view state", ex);
-        }
-    }
-
-    private void RestoreViewState(Action restore)
-    {
-        try { restore(); }
-        catch (Exception ex) { AppLog.Error($"{_history.Current?.Tag}: could not put back the view state", ex); }
-    }
-
-    // Which routes Back and Forward can still open: no connection they name has been removed,
-    // and the active server has the page. Another server's Azure pages are only known once
-    // switched to, and then its Overview opens instead. The saved connections are the ones held here,
-    // kept current as they change, rather than the settings file read again.
-    private Func<Route, bool> Availability()
-    {
-        var ids = _selectorItems.Select(i => i.Settings.Id).ToHashSet();
-        bool Exists(Guid? id) => id is not { } value || ids.Contains(value);
-        return route => Exists(route.ConnectionId) && Exists(route.ServerId) && Exists(route.AlertsConnectionId)
-                     && Exists(route.Settings?.ConnectionId)
-                     && !(route.ConnectionId == _activeConnectionId && IsDisabled(route.Tag));
-    }
-
-    // Back and Forward say where they go, and the breadcrumb says where you are (#140).
-    private void UpdateHistoryButtons()
-    {
-        var isAvailable = Availability();
-        var back    = _history.PeekBack(isAvailable);
-        var forward = _history.PeekForward(isAvailable);
-        Bar.ShowHistory(back is null ? null : Describe(back), forward is null ? null : Describe(forward));
-        UpdateBreadcrumb();
-    }
-
-    // All servers › PROD-SQL01 › Activity now › Processes, with the server's health.
-    private void UpdateBreadcrumb()
-    {
-        if (_history.Current is not { } current)
-            return;
-        Bar.ShowBreadcrumb(Breadcrumb.For(current, id => Item(id)?.DisplayName), id => Item(id), _selectorItems);
-    }
-
-    // "Processes · PROD-SQL01", "Overview · PROD-SQL01", "Alerts" for a page about every server.
-    private string Describe(Route route) => Breadcrumb.Describe(route, id => Item(id)?.DisplayName);
 }

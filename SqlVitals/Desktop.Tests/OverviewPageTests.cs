@@ -239,7 +239,7 @@ public sealed class OverviewPageTests : IDisposable
         Assert.Equal("0", rows[2].Count);
 
         var opened = new List<(Guid, string)>();
-        page.OpenPageRequested += (id, tag) => opened.Add((id, tag));
+        page.ViewModel.OpenPageRequested += (id, tag) => opened.Add((id, tag));
         foreach (var link in Links(page.SinceList))
             Click(link);
         Assert.Equal([(_calm.Id, "Deadlocks"), (_calm.Id, "AgentJobs"), (_calm.Id, "QueryRegressions")], opened);
@@ -267,7 +267,7 @@ public sealed class OverviewPageTests : IDisposable
         Setup();
         var page = Open(_hot);
         var opened = new List<Route>();
-        page.EvidenceRequested += opened.Add;
+        page.ViewModel.EvidenceRequested += opened.Add;
 
         Assert.Equal("CRITICAL", page.TxtStatus.Text);
         Assert.Equal("1 active alert", page.TxtAlertsTitle.Text);
@@ -294,7 +294,7 @@ public sealed class OverviewPageTests : IDisposable
         Setup();
         var page = Open(_hot);
         var opened = new List<Route>();
-        page.EvidenceRequested += opened.Add;
+        page.ViewModel.EvidenceRequested += opened.Add;
 
         Assert.Equal("84", page.RunScore.Text);
         var cost = Assert.Single(Rows<CostRow>(page.CostsList));
@@ -336,7 +336,7 @@ public sealed class OverviewPageTests : IDisposable
         Setup();
         var page = Open(_hot);
         var opened = new List<(Guid, string)>();
-        page.OpenPageRequested += (id, tag) => opened.Add((id, tag));
+        page.ViewModel.OpenPageRequested += (id, tag) => opened.Add((id, tag));
 
         Click(Links(page.ChartsCard).Single(l => LinkText(l) == "Full-size live charts →"));
 
@@ -351,7 +351,7 @@ public sealed class OverviewPageTests : IDisposable
         Setup();
         var page = Open(_down);
         var madeActive = new List<Guid>();
-        page.MakeActiveRequested += madeActive.Add;
+        page.ViewModel.MakeActiveRequested += madeActive.Add;
 
         Assert.Equal("UNREACHABLE", page.TxtStatus.Text);
         Assert.Equal(Visibility.Visible, page.OutageRow.Visibility);

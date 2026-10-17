@@ -209,7 +209,7 @@ public sealed class Wave4PagesTests : IDisposable
             Assert.Equal("● Start Trace", page.BtnTrace.Content);
             Assert.Equal(Colour(page, "Success"), ((SolidColorBrush)page.BtnTrace.Foreground).Color);
             TemplateRolloutTests.Click(page.BtnTrace);   // Start Trace
-            page.PrepareForShutdown();   // no timed poll during the test: one read, below
+            page.ViewModel.PrepareForShutdown();   // no timed poll during the test: one read, below
             await page.ViewModel.RefreshAsync();
         }, "sp-trace-vm", () =>
         {

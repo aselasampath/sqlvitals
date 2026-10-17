@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
@@ -8,27 +7,86 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels.Shell;
 
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
 /// The one bar across the top of the content area (#140): Back and Forward, the breadcrumb, and
 /// the page's context: its database, its own controls (a time range picker), whether it is live,
-/// a snapshot or history and how fresh, then Pause or Refresh. MainWindow fills it in.
+/// a snapshot or history and how fresh, then Pause or Refresh. It draws its
+/// <see cref="TopBarViewModel"/> (#191), whose commands its buttons are; the page's own controls
+/// and the layout in a narrow window are its own.
 /// </summary>
 public partial class TopBar : UserControl
 {
     // A snapshot's age moves on while it is on screen: "2 min ago", then amber at 15 minutes.
     private readonly DispatcherTimer _ageTimer = new() { Interval = TimeSpan.FromSeconds(15) };
 
-    private PageFreshness? _freshness;
-    private bool _canPause;
+    private TopBarViewModel _model = new();
 
     public TopBar()
     {
+        DataContext = _model;
         InitializeComponent();
+        _model.PropertyChanged += OnModelChanged;
         _ageTimer.Tick += (_, _) => ShowFreshness();
         Unloaded += (_, _) => _ageTimer.Stop();
+    }
+
+    /// <summary>What it shows, and what its buttons ask for: the shell's, or its own until then.</summary>
+    public TopBarViewModel ViewModel
+    {
+        get => _model;
+        set
+        {
+            _model.PropertyChanged -= OnModelChanged;
+            _model = value;
+            DataContext = value;
+            _model.PropertyChanged += OnModelChanged;
+            ShowHistory();
+            ShowBreadcrumb();
+            ShowContext();
+            ShowMessage();
+            ShowSidebar();
+            ShowFocus();
+            ShowDetailsOpen();
+        }
+    }
+
+    // Each change, drawn from the view model as it is now: it sets everything a change touches
+    // before it raises any of it. The breadcrumb is rebuilt, and a message read out, once: on
+    // Crumbs and Message, which are raised whenever they're shown again.
+    private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(TopBarViewModel.BackTo) or nameof(TopBarViewModel.ForwardTo)
+              or nameof(TopBarViewModel.BackToolTip) or nameof(TopBarViewModel.ForwardToolTip):
+                ShowHistory();
+                break;
+            case nameof(TopBarViewModel.Crumbs):
+                ShowBreadcrumb();
+                break;
+            case nameof(TopBarViewModel.Freshness) or nameof(TopBarViewModel.CanPause) or nameof(TopBarViewModel.Database)
+              or nameof(TopBarViewModel.ShowsPause) or nameof(TopBarViewModel.ShowsRefresh) or nameof(TopBarViewModel.IsPaused):
+                ShowContext();
+                break;
+            case nameof(TopBarViewModel.Message):
+                ShowMessage();
+                break;
+            case nameof(TopBarViewModel.Sidebar) or nameof(TopBarViewModel.SidebarSlidOver) or nameof(TopBarViewModel.Alerts)
+              or nameof(TopBarViewModel.SidebarName) or nameof(TopBarViewModel.SidebarToolTip)
+              or nameof(TopBarViewModel.SidebarAutomationName) or nameof(TopBarViewModel.SidebarCounts) or nameof(TopBarViewModel.SidebarBadge):
+                ShowSidebar();
+                break;
+            case nameof(TopBarViewModel.InFocus):
+                ShowFocus();
+                break;
+            case nameof(TopBarViewModel.DetailsOpen) or nameof(TopBarViewModel.DetailsToolTip) or nameof(TopBarViewModel.DetailsName):
+                ShowDetailsOpen();
+                break;
+        }
     }
 
     /// <summary>The clock the snapshot's age is measured on; a fake one in tests.</summary>
@@ -36,111 +94,48 @@ public partial class TopBar : UserControl
 
     private DateTime Now => Clock.GetLocalNow().DateTime;
 
-    public event Action? BackRequested;
-    public event Action? ForwardRequested;
-    public event Action? RefreshRequested;
-    public event Action? DatabaseRequested;
+    // ── What it draws ────────────────────────────────────────────────────────
 
-    /// <summary>Pause (true) or resume (false) the live page.</summary>
-    public event Action<bool>? PauseRequested;
-
-    /// <summary>A breadcrumb part was clicked: open its route.</summary>
-    public event Action<Route>? CrumbRequested;
-
-    /// <summary>Another server was picked from the breadcrumb's server menu (#141).</summary>
-    public event Action<Guid>? ServerRequested;
-
-    /// <summary>☰ was clicked: collapse or hide the sidebar, or show the hidden one over the page (#142).</summary>
-    public event Action? SidebarRequested;
-
-    /// <summary>The search button was clicked: open the quick switcher (#144).</summary>
-    public event Action? JumpRequested;
-
-    // ── The sidebar's ☰ (#142) ───────────────────────────────────────────────
-
-    /// <summary>
-    /// What ☰ does next, as its tooltip and spoken name, and, while the sidebar is hidden, the
-    /// active alerts' count on it, since the sidebar's own count is out of sight.
-    /// </summary>
-    public void ShowSidebar(SidebarMode shown, bool slidOver, int alerts)
+    private void ShowSidebar()
     {
-        var (name, tip) = shown switch
-        {
-            SidebarMode.Pinned    => ("Collapse the menu", "Collapse the menu to icons (Ctrl+B)"),
-            SidebarMode.Collapsed => ("Hide the menu", "Hide the menu (Ctrl+B)"),
-            _ when slidOver       => ("Close the menu", "Close the menu (Esc). Ctrl+B pins it open."),
-            _                     => ("Show the menu", "Show the menu over the page. Ctrl+B pins it open."),
-        };
-
-        var counted = shown == SidebarMode.Hidden && alerts > 0;
-        SidebarBadge.Visibility = counted ? Visibility.Visible : Visibility.Collapsed;
-        TxtSidebarBadge.Text    = alerts > 99 ? "99+" : alerts.ToString(CultureInfo.CurrentCulture);
-        var count = alerts == 1 ? "1 active alert" : $"{alerts} active alerts";
-        BtnSidebar.ToolTip = counted ? $"{tip}\n{count}" : tip;
-        AutomationProperties.SetName(BtnSidebar, counted ? $"{name} ({count})" : name);
+        SidebarBadge.Visibility = _model.SidebarCounts ? Visibility.Visible : Visibility.Collapsed;
+        TxtSidebarBadge.Text    = _model.SidebarBadge;
+        BtnSidebar.ToolTip      = _model.SidebarToolTip;
+        AutomationProperties.SetName(BtnSidebar, _model.SidebarAutomationName);
     }
 
-    private void BtnSidebar_Click(object sender, RoutedEventArgs e) => SidebarRequested?.Invoke();
-
-    private void BtnJump_Click(object sender, RoutedEventArgs e) => JumpRequested?.Invoke();
-
-    /// <summary>Focus, or Exit focus: focus mode on or off (#148), as F11 does.</summary>
-    public event Action? FocusRequested;
-
-    private void BtnFocus_Click(object sender, RoutedEventArgs e) => FocusRequested?.Invoke();
-
-    /// <summary>In focus mode the Focus button gives way to Exit focus (Esc).</summary>
-    public void ShowFocus(bool on)
+    private void ShowFocus()
     {
-        BtnFocus.Visibility     = on ? Visibility.Collapsed : Visibility.Visible;
-        BtnExitFocus.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        BtnFocus.Visibility     = _model.InFocus ? Visibility.Collapsed : Visibility.Visible;
+        BtnExitFocus.Visibility = _model.InFocus ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>The details button: opens or closes the details drawer (#147), as Ctrl+J does.</summary>
-    public event Action? DetailsRequested;
-
-    private void BtnDetails_Click(object sender, RoutedEventArgs e) => DetailsRequested?.Invoke();
-
-    /// <summary>Says whether the details button opens or closes the drawer.</summary>
-    public void ShowDetailsOpen(bool open)
+    private void ShowDetailsOpen()
     {
-        BtnDetails.ToolTip = open ? "Hide the details (Ctrl+J)" : "Show the selected row's details (Ctrl+J)";
-        System.Windows.Automation.AutomationProperties.SetName(BtnDetails, open ? "Hide details" : "Show details");
+        BtnDetails.ToolTip = _model.DetailsToolTip;
+        AutomationProperties.SetName(BtnDetails, _model.DetailsName);
     }
 
     // ── Back and Forward ─────────────────────────────────────────────────────
 
-    /// <summary>The buttons say where they go: "Back to Processes · PROD-SQL01".</summary>
-    public void ShowHistory(string? back, string? forward)
+    // Enabled by their commands.
+    private void ShowHistory()
     {
-        BtnBack.IsEnabled    = back is not null;
-        BtnForward.IsEnabled = forward is not null;
-        BtnBack.ToolTip      = back    is null ? "Back (Alt+Left)"     : $"Back to {back} (Alt+Left)";
-        BtnForward.ToolTip   = forward is null ? "Forward (Alt+Right)" : $"Forward to {forward} (Alt+Right)";
+        BtnBack.ToolTip    = _model.BackToolTip;
+        BtnForward.ToolTip = _model.ForwardToolTip;
     }
 
-    private void BtnBack_Click(object sender, RoutedEventArgs e)    => BackRequested?.Invoke();
-    private void BtnForward_Click(object sender, RoutedEventArgs e) => ForwardRequested?.Invoke();
-
     // ── Breadcrumb ───────────────────────────────────────────────────────────
-
-    /// <summary>The breadcrumb's text, for tests and the window's own description of where it is.</summary>
-    internal string BreadcrumbText { get; private set; } = string.Empty;
 
     // The breadcrumb on show, and its server part's health, which a new sample updates in place:
     // rebuilding the parts would take the keyboard focus off one.
     private IReadOnlyList<Crumb> _crumbs = [];
     private (Ellipse Dot, TextBlock Score, FrameworkElement Part, Crumb Crumb)? _serverPart;
 
-    // The saved servers, for the server part's menu: the latest list, read when the menu opens.
-    private IReadOnlyList<ConnectionSelectorItem> _servers = [];
-
-    /// <param name="server">A server's selector row, for its health dot and score.</param>
-    /// <param name="servers">Every saved server, in the order the server menu lists them.</param>
-    public void ShowBreadcrumb(IReadOnlyList<Crumb> crumbs, Func<Guid, ConnectionSelectorItem?> server,
-                               IReadOnlyList<ConnectionSelectorItem>? servers = null)
+    private void ShowBreadcrumb()
     {
-        _servers = servers ?? [];
+        var crumbs = _model.Crumbs;
+        var server = _model.ServerOf;
         if (crumbs.SequenceEqual(_crumbs) && _serverPart is { Crumb.ServerId: { } shownId } shown && server(shownId) is { } item)
         {
             ShowHealth(shown.Dot, shown.Score, shown.Part, shown.Crumb, item);
@@ -156,7 +151,6 @@ public partial class TopBar : UserControl
             CrumbPanel.SetCanDrop(part, crumb.CanDrop);
             Crumbs.Children.Add(part);
         }
-        BreadcrumbText = string.Join(" › ", crumbs.Select(c => c.Text));
     }
 
     private FrameworkElement CrumbElement(Crumb crumb, ConnectionSelectorItem? server)
@@ -213,7 +207,7 @@ public partial class TopBar : UserControl
         else
         {
             var button = new Button { Content = content, Style = (Style)FindResource("CrumbButton"), ToolTip = $"Open {crumb.Text}" };
-            button.Click += (_, _) => CrumbRequested?.Invoke(target);
+            button.Click += (_, _) => _model.OpenCrumb(target);
             part = button;
         }
 
@@ -248,7 +242,7 @@ public partial class TopBar : UserControl
     private void OpenServerMenu(FrameworkElement anchor, Guid current)
     {
         var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
-        foreach (var server in _servers)
+        foreach (var server in _model.Servers)
         {
             var id   = server.Settings.Id;
             var dot  = new Ellipse { Width = 8, Height = 8, StrokeThickness = 1.5, Fill = server.HealthFill, Stroke = server.HealthStroke, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -263,12 +257,12 @@ public partial class TopBar : UserControl
 
             var item = new MenuItem { Header = header, IsCheckable = false, IsChecked = id == current, ToolTip = server.ToolTipText };
             AutomationProperties.SetName(item, server.Score is { } s ? $"{server.DisplayName}, health score {s.Value}" : server.DisplayName);
-            item.Click += (_, _) => { if (id != current) ServerRequested?.Invoke(id); };
+            item.Click += (_, _) => _model.SwitchServer(id, current);
             menu.Items.Add(item);
         }
         menu.Items.Add(new Separator());
         var all = new MenuItem { Header = Breadcrumb.AllServers };
-        all.Click += (_, _) => CrumbRequested?.Invoke(new Route("Home"));
+        all.Click += (_, _) => _model.OpenCrumb(new Route("Home"));
         menu.Items.Add(all);
 
         menu.Closed += (_, _) => ServerMenu = null;
@@ -278,11 +272,8 @@ public partial class TopBar : UserControl
 
     // ── Page context ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// A new page: the controls it hands to the bar (the previous page's go with it), then its
-    /// context as <see cref="ShowContext"/>. The message is cleared.
-    /// </summary>
-    public void ShowPage(FrameworkElement? tools, PageFreshness? freshness, bool canPause, string? database)
+    /// <summary>The controls a new page hands to the bar, taken out of its layout; the previous page's go.</summary>
+    public void ShowTools(FrameworkElement? tools)
     {
         // In the bar to begin with; the layout moves them to the row below if there's no room.
         ToolsRow.Content    = null;
@@ -290,16 +281,12 @@ public partial class TopBar : UserControl
         ToolsHost.Content    = tools;
         ToolsHost.Visibility = tools is null ? Visibility.Collapsed : Visibility.Visible;
         _tools = tools;
-        ShowMessage(null);
-        ShowContext(freshness, canPause, database);
+        ShowContext();
     }
 
-    /// <summary>
-    /// The page on screen updated, paused, or changed kind: its kind and freshness (null for no
-    /// page yet), whether it can pause, and the database it reads (null for none).
-    /// </summary>
-    public void ShowContext(PageFreshness? freshness, bool canPause, string? database)
+    private void ShowContext()
     {
+        var database = _model.Database;
         BtnDatabase.Visibility = database is null ? Visibility.Collapsed : Visibility.Visible;
         if (database is not null)
         {
@@ -308,20 +295,15 @@ public partial class TopBar : UserControl
             AutomationProperties.SetName(BtnDatabase, $"Database: {database}");
         }
 
-        _canPause  = canPause;
-        _freshness = freshness;
         ShowFreshness();
 
-        var any = freshness is { Kind: not PageKind.None } || _tools is not null || database is not null;
+        var any = _model.Freshness is { Kind: not PageKind.None } || _tools is not null || database is not null;
         ContextPanel.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>What the bar says now, for tests.</summary>
-    internal PageFreshness? Freshness => _freshness;
-
     private void ShowFreshness()
     {
-        var f = _freshness;
+        var f = _model.Freshness;
         var kind = f?.Kind ?? PageKind.None;
         var now = Now;
 
@@ -333,7 +315,7 @@ public partial class TopBar : UserControl
         if (f is null || kind == PageKind.None)
         {
             _ageTimer.Stop();
-            UpdatePauseButton(null);
+            UpdatePauseButton();
             return;
         }
 
@@ -371,7 +353,7 @@ public partial class TopBar : UserControl
         else
             _ageTimer.Stop();
 
-        UpdatePauseButton(f);
+        UpdatePauseButton();
     }
 
     // Short of room, the bar gives things up before the breadcrumb's server's or page's name
@@ -479,59 +461,36 @@ public partial class TopBar : UserControl
     internal void Tick() => ShowFreshness();
 
     // Pause or Resume for a live page that can pause; Refresh beside a paused one, and for every other page.
-    private void UpdatePauseButton(PageFreshness? f)
+    private void UpdatePauseButton()
     {
-        var pausable = _canPause && f is { Kind: PageKind.Live };
-        BtnPause.Visibility = pausable ? Visibility.Visible : Visibility.Collapsed;
-        BtnRefresh.Visibility = pausable && !f!.Paused ? Visibility.Collapsed : Visibility.Visible;
-        if (!pausable)
+        BtnPause.Visibility   = _model.ShowsPause ? Visibility.Visible : Visibility.Collapsed;
+        BtnRefresh.Visibility = _model.ShowsRefresh ? Visibility.Visible : Visibility.Collapsed;
+        if (!_model.ShowsPause)
             return;
 
-        var paused = f!.Paused;
+        var paused = _model.IsPaused;
         BtnPause.Content = paused ? "\uE768" : "\uE769";
         var name = paused ? "Resume live updates" : "Pause live updates";
         BtnPause.ToolTip = paused ? name : $"{name}: the page stops moving so you can read it. F5 still refreshes it once.";
         AutomationProperties.SetName(BtnPause, name);
     }
 
-    private void BtnPause_Click(object sender, RoutedEventArgs e) =>
-        PauseRequested?.Invoke(_freshness is not { Paused: true });
-
-    private void BtnRefresh_Click(object sender, RoutedEventArgs e) => RefreshRequested?.Invoke();
-
-    private void BtnDatabase_Click(object sender, RoutedEventArgs e) => DatabaseRequested?.Invoke();
-
-    /// <summary>Refresh can be pressed: false while the page loads, and for a page with nothing to read.</summary>
-    public bool CanRefresh
-    {
-        get => BtnRefresh.IsEnabled;
-        set => BtnRefresh.IsEnabled = value;
-    }
-
     // ── Messages ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// "Loading…", "Switched to PROD-SQL02.", or an error the page ran into, which used to be the
-    /// sidebar's status text. Null clears it.
-    /// </summary>
-    public void ShowMessage(string? text, bool isError = false)
+    private void ShowMessage()
     {
-        TxtMessage.Text = text ?? string.Empty;
-        MessageIsError = isError && !string.IsNullOrEmpty(text);
+        var text    = _model.Message;
+        var isError = _model.MessageIsError;
+        TxtMessage.Text = text;
         TxtMessage.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
         TxtMessage.ToolTip = string.IsNullOrEmpty(text) ? null : text;
         TxtMessage.SetResourceReference(TextBlock.ForegroundProperty, isError ? "Danger" : "TextMuted");
-        AutomationProperties.SetName(TxtMessage, isError ? $"Error: {text}" : text ?? string.Empty);
+        AutomationProperties.SetName(TxtMessage, isError ? $"Error: {text}" : text);
         // A screen reader hears an error as it arrives.
         AutomationProperties.SetLiveSetting(TxtMessage, isError ? AutomationLiveSetting.Assertive : AutomationLiveSetting.Polite);
         if (!string.IsNullOrEmpty(text) && UIElementAutomationPeer.FromElement(TxtMessage) is { } peer)
             peer.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
-
-    /// <summary>The message on show, for tests and for keeping an error when the page reports again.</summary>
-    public string Message => TxtMessage.Text;
-
-    public bool MessageIsError { get; private set; }
 
     // A toolbar to a screen reader, not a plain group.
     protected override AutomationPeer OnCreateAutomationPeer() => new TopBarAutomationPeer(this);

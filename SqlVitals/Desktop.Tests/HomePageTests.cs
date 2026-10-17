@@ -191,7 +191,7 @@ public sealed class HomePageTests : IDisposable
         var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
         var opened = new List<Guid>();
-        page.OpenRequested += opened.Add;
+        page.ViewModel.OpenRequested += opened.Add;
 
         Click(ButtonOn(page, "Open", "Hot"));
 
@@ -207,8 +207,8 @@ public sealed class HomePageTests : IDisposable
         UiThread.Layout(page, 1100, 900);
         var opened = new List<Guid>();
         var edited = new List<Guid>();
-        page.OpenRequested += opened.Add;
-        page.EditRequested += edited.Add;
+        page.ViewModel.OpenRequested += opened.Add;
+        page.ViewModel.EditRequested += edited.Add;
 
         MenuItem Item(string tile, string header)
         {
@@ -250,7 +250,7 @@ public sealed class HomePageTests : IDisposable
         var page = Home(monitoring, settings);
         UiThread.Layout(page, 1100, 900);
         var opened = new List<Guid>();
-        page.OpenRequested += opened.Add;
+        page.ViewModel.OpenRequested += opened.Add;
         var before = _calls.Count(c => c.Server == "down" && c.Method == nameof(IWaitStatsRepository.GetLiveMetricsAsync));
 
         Click(ButtonOn(page, "Retry", "Down"));

@@ -4,7 +4,8 @@
              xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
              AutomationProperties.Name="Navigation and page context"
              FontFamily="Segoe UI" FontSize="12.5">
-    <!-- Everything here follows a theme change, so every colour is a DynamicResource. -->
+    <!-- Everything here follows a theme change, so every colour is a DynamicResource. Its buttons
+         are TopBarViewModel's commands (#191); the code-behind draws the rest of it. -->
     <UserControl.Resources>
         <!-- A 32 px icon button: Back, Forward, Pause, Refresh and the placeholders. -->
         <Style x:Key="BarIconButton" TargetType="Button">
@@ -119,7 +120,7 @@
                 <!-- The sidebar's ☰ (#142): collapse, hide, or show it over the page; with the alert
                      count while it is hidden. Then Back and Forward. -->
                 <StackPanel x:Name="LeftButtons" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="BtnSidebar" Style="{StaticResource BarIconButton}" Click="BtnSidebar_Click"
+                    <Button x:Name="BtnSidebar" Style="{StaticResource BarIconButton}" Command="{Binding ToggleSidebarCommand}"
                             ToolTip="Collapse the menu to icons (Ctrl+B)" AutomationProperties.Name="Collapse the menu">
                         <Grid Width="30" Height="30">
                             <TextBlock Text="&#xE700;" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -132,10 +133,10 @@
                         </Grid>
                     </Button>
                     <Button x:Name="BtnBack" Style="{StaticResource BarIconButton}" Content="&#xE72B;" Margin="2,0,0,0"
-                            Click="BtnBack_Click" IsEnabled="False" ToolTip="Back (Alt+Left)"
+                            Command="{Binding BackCommand}" ToolTip="Back (Alt+Left)"
                             AutomationProperties.Name="Back" />
                     <Button x:Name="BtnForward" Style="{StaticResource BarIconButton}" Content="&#xE72A;" Margin="2,0,0,0"
-                            Click="BtnForward_Click" IsEnabled="False" ToolTip="Forward (Alt+Right)"
+                            Command="{Binding ForwardCommand}" ToolTip="Forward (Alt+Right)"
                             AutomationProperties.Name="Forward" />
                     <Border Style="{StaticResource BarDivider}" />
                 </StackPanel>
@@ -149,7 +150,7 @@
                 <StackPanel x:Name="ContextPanel" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Style="{StaticResource BarDivider}" />
                     <Button x:Name="BtnDatabase" Style="{StaticResource ChipButton}" Margin="0,0,8,0" Visibility="Collapsed"
-                            Click="BtnDatabase_Click">
+                            Command="{Binding OpenDatabaseCommand}">
                         <TextBlock>
                             <Run Text="DB" Foreground="{DynamicResource TextMuted}" /><Run Text=" " /><Run x:Name="RunDatabase" />
                         </TextBlock>
@@ -173,22 +174,22 @@
                 <!-- Jump to (the quick switcher, #144), Pause or Refresh, and Ask AI (until the assistant, #93) -->
                 <StackPanel x:Name="RightButtons" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                     <Button x:Name="BtnJump" Style="{StaticResource BarIconButton}" Content="&#xE721;"
-                            Click="BtnJump_Click" ToolTip="Jump to a server, page or setting (Ctrl+K)"
+                            Command="{Binding JumpCommand}" ToolTip="Jump to a server, page or setting (Ctrl+K)"
                             AutomationProperties.Name="Jump to a server, page or setting"
                             AutomationProperties.AcceleratorKey="Ctrl+K" />
                     <Button x:Name="BtnPause" Style="{StaticResource BarIconButton}" Content="&#xE769;" Margin="2,0,0,0"
-                            Click="BtnPause_Click" Visibility="Collapsed"
+                            Command="{Binding PauseCommand}" Visibility="Collapsed"
                             ToolTip="Pause live updates" AutomationProperties.Name="Pause live updates" />
                     <Button x:Name="BtnRefresh" Style="{StaticResource BarIconButton}" Content="&#xE72C;" Margin="2,0,0,0"
-                            Click="BtnRefresh_Click" IsEnabled="False"
+                            Command="{Binding RefreshCommand}"
                             ToolTip="Refresh (F5)" AutomationProperties.Name="Refresh" />
                     <!-- Focus mode (#148): full screen, no sidebar; in it, the way out -->
                     <Button x:Name="BtnFocus" Style="{StaticResource BarIconButton}" Content="&#xE740;" Margin="2,0,0,0"
-                            Click="BtnFocus_Click" ToolTip="Focus: full screen, without the sidebar (F11)"
+                            Command="{Binding ToggleFocusCommand}" ToolTip="Focus: full screen, without the sidebar (F11)"
                             AutomationProperties.Name="Focus mode"
                             AutomationProperties.AcceleratorKey="F11" />
                     <Button x:Name="BtnExitFocus" Style="{DynamicResource SecondaryButton}" Margin="6,0,0,0" Padding="10,4"
-                            Click="BtnFocus_Click" Visibility="Collapsed" VerticalAlignment="Center"
+                            Command="{Binding ToggleFocusCommand}" Visibility="Collapsed" VerticalAlignment="Center"
                             ToolTip="Back to the window and the sidebar as they were (Esc or F11)"
                             AutomationProperties.Name="Exit focus" AutomationProperties.AcceleratorKey="Escape">
                         <StackPanel Orientation="Horizontal">
@@ -201,7 +202,7 @@
                     </Button>
                     <!-- The details drawer (#147): the selected row's details beside the grid -->
                     <Button x:Name="BtnDetails" Style="{StaticResource BarIconButton}" Content="&#xE8A0;" Margin="2,0,0,0"
-                            Click="BtnDetails_Click" ToolTip="Show the selected row's details (Ctrl+J)"
+                            Command="{Binding ToggleDetailsCommand}" ToolTip="Show the selected row's details (Ctrl+J)"
                             AutomationProperties.Name="Show details"
                             AutomationProperties.AcceleratorKey="Ctrl+J" />
                     <Button x:Name="BtnAskAi" Style="{StaticResource BarIconButton}" Content="&#xE8BD;" Margin="2,0,0,0"

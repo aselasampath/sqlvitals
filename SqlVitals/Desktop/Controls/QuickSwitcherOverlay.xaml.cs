@@ -8,45 +8,83 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels.Shell;
 
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>
-/// The Ctrl+K quick switcher (#144): a search box over the dimmed window, and what it finds in
-/// groups, from <see cref="QuickSwitcher"/>. The keyboard stays in the box: ↑ and ↓ move the
-/// selection, Enter opens it, Esc closes and gives the focus back to where it was. A result that
-/// can't be opened says why, and the selection steps over it.
+/// The Ctrl+K quick switcher (#144): a search box over the dimmed window, and what its
+/// <see cref="QuickSwitcherViewModel"/> finds, in groups (#191). The keyboard stays in the box: ↑
+/// and ↓ move the selection, Enter opens it, Esc closes and gives the focus back to where it was. A
+/// result that can't be opened says why, and the selection steps over it.
 /// </summary>
 public partial class QuickSwitcherOverlay : UserControl
 {
-    private Func<string, IReadOnlyList<SwitcherSection>> _search = _ => [];
-    private Func<Guid, ConnectionSelectorItem?> _server = _ => null;
+    private QuickSwitcherViewModel _model = new();
 
-    // Where the keyboard was when it opened.
+    // Where the keyboard was when it opened, and whether closing gives it back.
     private IInputElement? _returnFocus;
+    private bool _restoreFocus;
 
-    // The results that can be opened, in order, with their rows; and the one selected.
-    private readonly List<(SwitcherItem Item, Border Row, FrameworkElement EnterKey)> _rows = [];
+    // The rows of the results that can be opened, in order, and the one drawn selected.
+    private readonly List<(Border Row, FrameworkElement EnterKey)> _rows = [];
     private int _selected = -1;
 
     public QuickSwitcherOverlay()
     {
+        DataContext = _model;
         InitializeComponent();
+        Follow(_model);
         Backdrop.PreviewMouseDown += Backdrop_PreviewMouseDown;
         // In a short window the list gives up room before the box and the keys do.
         SizeChanged += (_, e) => Scroll.MaxHeight = Math.Clamp(e.NewSize.Height - 240, 120, 440);
     }
 
-    /// <summary>
-    /// A result was picked: open its route. The flag is true when the keyboard was in the page,
-    /// which the route replaces, so it should go into the new page instead.
-    /// </summary>
-    public event Action<Route, bool>? OpenRequested;
+    /// <summary>What it searches and shows: the shell's, or its own until then.</summary>
+    public QuickSwitcherViewModel ViewModel
+    {
+        get => _model;
+        set
+        {
+            _model.PropertyChanged -= OnModelChanged;
+            _model.Opened          -= OnOpened;
+            _model = value;
+            DataContext = value;
+            Follow(value);
+            Visibility = value.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+            ShowTip();
+            ShowResults();
+        }
+    }
+
+    private void Follow(QuickSwitcherViewModel model)
+    {
+        model.PropertyChanged += OnModelChanged;
+        model.Opened          += OnOpened;
+    }
+
+    private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(QuickSwitcherViewModel.IsOpen):
+                if (_model.IsOpen) ShowOpen();
+                else               ShowClosed();
+                break;
+            case nameof(QuickSwitcherViewModel.KeepsPage):
+                ShowTip();
+                break;
+            case nameof(QuickSwitcherViewModel.Sections):
+                ShowResults();
+                break;
+            case nameof(QuickSwitcherViewModel.SelectedIndex):
+                Select(_model.SelectedIndex);
+                break;
+        }
+    }
 
     /// <summary>What holds the page: focus in it doesn't survive another page being opened.</summary>
     public UIElement? PageHost { get; set; }
-
-    public bool IsOpen => Visibility == Visibility.Visible;
 
     /// <summary>Where the keyboard is; off screen, in tests, there is no keyboard focus to read.</summary>
     internal Func<IInputElement?> FocusedElement { get; set; } = () => Keyboard.FocusedElement;
@@ -54,45 +92,39 @@ public partial class QuickSwitcherOverlay : UserControl
     /// <summary>The element the switcher last moved the keyboard focus to; for tests, where nothing is on screen.</summary>
     internal UIElement? FocusMovedTo { get; private set; }
 
-    /// <summary>The results on show.</summary>
-    internal IReadOnlyList<SwitcherSection> Sections { get; private set; } = [];
-
-    /// <summary>The results that can be opened, in the order ↓ goes.</summary>
-    internal IReadOnlyList<SwitcherItem> Openable => _rows.Select(r => r.Item).ToList();
-
-    internal SwitcherItem? Selected => _selected >= 0 ? _rows[_selected].Item : null;
-
     internal TextBox SearchBox => Query;
-
-    /// <summary>Opens it, empty, with the keyboard in the box.</summary>
-    /// <param name="search">The results for what is typed (see <see cref="QuickSwitcher.Search"/>).</param>
-    /// <param name="server">A saved server's row, for its health dot and score.</param>
-    /// <param name="keepsPage">The page on screen is a server's: typing another server's name keeps it.</param>
-    public void Open(Func<string, IReadOnlyList<SwitcherSection>> search, Func<Guid, ConnectionSelectorItem?> server, bool keepsPage)
-    {
-        _search = search;
-        _server = server;
-        if (!IsOpen)
-            _returnFocus = FocusedElement();
-        TxtTip.Visibility = keepsPage ? Visibility.Visible : Visibility.Collapsed;
-        Visibility = Visibility.Visible;
-        Query.Text = string.Empty;
-        Show();
-        // Laid out first, so the box can take the focus.
-        UpdateLayout();
-        MoveFocus(Query);
-    }
 
     /// <summary>Closes it, if it is open.</summary>
     /// <param name="restoreFocus">Give the keyboard back to where it was when it opened.</param>
     public void Close(bool restoreFocus)
     {
-        if (!IsOpen)
-            return;
+        _restoreFocus = restoreFocus;
+        try { _model.Close(); }
+        finally { _restoreFocus = false; }
+    }
+
+    // Opened: over the window, remembering where the keyboard was.
+    private void ShowOpen()
+    {
+        _returnFocus = FocusedElement();
+        Visibility = Visibility.Visible;
+    }
+
+    // Opened, or opened again: the tip as this page has it, and the keyboard into the box, once it is laid out.
+    private void OnOpened()
+    {
+        ShowTip();
+        UpdateLayout();
+        MoveFocus(Query);
+    }
+
+    // Closed: the keyboard back to where it was, when asked; the shell closing it leaves it be.
+    private void ShowClosed()
+    {
         Visibility = Visibility.Collapsed;
         var target = _returnFocus;
         _returnFocus = null;
-        if (!restoreFocus || target is null)
+        if (!_restoreFocus || target is null)
             return;
         // A link in a grid's cell is a content element, not an element of its own.
         if (target is UIElement element)
@@ -101,25 +133,20 @@ public partial class QuickSwitcherOverlay : UserControl
             Keyboard.Focus(target);
     }
 
+    // Inside a server's workspace: how to keep the page on another server.
+    private void ShowTip() => TxtTip.Visibility = _model.KeepsPage ? Visibility.Visible : Visibility.Collapsed;
+
     // ── Results ──────────────────────────────────────────────────────────────
 
-    private void Query_TextChanged(object sender, TextChangedEventArgs e)
+    // The results, the first that can be opened selected (the view model says which).
+    private void ShowResults()
     {
-        if (IsOpen)
-            Show();
-    }
+        TxtPrompt.Visibility = _model.Query.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    // The results for the text in the box, the first that can be opened selected.
-    private void Show()
-    {
-        var text = Query.Text;
-        TxtPrompt.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        Sections = _search(text);
         Results.Children.Clear();
         _rows.Clear();
         _selected = -1;
-        foreach (var section in Sections)
+        foreach (var section in _model.Sections)
         {
             var heading = new TextBlock
             {
@@ -135,17 +162,14 @@ public partial class QuickSwitcherOverlay : UserControl
                 var (row, enterKey) = Row(item);
                 Results.Children.Add(row);
                 if (item.CanOpen)
-                    _rows.Add((item, row, enterKey));
+                    _rows.Add((row, enterKey));
             }
         }
 
-        var none = Sections.Count == 0;
+        var none = _model.Sections.Count == 0;
         TxtEmpty.Visibility = none ? Visibility.Visible : Visibility.Collapsed;
-        TxtEmpty.Text = text.Trim().Length == 0
-            ? "The pages you open show here. Type to find a server, a page or a setting."
-            : $"No server, page or setting matches “{text.Trim()}”.";
+        TxtEmpty.Text = _model.EmptyText;
         Scroll.ScrollToTop();
-        Select(_rows.Count > 0 ? 0 : -1);
         if (none)
             Announce(TxtEmpty.Text);
     }
@@ -156,7 +180,7 @@ public partial class QuickSwitcherOverlay : UserControl
 
         // One slot on the left, so the names line up: its page's icon, or a server's health dot. A
         // server's page has both: its dot goes beside the score.
-        var server = item.Server is { } id ? _server(id) : null;
+        var server = item.Server is { } id ? _model.ServerOf(id) : null;
         var slot = new Grid { Width = 20, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
         if (item.Icon.Length > 0)
         {
@@ -235,8 +259,8 @@ public partial class QuickSwitcherOverlay : UserControl
         AutomationProperties.SetName(row, Spoken(item, server));
         if (item.CanOpen)
         {
-            row.MouseEnter += (_, _) => { if (Selected != item) row.Background = Tint("TextPrimaryColor", 0x14); };
-            row.MouseLeave += (_, _) => { if (Selected != item) row.Background = Brushes.Transparent; };
+            row.MouseEnter += (_, _) => { if (_model.Selected != item) row.Background = Tint("TextPrimaryColor", 0x14); };
+            row.MouseLeave += (_, _) => { if (_model.Selected != item) row.Background = Brushes.Transparent; };
             row.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
@@ -274,6 +298,7 @@ public partial class QuickSwitcherOverlay : UserControl
 
     // ── Selection ────────────────────────────────────────────────────────────
 
+    // The selected row in the accent, with Enter on it, in view and read out.
     private void Select(int index)
     {
         if (_selected >= 0 && _selected < _rows.Count)
@@ -283,21 +308,13 @@ public partial class QuickSwitcherOverlay : UserControl
         }
 
         _selected = index;
-        if (index < 0)
+        if (index < 0 || index >= _rows.Count)
             return;
-        var (_, row, enterKey) = _rows[index];
+        var (row, enterKey) = _rows[index];
         row.Background = Tint("AccentColor", 0x2E);
         enterKey.Visibility = Visibility.Visible;
         row.BringIntoView();
         Announce($"{AutomationProperties.GetName(row)}, {index + 1} of {_rows.Count}");
-    }
-
-    // ↑ and ↓ go round.
-    private void Move(int by)
-    {
-        if (_rows.Count == 0)
-            return;
-        Select(((_selected + by) % _rows.Count + _rows.Count) % _rows.Count);
     }
 
     private void Announce(string text)
@@ -316,8 +333,9 @@ public partial class QuickSwitcherOverlay : UserControl
             return;
         // The keyboard was in the page, which is about to go: into the new one instead.
         var intoPage = _returnFocus is not DependencyObject focused || PageHost is null || IsWithin(focused, PageHost);
-        Close(restoreFocus: !intoPage);
-        OpenRequested?.Invoke(item.Route, intoPage);
+        _restoreFocus = !intoPage;
+        try { _model.Pick(item, intoPage); }
+        finally { _restoreFocus = false; }
     }
 
     private void Query_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -325,13 +343,13 @@ public partial class QuickSwitcherOverlay : UserControl
         switch (e.Key)
         {
             case System.Windows.Input.Key.Down:
-                Move(1);
+                _model.Move(1);
                 break;
             case System.Windows.Input.Key.Up:
-                Move(-1);
+                _model.Move(-1);
                 break;
             case System.Windows.Input.Key.Enter:
-                if (Selected is { } item)
+                if (_model.Selected is { } item)
                     Pick(item);
                 break;
             case System.Windows.Input.Key.Escape:

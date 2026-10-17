@@ -14,4 +14,10 @@ public interface IUiDispatcher
 
     /// <summary>Runs <paramref name="action"/> on the UI thread: at once when on it, otherwise when it gets there.</summary>
     Task InvokeAsync(Action action);
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on the UI thread ahead of anything waiting there, and waits for
+    /// it, but not past <paramref name="timeout"/>: one that hasn't run by then doesn't run.
+    /// </summary>
+    void Invoke(Action action, TimeSpan timeout);
 }

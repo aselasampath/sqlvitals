@@ -31,7 +31,7 @@ public sealed class WorkspaceShellTests
     [Theory, MemberData(nameof(Themes))]
     public void Pinned_Is232Wide_WithLabelsAndTheOpenGroupsPages(string theme) => OnSta(theme, (shell, host, bar, page) =>
     {
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
         Assert.Equal(232, shell.ColumnDefinitions[0].ActualWidth);
         Assert.Equal(1088, page.ActualWidth);
         Assert.True(shell.Menu.Button("Processes").ActualHeight > 0);
@@ -43,16 +43,16 @@ public sealed class WorkspaceShellTests
         Render(host, theme, "1-pinned");
 
         Click(shell.PinButton);
-        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Shown);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void Collapsed_Is56Wide_AnIconPerGlobalPageAndGroup_EachNamed_WithTheCountAndScore(string theme) => OnSta(theme, (shell, host, bar, page) =>
     {
-        shell.Cycle();
+        shell.ViewModel.Cycle();
         Layout(host);
 
-        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Shown);
         Assert.Equal(56, shell.ColumnDefinitions[0].ActualWidth);
         Assert.Equal(1264, page.ActualWidth);
         Assert.Equal(Visibility.Visible, Rail(shell).Visibility);
@@ -94,10 +94,10 @@ public sealed class WorkspaceShellTests
     public void Collapsed_AGroupsFlyout_HasItsNameQuestionPagesAndPin_AndClosesWhenAPageIsPicked(string theme) => OnSta(theme, (shell, host, _, _) =>
     {
         var picked = new List<string>();
-        shell.PageRequested += picked.Add;
+        shell.ViewModel.PageRequested += picked.Add;
         shell.Menu.Button("Backups").IsEnabled = false;   // as on Azure SQL Database
         shell.Menu.Button("Backups").ToolTip   = "Not available on Azure SQL Database";
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         Layout(host);
 
         Click(shell.Rail.Group("Maintenance"));
@@ -126,13 +126,13 @@ public sealed class WorkspaceShellTests
         Click(shell.Flyout!.Pages.Single(p => (string)p.Tag == "QueryStore"));
         Assert.Equal(["QueryStore"], picked);
         Assert.Null(shell.Flyout);
-        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Shown);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void Collapsed_AFlyout_OpensAfterThePointerRests_AndClosesOnEsc_AClickOutside_OrThePointerLeaving(string theme) => OnSta(theme, (shell, host, _, page) =>
     {
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         Layout(host);
         var waits = shell.Rail.Group("Waits");
 
@@ -183,7 +183,7 @@ public sealed class WorkspaceShellTests
     [Theory, MemberData(nameof(Themes))]
     public void Collapsed_TheKeyboard_OpensAFlyoutWithEnterOrRight_ArrowsMove_AndEscGoesBackToTheIcon(string theme) => OnSta(theme, (shell, host, _, _) =>
     {
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         Layout(host);
         var resources = shell.Rail.Group("Resources");
 
@@ -203,7 +203,7 @@ public sealed class WorkspaceShellTests
         Assert.Same(resources, shell.FocusMovedTo);
 
         // The page on screen is where the keyboard goes in, if it is in the group.
-        shell.Highlight("TempDb");
+        shell.ViewModel.Current = "TempDb";
         PressKey(resources, Key.Right);
         Assert.Equal("TempDb", (string)((Button)shell.FocusMovedTo!).Tag);
         PressKey(shell.Flyout!.Pages[0], Key.Escape, preview: true);
@@ -218,25 +218,25 @@ public sealed class WorkspaceShellTests
     public void Collapsed_PinTheMenuOpen_PinsIt_AndIsSaved(string theme) => OnSta(theme, (shell, host, _, _) =>
     {
         var chosen = new List<SidebarMode>();
-        shell.ModeChosen += chosen.Add;
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.ModeChosen += chosen.Add;
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         Click(shell.Rail.Group("Waits"));
         Click(shell.Flyout!.PinButton);
 
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
         Assert.Null(shell.Flyout);
         Assert.Equal([SidebarMode.Collapsed, SidebarMode.Pinned], chosen);
 
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         Click(shell.Rail.PinButton);
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void Hidden_GivesThePageTheWholeWidth_AndThe_BarsButtonSlidesItInOverThePage(string theme) => OnSta(theme, (shell, host, bar, page) =>
     {
-        shell.Choose(SidebarMode.Hidden);
-        bar.ShowSidebar(shell.Shown, shell.IsSlidOver, alerts: 3);
+        shell.ViewModel.Choose(SidebarMode.Hidden);
+        bar.ViewModel.ShowSidebar(shell.ViewModel.Shown, shell.ViewModel.IsSlidOver, alerts: 3);
         Layout(host);
 
         Assert.Equal(0, shell.ColumnDefinitions[0].ActualWidth);
@@ -247,10 +247,10 @@ public sealed class WorkspaceShellTests
         Assert.Equal(Visibility.Visible, bar.SidebarBadge.Visibility);
         Render(host, theme, "4-hidden");
 
-        shell.ToggleFromBar();
+        shell.ViewModel.ToggleFromBar();
         Layout(host);
-        Assert.True(shell.IsSlidOver);
-        Assert.Equal(SidebarMode.Hidden, shell.Shown);
+        Assert.True(shell.ViewModel.IsSlidOver);
+        Assert.Equal(SidebarMode.Hidden, shell.ViewModel.Shown);
         // Over the page, which keeps its width.
         Assert.Equal(WindowWidth, page.ActualWidth);
         Assert.Equal(232, Pinned(shell).ActualWidth);
@@ -264,10 +264,10 @@ public sealed class WorkspaceShellTests
 
         // Picking a page closes it.
         var picked = new List<string>();
-        shell.PageRequested += picked.Add;
+        shell.ViewModel.PageRequested += picked.Add;
         Click(shell.Menu.Button("Alerts"));
         Assert.Equal(["Alerts"], picked);
-        Assert.False(shell.IsSlidOver);
+        Assert.False(shell.ViewModel.IsSlidOver);
         Assert.Equal(Visibility.Collapsed, Pinned(shell).Visibility);
         Assert.Equal(KeyboardNavigationMode.Continue, KeyboardNavigation.GetTabNavigation(Pinned(shell)));
     });
@@ -275,29 +275,29 @@ public sealed class WorkspaceShellTests
     [Theory, MemberData(nameof(Themes))]
     public void Hidden_TheSlidInMenu_ClosesOnEscOrAClickOutside_AndGivesTheFocusBackToTheBarsButton(string theme) => OnSta(theme, (shell, host, bar, page) =>
     {
-        shell.Choose(SidebarMode.Hidden);
+        shell.ViewModel.Choose(SidebarMode.Hidden);
         Layout(host);
 
-        shell.ToggleFromBar();
+        shell.ViewModel.ToggleFromBar();
         PressKey(shell.Menu.Button("Home"), Key.Escape, preview: true);
-        Assert.False(shell.IsSlidOver);
+        Assert.False(shell.ViewModel.IsSlidOver);
         Assert.Same(bar.BtnSidebar, shell.FocusMovedTo);
 
-        shell.ToggleFromBar();
+        shell.ViewModel.ToggleFromBar();
         Press(page);
-        Assert.False(shell.IsSlidOver);
+        Assert.False(shell.ViewModel.IsSlidOver);
 
         // A click in it doesn't close it.
-        shell.ToggleFromBar();
+        shell.ViewModel.ToggleFromBar();
         Press(shell.Menu.Button("Export"));
-        Assert.True(shell.IsSlidOver);
+        Assert.True(shell.ViewModel.IsSlidOver);
 
         // Its pin pins it, and that is what is saved.
         var chosen = new List<SidebarMode>();
-        shell.ModeChosen += chosen.Add;
+        shell.ViewModel.ModeChosen += chosen.Add;
         Click(shell.PinButton);
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
-        Assert.False(shell.IsSlidOver);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
+        Assert.False(shell.ViewModel.IsSlidOver);
         Assert.Equal([SidebarMode.Pinned], chosen);
         Assert.True(double.IsNaN(Pinned(shell).Width));
         Assert.Equal(1, Grid.GetColumnSpan(Pinned(shell)));
@@ -306,40 +306,40 @@ public sealed class WorkspaceShellTests
     [Theory, MemberData(nameof(Themes))]
     public void Hidden_PointingAtTheLeftEdge_SlidesItIn_AndItGoesWhenThePointerLeaves(string theme) => OnSta(theme, (shell, host, _, _) =>
     {
-        shell.Choose(SidebarMode.Hidden);
+        shell.ViewModel.Choose(SidebarMode.Hidden);
         Layout(host);
         var edge = Edge(shell);
         Assert.Equal(Visibility.Visible, edge.Visibility);
         Assert.Equal(6, edge.ActualWidth);
 
         Mouse(edge, UIElement.MouseEnterEvent);
-        Assert.False(shell.IsSlidOver);
+        Assert.False(shell.ViewModel.IsSlidOver);
         shell.ElapseTimers();
-        Assert.True(shell.IsSlidOver);
+        Assert.True(shell.ViewModel.IsSlidOver);
         // The keyboard stays where it was: the pointer opened it.
         Assert.Null(shell.FocusMovedTo);
 
         Mouse(Pinned(shell), UIElement.MouseEnterEvent);
         Mouse(Pinned(shell), UIElement.MouseLeaveEvent);
         shell.ElapseTimers();
-        Assert.False(shell.IsSlidOver);
+        Assert.False(shell.ViewModel.IsSlidOver);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void CtrlB_AndTheBarsButton_GoPinnedCollapsedHidden_AndCtrlBPinsAgain(string theme) => OnSta(theme, (shell, host, _, _) =>
     {
         var chosen = new List<SidebarMode>();
-        shell.ModeChosen += chosen.Add;
+        shell.ViewModel.ModeChosen += chosen.Add;
 
-        shell.Cycle();
-        shell.ToggleFromBar();
-        Assert.Equal(SidebarMode.Hidden, shell.Shown);
+        shell.ViewModel.Cycle();
+        shell.ViewModel.ToggleFromBar();
+        Assert.Equal(SidebarMode.Hidden, shell.ViewModel.Shown);
         // In Hidden, ☰ shows it over the page; Ctrl+B pins it.
-        shell.ToggleFromBar();
-        Assert.True(shell.IsSlidOver);
-        shell.Cycle();
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
-        Assert.False(shell.IsSlidOver);
+        shell.ViewModel.ToggleFromBar();
+        Assert.True(shell.ViewModel.IsSlidOver);
+        shell.ViewModel.Cycle();
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
+        Assert.False(shell.ViewModel.IsSlidOver);
 
         Assert.Equal([SidebarMode.Collapsed, SidebarMode.Hidden, SidebarMode.Pinned], chosen);
     });
@@ -348,36 +348,36 @@ public sealed class WorkspaceShellTests
     public void ANarrowWindow_ShowsItCollapsed_WithoutSavingThat_AndWideningRestoresIt(string theme) => OnSta(theme, (shell, host, _, page) =>
     {
         var chosen = new List<SidebarMode>();
-        shell.ModeChosen += chosen.Add;
+        shell.ViewModel.ModeChosen += chosen.Add;
 
-        shell.SetWindowWidth(1200);
+        shell.ViewModel.SetWindowWidth(1200);
         Layout(host, 1200);
-        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
-        Assert.Equal(SidebarMode.Pinned, shell.Saved);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Shown);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Saved);
         Assert.Equal(1144, page.ActualWidth);
         Render(host, theme, "6-narrow", 1200);
 
-        shell.SetWindowWidth(1320);
+        shell.ViewModel.SetWindowWidth(1320);
         Layout(host);
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
         Assert.Empty(chosen);
 
         // Restored at start-up in a narrow window: collapsed, and pinned again once wide.
-        shell.Restore(SidebarMode.Pinned, 1000);
-        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
-        shell.SetWindowWidth(1300);
-        Assert.Equal(SidebarMode.Pinned, shell.Shown);
+        shell.ViewModel.Restore(SidebarMode.Pinned, 1000);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Shown);
+        shell.ViewModel.SetWindowWidth(1300);
+        Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
     });
 
     [Theory, MemberData(nameof(Themes))]
     public void ChangingState_ClosesAFlyout(string theme) => OnSta(theme, (shell, host, bar, _) =>
     {
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         PressKey(shell.Rail.Group("Waits"), Key.Right);
         Assert.NotNull(shell.Flyout);
-        shell.Cycle();
+        shell.ViewModel.Cycle();
         Assert.Null(shell.Flyout);
-        Assert.Equal(SidebarMode.Hidden, shell.Shown);
+        Assert.Equal(SidebarMode.Hidden, shell.ViewModel.Shown);
     });
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -385,6 +385,13 @@ public sealed class WorkspaceShellTests
     private static Border Pinned(WorkspaceShell shell) => (Border)shell.Children[0];
     private static Border Rail(WorkspaceShell shell)   => (Border)shell.Children[1];
     private static Border Edge(WorkspaceShell shell)   => (Border)shell.Children[2];
+
+    // A new page, as the shell shows one: its controls in the bar, then its context.
+    private static void ShowPage(TopBar bar, FrameworkElement? tools, PageFreshness? freshness, bool canPause, string? database)
+    {
+        bar.ShowTools(tools);
+        bar.ViewModel.ShowPage(freshness, canPause, database);
+    }
 
     private static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
@@ -446,26 +453,26 @@ public sealed class WorkspaceShellTests
     public void Focus_HidesTheSidebar_CtrlBSlidesItIn_AndLeavingPutsBackWhatWasChosen(string theme) => OnSta(theme, (shell, host, _, page) =>
     {
         var chosen = new List<SidebarMode>();
-        shell.ModeChosen += chosen.Add;
-        shell.Choose(SidebarMode.Collapsed);
+        shell.ViewModel.ModeChosen += chosen.Add;
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
         chosen.Clear();
 
-        shell.InFocus = true;
+        shell.ViewModel.InFocus = true;
         Layout(host);
-        Assert.Equal(SidebarMode.Hidden, shell.Shown);
-        Assert.Equal(SidebarMode.Collapsed, shell.Saved);
+        Assert.Equal(SidebarMode.Hidden, shell.ViewModel.Shown);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Saved);
         Assert.Equal(WindowWidth, page.ActualWidth, 1);
 
         // Ctrl+B slides the menu in over the page, and out, without choosing a state.
-        shell.Cycle();
-        Assert.True(shell.IsSlidOver);
-        shell.Cycle();
-        Assert.False(shell.IsSlidOver);
+        shell.ViewModel.Cycle();
+        Assert.True(shell.ViewModel.IsSlidOver);
+        shell.ViewModel.Cycle();
+        Assert.False(shell.ViewModel.IsSlidOver);
         Assert.Empty(chosen);
 
-        shell.InFocus = false;
+        shell.ViewModel.InFocus = false;
         Layout(host);
-        Assert.Equal(SidebarMode.Collapsed, shell.Shown);
+        Assert.Equal(SidebarMode.Collapsed, shell.ViewModel.Shown);
         Assert.Equal(WindowWidth - SidebarLayout.CollapsedWidth, page.ActualWidth, 1);
     });
 
@@ -491,13 +498,13 @@ public sealed class WorkspaceShellTests
 
                 var server = Server();
                 var route  = new Route("Processes", ConnectionId: server.Settings.Id);
-                bar.ShowBreadcrumb(Breadcrumb.For(route, _ => "PROD-SQL01"), _ => server, [server]);
-                bar.ShowPage(null, new PageFreshness(PageKind.Live, TimeSpan.FromSeconds(10), false, AsOf: DateTime.Now), canPause: true, database: null);
+                bar.ViewModel.ShowBreadcrumb(Breadcrumb.For(route, _ => "PROD-SQL01"), _ => server, [server]);
+                ShowPage(bar, null, new PageFreshness(PageKind.Live, TimeSpan.FromSeconds(10), false, AsOf: DateTime.Now), canPause: true, database: null);
                 shell.ReturnFocusTo = bar.BtnSidebar;
-                shell.ModeShown += () => bar.ShowSidebar(shell.Shown, shell.IsSlidOver, 3);
-                shell.Restore(SidebarMode.Pinned, WindowWidth);
-                shell.ShowServer(server);
-                shell.Highlight("Processes");
+                shell.ViewModel.PropertyChanged += (_, _) => bar.ViewModel.ShowSidebar(shell.ViewModel.Shown, shell.ViewModel.IsSlidOver, 3);
+                shell.ViewModel.Restore(SidebarMode.Pinned, WindowWidth);
+                shell.ViewModel.ShowServer(server);
+                shell.ViewModel.Current = "Processes";
                 shell.SetCount("Alerts", 3, "3 active alerts");
                 shell.VersionText.Text = "v0.58.0";
                 Layout(host);

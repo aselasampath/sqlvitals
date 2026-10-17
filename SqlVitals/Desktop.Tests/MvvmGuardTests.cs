@@ -23,8 +23,6 @@ public sealed class MvvmGuardTests
     /// <summary>How many <c>Click=</c> each page's XAML has: none since #190 bound Settings' buttons to commands.</summary>
     private static readonly Dictionary<string, int> ClicksAllowed = new();
 
-    /// <summary>Pages whose code-behind still reads (#183): <see cref="Pages.ICodeBehindPage"/>. None since #189's wave.</summary>
-    private static readonly string[] CodeBehindPagesAllowed = [];
 
     // ── View models stay out of the view ─────────────────────────────────
 
@@ -84,18 +82,36 @@ public sealed class MvvmGuardTests
     private static readonly Lazy<IReadOnlyList<Offence>> LazyRepositoryOffences = new(() =>
         Models("Pages/").SelectMany(m => MvvmRules.RepositoryReferences(m.Model, m.File)).ToList());
 
-    // ── Only the shell refers to the main window (#166) ──────────────────
+    // ── Only the window and the app refer to the main window (#166, #191) ─
+
+    /// <summary>The files that may refer to <c>MainWindow</c>: itself, and the app that makes and shows it.</summary>
+    private static readonly string[] MayReferToTheWindow = ["MainWindow.xaml.cs", "App.xaml.cs"];
 
     [Fact]
-    public void PagesControlsWindowsAndHelpers_DoNotReferToMainWindow()
+    public void OnlyTheWindowAndTheApp_ReferToMainWindow()
     {
-        var broken = new[] { "Pages/", "Controls/", "Windows/", "Helpers/" }
-            .SelectMany(Models)
+        var broken = Models("")
+            .Where(m => !MayReferToTheWindow.Contains(m.File))
             .SelectMany(m => MvvmRules.WindowReferences(m.Model, m.File))
             .ToList();
 
-        Fail(broken, "Only the shell refers to MainWindow (docs/Architecture.md, The composition root): " +
-                     "report to IShellStatus, open pages through INavigator, and ask the constructor for services:");
+        Fail(broken, "Only MainWindow and App refer to MainWindow (docs/Architecture.md, The shell): report to IShellStatus, " +
+                     "open pages through INavigator, ask the constructor for services, and put the window's logic in ShellViewModel:");
+    }
+
+    // ── The shell and the windows bind commands (#191) ───────────────────
+
+    [Fact]
+    public void ShellAndWindowXaml_BindCommands_NotClickHandlers()
+    {
+        var xaml = new[] { "MainWindow.xaml", "Controls/TopBar.xaml", "Controls/QuickSwitcherOverlay.xaml" }
+            .Select(file => Path.Combine(DesktopSource.Dir, file))
+            .Concat(DesktopSource.Files("*.xaml", "Windows"));
+        var broken = xaml.SelectMany(path => MvvmRules.Clicks(File.ReadAllText(path), DesktopSource.Relative(path)))
+            .Select(o => o.ToString())
+            .ToList();
+
+        Fail(broken, "The shell's and the windows' buttons are their view models' commands (docs/Architecture.md, The shell):");
     }
 
     [Fact]
@@ -188,33 +204,6 @@ public sealed class MvvmGuardTests
         Fail(broken, "View models are one file each, named for their page (docs/Architecture.md, MVVM):");
     }
 
-    // ── Pages read through their view models ─────────────────────────────
-
-    [Fact]
-    public void CodeBehindPages_DoNotGrow()
-    {
-        var broken = CodeBehindPages().Where(name => !CodeBehindPagesAllowed.Contains(name))
-            .Select(name => $"{name} reads in its code-behind (ICodeBehindPage): load in its view model's LoadAsync instead.")
-            .ToList();
-
-        Fail(broken, "A new page reads through its view model (docs/Architecture.md, Adding a page):");
-    }
-
-    [Fact]
-    public void CodeBehindPages_AllowlistShrinksWithIt()
-    {
-        var pages = CodeBehindPages().ToHashSet();
-        var stale = CodeBehindPagesAllowed.Where(name => !pages.Contains(name))
-            .Select(name => $"{name} no longer reads in its code-behind: take it off CodeBehindPagesAllowed.")
-            .ToList();
-
-        Fail(stale, "The allowlist only shrinks:");
-    }
-
-    private static IEnumerable<string> CodeBehindPages() =>
-        typeof(MainWindow).Assembly.GetTypes()
-            .Where(t => !t.IsAbstract && typeof(Pages.ICodeBehindPage).IsAssignableFrom(t))
-            .Select(t => t.Name);
 
     // ── The checks themselves ────────────────────────────────────────────
 

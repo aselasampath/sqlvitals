@@ -93,9 +93,6 @@ public partial class SpTracePage : Page, IPageContext, IDetailsSource
         Paint();
     }
 
-    /// <summary>Stops polling without waiting on the server; the window calls it as it closes.</summary>
-    internal void PrepareForShutdown() => ViewModel.PrepareForShutdown();
-
     // Start is green, Stop amber; the mode badge in its tone: the colour, its outline and a wash of it behind.
     private void Paint()
     {
