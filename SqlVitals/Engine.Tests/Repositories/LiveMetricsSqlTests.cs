@@ -56,4 +56,42 @@ public class LiveMetricsSqlTests
         Assert.Contains("is_user_process = 1", sql);
         Assert.Contains("AS WaitingTasks", sql);
     }
+
+    // ── Azure SQL Database's resource figures (#234) ─────────────────────
+
+    [Fact]
+    public void AzureSqlDatabase_ReadsCpuDataIoLogWriteAndTheDtuLimit_FromOneRow()
+    {
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb: true);
+
+        // One OUTER APPLY of the latest row: the figures are from the same 15 seconds.
+        Assert.Equal(2, sql.Split("sys.dm_db_resource_stats").Length);
+        Assert.Contains("ORDER BY end_time DESC) AS rs", sql);
+        Assert.Contains("rs.avg_cpu_percent AS SqlCpuUtilizationPct", sql);
+        Assert.Contains("rs.avg_data_io_percent AS AzureDataIoPct", sql);
+        Assert.Contains("rs.avg_log_write_percent AS AzureLogWritePct", sql);
+        Assert.Contains("rs.dtu_limit AS AzureDtuLimit", sql);
+    }
+
+    [Fact]
+    public void OtherEditions_HaveNullAzureFigures_AndNoRow()
+    {
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb: false);
+
+        Assert.Contains("CAST(NULL AS DECIMAL(5,2)) AS AzureDataIoPct", sql);
+        Assert.Contains("CAST(NULL AS DECIMAL(5,2)) AS AzureLogWritePct", sql);
+        Assert.Contains("CAST(NULL AS INT) AS AzureDtuLimit", sql);
+        Assert.DoesNotContain("rs.", sql);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheAzurePlaceholdersAreAlwaysReplaced(bool isAzureSqlDb)
+    {
+        var sql = LiveMetricsRepository.LiveMetricsSql(isAzureSqlDb);
+
+        Assert.DoesNotContain("/*AZURE_COLUMNS*/", sql);
+        Assert.DoesNotContain("/*AZURE_APPLY*/", sql);
+    }
 }

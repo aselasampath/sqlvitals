@@ -91,6 +91,16 @@ public class ServerTests(SqlServerFixture server)
     }
 
     [SqlServerFact]
+    [Covers(nameof(ILiveMetricsRepository.GetLiveMetricsAsync))]
+    public async Task LiveMetrics_OnSqlServer_HaveNoAzureResourceFigures()
+    {
+        // sys.dm_db_resource_stats is Azure SQL Database's (#234): elsewhere they are NULL, not 0 %.
+        var metrics = await _repo.GetLiveMetricsAsync();
+
+        Assert.Equal((null, null, null), (metrics.AzureDataIoPct, metrics.AzureLogWritePct, metrics.AzureDtuLimit));
+    }
+
+    [SqlServerFact]
     [Covers(nameof(ILiveMetricsRepository.GetPerfmonCountersAsync))]
     public async Task PerfmonCounters_AreRead()
     {

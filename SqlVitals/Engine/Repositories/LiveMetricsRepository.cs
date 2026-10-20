@@ -14,12 +14,29 @@ public class LiveMetricsRepository(SqlTarget target, ServerCapabilitiesCache? ca
     // the same figure as the portal's "CPU percentage". That view doesn't exist elsewhere.
     internal static readonly string RingBufferCpuSql = SqlScripts.Get("LiveMetrics/RingBufferCpu");
 
-    internal const string AzureSqlDbCpuSql =
-        "(SELECT TOP (1) avg_cpu_percent FROM sys.dm_db_resource_stats ORDER BY end_time DESC)";
+    // rs is AzureResourceApplySql's: LiveMetricsSql puts both in, or neither.
+    internal const string AzureSqlDbCpuSql = "rs.avg_cpu_percent";
 
-    /// <summary>The live metrics query, with the CPU figure read where this edition keeps it.</summary>
+    // The same row's data IO and log write, as shares of the tier's limits, and its DTU limit,
+    // which is NULL on a vCore tier (#234): the portal's "Data IO percentage" and "Log IO
+    // percentage". Elsewhere they are NULL, and the view isn't named.
+    internal const string AzureResourceColumnsSql =
+        "rs.avg_data_io_percent AS AzureDataIoPct, rs.avg_log_write_percent AS AzureLogWritePct, rs.dtu_limit AS AzureDtuLimit,";
+
+    internal const string NoAzureResourceColumnsSql =
+        "CAST(NULL AS DECIMAL(5,2)) AS AzureDataIoPct, CAST(NULL AS DECIMAL(5,2)) AS AzureLogWritePct, CAST(NULL AS INT) AS AzureDtuLimit,";
+
+    // One row for all of them, so CPU, data IO and log write are from the same 15 seconds.
+    internal const string AzureResourceApplySql =
+        "OUTER APPLY (SELECT TOP (1) avg_cpu_percent, avg_data_io_percent, avg_log_write_percent, dtu_limit " +
+        "FROM sys.dm_db_resource_stats ORDER BY end_time DESC) AS rs";
+
+    /// <summary>The live metrics query, with the CPU figure read where this edition keeps it, and Azure's resource figures on Azure SQL Database.</summary>
     internal static string LiveMetricsSql(bool isAzureSqlDb) =>
-        LiveMetricsSqlTemplate.Replace("/*CPU*/", isAzureSqlDb ? AzureSqlDbCpuSql : RingBufferCpuSql);
+        LiveMetricsSqlTemplate
+            .Replace("/*CPU*/",           isAzureSqlDb ? AzureSqlDbCpuSql : RingBufferCpuSql)
+            .Replace("/*AZURE_COLUMNS*/", isAzureSqlDb ? AzureResourceColumnsSql : NoAzureResourceColumnsSql)
+            .Replace("/*AZURE_APPLY*/",   isAzureSqlDb ? AzureResourceApplySql : string.Empty);
 
     public async Task<LiveMetricSnapshot> GetLiveMetricsAsync(CancellationToken cancellationToken = default)
     {
@@ -29,12 +46,12 @@ public class LiveMetricsRepository(SqlTarget target, ServerCapabilitiesCache? ca
         var r = await QFirst(conn, LiveMetricsSql(isAzureSqlDb), cancellationToken,
                              new { SmallLogKb = (long)(HealthRules.SmallLogMb * 1024) })
                 ?? throw new InvalidOperationException("Failed to capture metrics");
-        return ToLiveMetricSnapshot(r);
+        return ToLiveMetricSnapshot(r, isAzureSqlDb);
     }
 
     private static readonly string LiveMetricsSqlTemplate = SqlScripts.Get("LiveMetrics/Dashboard");
 
-    private static LiveMetricSnapshot ToLiveMetricSnapshot(dynamic r)
+    private static LiveMetricSnapshot ToLiveMetricSnapshot(dynamic r, bool isAzureSqlDb)
     {
         long total = (long)(r.TotalWaitMs ?? 0);
         long cpu = (long)(r.CpuWaitMs ?? 0);
@@ -65,7 +82,11 @@ public class LiveMetricsRepository(SqlTarget target, ServerCapabilitiesCache? ca
             WaitingTasks: Convert.ToInt32(r.WaitingTasks ?? 0),
             BufferPoolPages: Convert.ToInt64(r.BufferPoolPages ?? 0),
             LogSizeMb: Convert.ToDouble(r.LogSizeMb ?? 0),
-            LogReuseWait: (string?)r.LogReuseWait
+            LogReuseWait: (string?)r.LogReuseWait,
+            AzureDataIoPct: r.AzureDataIoPct is null ? null : Convert.ToDouble(r.AzureDataIoPct),
+            AzureLogWritePct: r.AzureLogWritePct is null ? null : Convert.ToDouble(r.AzureLogWritePct),
+            AzureDtuLimit: r.AzureDtuLimit is null ? null : Convert.ToInt32(r.AzureDtuLimit),
+            IsAzureSqlDatabase: isAzureSqlDb
         );
     }
 

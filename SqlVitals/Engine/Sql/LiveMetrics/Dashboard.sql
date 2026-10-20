@@ -19,6 +19,8 @@
                 AND A.object_name LIKE '%Buffer Manager%'),0) AS BufferCacheHitRatio,
         -- CPU: see RingBufferCpuSql / AzureSqlDbCpuSql
         /*CPU*/ AS SqlCpuUtilizationPct,
+        -- Azure SQL Database's data IO, log write and DTU limit (#234): see AzureResourceColumnsSql
+        /*AZURE_COLUMNS*/
         -- Health indicators: blocking, the fullest log, TempDB data space
         (SELECT COUNT(*) FROM sys.dm_exec_requests
          WHERE blocking_session_id > 0 AND blocking_session_id <> session_id) AS BlockedSessions,
@@ -70,3 +72,4 @@
                       WHEN d.name IS NULL THEN 1 ELSE 0 END,
                  u.cntr_value DESC, u.instance_name
     ) AS lg
+    /*AZURE_APPLY*/

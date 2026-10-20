@@ -218,6 +218,13 @@ An application that opens connections and doesn't close them fills its pool with
 2. Tick **Compare to baseline**. Dashed lines show **the same time last week**.
 3. Current line well above the dashed line = unusual. Both similar = that's just your normal load.
 
+## Azure SQL Database is slow, but CPU is low
+
+1. Open **💓 Live charts** and look at the **Azure resources** card (from 0.82.0). If **Log IO** or **Data IO** is at or near 100 %, Azure is throttling the database at its service tier's limit. **DTU**, on a DTU tier, is the highest of the three, so it is at 100 % too.
+2. **Log IO** at the limit: something writes a lot. **🔗 Processes** shows what is running; large batches, index rebuilds and loads are the usual cause. Spread them out, write in smaller batches, or move to a tier with a higher log rate.
+3. **Data IO** at the limit: reads that don't fit in memory. **🔥 Resource Queries → By Logical Reads** shows the queries reading most; an index often fixes it.
+4. The **Azure IO** health check turns amber at 80 % and red at 95 %, and raises an [alert](Alerts.md), so you hear about it next time.
+
 ## CPU is high
 
 1. **🔥 Resource Queries → By CPU**. Sort by *Total CPU µs* (total cost) or *Avg CPU µs* (per run).

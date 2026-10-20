@@ -29,6 +29,8 @@ public partial class SqlParseTests
         // Index, LiveMetrics, Memory, Storage, Waits
         ["INCREMENTAL"]        = ["s.is_incremental", "CAST(0 AS BIT)"],
         ["CPU"]                = [LiveMetricsRepository.RingBufferCpuSql, LiveMetricsRepository.AzureSqlDbCpuSql],
+        ["AZURE_COLUMNS"]      = [LiveMetricsRepository.AzureResourceColumnsSql, LiveMetricsRepository.NoAzureResourceColumnsSql],
+        ["AZURE_APPLY"]        = [LiveMetricsRepository.AzureResourceApplySql, ""],
         ["MEMORY_MODEL"]       = [MemoryRepository.MemoryModelColumnSql, MemoryRepository.MemoryModelUnknownSql],
         ["QUERY_STORE_ON"]     = ["d.is_query_store_on", "0"],
         ["DOP"]                = ["r.dop", "0"],

@@ -20,6 +20,9 @@ public sealed record PageArgs(Route Route, IWaitStatsRepository Repo)
     /// <summary>The open server's clock from UTC, when it is being sampled.</summary>
     public TimeSpan? ServerOffset { get; init; }
 
+    /// <summary>The open server is Azure SQL Database, as the shell's check on switching found (#234); false when not known.</summary>
+    public bool IsAzureSqlDatabase { get; init; }
+
     /// <summary>Settings tells the app its saved connections changed; true opens the active server's Overview.</summary>
     public Func<bool, Task>? ApplyConnections { get; init; }
 

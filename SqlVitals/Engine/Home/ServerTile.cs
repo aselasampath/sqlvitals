@@ -131,6 +131,7 @@ public sealed record ServerTile(
         HealthIndicator.MemoryGrantsPending => "Grants",
         HealthIndicator.LogSpace            => "Log",
         HealthIndicator.TempDbSpace         => "Temp",
+        HealthIndicator.AzureIo             => "IO",
         HealthIndicator.DiskFree            => "Disk",
         HealthIndicator.BackupsPastRpo      => "RPO",
         HealthIndicator.FailedJobs          => "Jobs",
@@ -257,7 +258,9 @@ public sealed record ServerTile(
             _                      => $"{Label(status)}: alerting on {alertingOn.ToLower(CultureInfo.CurrentCulture)}",
         };
         var alerting = watch.ActiveAlerts.GroupBy(a => a.Indicator).ToDictionary(g => g.Key, g => g.Max(a => a.Severity));
+        // Azure IO only while it alerts: otherwise the tile can't tell whether the server reports it (#234).
         var bars = Enum.GetValues<HealthIndicator>()
+            .Where(i => !HealthRules.IsAzureOnly(i) || alerting.ContainsKey(i))
             .Select(i => alerting.TryGetValue(i, out var severity)
                 ? new CheckBar(i, ShortName(i), severity, $"{HealthThresholds.Info(i).Name}: alerting ({severity.ToString().ToLowerInvariant()}), from {watch.By}")
                 : new CheckBar(i, ShortName(i), HealthLevel.Unknown, $"{HealthThresholds.Info(i).Name}: unknown here, {watch.By} keeps the score, not the figure; no alert"))
@@ -306,7 +309,9 @@ public sealed record ServerTile(
             TileStatus.Waiting     => "waiting for the first sample",
             _                      => "not monitored",
         };
+        // Not Azure IO: with no sample, which edition the server is isn't known (#234).
         return Enum.GetValues<HealthIndicator>()
+                   .Where(i => !HealthRules.IsAzureOnly(i))
                    .Select(i => new CheckBar(i, ShortName(i), HealthLevel.Unknown, $"{HealthThresholds.Info(i).Name}: no figure, {why}"))
                    .ToList();
     }

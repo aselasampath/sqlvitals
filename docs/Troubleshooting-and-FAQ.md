@@ -30,6 +30,9 @@ SqlVitals couldn't read `%AppData%\SqlVitals\settings.dat`: it was damaged, or i
 **Saving a setting says SqlVitals "couldn't read its settings file just now".**
 Another program, usually a sync or antivirus tool, had `settings.dat` open. SqlVitals won't save over a file it couldn't read, so nothing was lost. Try again in a moment.
 
+**Azure SQL Database is slow and the portal shows DTU at 100 %, but CPU is low.**
+Another limit is reached first: usually log write, sometimes data IO. From 0.82.0 Live charts' **Azure resources** card shows both, with DTU, and the **Azure IO** health check warns at 80 %. See [Azure SQL Database is slow, but CPU is low](How-To-Recipes.md#azure-sql-database-is-slow-but-cpu-is-low).
+
 **CPU showed 0 % on Azure SQL Database.**
 Before 0.36.0 CPU was read from records Azure SQL Database doesn't have. From 0.36.0 it's the portal's *CPU percentage* (`sys.dm_db_resource_stats`), per 15 seconds, so it can jump between 0 and a high figure where the portal's one-minute average looks smoother.
 

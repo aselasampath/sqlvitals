@@ -168,6 +168,8 @@ public static class AlertText
                                                        : $"{value} queries are waiting for memory to start running{limit}.",
             HealthIndicator.LogSpace            => $"The fullest transaction log is {value} full{limit}." + Also(alert.Detail),
             HealthIndicator.TempDbSpace         => $"TempDB's data files are {value} full{limit}.",
+            HealthIndicator.AzureIo             => $"The database's {AzureIoResource(alert.Detail) ?? "data IO or log write"} reached {value} " +
+                                                   $"of its service tier's limit{limit}: Azure throttles it there.",
             HealthIndicator.DiskFree            => $"A volume holding database files is down to {value} free{limit}." + Also(alert.Detail),
             HealthIndicator.BackupsPastRpo      => (alert.Value == 1 ? "1 database is" : $"{value} databases are") +
                                                    $" past their backup RPO{limit}: a restore would lose more than it allows." + Also(alert.Detail),
@@ -179,6 +181,16 @@ public static class AlertText
         // What the health dot said, when it names more: "Blocking 3.5 min (3 blocked)".
         static string Also(string detail) => string.IsNullOrWhiteSpace(detail) ? "" : $" {detail}.";
     }
+
+    /// <summary>
+    /// Which of Azure's limits an Azure IO alert was at (#234): "log write" from "Azure log write
+    /// 98% of the tier's limit", as <see cref="HealthRules"/> words it. Null when it names neither.
+    /// </summary>
+    public static string? AzureIoResource(string? detail) =>
+        detail is null ? null
+        : detail.StartsWith("Azure log write ", StringComparison.Ordinal) ? "log write"
+        : detail.StartsWith("Azure data IO ", StringComparison.Ordinal) ? "data IO"
+        : null;
 
     /// <summary>
     /// The database a log space alert or check names: "Sales" from "Log 93% full (Sales)", as

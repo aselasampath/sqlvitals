@@ -73,7 +73,9 @@ public sealed record PageFocus(FocusFilter Filter, FocusOrigin Origin, DateTime?
 /// <param name="HistoryTag">The page that charts the check's past, or null when SqlVitals keeps none.</param>
 /// <param name="NowOnly">The filter describes the server now (a blocking chain, a grant waiting), so it
 /// can't apply to an alert that has ended.</param>
-public sealed record Evidence(string Text, string PageTag, FocusKind Filter, string? HistoryTag, bool NowOnly = false);
+/// <param name="LiveOnly">The page shows the check live only (#234): an alert opens it with no time
+/// window, which would be read from a history that doesn't keep it.</param>
+public sealed record Evidence(string Text, string PageTag, FocusKind Filter, string? HistoryTag, bool NowOnly = false, bool LiveOnly = false);
 
 /// <summary>
 /// Every alert's and health check's evidence route (#145): the page that shows why, already
@@ -98,6 +100,8 @@ public static class EvidenceRoutes
         HealthIndicator.MemoryGrantsPending => new("Memory grants", "Memory", FocusKind.PendingGrants, "LiveMetrics", NowOnly: true),
         HealthIndicator.LogSpace            => new("Log space", "DbStorage", FocusKind.Database, null),
         HealthIndicator.TempDbSpace         => new("TempDB", "TempDb", FocusKind.None, null),
+        // Azure IO (#234): Live charts' Azure resources card, live, since the history doesn't keep it.
+        HealthIndicator.AzureIo             => new("Azure resources", "LiveMetrics", FocusKind.None, null, LiveOnly: true),
         // The slow checks (#174): the volumes with their free space, the databases past their RPO,
         // the jobs with their last outcome. None of them is kept in the history.
         HealthIndicator.DiskFree            => new("Volumes", "FileIo", FocusKind.None, null),
@@ -118,7 +122,9 @@ public static class EvidenceRoutes
         var origin   = new FocusOrigin(FocusSource.Alert,
                                        $"{HealthThresholds.Info(alert.Indicator).Name} · {AlertText.Severity(alert.Severity).ToLowerInvariant()}",
                                        StartedUtc: alert.StartedUtc, EndedUtc: alert.EndedUtc);
-        var focus = new PageFocus(filter, origin, alert.StartedUtc - Margin, alert.EndedUtc + Margin, evidence.HistoryTag);
+        var focus = evidence.LiveOnly
+            ? new PageFocus(filter, origin)
+            : new PageFocus(filter, origin, alert.StartedUtc - Margin, alert.EndedUtc + Margin, evidence.HistoryTag);
         return new Route(evidence.PageTag, ConnectionId: alert.ConnectionId, Focus: focus);
     }
 

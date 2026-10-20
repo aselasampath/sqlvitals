@@ -25,15 +25,19 @@ public sealed class OverviewTests
     public static TheoryData<HealthIndicator, HealthLevel> EveryCheckState()
     {
         var data = new TheoryData<HealthIndicator, HealthLevel>();
-        foreach (var indicator in Enum.GetValues<HealthIndicator>())
+        foreach (var indicator in Enum.GetValues<HealthIndicator>().Where(i => !HealthRules.IsAzureOnly(i)))
             foreach (var level in new[] { HealthLevel.Healthy, HealthLevel.Warning, HealthLevel.Critical })
                 data.Add(indicator, level);
         return data;
     }
 
+    // A SQL Server's checks: every one but Azure IO (#234).
+    private static readonly IReadOnlyList<HealthIndicatorInfo> ServerChecks =
+        HealthThresholds.Indicators.Where(i => !HealthRules.IsAzureOnly(i.Indicator)).ToList();
+
     // One check at the level, every other one healthy.
     private static HealthScore ScoreWith(HealthIndicator indicator, HealthLevel level) =>
-        HealthScore.From(HealthThresholds.Indicators.Select(i => new HealthReading(
+        HealthScore.From(ServerChecks.Select(i => new HealthReading(
             i.Indicator, i.Indicator == indicator ? level : HealthLevel.Healthy, 1, i.Default, null)).ToList(), Now);
 
     [Theory]
@@ -56,14 +60,14 @@ public sealed class OverviewTests
         if (expected == 0)
         {
             Assert.Empty(costs);
-            Assert.Equal(HealthThresholds.Indicators.Count, passing.Count);
+            Assert.Equal(ServerChecks.Count, passing.Count);
         }
         else
         {
             var cost = Assert.Single(costs);
             Assert.Equal((indicator, level, weight, expected), (cost.Indicator, cost.Level, cost.Weight, cost.Points));
             Assert.DoesNotContain(passing, p => p.Indicator == indicator);
-            Assert.Equal(HealthThresholds.Indicators.Count - 1, passing.Count);
+            Assert.Equal(ServerChecks.Count - 1, passing.Count);
         }
     }
 
@@ -100,6 +104,7 @@ public sealed class OverviewTests
             AlertText.Happening(ActiveAlert(HealthIndicator.MemoryGrantsPending, HealthLevel.Warning, 4, 1)),
             AlertText.Happening(ActiveAlert(HealthIndicator.LogSpace, HealthLevel.Critical, 93, null, "Log 93% full (Sales)")),
             AlertText.Happening(ActiveAlert(HealthIndicator.TempDbSpace, HealthLevel.Warning, 85, 80)),
+            AlertText.Happening(ActiveAlert(HealthIndicator.AzureIo, HealthLevel.Critical, 98, 95, "Azure log write 98% of the tier's limit")),
         });
 
         Assert.Equal(
@@ -111,6 +116,7 @@ public sealed class OverviewTests
             "4 queries are waiting for memory to start running (warning at ≥ 1).",
             "The fullest transaction log is 93 % full. Log 93% full (Sales).",
             "TempDB's data files are 85 % full (warning at ≥ 80 %).",
+            "The database's log write reached 98 % of its service tier's limit (critical at ≥ 95 %): Azure throttles it there.",
         ], texts);
     }
 

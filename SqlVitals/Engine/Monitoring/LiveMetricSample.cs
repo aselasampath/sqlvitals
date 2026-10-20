@@ -49,8 +49,25 @@ public sealed record LiveMetricSample(
     // What the health score judges page life expectancy and log space by (#173), not kept in the history
     double  BufferPoolMb    = 0,
     double  LogSizeMb       = 0,
-    string? LogReuseWait    = null)
+    string? LogReuseWait    = null,
+
+    // Azure SQL Database's resource figures (#234), as shares of its service tier's limits; null
+    // where the server doesn't report them (not 0 %). DTU % only on a DTU tier. Not kept in the
+    // history, and neither is whether the server is Azure SQL Database.
+    double? DataIoPct          = null,
+    double? LogWritePct        = null,
+    double? DtuPct             = null,
+    bool    IsAzureSqlDatabase = false)
 {
+    /// <summary>
+    /// The portal's "DTU percentage": the highest of CPU, data IO and log write, each a share of
+    /// the tier's limit. Null unless the tier is sold in DTUs and both IO figures were reported.
+    /// </summary>
+    public static double? Dtu(double cpuPct, double? dataIoPct, double? logWritePct, int? dtuLimit) =>
+        dtuLimit is not null && dataIoPct is { } dataIo && logWritePct is { } logWrite
+            ? Math.Max(cpuPct, Math.Max(dataIo, logWrite))
+            : null;
+
     /// <summary>
     /// Builds a sample from the current snapshot and the one before it. Rates are zero for the
     /// first snapshot, and never negative — counters restart from zero when the server does.
@@ -92,7 +109,11 @@ public sealed record LiveMetricSample(
             WaitingTasks:          current.WaitingTasks,
             BufferPoolMb:          current.BufferPoolPages * 8 / 1024.0,
             LogSizeMb:             current.LogSizeMb,
-            LogReuseWait:          current.LogReuseWait);
+            LogReuseWait:          current.LogReuseWait,
+            DataIoPct:             current.AzureDataIoPct,
+            LogWritePct:           current.AzureLogWritePct,
+            DtuPct:                Dtu(current.SqlCpuUtilizationPct, current.AzureDataIoPct, current.AzureLogWritePct, current.AzureDtuLimit),
+            IsAzureSqlDatabase:    current.IsAzureSqlDatabase);
     }
 }
 
@@ -120,6 +141,7 @@ public enum HealthLevel
 /// <param name="Volume">Disk free: the volume graded, the one past the worst level with the least free space.</param>
 /// <param name="FreeGb">Disk free: that volume's free space.</param>
 /// <param name="Names">Backups past RPO and failed Agent jobs (#174): the databases or jobs, in the order read.</param>
+/// <param name="AzureIoResource">Azure IO (#234): which is nearer the tier's limit, "log write" or "data IO".</param>
 public sealed record HealthFacts(
     double                       BufferPoolGb    = 0,
     double                       LogSizeMb       = 0,
@@ -129,12 +151,15 @@ public sealed record HealthFacts(
     IReadOnlyList<VolumeSpace>?  Volumes         = null,
     string?                      Volume          = null,
     double                       FreeGb          = 0,
-    IReadOnlyList<string>?       Names           = null)
+    IReadOnlyList<string>?       Names           = null,
+    string?                      AzureIoResource = null)
 {
     public static HealthFacts None { get; } = new();
 
     public static HealthFacts Of(LiveMetricSample sample) => new(
-        sample.BufferPoolMb / 1024, sample.LogSizeMb, sample.LogReuseWait, sample.LogUsedDatabase, sample.BlockedSessions);
+        sample.BufferPoolMb / 1024, sample.LogSizeMb, sample.LogReuseWait, sample.LogUsedDatabase, sample.BlockedSessions,
+        AzureIoResource: sample.DataIoPct is null && sample.LogWritePct is null ? null
+                       : (sample.LogWritePct ?? 0) >= (sample.DataIoPct ?? 0) ? "log write" : "data IO");
 }
 
 /// <summary>
@@ -164,9 +189,18 @@ public static class HealthRules
     /// </summary>
     public static IReadOnlyList<string> ReusableLogWaits { get; } = ["NOTHING", "CHECKPOINT"];
 
-    /// <summary>The checks graded on every sample (<see cref="Grade"/>); the rest are <see cref="ServerChecks"/>.</summary>
+    /// <summary>
+    /// The checks graded on every sample (<see cref="Grade"/>), on every server; the rest are
+    /// <see cref="ServerChecks"/>, and Azure IO, which only Azure SQL Database's samples have.
+    /// </summary>
     public static IReadOnlyList<HealthIndicator> SampleIndicators { get; } =
-        Enum.GetValues<HealthIndicator>().Where(i => !ServerChecks.IsServerCheck(i)).ToList();
+        Enum.GetValues<HealthIndicator>().Where(i => !ServerChecks.IsServerCheck(i) && !IsAzureOnly(i)).ToList();
+
+    /// <summary>
+    /// A check only Azure SQL Database has (#234). Elsewhere it isn't graded at all, rather than
+    /// graded as no data: it doesn't apply, so it has no bar on the server's tile.
+    /// </summary>
+    public static bool IsAzureOnly(HealthIndicator indicator) => indicator == HealthIndicator.AzureIo;
 
     /// <summary>Grades a sample on the default thresholds.</summary>
     public static (HealthLevel Level, IReadOnlyList<string> Reasons) Evaluate(LiveMetricSample sample) =>
@@ -190,12 +224,14 @@ public static class HealthRules
     /// <summary>
     /// Grades each indicator of a sample on its thresholds, in <see cref="HealthIndicator"/> order.
     /// An indicator the sample has no figure for (a counter the server didn't report) is
-    /// <see cref="HealthLevel.Unknown"/>; nothing blocked is a figure, 0 s.
+    /// <see cref="HealthLevel.Unknown"/>; nothing blocked is a figure, 0 s. Azure IO is graded only
+    /// on a sample from Azure SQL Database (<see cref="IsAzureOnly"/>), and Unknown there while
+    /// sys.dm_db_resource_stats has no row, so an alert on it ends as other checks' do.
     /// </summary>
     public static IReadOnlyList<HealthReading> Grade(LiveMetricSample sample, HealthThresholds thresholds)
     {
         var facts = HealthFacts.Of(sample);
-        return
+        List<HealthReading> readings =
         [
             Read(HealthIndicator.Cpu, sample.SqlCpuPct, measured: true, facts, thresholds),
             // Nothing blocked is a figure, 0 s: a wait time without a blocked request is ignored.
@@ -208,6 +244,11 @@ public static class HealthRules
             // Zero means TempDB's counters weren't reported (Azure SQL Database).
             Read(HealthIndicator.TempDbSpace, sample.TempDbUsedPct, measured: sample.TempDbUsedPct > 0, facts, thresholds),
         ];
+        // The higher of data IO and log write: either one at the tier's limit throttles the database.
+        if (sample.IsAzureSqlDatabase)
+            readings.Add(Read(HealthIndicator.AzureIo, Math.Max(sample.DataIoPct ?? 0, sample.LogWritePct ?? 0),
+                              measured: sample.DataIoPct is not null || sample.LogWritePct is not null, facts, thresholds));
+        return readings;
     }
 
     /// <summary>
@@ -332,6 +373,7 @@ public static class HealthRules
             HealthIndicator.LogSpace            => string.Format(culture, "log {0:0} % full", v) +
                                                    (string.IsNullOrWhiteSpace(facts.LogDatabase) ? string.Empty : $" in {facts.LogDatabase}"),
             HealthIndicator.TempDbSpace         => string.Format(culture, "TempDB {0:0} % full", v),
+            HealthIndicator.AzureIo             => string.Format(culture, "{0} at {1:0} % of the tier's limit", facts.AzureIoResource ?? "IO", v),
             HealthIndicator.DiskFree            => string.Format(culture, "disk {0} {1:0} % free ({2})", facts.Volume, v, Gigabytes(facts.FreeGb)),
             HealthIndicator.BackupsPastRpo      => v == 1 && OnlyName(facts) is { } database
                                                        ? $"{database} past its backup RPO"
@@ -354,6 +396,7 @@ public static class HealthRules
         HealthIndicator.MemoryGrantsPending => $"{value:0} memory grant(s) pending",
         HealthIndicator.LogSpace            => $"Log {value:0}% full" + LogDetail(facts),
         HealthIndicator.TempDbSpace         => $"TempDB {value:0}% full",
+        HealthIndicator.AzureIo             => $"Azure {facts.AzureIoResource ?? "IO"} {value:0}% of the tier's limit",
         HealthIndicator.DiskFree            => $"Disk {facts.Volume} {value:0}% free ({Gigabytes(facts.FreeGb)})",
         HealthIndicator.BackupsPastRpo      => $"{value:0} past backup RPO" + NameList(facts),
         HealthIndicator.FailedJobs          => $"{value:0} Agent job(s) failed" + NameList(facts),

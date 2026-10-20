@@ -23,7 +23,7 @@ Each tile shows:
 | **Worst state first** | From 0.75.0, before the number: the worst state and its reason, in the dot's colour: *Critical: blocking for 4 min*, *Healthy: every check passes*, *Unreachable*. See [The worst state first](Health-Dot-and-Background-Monitoring.md#the-worst-state-first). |
 | **Score** | 0 to 100, in the dot's colour, with a sparkline of the **last hour**: shaded red where the server couldn't be reached, grey where it wasn't monitored. Under it, how much of the last day was watched: *Monitored 14 h of the last 24 h* (point at it for the longest gap). See [How much was monitored](#how-much-was-monitored). |
 | **Why** | What lowered it, in the words of the score's breakdown: *Lowered by Page life expectancy −8.* |
-| **Nine bars** | One per check (CPU, Block, PLE, Grants, Log, Temp, and from 0.76.0 Disk, RPO, Jobs; from 0.76.0 TempDB's is *Temp*, so nine fit), each in its own colour. Point at a bar for its figure and thresholds. A check with no data is grey, and left out of the score. |
+| **Nine bars** | One per check (CPU, Block, PLE, Grants, Log, Temp, and from 0.76.0 Disk, RPO, Jobs; from 0.76.0 TempDB's is *Temp*, so nine fit), each in its own colour. On Azure SQL Database a tenth, **IO** (from 0.82.0), after Temp. Point at a bar for its figure and thresholds. A check with no data is grey, and left out of the score. |
 | **Footer** | When the last sample was taken, and whether it's the active connection or monitored in the background |
 | **Button** | **Open** its Overview, **Retry** a server that can't be reached, or **▶ Start monitoring** one that isn't monitored |
 | **⋯ menu** | From 0.57.0: **Open**, **Start monitoring** or **Stop monitoring**, **Why this score…** (the score's breakdown, beside the tile) and **Edit connection…**: what the sidebar's connection selector did for each server before |
@@ -96,6 +96,7 @@ Each check that lowers the score, the costliest first, with:
 | Memory grants pending | Memory grants | 🧠 Memory |
 | Log space used | Log space | 📦 DB Storage |
 | TempDB space used | TempDB | 🗄️ TempDB |
+| Azure IO | Azure resources | 💓 Live charts |
 | Disk free | Volumes | 💽 File I/O |
 | Backups past RPO | Backups | 💾 Backups |
 | Failed Agent jobs | Agent jobs | 🕒 Agent Jobs |

@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -45,18 +48,32 @@ public sealed class LiveMetricsDashboardViewModelTests : IDisposable
         Sample();
     }
 
-    private FakeRepository Hot() => MonitoringManagerTests.Hot("hot", _calls);
+    // Set before Setup to make "Hot" an Azure SQL Database (#234): its data IO, log write and DTU
+    // limit; null figures are a sample taken while sys.dm_db_resource_stats has no row.
+    private (double? DataIo, double? LogWrite, int? DtuLimit)? _azure;
+
+    private FakeRepository Hot()
+    {
+        var repo = MonitoringManagerTests.Hot("hot", _calls);
+        if (repo.GetLiveMetricsAsync is { } live)
+            repo.GetLiveMetricsAsync = async () => _azure is { } azure
+                ? (await live()) with { AzureDataIoPct = azure.DataIo, AzureLogWritePct = azure.LogWrite, AzureDtuLimit = azure.DtuLimit,
+                                        IsAzureSqlDatabase = true }
+                : await live();
+        return repo;
+    }
 
     // The page's own repository: the active connection's, which the process map reads.
     private readonly List<string> _pageReads = [];
 
     private void Sample() => UiThread.Wait(_monitoring!.Get(_hot.Id)!.CollectNowAsync());
 
-    private LiveMetricsDashboardViewModel Connected(ConnectionSettings conn, FakeHistoryReader? history = null)
+    private LiveMetricsDashboardViewModel Connected(ConnectionSettings conn, FakeHistoryReader? history = null, bool shellSaysAzure = false)
     {
         var repo  = new FakeRepository { Called = _pageReads.Add, GetProcessesAsync = () => Task.FromResult<IEnumerable<ProcessNode>>([]) };
         var model = new LiveMetricsDashboardViewModel(repo, _monitoring, conn.Id,
-                                                      history is null ? null : new ConnectionHistory(history, conn.Id), conn.Name, _navigator);
+                                                      history is null ? null : new ConnectionHistory(history, conn.Id), conn.Name, _navigator,
+                                                      isAzureSqlDatabase: shellSaysAzure);
         model.Connect("LiveMetrics", _shell, new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
         return model;
     }
@@ -155,6 +172,143 @@ public sealed class LiveMetricsDashboardViewModelTests : IDisposable
         Sample();
         Assert.Equal(plotted + 3, model.Points(Metric.Cpu).Count);
         Assert.Empty(_shell.Reports);
+    });
+
+    // ── Azure SQL Database (#234) ────────────────────────────────────────
+
+    [Fact]
+    public void AzureSqlDatabase_OnADtuTier_ChartsDtuCpuDataIoAndLogIo() => OnDispatcher.Run(() =>
+    {
+        _azure = (DataIo: 40, LogWrite: 98, DtuLimit: 100);
+        Setup();
+        var model = Connected(_hot);
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        Assert.True(model.IsAzureSqlDatabase);
+        Assert.True(model.HasDtu);
+        Assert.True(model.Shows(Chart.AzureResources));
+        Assert.Equal((40.0, 98.0, 99.0), (model.Points(Metric.DataIo)[^1].Value, model.Points(Metric.LogWrite)[^1].Value,
+                                          model.Points(Metric.Dtu)[^1].Value));   // DTU: the highest, here CPU's 99 %
+        Assert.Contains(_monitoring!.Get(_hot.Id)!.Score!.Checks, c => c is { Indicator: HealthIndicator.AzureIo, Level: HealthLevel.Critical });
+
+        model.CloseCommand.Execute(Chart.AzureResources);
+        Assert.False(model.ShowsAzureResources);
+        Assert.False(model.Shows(Chart.AzureResources));
+    });
+
+    [Fact]
+    public void AzureSqlDatabase_OnAVCoreTier_HasNoDtu() => OnDispatcher.Run(() =>
+    {
+        _azure = (DataIo: 40, LogWrite: 30, DtuLimit: null);
+        Setup();
+        var model = Connected(_hot);
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        Assert.True(model.Shows(Chart.AzureResources));
+        Assert.False(model.HasDtu);
+        Assert.All(model.Points(Metric.Dtu), p => Assert.Null(p.Value));
+        Assert.Equal(30, model.Points(Metric.LogWrite)[^1].Value);
+    });
+
+    [Fact]
+    public void AzureSqlDatabase_NotMonitored_OffersItsChart_AsTheShellFound_AndSendsNothing() => OnDispatcher.Run(() =>
+    {
+        // An Azure IO alert from the collector service opens Live charts here: the card is there to show.
+        Setup();
+        var model = Connected(_quiet, shellSaysAzure: true);
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        Assert.False(model.IsMonitoring);
+        Assert.True(model.Shows(Chart.AzureResources));
+        Assert.DoesNotContain(_calls, c => c.Server == "quiet");
+        Assert.Empty(_pageReads);
+    });
+
+    [Fact]
+    public void AzureSqlDatabase_ASampleWithNoRowYet_KeepsTheDtuLine_AndIsAGap() => OnDispatcher.Run(() =>
+    {
+        _azure = (DataIo: 40, LogWrite: 98, DtuLimit: 100);
+        Setup();
+        var model = Connected(_hot);
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        _azure = (DataIo: null, LogWrite: null, DtuLimit: null);   // after a failover: the view is empty
+        Sample();
+
+        Assert.True(model.IsAzureSqlDatabase);
+        Assert.True(model.HasDtu);
+        Assert.Null(model.Points(Metric.LogWrite)[^1].Value);
+        Assert.Contains(_monitoring!.Get(_hot.Id)!.Score!.Checks, c => c is { Indicator: HealthIndicator.AzureIo, Level: HealthLevel.Unknown });
+    });
+
+    [Fact]
+    public void SqlServer_HasNoAzureResourcesChart_AndItsFiguresAreGaps_NotZero() => OnDispatcher.Run(() =>
+    {
+        Setup();
+        var model = Connected(_hot);
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        Assert.False(model.IsAzureSqlDatabase);
+        Assert.True(model.ShowsAzureResources);
+        Assert.False(model.Shows(Chart.AzureResources));
+        Assert.NotEmpty(model.Points(Metric.DataIo));
+        Assert.All(model.Points(Metric.DataIo), p => Assert.Null(p.Value));
+        Assert.DoesNotContain(_monitoring!.Get(_hot.Id)!.Score!.Checks, c => c.Indicator == HealthIndicator.AzureIo);
+    });
+
+    [Fact]
+    public void AzureSqlDatabase_APastRange_SaysItsResourcesAreLiveOnly() => OnDispatcher.Run(() =>
+    {
+        _azure = (DataIo: 40, LogWrite: 98, DtuLimit: 100);
+        Setup();
+        var now     = DateTime.UtcNow;
+        var history = new FakeHistoryReader { Metrics = [Point(now.AddMinutes(-40), 50), Point(now.AddMinutes(-20), 60)] };
+        var model   = Connected(_hot, history);
+        UiThread.Wait(model.OnNavigatedToAsync());
+
+        UiThread.Wait(model.PickRangeAsync(HistoryRange.LastHour));
+        Assert.Contains(LiveMetricsDashboardViewModel.AzureLiveOnlyNote, model.HistoryStatus);
+        Assert.All(model.Points(Metric.LogWrite), p => Assert.Null(p.Value));
+
+        // Its chip off, nothing to say about it.
+        model.ShowsAzureResources = false;
+        Assert.DoesNotContain(LiveMetricsDashboardViewModel.AzureLiveOnlyNote, model.HistoryStatus);
+
+        model.ShowsAzureResources = true;
+        UiThread.Wait(model.PickRangeAsync(HistoryRange.Live));
+        Assert.DoesNotContain(LiveMetricsDashboardViewModel.AzureLiveOnlyNote, model.HistoryStatus);
+    });
+
+    // The page: its chip, and a card titled "Azure resources" with a line per figure, built again
+    // once a sample says the server is Azure SQL Database.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ThePage_ShowsTheAzureResourcesCardAndChip_OnlyOnAzureSqlDatabase(bool azure) => UiThread.Run(() =>
+    {
+        if (azure)
+            _azure = (DataIo: 40, LogWrite: 98, DtuLimit: 100);
+        Setup();
+        var model = Connected(_hot);
+        var page  = new LiveMetricsDashboardPage(model);   // before the samples are plotted: the card comes later
+        UiThread.Wait(model.OnNavigatedToAsync());
+        UiThread.Layout(page, 1400, 900);
+
+        var card = page.ChartGrid.Children.OfType<Border>()
+                       .FirstOrDefault(b => UiThread.Find<TextBlock>(b).Any(t => t.Text == "Azure resources"));
+        Assert.Equal(azure ? Visibility.Visible : Visibility.Collapsed, page.ChipAzureResources.Visibility);
+        if (!azure)
+        {
+            Assert.Null(card);
+            return;
+        }
+        var chart = Assert.Single(UiThread.Find<LiveChartsCore.SkiaSharpView.WPF.CartesianChart>(card!));
+        Assert.Equal(["DTU", "CPU", "Data IO", "Log IO"], chart.Series.Select(s => s.Name));
+        // In the chips' order: after CPU Usage's place, before the process map.
+        Assert.Equal(card, page.ChartGrid.Children[1]);
+
+        model.ShowsAzureResources = false;
+        Assert.DoesNotContain(card, page.ChartGrid.Children.OfType<Border>());
     });
 
     // ── A past range, and last week ──────────────────────────────────────

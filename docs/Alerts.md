@@ -37,7 +37,7 @@ The single 73 at sample 5 doesn't end it, because the samples after it are past 
 |---|---|
 | **Status** | **● Active**: still past its threshold. **Ended**: finished. |
 | **Severity** | 🟠 **Warning** or 🔴 **Critical**: the worst level it held for long enough |
-| **Connection**, **Indicator** | Which server, and which of the nine health indicators |
+| **Connection**, **Indicator** | Which server, and which of the health indicators: nine, and Azure IO on Azure SQL Database |
 | **Evidence** | **Investigate →**: the page that shows why, filtered and set to the alert's time (see [below](#from-an-alert-to-its-evidence)). Double-click a row or press **Enter** on it to do the same. |
 | **Started**, **Ended**, **Duration** | On this PC's clock. Duration keeps counting while it's active. |
 | **Worst value** | The highest figure seen, or the **lowest** for page life expectancy |
@@ -63,6 +63,7 @@ From 0.61.0 every alert has an **evidence route**: the page that shows why, alre
 | Memory grants pending | 🧠 Memory | the grants still waiting for memory | Live charts (memory) |
 | Log space used | 📦 DB Storage | the files of the database whose log was fullest | none kept |
 | TempDB space used | 🗄️ TempDB | (the whole page) | none kept |
+| Azure IO (from 0.82.0, Azure SQL Database) | 💓 Live charts, live, with its **Azure resources** card | (the whole page) | none kept |
 | Disk free (from 0.76.0) | 💽 File I/O | (the whole page: its **Volumes** grid has each volume's free space) | none kept |
 | Backups past RPO (from 0.76.0) | 💾 Backups | (the whole page: the databases past the RPO come first) | none kept |
 | Failed Agent jobs (from 0.76.0) | 🕒 Agent Jobs | (the whole page: failed jobs at the top, after any running long) | none kept |

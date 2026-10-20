@@ -3,8 +3,9 @@ using System.Globalization;
 namespace SqlVitals.Engine.Monitoring;
 
 /// <summary>
-/// The figures the health dot is graded on. The first six are read with every sample; the last
-/// three change slowly and are read every few minutes (#174, <see cref="ServerChecks"/>).
+/// The figures the health dot is graded on. The first seven are read with every sample (Azure IO
+/// only on Azure SQL Database, #234); the last three change slowly and are read every few minutes
+/// (#174, <see cref="ServerChecks"/>). Stored by name, so a new one can go anywhere.
 /// </summary>
 public enum HealthIndicator
 {
@@ -14,6 +15,7 @@ public enum HealthIndicator
     MemoryGrantsPending,
     LogSpace,
     TempDbSpace,
+    AzureIo,
     DiskFree,
     BackupsPastRpo,
     FailedJobs,
@@ -51,20 +53,23 @@ public sealed record HealthWeights(
     int? TempDbSpace         = null,
     int? DiskFree            = null,
     int? BackupsPastRpo      = null,
-    int? FailedJobs          = null)
+    int? FailedJobs          = null,
+    int? AzureIo             = null)
 {
     public const int MaxWeight = 100;
 
     public static HealthWeights Default { get; } = new(
         DefaultOf(HealthIndicator.Cpu), DefaultOf(HealthIndicator.Blocking), DefaultOf(HealthIndicator.PageLifeExpectancy),
         DefaultOf(HealthIndicator.MemoryGrantsPending), DefaultOf(HealthIndicator.LogSpace), DefaultOf(HealthIndicator.TempDbSpace),
-        DefaultOf(HealthIndicator.DiskFree), DefaultOf(HealthIndicator.BackupsPastRpo), DefaultOf(HealthIndicator.FailedJobs));
+        DefaultOf(HealthIndicator.DiskFree), DefaultOf(HealthIndicator.BackupsPastRpo), DefaultOf(HealthIndicator.FailedJobs),
+        DefaultOf(HealthIndicator.AzureIo));
 
     /// <summary>
-    /// The default points of a check; they add up to 100. CPU and blocking stop users' work
-    /// outright, and so do a full log and a full disk; memory pressure slows everything and a
-    /// database past its backup RPO risks data; queued memory grants and a full TempDB hit fewer
-    /// queries; a failed job is one task.
+    /// The default points of a check; the checks every server has add up to 100. CPU and blocking
+    /// stop users' work outright, and so do a full log and a full disk; memory pressure slows
+    /// everything and a database past its backup RPO risks data; queued memory grants and a full
+    /// TempDB hit fewer queries; a failed job is one task. Azure IO (#234), on Azure SQL Database
+    /// only, is worth a full log's: at the tier's limit Azure throttles every query that reads or writes.
     /// </summary>
     public static int DefaultOf(HealthIndicator indicator) => indicator switch
     {
@@ -72,6 +77,7 @@ public sealed record HealthWeights(
         HealthIndicator.Blocking            => 16,
         HealthIndicator.LogSpace            => 14,
         HealthIndicator.DiskFree            => 14,
+        HealthIndicator.AzureIo             => 14,
         HealthIndicator.PageLifeExpectancy  => 10,
         HealthIndicator.BackupsPastRpo      => 10,
         HealthIndicator.MemoryGrantsPending => 8,
@@ -98,6 +104,7 @@ public sealed record HealthWeights(
         HealthIndicator.DiskFree            => DiskFree,
         HealthIndicator.BackupsPastRpo      => BackupsPastRpo,
         HealthIndicator.FailedJobs          => FailedJobs,
+        HealthIndicator.AzureIo             => AzureIo,
         _                                   => null,
     } ?? DefaultOf(indicator);
 
@@ -112,6 +119,7 @@ public sealed record HealthWeights(
         HealthIndicator.DiskFree            => this with { DiskFree            = weight },
         HealthIndicator.BackupsPastRpo      => this with { BackupsPastRpo      = weight },
         HealthIndicator.FailedJobs          => this with { FailedJobs          = weight },
+        HealthIndicator.AzureIo             => this with { AzureIo             = weight },
         _                                   => this,
     };
 
@@ -176,7 +184,8 @@ public sealed record HealthThresholds(
     HealthThreshold? DiskFreePct             = null,
     HealthThreshold? DiskFreeGb              = null,
     HealthThreshold? BackupsPastRpo          = null,
-    HealthThreshold? FailedJobs              = null)
+    HealthThreshold? FailedJobs              = null,
+    HealthThreshold? AzureIoPct              = null)
 {
     /// <summary>The buffer pool size a scaled page life expectancy threshold is given for: 300 s per 4 GB.</summary>
     public const double PageLifeExpectancyPerGb = 4;
@@ -202,6 +211,10 @@ public sealed record HealthThresholds(
         new(HealthIndicator.TempDbSpace, "TempDB space used", "%",
             "TempDB data files, as a share of their current size (before they autogrow).",
             LowerIsWorse: false, WholeNumber: false, Min: 1, Max: 100, new(80, 90)),
+        new(HealthIndicator.AzureIo, "Azure IO", "%",
+            "Azure SQL Database only: the higher of data IO and log write, as a share of the service tier's limit, " +
+            "over the last 15 seconds. At 100 % Azure throttles the database, however low its CPU.",
+            LowerIsWorse: false, WholeNumber: false, Min: 1, Max: 100, new(80, 95)),
         new(HealthIndicator.DiskFree, "Disk free", "%",
             "The volume holding database files with the least free space, read every few minutes. A volume is " +
             "past a level only when both its free % and its free GB are below it, so a large volume isn't " +
@@ -236,7 +249,8 @@ public sealed record HealthThresholds(
         Info(HealthIndicator.DiskFree).Default,
         DiskFreeGbInfo.Default,
         Info(HealthIndicator.BackupsPastRpo).Default,
-        Info(HealthIndicator.FailedJobs).Default);
+        Info(HealthIndicator.FailedJobs).Default,
+        Info(HealthIndicator.AzureIo).Default);
 
     public static HealthIndicatorInfo Info(HealthIndicator indicator) =>
         Indicators.First(i => i.Indicator == indicator);
@@ -278,6 +292,7 @@ public sealed record HealthThresholds(
         HealthIndicator.DiskFree            => DiskFreePct,
         HealthIndicator.BackupsPastRpo      => BackupsPastRpo,
         HealthIndicator.FailedJobs          => FailedJobs,
+        HealthIndicator.AzureIo             => AzureIoPct,
         _                                   => null,
     } ?? Info(indicator).Default;
 
@@ -292,6 +307,7 @@ public sealed record HealthThresholds(
         HealthIndicator.DiskFree            => this with { DiskFreePct           = threshold },
         HealthIndicator.BackupsPastRpo      => this with { BackupsPastRpo        = threshold },
         HealthIndicator.FailedJobs          => this with { FailedJobs            = threshold },
+        HealthIndicator.AzureIo             => this with { AzureIoPct            = threshold },
         _                                   => this,
     };
 
