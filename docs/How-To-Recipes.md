@@ -18,6 +18,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [A query got slower after a release](#a-query-got-slower-after-a-release)
 - [Find a query that's sometimes slow (parameter sniffing)](#find-a-query-thats-sometimes-slow-parameter-sniffing)
 - [Check a forced plan still works](#check-a-forced-plan-still-works)
+- [Find which stored procedure costs the most](#find-which-stored-procedure-costs-the-most)
 - [Is today normal?](#is-today-normal)
 - [CPU is high](#cpu-is-high)
 - [Plan routine index and statistics maintenance](#plan-routine-index-and-statistics-maintenance)
@@ -224,6 +225,13 @@ An application that opens connections and doesn't close them fills its pool with
 3. **🔎 Plan Cache Health → Implicit Conversions**: data-type mismatches cause scans that burn CPU.
 4. **🔎 Plan Cache Health → Multi-Plan Queries**: many compilations cost CPU too.
 5. **📦 DB Storage → Max DOP / Cost Threshold**: a cost threshold of 5 (the default) often causes too much parallelism (`CXPACKET` waits). **✅ Config Checks** says what to set them to for this server.
+
+## Find which stored procedure costs the most
+
+1. **🔥 Resource Queries**, then tick **Group by object** beside Row Limit. Each procedure, function and trigger is one closed line with the totals of its statements in the list, the costliest first; the ad hoc queries are one more.
+2. **By Logical Reads** ranks them by reads, **By CPU** by CPU. A procedure with many medium statements can outrank one big ad hoc query.
+3. Click the top group to open it and see which of its statements cost the most. **View** shows a statement's whole text; **View Plan** its plan.
+4. Raise **Row Limit** (up to 200) if a procedure's statements fall outside the list: the totals count only the statements listed.
 
 ## Plan routine index and statistics maintenance
 

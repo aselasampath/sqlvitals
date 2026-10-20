@@ -14,6 +14,64 @@
             <Setter Property="Foreground" Value="{StaticResource AccentLight}"/>
             <Setter Property="FontSize" Value="11"/>
         </Style>
+        <!-- Query text (#232): one line without its comments, so a procedure's whole batch keeps
+             its row one line high; hover for the text with its line breaks, View for all of it. -->
+        <helpers:QueryLine x:Key="QueryLine"/>
+        <Style x:Key="QueryTextCell" TargetType="TextBlock" BasedOn="{StaticResource SingleLineText}">
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="ToolTip" Value="{Binding QueryText, Converter={StaticResource QueryLine}, ConverterParameter=Tip}"/>
+        </Style>
+        <DataTemplate x:Key="ViewTextCell">
+            <Button Content="View" CommandParameter="{Binding QueryText}" Command="{x:Static helpers:QueryTextWindow.Show}"
+                    Style="{StaticResource RefreshButton}" Padding="6,3" FontSize="11" Margin="2,1"
+                    ToolTip="Open the whole query text in its own window, line breaks kept, to read, copy or save"/>
+        </DataTemplate>
+        <!-- Group by object (#232): a header per procedure, function or trigger, closed at first. -->
+        <Style x:Key="ObjectGroup" TargetType="GroupItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupItem">
+                        <StackPanel>
+                            <ToggleButton IsChecked="{Binding Name.IsExpanded, Mode=TwoWay}" Cursor="Hand" Focusable="False"
+                                          ToolTip="Show or hide this object's queries. The totals are of its queries in this list.">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{DynamicResource BgSidebar}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                            <DockPanel>
+                                                <TextBlock x:Name="Arrow" DockPanel.Dock="Left" Text="▾" Width="16" Margin="6,0,0,0"
+                                                           VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextMuted}"/>
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Name.Name}" Margin="0,6,10,6"
+                                                           VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimary}"/>
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Name.Type}" Margin="0,0,10,0"
+                                                           VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="11"
+                                                           Foreground="{DynamicResource AccentLight}"/>
+                                                <TextBlock Text="{Binding Name.Summary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                           FontFamily="Segoe UI" FontSize="11" Foreground="{DynamicResource TextMuted}"/>
+                                            </DockPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="False">
+                                                <Setter TargetName="Arrow" Property="Text" Value="▸"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Arrow" Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ItemsPresenter x:Name="Items"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Name.IsExpanded}" Value="False">
+                                <Setter TargetName="Items" Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Page.Resources>
     <!-- The page template (#149): the verdict on the costliest queries first, then the tabs; a row
          selected shows its figures, its text and its plan in the details drawer. Bound to
@@ -21,6 +79,13 @@
     <controls:PageShell x:Name="Shell" Margin="20" Title="Resource-Intensive Queries" PageKey="ResourceQueries">
         <controls:PageShell.Actions>
             <StackPanel Orientation="Horizontal">
+                <CheckBox Content="Group by object" IsChecked="{Binding GroupByObject}" VerticalAlignment="Center"
+                          Foreground="{DynamicResource TextPrimary}" Cursor="Hand" FontFamily="Segoe UI" FontSize="13" Margin="0,0,10,0"
+                          ToolTip="One group per stored procedure, function or trigger, and one for the ad hoc queries, the costliest first. Groups start closed."/>
+                <Button Content="Expand all" Command="{Binding ExpandAllCommand}" Style="{StaticResource SecondaryButton}"
+                        Padding="8,3" Margin="0,0,6,0" ToolTip="Open every group"/>
+                <Button Content="Collapse all" Command="{Binding CollapseAllCommand}" Style="{StaticResource SecondaryButton}"
+                        Padding="8,3" Margin="0,0,16,0" ToolTip="Close every group"/>
                 <TextBlock Text="Row Limit:" VerticalAlignment="Center"
                            Foreground="{StaticResource TextMuted}"
                            FontFamily="Segoe UI" FontSize="13" Margin="0,0,8,0"/>
@@ -57,7 +122,13 @@
                                       AlternatingRowBackground="{StaticResource BgSidebar}"
                                       Foreground="{StaticResource TextPrimary}"
                                       BorderBrush="{StaticResource Border}" GridLinesVisibility="Horizontal"
-                                      HorizontalGridLinesBrush="{StaticResource Border}">
+                                      HorizontalGridLinesBrush="{StaticResource Border}"
+                                      VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                                <DataGrid.GroupStyle>
+                                    <GroupStyle ContainerStyle="{StaticResource ObjectGroup}">
+                                        <GroupStyle.Panel><ItemsPanelTemplate><DataGridRowsPresenter/></ItemsPanelTemplate></GroupStyle.Panel>
+                                    </GroupStyle>
+                                </DataGrid.GroupStyle>
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"  Width="100" ElementStyle="{StaticResource SingleLineText}">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Database the query was compiled against (DB_NAME from sql_handle)."/></Style></DataGridTextColumn.HeaderStyle>
@@ -99,8 +170,9 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"    Width="*" ElementStyle="{StaticResource SingleLineText}">
-                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Extracted statement text using statement offset."/></Style></DataGridTextColumn.HeaderStyle>
+                                    <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The statement, cut from its batch by its offsets, on one line without its comments. Hover for more, View or select the row for all of it. The filter, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
@@ -129,7 +201,13 @@
                                       AlternatingRowBackground="{StaticResource BgSidebar}"
                                       Foreground="{StaticResource TextPrimary}"
                                       BorderBrush="{StaticResource Border}" GridLinesVisibility="Horizontal"
-                                      HorizontalGridLinesBrush="{StaticResource Border}">
+                                      HorizontalGridLinesBrush="{StaticResource Border}"
+                                      VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                                <DataGrid.GroupStyle>
+                                    <GroupStyle ContainerStyle="{StaticResource ObjectGroup}">
+                                        <GroupStyle.Panel><ItemsPanelTemplate><DataGridRowsPresenter/></ItemsPanelTemplate></GroupStyle.Panel>
+                                    </GroupStyle>
+                                </DataGrid.GroupStyle>
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"  Width="100" ElementStyle="{StaticResource SingleLineText}"/>
                                     <DataGridTextColumn Header="Object"      Binding="{Binding ObjectName}"    Width="140" ElementStyle="{StaticResource SingleLineText}"/>
@@ -157,7 +235,10 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"    Width="*" ElementStyle="{StaticResource SingleLineText}"/>
+                                    <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The statement, cut from its batch by its offsets, on one line without its comments. Hover for more, View or select the row for all of it. The filter, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -185,7 +266,13 @@
                                       AlternatingRowBackground="{StaticResource BgSidebar}"
                                       Foreground="{StaticResource TextPrimary}"
                                       BorderBrush="{StaticResource Border}" GridLinesVisibility="Horizontal"
-                                      HorizontalGridLinesBrush="{StaticResource Border}">
+                                      HorizontalGridLinesBrush="{StaticResource Border}"
+                                      VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                                <DataGrid.GroupStyle>
+                                    <GroupStyle ContainerStyle="{StaticResource ObjectGroup}">
+                                        <GroupStyle.Panel><ItemsPanelTemplate><DataGridRowsPresenter/></ItemsPanelTemplate></GroupStyle.Panel>
+                                    </GroupStyle>
+                                </DataGrid.GroupStyle>
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Database"    Binding="{Binding DatabaseName}"  Width="100" ElementStyle="{StaticResource SingleLineText}"/>
                                     <DataGridTextColumn Header="Object"      Binding="{Binding ObjectName}"    Width="140" ElementStyle="{StaticResource SingleLineText}"/>
@@ -209,7 +296,10 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText}"    Width="*" ElementStyle="{StaticResource SingleLineText}"/>
+                                    <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                        <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The whole batch the statement is in: for a procedure, its CREATE PROCEDURE. Shown on one line without its comments; hover for more, View or select the row for all of it. The filter, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>

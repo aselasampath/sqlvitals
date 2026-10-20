@@ -347,8 +347,8 @@
                                     <DataGridTextColumn.Header><TextBlock Text="Status" ToolTip="By total CPU in the period, whatever the list is ranked by: Critical over 60 s, Warning over 10 s, Info below."/></DataGridTextColumn.Header>
                                 </DataGridTextColumn>
                                 <DataGridTemplateColumn Header="" Width="88" CanUserSort="False" CellTemplate="{StaticResource ViewPlanCell}"/>
-                                <DataGridTextColumn Binding="{Binding QueryTextLine}" Width="*" MinWidth="220" ElementStyle="{StaticResource QueryText}">
-                                    <DataGridTextColumn.Header><TextBlock Text="Query text" ToolTip="The statement on one line; hover for all of it. Type part of it in the filter box to find a query."/></DataGridTextColumn.Header>
+                                <DataGridTextColumn Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" MinWidth="220" ElementStyle="{StaticResource QueryText}">
+                                    <DataGridTextColumn.Header><TextBlock Text="Query text" ToolTip="The statement on one line, without its comments; hover for more of it. The filter box, Copy All and Export use the whole text."/></DataGridTextColumn.Header>
                                 </DataGridTextColumn>
                             </DataGrid.Columns>
                         </DataGrid>
@@ -420,7 +420,7 @@
                                 <DataGridTextColumn Binding="{Binding Executions, StringFormat=N0}" Width="85" ElementStyle="{StaticResource Number}" Header="Executions"/>
                                 <DataGridTextColumn Binding="{Binding ObjectText}" Width="140" ElementStyle="{StaticResource SingleLineText}" Header="Object"/>
                                 <DataGridTemplateColumn Header="" Width="88" CanUserSort="False" CellTemplate="{StaticResource ViewPlanCell}"/>
-                                <DataGridTextColumn Binding="{Binding QueryTextLine}" Width="*" MinWidth="220" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
+                                <DataGridTextColumn Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" MinWidth="220" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </DockPanel>
@@ -493,7 +493,7 @@
                                     <DataGridTextColumn.Header><TextBlock Text="% of category" ToolTip="This query's share of all the category's wait time in the period."/></DataGridTextColumn.Header>
                                 </DataGridTextColumn>
                                 <DataGridTemplateColumn Header="" Width="88" CanUserSort="False" CellTemplate="{StaticResource ViewPlanCell}"/>
-                                <DataGridTextColumn Binding="{Binding QueryTextLine}" Width="*" MinWidth="220" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
+                                <DataGridTextColumn Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" MinWidth="220" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
@@ -556,7 +556,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Binding="{Binding QueryTextLine}" Width="*" MinWidth="200" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
+                                <DataGridTextColumn Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" MinWidth="200" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
                             </DataGrid.Columns>
                         </DataGrid>
 
@@ -574,7 +574,7 @@
                                 <DataGridTextColumn Binding="{Binding Source}" Width="110" ElementStyle="{StaticResource SingleLineText}" Header="Source"/>
                                 <DataGridTextColumn Binding="{Binding Failures, StringFormat=N0}" Width="70" ElementStyle="{StaticResource Number}" Header="Failures"/>
                                 <DataGridTextColumn Binding="{Binding LastFailureText}" Width="160" ElementStyle="{StaticResource SingleLineText}" Header="Last failure reason"/>
-                                <DataGridTextColumn Binding="{Binding QueryTextLine}" Width="*" MinWidth="200" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
+                                <DataGridTextColumn Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" MinWidth="200" ElementStyle="{StaticResource QueryText}" Header="Query text"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>

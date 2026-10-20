@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows.Controls;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
@@ -10,7 +11,8 @@ namespace SqlVitals.Desktop.Pages;
 /// <summary>
 /// Resource Queries, bound to <see cref="ResourceQueriesViewModel"/> (#186): the code-behind fills
 /// the details drawer with the query selected on any tab, scrolls the one the verdict shows into
-/// view, and hands a CPU alert's focus (#145) to the view model.
+/// view, and hands a CPU alert's focus (#145) to the view model. Group by object (#232) groups each
+/// tab's grid; the view model only says whether, and when to open or close every group.
 /// </summary>
 public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDetailsSource
 {
@@ -56,12 +58,43 @@ public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDeta
         foreach (var grid in new[] { ReadsGrid, CpuGrid, HighestReadsGrid })
             DrawerParts.FollowSelection(grid, ShowQuery);
         ViewModel.ShowRow += ShowTop;
+
+        _groupings =
+        [
+            new QueryObjectGrouping(ReadsGrid, QueryGroupRank.Reads),
+            new QueryObjectGrouping(CpuGrid, QueryGroupRank.Cpu),
+            new QueryObjectGrouping(HighestReadsGrid, QueryGroupRank.Reads),
+        ];
+        ViewModel.PropertyChanged += GroupingChanged;
+        ViewModel.ExpandGroups    += expanded => { foreach (var grouping in _groupings) grouping.SetAllExpanded(expanded); };
+        GroupAll();
+    }
+
+    // ── Group by object (#232): one grouping per tab, in the order of the tabs ──
+
+    private readonly QueryObjectGrouping[] _groupings;
+
+    internal QueryObjectGrouping GroupingOf(DataGrid grid) => _groupings[Array.IndexOf([ReadsGrid, CpuGrid, HighestReadsGrid], grid)];
+
+    private void GroupingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ResourceQueriesViewModel.GroupByObject))
+            GroupAll();
+    }
+
+    private void GroupAll()
+    {
+        foreach (var grouping in _groupings)
+            grouping.IsGrouped = ViewModel.GroupByObject;
     }
 
     // The verdict's Show it: the tab's top row in view, and in the drawer.
     private void ShowTop(ResourceIntensiveQuery top)
     {
         var grid = ViewModel.SelectedTab == (int)ResourceQueriesViewModel.Tab.Cpu ? CpuGrid : ReadsGrid;
+        // Grouped, its group may be closed: it opens, so the row can be seen.
+        if (ViewModel.GroupByObject)
+            GroupingOf(grid).Reveal(top);
         grid.ScrollIntoView(top);
         ShowQuery(top, open: true);
     }

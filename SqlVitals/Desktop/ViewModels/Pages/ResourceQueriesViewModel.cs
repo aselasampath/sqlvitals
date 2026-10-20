@@ -60,6 +60,23 @@ public sealed partial class ResourceQueriesViewModel(IResourceQueryRepository re
     [ObservableProperty]
     private ResourceIntensiveQuery? _selectedByHighestReads;
 
+    /// <summary>
+    /// Every tab grouped by the object each statement belongs to (#232): one collapsible group per
+    /// procedure, function or trigger, and one for the ad hoc queries, the costliest first.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ExpandAllCommand), nameof(CollapseAllCommand))]
+    private bool _groupByObject;
+
+    /// <summary>Expand all (true) or Collapse all (false) was pressed: the view opens or closes every group.</summary>
+    public event Action<bool>? ExpandGroups;
+
+    [RelayCommand(CanExecute = nameof(GroupByObject))]
+    private void ExpandAll() => ExpandGroups?.Invoke(true);
+
+    [RelayCommand(CanExecute = nameof(GroupByObject))]
+    private void CollapseAll() => ExpandGroups?.Invoke(false);
+
     /// <summary>A query to show on the tab selected: the verdict's Show it selected it. The view scrolls to it and opens the drawer.</summary>
     public event Action<ResourceIntensiveQuery>? ShowRow;
 

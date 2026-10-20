@@ -1,4 +1,4 @@
-using System.Text;
+using SqlVitals.Engine.Scripting;
 
 namespace SqlVitals.Engine.QueryStore;
 
@@ -12,35 +12,10 @@ public static class QueryStoreText
     public const int MaxTooltipLength = 4000;
 
     /// <summary>
-    /// The statement on one line: line breaks, tabs and runs of spaces become one space, so
-    /// <c>SELECT⏎  s.session_id</c> reads <c>SELECT s.session_id</c> instead of just <c>SELECT</c>.
-    /// Anything else, such as a leading parameter list, is kept as it is.
+    /// The statement on one line, as every grid shows query text (#232): see <see cref="SqlPreview.Line"/>.
+    /// <c>SELECT⏎  s.session_id</c> reads <c>SELECT s.session_id</c>, and a comment above it is left out.
     /// </summary>
-    public static string OneLine(string? text, int maxLength = MaxOneLineLength)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-
-        var sb = new StringBuilder(Math.Min(text.Length, maxLength + 1));
-        var pendingSpace = false;
-        foreach (var c in text)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                pendingSpace = sb.Length > 0;
-                continue;
-            }
-            if (pendingSpace)
-            {
-                sb.Append(' ');
-                pendingSpace = false;
-            }
-            sb.Append(c);
-            if (sb.Length > maxLength)
-                return sb.ToString(0, maxLength) + "…";
-        }
-        return sb.ToString();
-    }
+    public static string OneLine(string? text, int maxLength = MaxOneLineLength) => SqlPreview.Line(text, maxLength);
 
     /// <summary>The full statement for a tooltip, cut short past <see cref="MaxTooltipLength"/>.</summary>
     public static string Tooltip(string? text)

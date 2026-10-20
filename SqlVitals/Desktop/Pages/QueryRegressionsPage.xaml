@@ -2,9 +2,25 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
       Background="{StaticResource BgDeep}" Title="Query Regressions">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="Visible"/>
+        <!-- Query text (#232): one line without its comments, so a procedure's whole batch keeps
+             its row one line high; hover for the text with its line breaks, View for all of it. -->
+        <helpers:QueryLine x:Key="QueryLine"/>
+        <Style x:Key="QueryTextCell" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="ToolTip" Value="{Binding QueryText, Converter={StaticResource QueryLine}, ConverterParameter=Tip}"/>
+        </Style>
+        <DataTemplate x:Key="ViewTextCell">
+            <Button Content="View" CommandParameter="{Binding QueryText}" Command="{x:Static helpers:QueryTextWindow.Show}"
+                    Style="{StaticResource RefreshButton}" Padding="6,3" FontSize="11" Margin="2,1"
+                    ToolTip="Open the whole query text in its own window, line breaks kept, to read, copy or save"/>
+        </DataTemplate>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -227,8 +243,9 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Query Text" Binding="{Binding QueryText}" Width="*" MinWidth="200" ElementStyle="{StaticResource SingleLineText}">
-                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Statement text, first line. Type part of it in the filter box to find a query."/></Style></DataGridTextColumn.HeaderStyle>
+                            <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
+                            <DataGridTextColumn Header="Query Text" Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" MinWidth="200" ElementStyle="{StaticResource QueryTextCell}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The statement on one line, without its comments. Hover for more, View or select the row for all of it. The filter box, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
                             </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>

@@ -42,7 +42,7 @@ The list starts with the **costliest regression** (at most 200 rows).
 | **Extra time ms** | How much **longer** the recent runs took in total than they would have at the old average. The best measure of real impact. |
 | **Plan change** | **New plan** when the recent plan never ran in the baseline. This is the classic sign of a plan regression. |
 | **Execution plan** | **Now** opens the plan used most recently. **Before** (Query Store only) opens the baseline plan when it was different. Both open as a [graphical plan](Execution-Plans.md), so you can open them side by side and see what changed. |
-| **Query Text** | The statement |
+| **View**, **Query Text** | The statement on one line, without its comments (from 0.81.0; its first line before, often a comment). **View** opens the whole text in a window, and selecting the row shows it in the drawer. See [Long query text](Working-with-Grids.md#long-query-text). |
 
 Figures that crossed the threshold are shown **in red**.
 

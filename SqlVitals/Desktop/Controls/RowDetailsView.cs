@@ -75,7 +75,11 @@ public sealed class RowDetailsView : StackPanel
         Children.Add(_rows);
         Children.Add(_textHeading);
         Children.Add(_text);
-        _copy = DrawerParts.Row(DrawerParts.Button("Copy", () => ClipboardHelper.SetText(_queryText ?? string.Empty), "Copy the text"));
+        // The drawer is narrow and wraps: a long batch reads better in a window that scrolls both ways (#232).
+        _copy = DrawerParts.Row(
+            DrawerParts.Button("Copy", () => ClipboardHelper.SetText(_queryText ?? string.Empty), "Copy the text"),
+            DrawerParts.Button("Open in window", () => QueryTextWindow.Open(_queryText, _textHeading.Text),
+                               "Open the whole text in its own window, line breaks kept, to read, copy or save"));
         Children.Add(_copy);
         Children.Add(_plans);
     }
