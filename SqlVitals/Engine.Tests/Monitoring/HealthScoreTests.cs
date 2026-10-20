@@ -30,12 +30,13 @@ public class HealthScoreTests
     // ── Weights ───────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Weights_CoverEveryIndicatorAndAddUpTo100()
+    public void Weights_CoverEveryIndicator_AndTheChecksEveryServerHasAddUpTo100()
     {
         var weights = Enum.GetValues<HealthIndicator>().Select(HealthScore.Weight).ToList();
 
         Assert.All(weights, w => Assert.True(w > 0));
-        Assert.Equal(HealthScore.Max, weights.Sum());
+        // Azure IO (#234) is only graded on Azure SQL Database, so a SQL Server's points are its weights.
+        Assert.Equal(HealthScore.Max, Enum.GetValues<HealthIndicator>().Where(i => !HealthRules.IsAzureOnly(i)).Sum(HealthScore.Weight));
     }
 
     [Fact]
@@ -63,7 +64,7 @@ public class HealthScoreTests
         Assert.Equal(100, score.Value);
         Assert.Equal(HealthLevel.Healthy, score.Level);
         Assert.Empty(score.Lowering);
-        Assert.Equal(Enum.GetValues<HealthIndicator>(), score.Checks.Select(c => c.Indicator));
+        Assert.Equal(Enum.GetValues<HealthIndicator>().Where(i => !HealthRules.IsAzureOnly(i)), score.Checks.Select(c => c.Indicator));
         Assert.Equal(T0, score.Time);
     }
 

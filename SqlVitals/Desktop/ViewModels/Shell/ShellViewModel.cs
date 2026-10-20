@@ -1347,11 +1347,12 @@ public sealed partial class ShellViewModel : ObservableObject
         var made = _pages.Create(PageCatalog.Types.ContainsKey(tag) ? tag : "LiveMetrics",
             new PageArgs(tag == "Settings" ? shown with { Settings = settingsLocation ?? new SettingsLocation(_settingsCategory) } : shown, Repo)
             {
-                ConnectionId     = _activeConnectionId,
-                ConnectionName   = Item(_activeConnectionId)?.DisplayName,
-                ServerOffset     = ServerOffset(_activeConnectionId),
-                ApplyConnections = ApplySavedConnectionsAsync,
-                SettingsMessage  = settingsMessage,
+                ConnectionId       = _activeConnectionId,
+                ConnectionName     = Item(_activeConnectionId)?.DisplayName,
+                ServerOffset       = ServerOffset(_activeConnectionId),
+                IsAzureSqlDatabase = _activeIsAzureSql,
+                ApplyConnections   = ApplySavedConnectionsAsync,
+                SettingsMessage    = settingsMessage,
             });
         Wire(made.ViewModel);
 

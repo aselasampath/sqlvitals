@@ -419,9 +419,9 @@ public class HealthThresholdsTests
     // ── Weights (#173) ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Weights_DefaultsAreTheNineChecksOutOf100()
+    public void Weights_DefaultsAreTheNineChecksOutOf100_AndAzureIo()
     {
-        Assert.Equal(new HealthWeights(16, 16, 10, 8, 14, 8, 14, 10, 4), HealthWeights.Default);
+        Assert.Equal(new HealthWeights(16, 16, 10, 8, 14, 8, 14, 10, 4, AzureIo: 14), HealthWeights.Default);
         Assert.Equal(HealthWeights.Default, HealthThresholds.Default.Weights);
     }
 
@@ -432,16 +432,19 @@ public class HealthThresholdsTests
         Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(20, 20, 16, 12, 20, 12)));
 
         // Changed ones are the user's: kept, and the new checks get their defaults.
-        Assert.Equal(new HealthWeights(30, 20, 16, 12, 20, 12, 14, 10, 4), HealthWeights.Normalize(new HealthWeights(30, 20, 16, 12, 20, 12)));
+        Assert.Equal(new HealthWeights(30, 20, 16, 12, 20, 12, 14, 10, 4, 14), HealthWeights.Normalize(new HealthWeights(30, 20, 16, 12, 20, 12)));
     }
 
     [Fact]
     public void Weights_NormalizeFixesOutOfRange_AndAllZeroGivesTheDefaults()
     {
         var fixedUp = HealthWeights.Normalize(new HealthWeights(Cpu: 0, Blocking: 101, TempDbSpace: -1, FailedJobs: 200));
-        Assert.Equal(new HealthWeights(0, 16, 10, 8, 14, 8, 14, 10, 4), fixedUp);
+        Assert.Equal(new HealthWeights(0, 16, 10, 8, 14, 8, 14, 10, 4, 14), fixedUp);
 
-        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0)));
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 0)));
+        // Only Azure IO above 0 (#234) is the user's, as Settings accepts it.
+        Assert.Equal(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 30),
+                     HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 30)));
         Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(null));
     }
 
@@ -462,5 +465,66 @@ public class HealthThresholdsTests
             Assert.Equal(expected, parsed.weight);
         else
             Assert.Equal("CPU: enter a weight from 0 to 100; 0 leaves it out of the score.", parsed.error);
+    }
+
+    // ── Azure IO (#234) ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void AzureIo_IsntGraded_OnASampleFromAnotherEdition()
+    {
+        var readings = HealthRules.Grade(Sample(), HealthThresholds.Default);
+
+        Assert.DoesNotContain(readings, r => r.Indicator == HealthIndicator.AzureIo);
+        Assert.Equal(HealthRules.SampleIndicators, readings.Select(r => r.Indicator));
+    }
+
+    [Fact]
+    public void AzureIo_IsUnknown_OnAzureSqlDatabase_WhileTheViewHasNoRow()
+    {
+        // After a failover or a scale sys.dm_db_resource_stats is empty for a while: the check is
+        // still there, with no figure, so an alert on it ends as one on any other check does.
+        var reading = HealthRules.Grade(Sample() with { IsAzureSqlDatabase = true }, HealthThresholds.Default)[^1];
+
+        Assert.Equal((HealthIndicator.AzureIo, HealthLevel.Unknown, false), (reading.Indicator, reading.Level, reading.Measured));
+    }
+
+    [Theory]
+    [InlineData(40, 70, HealthLevel.Healthy)]
+    [InlineData(40, 80, HealthLevel.Warning)]
+    [InlineData(96, 30, HealthLevel.Critical)]
+    public void AzureIo_GradesTheHigherOfDataIoAndLogWrite(double dataIo, double logWrite, HealthLevel expected)
+    {
+        var reading = HealthRules.Grade(Sample() with { IsAzureSqlDatabase = true, DataIoPct = dataIo, LogWritePct = logWrite }, HealthThresholds.Default)[^1];
+
+        Assert.Equal((HealthIndicator.AzureIo, expected, Math.Max(dataIo, logWrite)), (reading.Indicator, reading.Level, reading.Value));
+    }
+
+    [Fact]
+    public void AzureIo_SaysWhichIsAtTheLimit()
+    {
+        var log  = InCulture("en-GB", () => HealthRules.Grade(Sample() with { IsAzureSqlDatabase = true, DataIoPct = 40, LogWritePct = 98 }, HealthThresholds.Default)[^1]);
+        var data = InCulture("en-GB", () => HealthRules.Grade(Sample() with { IsAzureSqlDatabase = true, DataIoPct = 97, LogWritePct = 20 }, HealthThresholds.Default)[^1]);
+
+        Assert.Equal("Azure log write 98% of the tier's limit", log.Reason);
+        Assert.Equal("log write at 98 % of the tier's limit", InCulture("en-GB", () => HealthRules.Phrase(log)));
+        Assert.Equal("Azure data IO 97% of the tier's limit", data.Reason);
+    }
+
+    [Fact]
+    public void AzureIo_RegradedInSettings_KeepsWhichItWas()
+    {
+        var reading = HealthRules.Grade(Sample() with { IsAzureSqlDatabase = true, DataIoPct = 40, LogWritePct = 85 }, HealthThresholds.Default)[^1];
+
+        var regraded = HealthRules.Regrade(reading, With(HealthIndicator.AzureIo, 90, null));
+
+        Assert.Equal(HealthLevel.Healthy, regraded.Level);
+        Assert.Equal("log write", regraded.Facts!.AzureIoResource);
+    }
+
+    [Fact]
+    public void AzureIo_DefaultsAreWarningAt80AndCriticalAt95()
+    {
+        Assert.Equal(new HealthThreshold(80, 95), HealthThresholds.Default.Get(HealthIndicator.AzureIo));
+        Assert.Equal(new HealthThreshold(80, 95), HealthThresholds.Normalize(new HealthThresholds(null, null, null, null, null, null)).Get(HealthIndicator.AzureIo));
     }
 }

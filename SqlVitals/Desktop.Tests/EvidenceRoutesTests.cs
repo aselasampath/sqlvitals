@@ -70,6 +70,7 @@ public sealed class EvidenceRoutesTests
     [InlineData(HealthIndicator.MemoryGrantsPending, "Memory grants",   "Memory",          FocusKind.PendingGrants, "LiveMetrics")]
     [InlineData(HealthIndicator.LogSpace,            "Log space",       "DbStorage",       FocusKind.Database,      null)]
     [InlineData(HealthIndicator.TempDbSpace,         "TempDB",          "TempDb",          FocusKind.None,          null)]
+    [InlineData(HealthIndicator.AzureIo,             "Azure resources", "LiveMetrics",     FocusKind.None,          null)]
     public void TheRoutes_AreTheStorys(HealthIndicator indicator, string text, string page, FocusKind filter, string? history)
     {
         var evidence = EvidenceRoutes.For(indicator);
@@ -266,6 +267,21 @@ public sealed class EvidenceRoutesTests
 
         Assert.Equal("It ended at 14:05; this page shows the server now. SqlVitals keeps no history of this check.", banner.Past);
         Assert.Null(banner.HistoryLink);
+    }
+
+    [Fact]
+    public void AnAzureIoAlert_OpensLiveCharts_Live_AsTheHistoryDoesntKeepIt()
+    {
+        // A window would make Live charts read it from the history, where Azure's figures aren't (#234).
+        var active = EvidenceRoutes.ForAlert(AlertOf(HealthIndicator.AzureIo));
+        var ended  = EvidenceRoutes.ForAlert(AlertOf(HealthIndicator.AzureIo, ended: End));
+
+        Assert.Equal("LiveMetrics", active.Tag);
+        Assert.Null(active.Focus!.FromUtc);
+        Assert.Null(active.Focus.ToUtc);
+        Assert.Null(ended.Focus!.FromUtc);
+        Assert.Null(ended.Focus.ToUtc);
+        Assert.Equal("It ended at 14:05; this page shows the server now. SqlVitals keeps no history of this check.", Banner(ended).Past);
     }
 
     [Fact]

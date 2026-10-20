@@ -123,4 +123,46 @@ public class LiveMetricSampleTests
     {
         Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), HealthRules.NextDelay(TimeSpan.FromSeconds(10), failures));
     }
+
+    // ── Azure SQL Database's resource figures (#234) ─────────────────────
+
+    [Theory]
+    [InlineData(12, 40, 98, 98)]    // log write at the limit, CPU low: the portal's picture
+    [InlineData(90, 40, 30, 90)]
+    [InlineData(10, 75, 20, 75)]
+    public void Dtu_IsTheHighestOfCpuDataIoAndLogWrite(double cpu, double dataIo, double logWrite, double expected)
+    {
+        Assert.Equal(expected, LiveMetricSample.Dtu(cpu, dataIo, logWrite, dtuLimit: 50));
+    }
+
+    [Fact]
+    public void Dtu_IsNull_OnAVCoreTier_OrWithoutBothIoFigures()
+    {
+        Assert.Null(LiveMetricSample.Dtu(50, 40, 30, dtuLimit: null));
+        Assert.Null(LiveMetricSample.Dtu(50, null, 30, dtuLimit: 50));
+        Assert.Null(LiveMetricSample.Dtu(50, 40, null, dtuLimit: 50));
+    }
+
+    [Fact]
+    public void From_CarriesAzuresFigures_AndWorksOutDtu()
+    {
+        var snapshot = Snap(T0, cpuPct: 12) with { AzureDataIoPct = 40, AzureLogWritePct = 98, AzureDtuLimit = 100, IsAzureSqlDatabase = true };
+
+        var sample = LiveMetricSample.From(null, snapshot);
+
+        Assert.Equal((40.0, 98.0, 98.0), (sample.DataIoPct, sample.LogWritePct, sample.DtuPct));
+        Assert.True(sample.IsAzureSqlDatabase);
+        Assert.False(LiveMetricSample.From(null, Snap(T0)).IsAzureSqlDatabase);
+    }
+
+    [Fact]
+    public void From_LeavesThemNull_WhereTheServerDoesntReportThem()
+    {
+        var sqlServer = LiveMetricSample.From(null, Snap(T0));
+        var vCore     = LiveMetricSample.From(null, Snap(T0) with { AzureDataIoPct = 40, AzureLogWritePct = 30 });
+
+        Assert.Equal((null, null, null), (sqlServer.DataIoPct, sqlServer.LogWritePct, sqlServer.DtuPct));
+        Assert.Equal((40.0, 30.0), (vCore.DataIoPct, vCore.LogWritePct));
+        Assert.Null(vCore.DtuPct);
+    }
 }

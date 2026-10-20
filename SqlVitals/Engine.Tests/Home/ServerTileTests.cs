@@ -158,6 +158,17 @@ public sealed class ServerTileTests
         Assert.DoesNotContain("−", tile.Bars[2].ToolTip);
     }
 
+    [Fact]
+    public void Bars_OnAzureSqlDatabase_HaveAzureIo_AfterTemp()
+    {
+        // Azure IO (#234) is graded only on a sample with Azure's figures; its bar is "IO".
+        var tile = InCulture("en-GB", () => Tile(Input(score: Score(Sample() with { IsAzureSqlDatabase = true, DataIoPct = 40, LogWritePct = 98 }))));
+
+        Assert.Equal(["CPU", "Block", "PLE", "Grants", "Log", "Temp", "IO", "Disk", "RPO", "Jobs"], tile.Bars.Select(b => b.Label));
+        Assert.Equal(HealthLevel.Critical, tile.Bars[6].Level);
+        Assert.StartsWith("Azure IO: 98 % (warning ≥ 80 %, critical ≥ 95 %)", tile.Bars[6].ToolTip);
+    }
+
     // ── The worst state first (#173) ──────────────────────────────────────────
 
     [Fact]
@@ -198,11 +209,12 @@ public sealed class ServerTileTests
     }
 
     [Fact]
-    public void Bars_WithNoScore_AreAGreyBarPerCheck()
+    public void Bars_WithNoScore_AreAGreyBarPerCheck_ButAzureIo()
     {
         var tile = Tile(Input(score: null));
 
-        Assert.Equal(Enum.GetValues<HealthIndicator>().Length, tile.Bars.Count);
+        // Which edition the server is isn't known without a sample, so Azure IO (#234) has no bar.
+        Assert.Equal(Enum.GetValues<HealthIndicator>().Where(i => !HealthRules.IsAzureOnly(i)), tile.Bars.Select(b => b.Indicator));
         Assert.All(tile.Bars, b => Assert.Equal(HealthLevel.Unknown, b.Level));
     }
 

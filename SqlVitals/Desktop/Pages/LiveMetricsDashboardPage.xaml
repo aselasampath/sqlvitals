@@ -215,6 +215,15 @@
                               Background="#2A1A1A" BorderBrush="#CC4444"
                               Foreground="#FF8888"
                               Style="{StaticResource ChipButton}"/>
+        <!-- Azure SQL Database only (#234): shown once a sample says so -->
+        <ToggleButton x:Name="ChipAzureResources" Content="Azure resources"
+                              Tag="AzureResources"
+                              IsChecked="{Binding ShowsAzureResources}"
+                              Visibility="{Binding IsAzureSqlDatabase, Converter={StaticResource Visible}}"
+                              ToolTip="Azure SQL Database's CPU, data IO, log IO and DTU, each as a share of its service tier's limit"
+                              Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource Info}"
+                              Foreground="{DynamicResource Info}"
+                              Style="{StaticResource ChipButton}"/>
         <ToggleButton x:Name="ChipThroughput" Content="SQL Throughput"
                               Tag="Throughput"
                               IsChecked="{Binding ShowsThroughput}"

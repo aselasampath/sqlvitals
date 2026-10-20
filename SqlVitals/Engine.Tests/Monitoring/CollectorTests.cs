@@ -337,7 +337,7 @@ public sealed class CollectorTests
         var request = Assert.Single(checks.Requests);
         Assert.Equal((null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(15)), (request.JobsAfterInstanceId, request.FirstLookBack, request.Rpo.LogMaxAge));
         var score = collector.State.Score!;
-        Assert.Equal(Enum.GetValues<HealthIndicator>(), score.Checks.Select(c => c.Indicator));
+        Assert.Equal(Enum.GetValues<HealthIndicator>().Where(i => !HealthRules.IsAzureOnly(i)), score.Checks.Select(c => c.Indicator));
         Assert.Equal(HealthLevel.Warning, collector.State.Health);
 
         // Within the interval, the samples reuse the read.

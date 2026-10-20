@@ -24,7 +24,8 @@ public static class PageRegistrations
                                                                     s.GetRequiredService<OverviewVisits>().Open(a.Route.ServerId!.Value),
                                                                     Starter(s), Ui(s), s.GetRequiredService<IClipboard>(), time: Time(s))), p => p.ViewModel)
             .AddPage("LiveMetrics",      (s, a) => new LiveMetricsDashboardPage(new LiveMetricsDashboardViewModel(a.Repo, Monitoring(s), a.ConnectionId,
-                                                                                History(s, a), a.ConnectionName, Navigator(s), Starter(s))), p => p.ViewModel)
+                                                                                History(s, a), a.ConnectionName, Navigator(s), Starter(s),
+                                                                                a.IsAzureSqlDatabase)), p => p.ViewModel)
             .AddPage("Alerts",           (s, a) => new AlertsPage(new AlertsViewModel(Monitoring(s), Settings(s), Navigator(s), a.Route.AlertsConnectionId, Time(s)),
                                                                   Settings(s)), p => p.ViewModel)
             .AddPage("Waits",            (s, a) => new WaitsPage(new WaitsViewModel(a.Repo, History(s, a), Navigator(s), Time(s)), Settings(s)), p => p.ViewModel)

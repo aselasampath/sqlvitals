@@ -57,6 +57,10 @@ public partial class LiveMetricsDashboardPage : Page, IPageContext, IFocusPage
             {
                 case nameof(LiveMetricsDashboardViewModel.ShowsWaits):      ShowPanel(Chart.Waits); break;
                 case nameof(LiveMetricsDashboardViewModel.ShowsCpu):        ShowPanel(Chart.Cpu); break;
+                // The chip, Azure SQL Database found, or a DTU tier: the card is built again (#234).
+                case nameof(LiveMetricsDashboardViewModel.ShowsAzureResources):
+                case nameof(LiveMetricsDashboardViewModel.IsAzureSqlDatabase):
+                case nameof(LiveMetricsDashboardViewModel.HasDtu):          ShowPanel(Chart.AzureResources); break;
                 case nameof(LiveMetricsDashboardViewModel.ShowsThroughput): ShowPanel(Chart.Throughput); break;
                 case nameof(LiveMetricsDashboardViewModel.ShowsPhysicalIo): ShowPanel(Chart.PhysicalIo); break;
                 case nameof(LiveMetricsDashboardViewModel.ShowsMemory):     ShowPanel(Chart.Memory); break;
@@ -163,6 +167,8 @@ public partial class LiveMetricsDashboardPage : Page, IPageContext, IFocusPage
     private static SKColor ColPle   => ChartTheme.Of("MetricPleColor");
     private static SKColor ColMgP   => ChartTheme.Of("DangerColor");
     private static SKColor ColBuf   => ChartTheme.Of("SuccessColor");
+    private static SKColor ColDtu   => ChartTheme.Of("InfoColor");
+    private static SKColor ColLogIo => ChartTheme.Of("MetricLogIoColor");
 
     // A chart's card, added in its place while its chip is on, removed when it is off.
     private void ShowPanel(Chart chart)
@@ -180,12 +186,13 @@ public partial class LiveMetricsDashboardPage : Page, IPageContext, IFocusPage
         {
             var panel = chart switch
             {
-                Chart.Waits      => BuildWaitsPanel(),
-                Chart.Cpu        => BuildCpuPanel(),
-                Chart.Throughput => BuildThroughputPanel(),
-                Chart.PhysicalIo => BuildPhysicalIoPanel(),
-                Chart.Memory     => BuildMemoryPanel(),
-                _                => BuildProcessMapPanel(),
+                Chart.Waits          => BuildWaitsPanel(),
+                Chart.Cpu            => BuildCpuPanel(),
+                Chart.AzureResources => BuildAzureResourcesPanel(),
+                Chart.Throughput     => BuildThroughputPanel(),
+                Chart.PhysicalIo     => BuildPhysicalIoPanel(),
+                Chart.Memory         => BuildMemoryPanel(),
+                _                    => BuildProcessMapPanel(),
             };
             _panels[chart] = panel;
             ChartGrid.Children.Insert(Math.Min(InsertIndex(chart), ChartGrid.Children.Count), panel);
@@ -204,6 +211,24 @@ public partial class LiveMetricsDashboardPage : Page, IPageContext, IFocusPage
         SetSeries(Chart.Cpu, () => series, BaselineLine(Metric.Cpu, "SQL Server CPU", ColCpu));
         SetDateTimeAxes(chart, "% CPU", 0, 100);
         return WrapPanel("CPU Usage", chart, Chart.Cpu);
+    }
+
+    // Azure SQL Database's figures as the portal plots them (#234), each a share of the tier's
+    // limit: whichever is at 100 % throttles the database, however low the others are. DTU % only
+    // on a DTU tier. Only CPU has a baseline: the history doesn't keep the others.
+    private Border BuildAzureResourcesPanel()
+    {
+        var chart  = MakeCartesian(Chart.AzureResources);
+        var lines  = new List<ISeries>();
+        if (ViewModel.HasDtu)
+            lines.Add(Line(Metric.Dtu, "DTU", ColDtu));
+        lines.Add(Line(Metric.Cpu,      "CPU",     ColCpu));
+        lines.Add(Line(Metric.DataIo,   "Data IO", ColIo));
+        lines.Add(Line(Metric.LogWrite, "Log IO",  ColLogIo));
+        var series = lines.ToArray();
+        SetSeries(Chart.AzureResources, () => series, BaselineLine(Metric.Cpu, "CPU", ColCpu));
+        SetDateTimeAxes(chart, "% of tier limit", 0, 100);
+        return WrapPanel("Azure resources", chart, Chart.AzureResources);
     }
 
     private Border BuildThroughputPanel()

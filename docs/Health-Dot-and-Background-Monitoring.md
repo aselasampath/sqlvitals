@@ -27,6 +27,7 @@ The dot shows the state **now**. When an indicator stays past a threshold for a 
 | **Memory grants pending** | Queries queued because there isn't enough memory to start them | ≥ 1 | off |
 | **Log space used** | The fullest transaction log on the server. The tooltip names the database and what the log is waiting on. | ≥ 80 % | ≥ 90 % |
 | **TempDB space used** | How full TempDB's data files are | ≥ 80 % | ≥ 90 % |
+| **Azure IO** (from 0.82.0) | Azure SQL Database only: the higher of data IO and log write, as a share of the service tier's limit over the last 15 seconds. At 100 % Azure throttles the database, however low its CPU. The tooltip says which one: *Azure log write 98% of the tier's limit*. | ≥ 80 % | ≥ 95 % |
 | **Disk free** | The volume holding database files with the least free space. *Lower is worse.* | < 20 % **and** < 50 GB | < 10 % **and** < 20 GB |
 | **Backups past RPO** | Databases whose last full or log backup is older than the RPO set on the [Backups](Backups.md) page, or that have none | off | ≥ 1 |
 | **Failed Agent jobs** | SQL Server Agent jobs that failed since the last check | ≥ 1 | off |
@@ -78,8 +79,9 @@ The score uses the same checks and thresholds as the dot (the table above), so t
 | **Memory grants pending** | 8 | Queries are waiting for memory to start |
 | **TempDB space used** | 8 | A full TempDB fails the queries that need it |
 | **Failed Agent jobs** | 4 | One scheduled task didn't do its work |
+| **Azure IO** (Azure SQL Database only) | 14 | At the tier's IO limit Azure throttles every query that reads or writes, like a full log |
 
-From 0.76.0 there are nine checks, and the defaults were shared out again so they still add up to 100 (before, the six were 20, 20, 20, 16, 12 and 12).
+From 0.76.0 there are nine checks, and the defaults were shared out again so they still add up to 100 (before, the six were 20, 20, 20, 16, 12 and 12). **Azure IO** (from 0.82.0) is a tenth, on Azure SQL Database only: elsewhere it isn't checked at all, so a SQL Server's nine still add up to 100 and score as before. It has no bar on a tile until the server's first sample says it applies.
 
 - A check inside its thresholds keeps all its points.
 - Past its **warning** threshold, it loses **half** of them.
@@ -210,6 +212,7 @@ Good to know:
 ### Under the hood
 
 - **Sources:** CPU comes from `sys.dm_os_ring_buffers` (scheduler monitor). On Azure SQL Database, which has no scheduler monitor records, it is the latest 15-second `avg_cpu_percent` in `sys.dm_db_resource_stats`: the database's CPU as a share of its service tier's limit, the figure the Azure portal shows as *CPU percentage* (before 0.36.0 it read 0 % there). Blocking is the longest `wait_time` of a blocked request in `sys.dm_exec_requests`. Page life expectancy and memory grants pending are Buffer Manager and Memory Manager counters. Log space is the highest `Percent Log Used` across databases, with that log's `Log File(s) Size (KB)` and its `log_reuse_wait_desc` from `sys.databases`; from 0.75.0 a log under 1 GB that can be reused sorts after the others, so the one checked is the fullest that counts. Page life expectancy's threshold is scaled by the Buffer Manager's `Database pages` (8 KB each) from 0.75.0. TempDB is `Free Space in tempdb` against `Data File(s) Size`. All come from `sys.dm_os_performance_counters`.
+- **Azure IO** (from 0.82.0) is the higher of `avg_data_io_percent` and `avg_log_write_percent` in the same `sys.dm_db_resource_stats` row as CPU. An alert on it opens [Live charts](Live-Monitoring.md#the-charts) live, not on the alert's window, as the history doesn't keep it.
 - **No extra query:** blocking, log and TempDB are read by the same live metrics query that feeds the charts. Their figures aren't saved to history, but [alerts](Alerts.md) on them are.
 - **Missing counters:** an indicator the server doesn't report (some counters are missing on certain Azure SQL tiers) is `HealthLevel.Unknown`: it doesn't colour the dot, and from 0.75.0 it is left out of the score, which is shared out over the checks that reported. Before 0.75.0 it kept its points.
 - **Validation:** values out of range in a hand-edited `settings.dat` fall back to the defaults.

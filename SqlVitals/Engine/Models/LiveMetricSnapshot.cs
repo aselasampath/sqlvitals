@@ -48,5 +48,16 @@ public record LiveMetricSnapshot(
     // the fullest log's size and why it can't be reused yet (sys.databases.log_reuse_wait_desc)
     long    BufferPoolPages   = 0,     // 8 KB data pages in the buffer pool
     double  LogSizeMb         = 0,
-    string? LogReuseWait      = null
+    string? LogReuseWait      = null,
+
+    // Azure SQL Database only (#234), from sys.dm_db_resource_stats: data IO and log write as
+    // shares of the service tier's limits, and the DTU limit (null on a vCore tier). Null on
+    // other editions, or while the view has no row (after a failover or a scale).
+    double? AzureDataIoPct    = null,
+    double? AzureLogWritePct  = null,
+    int?    AzureDtuLimit     = null,
+
+    // The server is Azure SQL Database (EngineEdition 5), as its capabilities say: the figures
+    // above apply to it even while they are null.
+    bool    IsAzureSqlDatabase = false
 );

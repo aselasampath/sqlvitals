@@ -26,27 +26,33 @@ namespace SqlVitals.Desktop.ViewModels.Pages;
 [SuppressMessage("Design", "CA1001", Justification = "A page's view model isn't IDisposable; OnLeaving disposes _adHoc")]
 public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
 {
-    /// <summary>What is plotted: the wait categories stacked on the waits chart first, then a line each.</summary>
+    /// <summary>
+    /// What is plotted: the wait categories stacked on the waits chart first, then a line each.
+    /// The last three are Azure SQL Database's (#234), and null elsewhere.
+    /// </summary>
     public enum Metric
     {
         WaitCpu, WaitIo, WaitLock, WaitMemory, WaitNetwork, WaitOther,
         Cpu, Batches, Compilations, Recompilations, Transactions, PhysicalReads, PhysicalWrites,
         PageLifeExpectancy, GrantsPending, BufferCacheHitRatio,
+        DataIo, LogWrite, Dtu,
     }
 
     /// <summary>The charts, in their order on the page.</summary>
-    public enum Chart { Waits, Cpu, Throughput, PhysicalIo, Memory, ProcessMap }
+    public enum Chart { Waits, Cpu, AzureResources, Throughput, PhysicalIo, Memory, ProcessMap }
 
     private const int MaxPoints     = MonitoringSession.MaxPoints;   // the rolling window
     private const int WaitCategories = 6;                             // the first metrics, stacked
 
-    private static readonly Func<LiveMetricSample, double>[] Values =
+    // Null where the sample has no figure (Azure's on other editions, and in the history): a gap, not 0.
+    private static readonly Func<LiveMetricSample, double?>[] Values =
     [
         s => s.WaitCpuMsPerSec, s => s.WaitIoMsPerSec, s => s.WaitLockMsPerSec, s => s.WaitMemoryMsPerSec,
         s => s.WaitNetworkMsPerSec, s => s.WaitOtherMsPerSec,
         s => s.SqlCpuPct, s => s.BatchRequestsPerSec, s => s.CompilationsPerSec, s => s.RecompilationsPerSec,
         s => s.TransactionsPerSec, s => s.PhysicalReadsPerSec, s => s.PhysicalWritesPerSec,
         s => s.PageLifeExpectancySec, s => s.MemoryGrantsPending, s => s.BufferCacheHitRatio,
+        s => s.DataIoPct, s => s.LogWritePct, s => s.DtuPct,
     ];
 
     private static readonly int[] Intervals = Enumerable.Range(1, 24).Select(i => i * 5).ToArray();
@@ -91,9 +97,11 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
     /// <param name="connectionName">Named in the health score's breakdown.</param>
     /// <param name="navigator">Where Start monitoring automatically… goes: Settings.</param>
     /// <param name="starter">What Start does for a saved connection (#172).</param>
+    /// <param name="isAzureSqlDatabase">The shell found the server is Azure SQL Database (#234): its chart is offered before a sample says so.</param>
     public LiveMetricsDashboardViewModel(IWaitStatsRepository repo, MonitoringManager? monitoring, Guid? connectionId, ConnectionHistory? history,
-                                         string? connectionName, INavigator navigator, IWatchStarter? starter = null)
+                                         string? connectionName, INavigator navigator, IWatchStarter? starter = null, bool isAzureSqlDatabase = false)
     {
+        _isAzureSqlDatabase = isAzureSqlDatabase;
         _repo           = repo;
         _monitoring     = monitoring;
         _connectionId   = connectionId;
@@ -167,6 +175,7 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
         {
             if (_lastPlotted is { } last && sample.Time <= last)
                 continue;
+            NoteEdition(sample);
             for (var i = 0; i < Values.Length; i++)
             {
                 var series = _points[i];
@@ -381,6 +390,10 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
         if (version != _historyVersion)
             return;   // the user picked something else meanwhile
 
+        // A past range opened first (an alert's window) still knows the edition from the session.
+        foreach (var sample in _session?.Samples ?? [])
+            NoteEdition(sample);
+
         // On the server's clock, like the live samples, so switching to a past range doesn't shift
         // the axis by the server's time zone. The range's ends use the latest offset.
         var offset = load.Items.Count > 0 ? load.Items[^1].ServerClockOffset : TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
@@ -498,7 +511,7 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
                 waits = 0;
                 for (var i = 0; i < WaitCategories; i++)
                     if (WaitsShown[i].IsShown)
-                        waits += Values[i](point.Averages);
+                        waits += Values[i](point.Averages) ?? 0;
             }
             BaselineWaits.Add(new DateTimePoint(time, waits));
         }
@@ -516,13 +529,17 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
     /// <summary>The wait categories shown changed: the stacked chart takes its series again.</summary>
     public event Action? WaitsChanged;
 
-    // The history status line, with what the baseline shows while it is on.
+    // The history status line, with what the baseline shows while it is on, and that a past range
+    // has no Azure resource figures (#234).
     private void ShowStatus(string historyNote)
     {
         _historyNote = historyNote;
         var baselineNote = CompareToBaseline ? _baselineNote : "";
-        HistoryStatus = string.Join(" · ", new[] { historyNote, baselineNote }.Where(s => s.Length > 0));
+        var azureNote    = IsAzureSqlDatabase && !_range.IsLive && ShowsAzureResources ? AzureLiveOnlyNote : "";
+        HistoryStatus = string.Join(" · ", new[] { historyNote, baselineNote, azureNote }.Where(s => s.Length > 0));
     }
+
+    internal const string AzureLiveOnlyNote = "Azure resources are live only: the history doesn't keep them";
 
     // ── An alert's window (#145) ──────────────────────────────────────────
     // An alert that has ended opens the charts on its window, read from the monitoring history,
@@ -716,15 +733,42 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
     [ObservableProperty] private bool _showsMemory;
     [ObservableProperty] private bool _showsProcessMap = true;
 
-    /// <summary>Whether a chart is shown: its chip, and its card's ✕.</summary>
+    /// <summary>The Azure resources chip (#234): on by default, as on Azure it is where a throttled database shows.</summary>
+    [ObservableProperty] private bool _showsAzureResources = true;
+
+    partial void OnShowsAzureResourcesChanged(bool value) => ShowStatus(_historyNote);
+
+    /// <summary>
+    /// The server is Azure SQL Database (#234), as the shell found on switching to it, and as each
+    /// sample says from then on, so nothing more is sent to the server to find out. Only then is
+    /// there an Azure resources chip and chart.
+    /// </summary>
+    [ObservableProperty] private bool _isAzureSqlDatabase;
+
+    /// <summary>The latest sample with Azure's figures had a DTU %: the database's tier is sold in DTUs, so the chart draws it.</summary>
+    [ObservableProperty] private bool _hasDtu;
+
+    partial void OnIsAzureSqlDatabaseChanged(bool value) => ShowStatus(_historyNote);
+
+    // DTU first: the card is built again on each change, so it is built once, with its DTU line.
+    // A sample without Azure's figures (no row in the view yet) leaves the tier as it was.
+    private void NoteEdition(LiveMetricSample sample)
+    {
+        if (sample.DataIoPct is not null || sample.LogWritePct is not null)
+            HasDtu = sample.DtuPct is not null;
+        IsAzureSqlDatabase = sample.IsAzureSqlDatabase;
+    }
+
+    /// <summary>Whether a chart is shown: its chip, and its card's ✕. Azure resources only on Azure SQL Database.</summary>
     public bool Shows(Chart chart) => chart switch
     {
-        Chart.Waits      => ShowsWaits,
-        Chart.Cpu        => ShowsCpu,
-        Chart.Throughput => ShowsThroughput,
-        Chart.PhysicalIo => ShowsPhysicalIo,
-        Chart.Memory     => ShowsMemory,
-        _                => ShowsProcessMap,
+        Chart.Waits          => ShowsWaits,
+        Chart.Cpu            => ShowsCpu,
+        Chart.AzureResources => ShowsAzureResources && IsAzureSqlDatabase,
+        Chart.Throughput     => ShowsThroughput,
+        Chart.PhysicalIo     => ShowsPhysicalIo,
+        Chart.Memory         => ShowsMemory,
+        _                    => ShowsProcessMap,
     };
 
     /// <summary>A chart's ✕: its chip goes off.</summary>
@@ -733,12 +777,13 @@ public sealed partial class LiveMetricsDashboardViewModel : PageViewModel
     {
         switch (chart)
         {
-            case Chart.Waits:      ShowsWaits      = false; break;
-            case Chart.Cpu:        ShowsCpu        = false; break;
-            case Chart.Throughput: ShowsThroughput = false; break;
-            case Chart.PhysicalIo: ShowsPhysicalIo = false; break;
-            case Chart.Memory:     ShowsMemory     = false; break;
-            default:               ShowsProcessMap = false; break;
+            case Chart.Waits:          ShowsWaits          = false; break;
+            case Chart.Cpu:            ShowsCpu            = false; break;
+            case Chart.AzureResources: ShowsAzureResources = false; break;
+            case Chart.Throughput:     ShowsThroughput     = false; break;
+            case Chart.PhysicalIo:     ShowsPhysicalIo     = false; break;
+            case Chart.Memory:         ShowsMemory         = false; break;
+            default:                   ShowsProcessMap     = false; break;
         }
     }
 
