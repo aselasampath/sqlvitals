@@ -9,16 +9,17 @@
         <BooleanToVisibilityConverter x:Key="Visible"/>
         <!-- Query text (#232): one line without its comments, so a procedure's whole batch keeps
              its row one line high; hover for the text with its line breaks, View for all of it. -->
-        <helpers:QueryLine x:Key="QueryLine"/>
+        <helpers:Shown x:Key="ShownIfText"/>
         <Style x:Key="QueryTextCell" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontFamily" Value="Consolas"/>
-            <Setter Property="ToolTip" Value="{Binding QueryText, Converter={StaticResource QueryLine}, ConverterParameter=Tip}"/>
+            <Setter Property="ToolTip" Value="{Binding QueryTextTip}"/>
         </Style>
         <DataTemplate x:Key="ViewTextCell">
             <Button Content="View" CommandParameter="{Binding QueryText}" Command="{x:Static helpers:QueryTextWindow.Show}"
+                    Visibility="{Binding QueryText, Converter={StaticResource ShownIfText}}"
                     Style="{StaticResource RefreshButton}" Padding="6,3" FontSize="11" Margin="2,1"
                     ToolTip="Open the whole query text in its own window, line breaks kept, to read, copy or save"/>
         </DataTemplate>
@@ -125,7 +126,7 @@
                                     </DataGridTextColumn>
                                     <DataGridTextColumn Header="Severity"         Binding="{Binding Severity}"                           Width="80" />
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"       Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}"                          Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"       Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}"                          Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -174,7 +175,7 @@
                                     <DataGridTextColumn Header="Database"         Binding="{Binding DatabaseName}"                          Width="110" />
                                     <DataGridTextColumn Header="Object"           Binding="{Binding ObjectName}"                            Width="130" />
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"       Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}"                             Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"       Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}"                             Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -227,7 +228,7 @@
                                     <DataGridTextColumn Header="Severity"         Binding="{Binding Severity}"                                  Width="80" />
                                     <DataGridTextColumn Header="Database"         Binding="{Binding DatabaseName}"                              Width="110" />
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"       Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}"                                 Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"       Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}"                                 Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -280,7 +281,7 @@
                                     <DataGridTextColumn Header="Severity"        Binding="{Binding Severity}"                               Width="80" />
                                     <DataGridTextColumn Header="Database"        Binding="{Binding DatabaseName}"                           Width="110" />
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"      Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}"                              Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"      Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}"                              Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -329,7 +330,7 @@
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="True if the plan guide is registered but currently disabled. A disabled guide does not affect query execution."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}"   Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}"   Width="*" ElementStyle="{StaticResource QueryTextCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -379,7 +380,7 @@
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Size of the compiled plan in KB. Large plans may consume significant procedure cache memory."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}"                    Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}"                    Width="*" ElementStyle="{StaticResource QueryTextCell}">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Query text from the plan cache. Look for WHERE clauses comparing columns of different types or joining mismatched columns."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>

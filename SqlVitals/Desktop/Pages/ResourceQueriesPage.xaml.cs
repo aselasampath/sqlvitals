@@ -34,9 +34,14 @@ public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDeta
         if (row is not ResourceIntensiveQuery q)
             return;
         var name = string.IsNullOrWhiteSpace(q.ObjectName) ? "Ad hoc query" : q.ObjectName;
+        // Grouped, a row selected in a closed group (a selection kept across a refresh, or restored
+        // on coming back) opens its group, so the drawer never shows a row the grid hides (#232).
+        if (ViewModel.GroupByObject)
+            foreach (var grouping in _groupings)
+                grouping.RevealIfShown(q);
         _detailsView ??= new RowDetailsView();
         _detailsView.Show(RowDetails.Rows(q), "Query text", q.QueryText,
-                          [new DrawerPlan("Execution plan", () => ViewModel.PlanOfAsync(q), $"Execution plan · {name}")]);
+                          [new DrawerPlan("Execution plan", () => ViewModel.PlanOfAsync(q), $"Execution plan · {name}")], isQuery: true);
         Details = new(name, _detailsView, SelectHint);
         DetailsChanged?.Invoke(open);
     }
@@ -55,16 +60,17 @@ public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDeta
 
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
-        foreach (var grid in new[] { ReadsGrid, CpuGrid, HighestReadsGrid })
-            DrawerParts.FollowSelection(grid, ShowQuery);
-        ViewModel.ShowRow += ShowTop;
-
+        // Before the drawer follows the selection: showing a row opens its group.
         _groupings =
         [
             new QueryObjectGrouping(ReadsGrid, QueryGroupRank.Reads),
             new QueryObjectGrouping(CpuGrid, QueryGroupRank.Cpu),
             new QueryObjectGrouping(HighestReadsGrid, QueryGroupRank.Reads),
         ];
+        foreach (var grid in new[] { ReadsGrid, CpuGrid, HighestReadsGrid })
+            DrawerParts.FollowSelection(grid, ShowQuery);
+        ViewModel.ShowRow += ShowTop;
+
         ViewModel.PropertyChanged += GroupingChanged;
         ViewModel.ExpandGroups    += expanded => { foreach (var grouping in _groupings) grouping.SetAllExpanded(expanded); };
         GroupAll();
@@ -92,9 +98,12 @@ public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDeta
     private void ShowTop(ResourceIntensiveQuery top)
     {
         var grid = ViewModel.SelectedTab == (int)ResourceQueriesViewModel.Tab.Cpu ? CpuGrid : ReadsGrid;
-        // Grouped, its group may be closed: it opens, so the row can be seen.
+        // Grouped, its group may be closed: it opens, and is laid out, so the row exists to scroll to.
         if (ViewModel.GroupByObject)
+        {
             GroupingOf(grid).Reveal(top);
+            grid.UpdateLayout();
+        }
         grid.ScrollIntoView(top);
         ShowQuery(top, open: true);
     }

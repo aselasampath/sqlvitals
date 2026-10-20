@@ -1,3 +1,5 @@
+using SqlVitals.Engine.Scripting;
+
 namespace SqlVitals.Engine.Models;
 
 /// <summary>
@@ -32,6 +34,12 @@ public sealed record QueryRegression(
 {
     /// <summary>Filled in after detection, for the rows that are shown only.</summary>
     public string? QueryText    { get; init; }
+
+    /// <summary>The text on one line without its comments, as the grid shows and sorts it (#232).</summary>
+    public string QueryTextLine => SqlPreview.Line(QueryText);
+
+    /// <summary>The cell's tooltip: the text with its line breaks, cut short when huge; null when there is none.</summary>
+    public string? QueryTextTip => SqlPreview.TooltipOrNull(QueryText);
 
     /// <summary>Filled in after detection; the history is server-wide, Query Store one database.</summary>
     public string? DatabaseName { get; init; }

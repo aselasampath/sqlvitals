@@ -60,14 +60,25 @@ public static class SqlPreview
         return line.IsEmpty ? Collapse(text, maxLength) : line.ToString();
     }
 
-    /// <summary>The full text for a tooltip, line breaks kept, cut short past <see cref="MaxTooltipLength"/>.</summary>
-    public static string Tooltip(string? text)
+    /// <summary>
+    /// The full text for a tooltip, line breaks kept, cut short past <see cref="MaxTooltipLength"/>
+    /// with <paramref name="whereTheRestIs"/> after it. A batch can be hundreds of KB and the tooltip
+    /// is built as each row is drawn, so only what is kept is copied.
+    /// </summary>
+    public static string Tooltip(string? text, string whereTheRestIs = "View shows all of it")
     {
-        var trimmed = text?.Trim() ?? string.Empty;
-        return trimmed.Length <= MaxTooltipLength
-            ? trimmed
-            : trimmed[..MaxTooltipLength] + "\n… (View shows all of it)";
+        if (text is null)
+            return string.Empty;
+        var start = 0;
+        while (start < text.Length && char.IsWhiteSpace(text[start]))
+            start++;
+        if (text.Length - start <= MaxTooltipLength)
+            return text[start..].TrimEnd();
+        return string.Concat(text.AsSpan(start, MaxTooltipLength), $"\n… ({whereTheRestIs})");
     }
+
+    /// <summary>The tooltip, or null when there is no text: no empty box over an empty cell.</summary>
+    public static string? TooltipOrNull(string? text) => Tooltip(text) is { Length: > 0 } tip ? tip : null;
 
     // The text with only its whitespace collapsed, comments and all.
     private static string Collapse(string text, int maxLength)

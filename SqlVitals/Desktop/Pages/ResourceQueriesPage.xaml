@@ -16,13 +16,17 @@
         </Style>
         <!-- Query text (#232): one line without its comments, so a procedure's whole batch keeps
              its row one line high; hover for the text with its line breaks, View for all of it. -->
-        <helpers:QueryLine x:Key="QueryLine"/>
-        <Style x:Key="QueryTextCell" TargetType="TextBlock" BasedOn="{StaticResource SingleLineText}">
+        <helpers:Shown x:Key="ShownIfText"/>
+        <Style x:Key="QueryTextCell" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontFamily" Value="Consolas"/>
-            <Setter Property="ToolTip" Value="{Binding QueryText, Converter={StaticResource QueryLine}, ConverterParameter=Tip}"/>
+            <Setter Property="ToolTip" Value="{Binding QueryTextTip}"/>
         </Style>
         <DataTemplate x:Key="ViewTextCell">
             <Button Content="View" CommandParameter="{Binding QueryText}" Command="{x:Static helpers:QueryTextWindow.Show}"
+                    Visibility="{Binding QueryText, Converter={StaticResource ShownIfText}}"
                     Style="{StaticResource RefreshButton}" Padding="6,3" FontSize="11" Margin="2,1"
                     ToolTip="Open the whole query text in its own window, line breaks kept, to read, copy or save"/>
         </DataTemplate>
@@ -32,7 +36,8 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="GroupItem">
                         <StackPanel>
-                            <ToggleButton IsChecked="{Binding Name.IsExpanded, Mode=TwoWay}" Cursor="Hand" Focusable="False"
+                            <ToggleButton IsChecked="{Binding Name.IsExpanded, Mode=TwoWay}" Cursor="Hand"
+                                          AutomationProperties.Name="{Binding Name.Name}"
                                           ToolTip="Show or hide this object's queries. The totals are of its queries in this list.">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
@@ -171,7 +176,7 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The statement, cut from its batch by its offsets, on one line without its comments. Hover for more, View or select the row for all of it. The filter, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>
@@ -236,7 +241,7 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The statement, cut from its batch by its offsets, on one line without its comments. Hover for more, View or select the row for all of it. The filter, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>
@@ -297,7 +302,7 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Text" Width="60" CanUserSort="False" CellTemplate="{StaticResource ViewTextCell}"/>
-                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryText, Converter={StaticResource QueryLine}}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
+                                    <DataGridTextColumn Header="Query Text"  Binding="{Binding QueryTextLine}" ClipboardContentBinding="{Binding QueryText}" Width="*" ElementStyle="{StaticResource QueryTextCell}">
                                         <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The whole batch the statement is in: for a procedure, its CREATE PROCEDURE. Shown on one line without its comments; hover for more, View or select the row for all of it. The filter, Copy All and Export use the whole text."/></Style></DataGridTextColumn.HeaderStyle>
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>

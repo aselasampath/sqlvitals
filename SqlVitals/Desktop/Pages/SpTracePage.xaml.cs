@@ -45,7 +45,7 @@ public partial class SpTracePage : Page, IPageContext, IDetailsSource
             plans.Add(new("Cached plan of the procedure", () => ViewModel.PlanOfAsync(objectName), $"Execution plan · {objectName}"));
         _detailsView ??= new RowDetailsView();
         _detailsView.Show(RowDetails.Rows(call), string.IsNullOrEmpty(call.ObjectName) ? "Statement" : $"Statement — {call.ObjectName}",
-                          call.Statement, plans);
+                          call.Statement, plans, isQuery: true);
         Details = new(string.IsNullOrEmpty(call.ObjectName) ? "Call" : call.ObjectName, _detailsView, SelectHint);
         DetailsChanged?.Invoke(open);
     }

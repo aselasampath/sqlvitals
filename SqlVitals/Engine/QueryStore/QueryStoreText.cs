@@ -6,10 +6,10 @@ namespace SqlVitals.Engine.QueryStore;
 public static class QueryStoreText
 {
     /// <summary>Longest one-line text a grid cell is given; the full text is in Query details.</summary>
-    public const int MaxOneLineLength = 1000;
+    public const int MaxOneLineLength = SqlPreview.MaxLineLength;
 
     /// <summary>Longest text a tooltip is given, so a huge statement can't fill the screen.</summary>
-    public const int MaxTooltipLength = 4000;
+    public const int MaxTooltipLength = SqlPreview.MaxTooltipLength;
 
     /// <summary>
     /// The statement on one line, as every grid shows query text (#232): see <see cref="SqlPreview.Line"/>.
@@ -18,13 +18,7 @@ public static class QueryStoreText
     public static string OneLine(string? text, int maxLength = MaxOneLineLength) => SqlPreview.Line(text, maxLength);
 
     /// <summary>The full statement for a tooltip, cut short past <see cref="MaxTooltipLength"/>.</summary>
-    public static string Tooltip(string? text)
-    {
-        var trimmed = text?.Trim() ?? string.Empty;
-        return trimmed.Length <= MaxTooltipLength
-            ? trimmed
-            : trimmed[..MaxTooltipLength] + "\n… (the full text is in Query details)";
-    }
+    public static string Tooltip(string? text) => SqlPreview.Tooltip(text, "the full text is in Query details");
 
     /// <summary>
     /// "schema.name" of the procedure, function or trigger the statement is in; "ad hoc" when it's in

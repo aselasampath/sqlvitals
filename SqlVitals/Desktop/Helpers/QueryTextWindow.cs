@@ -13,8 +13,12 @@ namespace SqlVitals.Desktop.Helpers;
 /// </summary>
 public static class QueryTextWindow
 {
-    /// <summary>Opens the text that is the command's parameter; nothing without one.</summary>
-    public static ICommand Show { get; } = new RelayCommand<string?>(text => Open(text), text => !string.IsNullOrWhiteSpace(text));
+    /// <summary>
+    /// Opens the text that is the command's parameter; nothing without one. Always executable: a
+    /// recycled row's button would keep the last row's enabled state, as nothing re-asks CanExecute
+    /// when only its parameter changes. The grids hide the button on a row with no text instead.
+    /// </summary>
+    public static ICommand Show { get; } = new RelayCommand<string?>(text => Open(text));
 
     /// <param name="heading">"Query text", or the drawer's own heading: "To fix it".</param>
     public static void Open(string? text, string heading = "Query text")

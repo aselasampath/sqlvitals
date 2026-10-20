@@ -114,4 +114,18 @@ public class SqlPreviewTests
     [InlineData(null)]
     [InlineData("   ")]
     public void No_text_gives_no_tooltip(string? text) => Assert.Equal(string.Empty, SqlPreview.Tooltip(text));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public void No_text_gives_a_null_tooltip_so_no_empty_box_shows(string? text) => Assert.Null(SqlPreview.TooltipOrNull(text));
+
+    // Review (#232): only what is kept is copied, and the leading blank lines don't count against the limit.
+    [Fact]
+    public void A_huge_tooltip_skips_leading_blanks_and_says_where_the_rest_is_in_the_callers_words()
+    {
+        var tip = SqlPreview.Tooltip("\r\n\r\n   " + new string('x', SqlPreview.MaxTooltipLength + 10), "see Query details");
+
+        Assert.Equal(new string('x', SqlPreview.MaxTooltipLength) + "\n… (see Query details)", tip);
+    }
 }

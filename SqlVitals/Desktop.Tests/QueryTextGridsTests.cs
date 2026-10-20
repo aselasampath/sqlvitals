@@ -76,17 +76,23 @@ public sealed class QueryTextGridsTests : IDisposable
     [Fact]
     public void TheCell_IsOneLine_FromTheCreate_AndTheTooltipKeepsTheLineBreaks()
     {
-        var line = new QueryLine();
+        var row = Queries[^1];
 
-        var cell = (string)line.Convert(Procedure, typeof(string), null, CultureInfo.InvariantCulture);
-        var tip  = (string)line.Convert(Procedure, typeof(object), "Tip", CultureInfo.InvariantCulture);
+        Assert.StartsWith("CREATE PROCEDURE [wf].[GetEntitiesToWakeupWorkflowsByCaseno] @EntityId INT = -1 AS BEGIN DECLARE", row.QueryTextLine);
+        Assert.DoesNotContain('\n', row.QueryTextLine);
+        Assert.StartsWith("-- ====", row.QueryTextTip);
+        Assert.Contains("\r\nCREATE PROCEDURE", row.QueryTextTip);
+        Assert.Null((row with { QueryText = null }).QueryTextTip);
+        Assert.Equal("", (row with { QueryText = null }).QueryTextLine);
+    }
 
-        Assert.StartsWith("CREATE PROCEDURE [wf].[GetEntitiesToWakeupWorkflowsByCaseno] @EntityId INT = -1 AS BEGIN DECLARE", cell);
-        Assert.DoesNotContain('\n', cell);
-        Assert.StartsWith("-- ====", tip);
-        Assert.Contains("\r\nCREATE PROCEDURE", tip);
-        Assert.Null(line.Convert(null, typeof(object), "Tip", CultureInfo.InvariantCulture));
-        Assert.Equal("", line.Convert(null, typeof(string), null, CultureInfo.InvariantCulture));
+    // Review (#232): Query Regressions fills its text in with a `with` copy; the line must follow it.
+    [Fact]
+    public void ALine_FollowsTheText_OfACopy()
+    {
+        var regression = new QueryRegression("42", 1, 1, 1, 2, 100, 1, 1, 0, true, false, null, null, false, 1);
+
+        Assert.Equal("SELECT 1", (regression with { QueryText = "-- note\r\nSELECT 1" }).QueryTextLine);
     }
 
     [Fact]
@@ -102,12 +108,26 @@ public sealed class QueryTextGridsTests : IDisposable
         Assert.Equal("To fix it · EXEC x", QueryTextWindow.Script("EXEC x", "To fix it").Heading);
     }
 
+    // Review (#232): a recycled row's button would keep the last row's enabled state, so the command
+    // is always executable and a row with no text hides its button instead.
     [Fact]
-    public void TheViewCommand_NeedsText() => UiThread.Run(() =>
+    public void TheViewCommand_IsAlwaysExecutable() => UiThread.Run(() =>
     {
-        Assert.False(QueryTextWindow.Show.CanExecute(null));
-        Assert.False(QueryTextWindow.Show.CanExecute("  "));
+        Assert.True(QueryTextWindow.Show.CanExecute(null));
         Assert.True(QueryTextWindow.Show.CanExecute("SELECT 1"));
+    });
+
+    // Review (#232): Open in window is for a query's text; a job's message or a fix script keeps its own.
+    [Fact]
+    public void OpenInWindow_IsOfferedForQueryText_NotForMessagesOrFixScripts() => UiThread.Run(() =>
+    {
+        var query = new RowDetailsView();
+        query.Show([], "Query text", "SELECT 1", [], isQuery: true);
+        var drawer = new RowDrawer("Job", "Select a step.");
+        drawer.Show("Step 1", [], open: false, "Message", "The step failed.");
+
+        Assert.True(query.OffersWindow);
+        Assert.False(drawer.View!.OffersWindow);
     });
 
     // ── Resource Queries, every tab ───────────────────────────────────────
@@ -144,12 +164,17 @@ public sealed class QueryTextGridsTests : IDisposable
                 filter.Text = "unicornadi";
                 Assert.Equal([procedure], grid.Items.Cast<object>());
                 filter.Clear();
+                page.UpdateLayout();
 
-                // Its View button opens the whole text.
+                // Its View button opens the whole text. The filter made the rows again: its row now.
+                row = (DataGridRow)grid.ItemContainerGenerator.ContainerFromItem(procedure);
                 var view = UiThread.Find<Button>(row).Single(b => (string)b.Content == "View");
                 Assert.Same(QueryTextWindow.Show, view.Command);
                 Assert.Equal(Procedure, view.CommandParameter);
-                Assert.True(view.IsEnabled);
+                Assert.True(view.IsVisible);
+
+                // Review (#232): sorted as the cells read, not by the comment banner in front.
+                Assert.Equal("QueryTextLine", QueryColumn(grid).SortMemberPath);
             }
         });
     });
@@ -163,6 +188,8 @@ public sealed class QueryTextGridsTests : IDisposable
             var model = page.ViewModel;
             Assert.Null(page.ReadsGrid.Items.Groups);
             Assert.False(model.ExpandAllCommand.CanExecute(null));
+            // Review (#232): ungrouped, nothing is summed up for groups no one sees.
+            Assert.Empty(page.GroupingOf(page.ReadsGrid).Headers);
 
             model.GroupByObject = true;
             UiThread.Wait(Task.Delay(50));
@@ -178,6 +205,11 @@ public sealed class QueryTextGridsTests : IDisposable
             Assert.Equal("3 queries · " + 6_000_000.ToString("N0", CultureInfo.CurrentCulture) + " reads · CPU 300 ms", chatty.Summary);
             Assert.Equal("Stored Proc", chatty.Type);
             Assert.DoesNotContain(UiThread.Find<DataGridRow>(page.ReadsGrid), r => r.IsVisible);
+
+            // Review (#232): a group's header takes the keyboard (Tab, then Space), and names its object.
+            var toggle = UiThread.Find<System.Windows.Controls.Primitives.ToggleButton>(page.ReadsGrid).First(t => t.DataContext is CollectionViewGroup);
+            Assert.True(toggle.Focusable);
+            Assert.Equal("usp_Chatty", System.Windows.Automation.AutomationProperties.GetName(toggle));
 
             TemplateRolloutTests.Render(page, "query-text-232-grouped-closed.png");
 
@@ -223,6 +255,59 @@ public sealed class QueryTextGridsTests : IDisposable
 
             Assert.True(Header(page.CpuGrid, QueryObjectGroups.AdHoc).IsExpanded);
             Assert.False(Header(page.CpuGrid, "usp_Chatty").IsExpanded);
+
+            // Review (#232): and the row is laid out and in view, not just its group opened.
+            page.UpdateLayout();
+            var row = page.CpuGrid.ItemContainerGenerator.ContainerFromItem(Queries[0]) as DataGridRow;
+            Assert.NotNull(row);
+            Assert.True(row.IsVisible);
+        });
+    });
+
+    // Review (#232): a row selected in a closed group (as a refresh or coming back restores it) opens
+    // the group, so the drawer never shows a row the grid hides.
+    [Fact]
+    public void ResourceQueries_ARowSelectedInAClosedGroup_OpensIt() => UiThread.Run(() =>
+    {
+        var page = Wave2Pages.ResourceQueries(Repo(), folds: new ConnectionSettingsService(_dir));
+        TemplateRolloutTests.Hosted(page, page.ViewModel.OnNavigatedToAsync, null, () =>
+        {
+            page.ViewModel.GroupByObject = true;
+            UiThread.Wait(Task.Delay(50));
+            Assert.False(Header(page.ReadsGrid, "usp_Chatty").IsExpanded);
+
+            page.ViewModel.SelectedByReads = Queries[2];
+            UiThread.Wait(Task.Delay(50));
+
+            Assert.True(Header(page.ReadsGrid, "usp_Chatty").IsExpanded);
+            Assert.False(Header(page.ReadsGrid, QueryObjectGroups.AdHoc).IsExpanded);
+        });
+    });
+
+    // Review (#232): an object no longer read loses its header; one the filter hides keeps it.
+    [Fact]
+    public void ResourceQueries_AnObjectNoLongerRead_LosesItsHeader() => UiThread.Run(() =>
+    {
+        var rows = Queries.ToList();
+        var page = Wave2Pages.ResourceQueries(new FakeRepository
+        {
+            GetResourceIntensiveQueriesAsync = _ => Task.FromResult<(IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>, IEnumerable<ResourceIntensiveQuery>)>(
+                (rows.ToList(), rows.ToList(), rows.ToList())),
+        }, folds: new ConnectionSettingsService(_dir));
+        TemplateRolloutTests.Hosted(page, page.ViewModel.OnNavigatedToAsync, null, () =>
+        {
+            page.ViewModel.GroupByObject = true;
+            var grouping = page.GroupingOf(page.ReadsGrid);
+            Assert.Equal(3, grouping.Headers.Count);
+
+            var filter = UiThread.Find<GridFilterBox>(page).Single(f => f.Target == page.ReadsGrid);
+            filter.Text = "dbo.Stock";
+            Assert.Equal(3, grouping.Headers.Count);
+            filter.Clear();
+
+            rows.RemoveAll(q => q.ObjectName == "usp_Chatty");
+            UiThread.Wait(page.ViewModel.RefreshAsync());
+            Assert.Equal(2, grouping.Headers.Count);
         });
     });
 
@@ -265,7 +350,7 @@ public sealed class QueryTextGridsTests : IDisposable
         Assert.All(grids, grid =>
         {
             var column = QueryColumn(grid);
-            Assert.IsType<QueryLine>(((Binding)column.Binding).Converter);
+            Assert.Equal("QueryTextLine", ((Binding)column.Binding).Path.Path);
             Assert.Equal("QueryText", ((Binding)column.ClipboardContentBinding).Path.Path);
             var view = grid.Columns[grid.Columns.IndexOf(column) - 1];
             Assert.Equal("Text", view.Header);

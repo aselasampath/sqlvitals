@@ -27,8 +27,12 @@ internal sealed class QueryObjectGrouping
         _grid     = grid;
         _rank     = rank;
         _byObject = new PropertyGroupDescription(null, new HeaderOf(this)) { CustomSort = QueryGroupHeader.GroupOrder.Instance };
-        // Rows read again, or filtered: the headers sum up what is shown now.
-        ((INotifyCollectionChanged)grid.Items).CollectionChanged += (_, _) => Update();
+        // Rows read again, or filtered: the headers sum up what is shown now. Nothing to do ungrouped.
+        ((INotifyCollectionChanged)grid.Items).CollectionChanged += (_, _) =>
+        {
+            if (IsGrouped)
+                Update();
+        };
     }
 
     /// <summary>The headers, by key; for tests.</summary>
@@ -42,7 +46,11 @@ internal sealed class QueryObjectGrouping
             if (value == IsGrouped)
                 return;
             if (value)
+            {
+                // Ranked first, so the groups come out in order at once.
+                Update();
                 _grid.Items.GroupDescriptions.Add(_byObject);
+            }
             else
                 _grid.Items.GroupDescriptions.Remove(_byObject);
         }
@@ -57,6 +65,13 @@ internal sealed class QueryObjectGrouping
     /// <summary>Opens the group a row is in, so it can be scrolled to: the verdict's Show it.</summary>
     public void Reveal(ResourceIntensiveQuery row) => HeaderFor(row).IsExpanded = true;
 
+    /// <summary>Opens the row's group when grouped and the grid shows the row: it was selected, and the drawer shows it.</summary>
+    public void RevealIfShown(ResourceIntensiveQuery row)
+    {
+        if (IsGrouped && _grid.Items.Contains(row))
+            Reveal(row);
+    }
+
     private QueryGroupHeader HeaderFor(ResourceIntensiveQuery row)
     {
         var key = QueryObjectGroups.KeyOf(row);
@@ -67,9 +82,14 @@ internal sealed class QueryObjectGrouping
 
     // Each header sums up its rows as shown, and the groups are ordered on those totals. The view
     // has grouped already when this runs, so a group that moved needs one more pass; it is queued,
-    // as the view can't be refreshed while it reports a change.
+    // as the view can't be refreshed while it reports a change. An object no longer read at all
+    // loses its header; one the filter hides keeps it, open or closed.
     private void Update()
     {
+        var read = (_grid.ItemsSource?.OfType<ResourceIntensiveQuery>() ?? []).Select(QueryObjectGroups.KeyOf).ToHashSet();
+        foreach (var gone in _headers.Keys.Where(key => !read.Contains(key)).ToList())
+            _headers.Remove(gone);
+
         var shown = _grid.Items.OfType<ResourceIntensiveQuery>().ToList();
         var moved = false;
         var order = 0;
