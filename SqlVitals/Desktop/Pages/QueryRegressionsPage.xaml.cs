@@ -38,7 +38,7 @@ public partial class QueryRegressionsPage : Page, IPageContext, IDetailsSource
             .Select(p => new DrawerPlan(p.Heading, () => ViewModel.PlanOfAsync(r, p.Baseline), p.WindowTitle))
             .ToList();
         _detailsView ??= new RowDetailsView();
-        _detailsView.Show(RowDetails.Rows(r), "Query text", r.QueryText, plans);
+        _detailsView.Show(RowDetails.Rows(r), "Query text", r.QueryText, plans, isQuery: true);
         Details = new($"Query {r.QueryKey}", _detailsView, SelectHint);
         DetailsChanged?.Invoke(open);
     }

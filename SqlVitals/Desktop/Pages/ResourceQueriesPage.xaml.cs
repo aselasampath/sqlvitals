@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows.Controls;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
@@ -10,7 +11,8 @@ namespace SqlVitals.Desktop.Pages;
 /// <summary>
 /// Resource Queries, bound to <see cref="ResourceQueriesViewModel"/> (#186): the code-behind fills
 /// the details drawer with the query selected on any tab, scrolls the one the verdict shows into
-/// view, and hands a CPU alert's focus (#145) to the view model.
+/// view, and hands a CPU alert's focus (#145) to the view model. Group by object (#232) groups each
+/// tab's grid; the view model only says whether, and when to open or close every group.
 /// </summary>
 public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDetailsSource
 {
@@ -32,9 +34,14 @@ public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDeta
         if (row is not ResourceIntensiveQuery q)
             return;
         var name = string.IsNullOrWhiteSpace(q.ObjectName) ? "Ad hoc query" : q.ObjectName;
+        // Grouped, a row selected in a closed group (a selection kept across a refresh, or restored
+        // on coming back) opens its group, so the drawer never shows a row the grid hides (#232).
+        if (ViewModel.GroupByObject)
+            foreach (var grouping in _groupings)
+                grouping.RevealIfShown(q);
         _detailsView ??= new RowDetailsView();
         _detailsView.Show(RowDetails.Rows(q), "Query text", q.QueryText,
-                          [new DrawerPlan("Execution plan", () => ViewModel.PlanOfAsync(q), $"Execution plan · {name}")]);
+                          [new DrawerPlan("Execution plan", () => ViewModel.PlanOfAsync(q), $"Execution plan · {name}")], isQuery: true);
         Details = new(name, _detailsView, SelectHint);
         DetailsChanged?.Invoke(open);
     }
@@ -53,15 +60,50 @@ public partial class ResourceQueriesPage : Page, IPageContext, IFocusPage, IDeta
 
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
+        // Before the drawer follows the selection: showing a row opens its group.
+        _groupings =
+        [
+            new QueryObjectGrouping(ReadsGrid, QueryGroupRank.Reads),
+            new QueryObjectGrouping(CpuGrid, QueryGroupRank.Cpu),
+            new QueryObjectGrouping(HighestReadsGrid, QueryGroupRank.Reads),
+        ];
         foreach (var grid in new[] { ReadsGrid, CpuGrid, HighestReadsGrid })
             DrawerParts.FollowSelection(grid, ShowQuery);
         ViewModel.ShowRow += ShowTop;
+
+        ViewModel.PropertyChanged += GroupingChanged;
+        ViewModel.ExpandGroups    += expanded => { foreach (var grouping in _groupings) grouping.SetAllExpanded(expanded); };
+        GroupAll();
+    }
+
+    // ── Group by object (#232): one grouping per tab, in the order of the tabs ──
+
+    private readonly QueryObjectGrouping[] _groupings;
+
+    internal QueryObjectGrouping GroupingOf(DataGrid grid) => _groupings[Array.IndexOf([ReadsGrid, CpuGrid, HighestReadsGrid], grid)];
+
+    private void GroupingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ResourceQueriesViewModel.GroupByObject))
+            GroupAll();
+    }
+
+    private void GroupAll()
+    {
+        foreach (var grouping in _groupings)
+            grouping.IsGrouped = ViewModel.GroupByObject;
     }
 
     // The verdict's Show it: the tab's top row in view, and in the drawer.
     private void ShowTop(ResourceIntensiveQuery top)
     {
         var grid = ViewModel.SelectedTab == (int)ResourceQueriesViewModel.Tab.Cpu ? CpuGrid : ReadsGrid;
+        // Grouped, its group may be closed: it opens, and is laid out, so the row exists to scroll to.
+        if (ViewModel.GroupByObject)
+        {
+            GroupingOf(grid).Reveal(top);
+            grid.UpdateLayout();
+        }
         grid.ScrollIntoView(top);
         ShowQuery(top, open: true);
     }

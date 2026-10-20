@@ -451,9 +451,9 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.True(view.PlanShown(0));
 
         // Every column, with View Plan, is still there.
-        Assert.Equal(12, page.ReadsGrid.Columns.Count);
-        Assert.Equal(12, page.CpuGrid.Columns.Count);
-        Assert.Equal(12, page.HighestReadsGrid.Columns.Count);
+        Assert.Equal(13, page.ReadsGrid.Columns.Count);
+        Assert.Equal(13, page.CpuGrid.Columns.Count);
+        Assert.Equal(13, page.HighestReadsGrid.Columns.Count);
     });
 
     // ── Query Regressions ────────────────────────────────────────────────
@@ -505,7 +505,7 @@ public sealed class TemplateRolloutTests : IDisposable
         page.CriteriaSection.Toggle.IsChecked = false;
         Assert.StartsWith("Last 24 hours compared with the 7 days before · Query Store · more than 50", page.CriteriaSection.FoldedSummary);
         Assert.Equal(Visibility.Visible, page.BtnCheck.Visibility);
-        Assert.Equal(15, page.RegressionsGrid.Columns.Count);
+        Assert.Equal(16, page.RegressionsGrid.Columns.Count);
     });
 
     // ── Plan Cache Health ────────────────────────────────────────────────
@@ -577,7 +577,7 @@ public sealed class TemplateRolloutTests : IDisposable
 
         Assert.Equal((VerdictLevel.Warning, $"3 cached plans convert implicitly; the most used ran {48_120:N0} times"),
                      (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
-        Assert.Equal(5, page.ConvGrid.Columns.Count);
+        Assert.Equal(6, page.ConvGrid.Columns.Count);
         Assert.Equal(3, page.ConvGrid.Items.Count);
     });
 

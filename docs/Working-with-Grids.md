@@ -26,6 +26,16 @@ From 0.63.0 a row's details open in a **details drawer** at the right of the scr
 
 For the most rows of all, add [focus mode](Getting-Started.md#focus-mode) (**F11**): full screen, without the sidebar.
 
+## Long query text
+
+From 0.81.0 the **Query Text** column on Resource Queries, Plan Cache Health, Query Regressions and Query Store shows the text on **one line**, so a row stays one line high, however long the text is. Before, a stored procedure's whole batch could make one row taller than the screen.
+
+- **Comments are left out** (`--` to the end of the line, and `/* … */`), and line breaks, tabs and runs of spaces become one space. A procedure reads `CREATE PROCEDURE [wf].[GetEntities…] @EntityId INT = -1 AS BEGIN DECLARE …`, not `-- ======…`. Text in quotes or brackets is kept as it is, so `'--'` isn't taken for a comment. Text that is nothing but comments is shown with them.
+- **Hover** the cell for the text with its line breaks (up to 4,000 characters).
+- **View**, on each row beside the text (not on Query Store, whose rows open in the drawer), opens the **whole text** in its own window: as the server holds it, line breaks kept, in a fixed-width font that scrolls both ways, with **Copy Script** and **Save as .sql**. The window isn't modal, so you can keep it beside the grid.
+- **Select the row** on Resource Queries or Query Regressions to see the text in the [details drawer](#details-beside-the-grid), with **Copy** and **Open in window**.
+- The **filter**, **Copy**, **Copy All** and **Export to CSV** still use the **whole text**, comments included, not the line: you can find a procedure by a word in its change history, and a copied query pastes into SSMS as it was.
+
 ## Sort
 
 Click a column header to sort, and click again to reverse. **Refresh keeps your sort**, so you can sort by *Avg CPU*, press Refresh, and still see the worst query at the top. From 0.55.0 it is also kept when you leave the page and come back to it (see [below](#coming-back-to-a-page)).
@@ -79,7 +89,7 @@ On **Refresh**, the rows stay on screen, dimmed, until the new ones replace them
 | **Copy with headers** | The same, with the column names first |
 | **Export to CSV…** | Every row shown, whatever is selected, saved as a UTF-8 CSV file. Text that Excel would run as a formula (starting with `=`, `+`, `-` or `@`) gets an apostrophe in front, so it opens as text |
 
-On **Resource Queries**, **⎘ Copy All** copies every row shown, with headers.
+On **Resource Queries**, **⎘ Copy All** copies every row shown, with headers. A query's text is copied whole, line breaks and all, even though the grid shows it on [one line](#long-query-text).
 
 ## What you see is what you get
 
@@ -91,5 +101,6 @@ Copy, Export to CSV, Copy All and the **script buttons** on Index Health and Sta
 
 - **Filtering:** `SqlVitals/Engine/Filtering/RowFilter.cs` parses terms (words and quoted phrases) and matches each against the displayed text **and** the raw value of every visible column. The control is `Desktop/Controls/GridFilterBox`.
 - **Keeping sort and filter on reload:** pages whose code-behind sets the rows go through `Desktop/Helpers/DataGridRefresh.SetItemsSource`, which reapplies the `SortDescriptions` and the filter predicate. Pages on view models (TempDB, Stale Stats and Backups from 0.79.1, #184; Plan Cache Health, DB Storage and App Connections from 0.79.2, #185) bind the grid to a `GridRows` collection that the view model refills, so the grid keeps its own view, with its sort and filter. See [Architecture](Architecture.md#grids).
+- **Query text on one line** (0.81.0, #232): `Engine/Scripting/SqlPreview.cs` leaves out the comments and collapses the whitespace, aware of quotes, brackets and nested `/* */`; each row model has `QueryTextLine` and `QueryTextTip` (computed, so a `with` copy can't go stale); the cell binds and sorts on the line, and `ClipboardContentBinding` stays on the full `QueryText`, which is what the filter, Copy and Export read. **View** is the static `QueryTextWindow.Show` command, which opens `SqlScriptWindow` without its warning banner; a row with no text hides the button. Resource Queries' **Group by object** is `Desktop/Controls/QueryObjectGrouping` (one per grid: a `PropertyGroupDescription` whose headers, `QueryGroupHeader`, are kept by key so a group stays open across a refresh), ranked by `Engine/Monitoring/QueryObjectGroups.cs`.
 - **Copy / CSV:** `Desktop/Helpers/DataGridExport` adds the context menu to every grid. Text is built by `Engine/Export/DelimitedText.cs`: tab-separated for the clipboard and CSV for files. Only visible columns are exported, in display order.
 - **Formulas in CSV:** application names, host names and query text come from the server, and anyone who can connect chooses their own application name. Excel runs a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return as a formula when it opens a CSV file, so such a **text** cell is written with a leading `'` (`DelimitedText.NeutralizeFormula`). Numbers and dates are written as they are: a negative number is not a formula. The clipboard copy is left exactly as shown, because query text copied from a grid is usually pasted into SSMS to run. Added in 0.44.1 (#109).

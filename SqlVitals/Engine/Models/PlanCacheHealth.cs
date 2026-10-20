@@ -1,3 +1,5 @@
+using SqlVitals.Engine.Scripting;
+
 namespace SqlVitals.Engine.Models;
 
 /// <summary>Summary KPI strip: plan cache erased flag, multi-plan queries, total plan count.</summary>
@@ -18,7 +20,14 @@ public record MultiPlanQuery(
     string?  QueryText,
     string?  DatabaseName,
     string   Severity               // WARNING if PlanCount > 20, else INFO
-);
+)
+{
+    /// <summary>The text on one line without its comments, as the grid shows and sorts it (#232).</summary>
+    public string QueryTextLine => SqlPreview.Line(QueryText);
+
+    /// <summary>The cell's tooltip: the text with its line breaks, cut short when huge; null when there is none.</summary>
+    public string? QueryTextTip => SqlPreview.TooltipOrNull(QueryText);
+}
 
 /// <summary>A query with a RID or Key Lookup in its plan — index gap.</summary>
 public record KeyLookupQuery(
@@ -29,7 +38,14 @@ public record KeyLookupQuery(
     string?  DatabaseName,
     string?  ObjectName,
     string?  QueryText
-);
+)
+{
+    /// <summary>The text on one line without its comments, as the grid shows and sorts it (#232).</summary>
+    public string QueryTextLine => SqlPreview.Line(QueryText);
+
+    /// <summary>The cell's tooltip: the text with its line breaks, cut short when huge; null when there is none.</summary>
+    public string? QueryTextTip => SqlPreview.TooltipOrNull(QueryText);
+}
 
 /// <summary>A currently-executing query with a large cardinality misestimation.</summary>
 public record CardinalityMisestimate(
@@ -41,7 +57,14 @@ public record CardinalityMisestimate(
     string?  DatabaseName,
     string?  QueryText,
     string   Severity               // CRITICAL if ratio >= 10 000, else WARNING
-);
+)
+{
+    /// <summary>The text on one line without its comments, as the grid shows and sorts it (#232).</summary>
+    public string QueryTextLine => SqlPreview.Line(QueryText);
+
+    /// <summary>The cell's tooltip: the text with its line breaks, cut short when huge; null when there is none.</summary>
+    public string? QueryTextTip => SqlPreview.TooltipOrNull(QueryText);
+}
 
 /// <summary>A currently-executing query with skewed parallelism across threads.</summary>
 public record SkewedParallelQuery(
@@ -53,7 +76,14 @@ public record SkewedParallelQuery(
     string?  DatabaseName,
     string?  QueryText,
     string   Severity               // CRITICAL if SkewRatio >= 10, else WARNING
-);
+)
+{
+    /// <summary>The text on one line without its comments, as the grid shows and sorts it (#232).</summary>
+    public string QueryTextLine => SqlPreview.Line(QueryText);
+
+    /// <summary>The cell's tooltip: the text with its line breaks, cut short when huge; null when there is none.</summary>
+    public string? QueryTextTip => SqlPreview.TooltipOrNull(QueryText);
+}
 
 /// <summary>A plan guide that is actively pinning execution plans.</summary>
 public record PlanGuide(
@@ -63,4 +93,11 @@ public record PlanGuide(
     string?  ObjectName,
     string?  QueryText,
     bool     IsDisabled
-);
+)
+{
+    /// <summary>The text on one line without its comments, as the grid shows and sorts it (#232).</summary>
+    public string QueryTextLine => SqlPreview.Line(QueryText);
+
+    /// <summary>The cell's tooltip: the text with its line breaks, cut short when huge; null when there is none.</summary>
+    public string? QueryTextTip => SqlPreview.TooltipOrNull(QueryText);
+}

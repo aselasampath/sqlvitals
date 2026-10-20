@@ -22,7 +22,7 @@ The most expensive queries currently in the **plan cache**, on three tabs:
 |---|---|---|
 | **By Logical Reads** | Total logical reads | Queries that read lots of data: usually missing indexes or scans |
 | **By CPU** | Total CPU time | High-CPU servers |
-| **Highest Logical Reads** | Total logical reads, with each query's **Last Reads** | Checking whether the latest run is still as heavy |
+| **Highest Logical Reads** | Total logical reads, with each query's **Last Reads** | Checking whether the latest run is still as heavy. Its **Query Text** is the whole batch the statement is in: for a procedure, its `CREATE PROCEDURE` |
 
 **The verdict** (from 0.65.0) names the query that used the most CPU and its share of the top queries' CPU (*dbo.usp_GetOrderHistory uses the most CPU: 61 % of the top 5 queries'*, amber over half), its runs and CPU per run, and the one that reads the most. **Show it** and **Show the top reader** open the tab with that query selected and in the drawer. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
@@ -35,12 +35,15 @@ The most expensive queries currently in the **plan cache**, on three tabs:
 3. **View Plan** opens the query's execution plan. See [Execution plans](#execution-plans). From 0.65.0 a click on a row also opens it in the [details drawer](Working-with-Grids.md#details-beside-the-grid): its figures with their units, its text with **Copy**, and its plan, drawn there by **Show the plan** or in a window by **Open in window**. From 0.79.3 a plan still being read when you leave the page is dropped rather than opened over the next page, and the other rows' **View Plan** buttons stay usable meanwhile.
 4. Type in **Filter rows…** to find a table, procedure or piece of text. See [Working with Grids](Working-with-Grids.md).
 5. **⎘ Copy All** copies every row shown, with headers, in the current order. From 0.79.3 it copies the values as the grid shows them (*41,210*, *2026-10-13 16:57*), like **Copy with headers**, and leaves out the View Plan column. A refresh keeps the row you selected on each tab.
+6. **Query Text** is one line on every tab (from 0.81.0): comments are left out and line breaks become spaces, so a stored procedure reads `CREATE PROCEDURE [wf].[GetEntities…] @EntityId INT = -1 …` instead of filling the screen with its comment banner and change history. Hover for the text with its line breaks; **View** opens all of it in a window. See [Long query text](Working-with-Grids.md#long-query-text).
+7. **Group by object** (from 0.81.0), beside **Row Limit**, groups every tab by the stored procedure, function or trigger each statement belongs to, with one group for the ad hoc queries. Groups start **closed**, one line each with the object's type and the totals of its statements in the list (*3 queries · 6,000,000 reads · CPU 300 ms*), the costliest first: by reads on the two reads tabs, by CPU on **By CPU**. Click a group to open or close it, or use **Expand all** and **Collapse all**. The totals follow the filter, a refresh keeps the groups you opened, and **Show it** opens the group of the query it shows. Untick it for one flat list again.
 
 ### Reading it
 
 - **Total** columns find what costs the server most overall. **Avg** columns find what's slow per run. A cheap query that runs a million times can cost more than a slow one that runs once.
 - CPU and elapsed times are in **microseconds** (µs). 1,000,000 µs = 1 second.
 - The plan cache is cleared on restart and under memory pressure. A query that ran yesterday may no longer be listed. Use [Query Store](#query-store) or [history](History-Time-Ranges-and-Baselines.md) for older activity.
+- A group's totals are those of its statements **in the list** (the top *Row Limit*), not of every statement the object has. Raise the row limit to see more of a procedure.
 
 ---
 
@@ -109,7 +112,7 @@ The top queries in the period, **one row per query** with its totals over all it
 | **Forced plan**, **Last executed** | The forced plan, if any; when it last ran, on this PC's clock |
 | **Status** | Always by total CPU in the period: **Critical** > 60 s · **Warning** > 10 s · **Info** below |
 | **View Plan** | The plan it used most in the period, in the graphical plan window |
-| **Query text** | The statement on **one line**: line breaks and runs of spaces are collapsed, so a statement that starts `SELECT⏎  s.session_id` reads `SELECT s.session_id …` instead of just `SELECT`. Hover for all of it. |
+| **Query text** | The statement on **one line**: line breaks and runs of spaces are collapsed, so a statement that starts `SELECT⏎  s.session_id` reads `SELECT s.session_id …` instead of just `SELECT`, and from 0.81.0 its comments are left out. Hover for all of it. From 0.81.0 the filter box, Copy All and Export use the whole statement, not the line. |
 
 ### Over Time
 
@@ -163,6 +166,8 @@ Six tabs, each looking for a different plan problem:
 | **Implicit Conversions** | Cached plans that contain `CONVERT_IMPLICIT`, sorted by execution count (a page of its own until 0.79.0) | Make the parameter's type match the column. See [Implicit conversions](#implicit-conversions) |
 
 *(live)* tabs show only queries running at that moment. Refresh while the problem is happening.
+
+From 0.81.0 each tab's **Query Text** is one line without its comments, and **View** beside it opens the whole text in a window. See [Long query text](Working-with-Grids.md#long-query-text).
 
 **The verdict** (from 0.65.0) says the worst of what the page found, coloured by the page's own severity: the plan cache emptied in the last 24 hours, else queries with more than 5 cached plans, else plan guides or a busy plan converting implicitly (1,000 runs or more), whichever is more serious, else busy plans doing key lookups, else any plan converting implicitly, or *The plan cache looks healthy*. Its button opens the tab concerned; for implicit conversions, **Show it** opens their tab with the most used plan selected. The explanation, the cache-erased banner and the cards fold to one line (*Plan cache OK · 18,420 plans · 4 multi-plan queries · 0 plan guides · WARNING*), and the tabs take the rest of the screen, each grid scrolling in it. From 0.79.2 a refresh keeps each grid's sort and filter, and the implicit conversion you selected. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 

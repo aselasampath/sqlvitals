@@ -66,6 +66,7 @@ public sealed class RowDetailsView : StackPanel
     private readonly TextBlock  _textHeading = DrawerParts.Heading("Query text");
     private readonly TextBox    _text        = DrawerParts.Code(maxHeight: 260);
     private readonly WrapPanel  _copy;
+    private readonly Button     _window;
     private readonly StackPanel _plans       = new();
     private readonly List<PlanPart> _parts   = [];
     private string? _queryText;
@@ -75,7 +76,10 @@ public sealed class RowDetailsView : StackPanel
         Children.Add(_rows);
         Children.Add(_textHeading);
         Children.Add(_text);
-        _copy = DrawerParts.Row(DrawerParts.Button("Copy", () => ClipboardHelper.SetText(_queryText ?? string.Empty), "Copy the text"));
+        // The drawer is narrow and wraps: a long batch reads better in a window that scrolls both ways (#232).
+        _window = DrawerParts.Button("Open in window", () => QueryTextWindow.Open(_queryText, _textHeading.Text),
+                                     "Open the whole text in its own window, line breaks kept, to read, copy or save");
+        _copy = DrawerParts.Row(DrawerParts.Button("Copy", () => ClipboardHelper.SetText(_queryText ?? string.Empty), "Copy the text"), _window);
         Children.Add(_copy);
         Children.Add(_plans);
     }
@@ -88,6 +92,9 @@ public sealed class RowDetailsView : StackPanel
     /// <summary>Whether the text, its heading and Copy are shown; for tests.</summary>
     internal bool TextShown => _text.Visibility == Visibility.Visible;
 
+    /// <summary>Whether Open in window is offered; for tests.</summary>
+    internal bool OffersWindow => _window.Visibility == Visibility.Visible;
+
     /// <summary>Each plan's heading; for tests.</summary>
     internal IReadOnlyList<string> PlanHeadings => _parts.Select(p => p.Heading.Text).ToList();
 
@@ -99,8 +106,10 @@ public sealed class RowDetailsView : StackPanel
     /// <summary>Shows a row: its figures, its text and its plans, none read until asked for.</summary>
     /// <param name="textHeading">"Query text", "Statement", "To fix it".</param>
     /// <param name="noText">Shown when there is no text; null hides the text, its heading and Copy instead (#150).</param>
+    /// <param name="isQuery">The text is a query's: Open in window shows it in the query text window (#232). A job's
+    /// message or a fix script isn't, and keeps its own window and warning where its page has one.</param>
     public void Show(IEnumerable<DetailRow> rows, string textHeading, string? text, IReadOnlyList<DrawerPlan> plans,
-                     string? noText = "(no text was captured)")
+                     string? noText = "(no text was captured)", bool isQuery = false)
     {
         DrawerParts.Fill(_rows, rows);
         _queryText        = text;
@@ -110,6 +119,7 @@ public sealed class RowDetailsView : StackPanel
         var shown = !string.IsNullOrWhiteSpace(text) || noText is not null ? Visibility.Visible : Visibility.Collapsed;
         _textHeading.Visibility = _text.Visibility = shown;
         _copy.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
+        _window.Visibility = isQuery ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var part in _parts)
             part.Forget();
