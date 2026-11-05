@@ -73,6 +73,7 @@ public class SpTraceTests(SqlServerFixture server)
             // The calls of that request, and what called each.
             var request = SpTraceNesting.ReadActivity(rpc.ActivityId)?.Request;
             Assert.True(request is not null, $"no activity id: {Describe(events)}");
+            // The pool's sp_reset_connection comes in the same request, before the call: the client's too.
             var calls = events.Where(e => SpTraceNesting.ReadActivity(e.ActivityId)?.Request == request).ToList();
             Assert.All(calls, c => Assert.NotNull(SpTraceNesting.ReadActivity(c.ActivityId)?.Sequence));
             var nesting = SpTraceNesting.Resolve(calls);
@@ -90,12 +91,13 @@ public class SpTraceTests(SqlServerFixture server)
                     @"CAST(CAST(t.target_data AS xml).query('(/RingBufferTarget/event[@name=""module_end""]/data[@name=""object_type""])[1]') AS nvarchar(max)) AS ObjectTypeXml " +
                     "FROM sys.dm_xe_session_targets t JOIN sys.dm_xe_sessions s ON s.address = t.event_session_address WHERE s.name = N'SqlVitals_SpTrace'");
 
-            Assert.True(rows.Count == 6, described);
+            Assert.True(rows.Count(r => r.Name != "sp_reset_connection") == 6, described);
+            Assert.All(rows.Where(r => r.Name == "sp_reset_connection"), r => Assert.True(r is { CalledBy: CallNesting.Client, Level: 1 }, described));
             Assert.True(rows.Count(r => r is { EventName: "rpc_completed", Name: "NestOuter", CalledBy: CallNesting.Client, Level: 1 }) == 1, described);
             Assert.True(rows.Count(r => r is { EventName: "module_end", Name: "NestOuter", CalledBy: CallNesting.Client, Level: 1 }) == 1, described);
             Assert.True(rows.Count(r => r is { Name: "NestMiddle", CalledBy: "NestOuter", Level: 2 }) == 2, described);
             Assert.True(rows.Count(r => r is { Name: "NestInner", CalledBy: "NestMiddle", Level: 3 }) == 2, described);
-            Assert.True(nesting.Count(n => n.IsTopLevel) == 1, described);   // Top-level only: the RPC, once
+            Assert.True(rows.Where((r, i) => nesting[i].IsTopLevel && r.Name == "NestOuter").Count() == 1, described);   // Top-level only: the RPC, once
         }
         finally
         {

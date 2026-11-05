@@ -69,18 +69,14 @@ public record SpTraceEvent(
     /// <summary>
     /// True when this event represents a stored procedure. <c>rpc_completed</c> always is;
     /// <c>module_end</c> also fires for functions and triggers, which this feature excludes.
-    /// An event with no captured object_type is kept rather than guessed away. SQL Server's
-    /// object_type map names a procedure PROC (8272) and a CLR one PROCASM (17232), as the ring
-    /// buffer writes them (#238: every module_end was dropped before); P, PC and RF are the
-    /// sys.objects codes.
+    /// An event with no captured object_type is kept rather than guessed away. SQL Server 2017-2025
+    /// write it as an ansi_string padded to two characters, "P " (#238: untrimmed, every module_end
+    /// was dropped where the server took no object_type predicate).
     /// </summary>
     public bool IsStoredProcedure =>
         !EventName.Equals("module_end", StringComparison.OrdinalIgnoreCase)
         || ObjectType is null
-        || ProcedureTypes.Contains(ObjectType.Trim());
-
-    private static readonly HashSet<string> ProcedureTypes =
-        new(["PROC", "PROCASM", "8272", "17232", "P", "PC", "RF"], StringComparer.OrdinalIgnoreCase);
+        || ObjectType.Trim() is "P" or "PC" or "RF" or "8272";
 }
 
 /// <summary>
