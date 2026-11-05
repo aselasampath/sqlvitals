@@ -51,6 +51,7 @@ public class SpTraceXmlParserTests
         var ev = Assert.Single(SpTraceXmlParser.Parse(RpcCompletedXml).Events);
 
         Assert.Equal(842, ev.DurationMs);
+        Assert.Equal(842_000, ev.DurationUs);   // kept to the microsecond for the call's span (#238)
         Assert.Equal(120, ev.CpuTimeMs);
     }
 

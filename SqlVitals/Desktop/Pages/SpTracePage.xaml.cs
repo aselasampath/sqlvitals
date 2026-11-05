@@ -3,6 +3,7 @@ using System.Windows.Media;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
@@ -31,29 +32,45 @@ public partial class SpTracePage : Page, IPageContext, IDetailsSource
 
     // The call the drawer shows: a poll that keeps it selected doesn't build the drawer again,
     // which would scroll its statement back and close the plan opened.
-    private SpTraceEvent? _shown;
+    private SpTraceCall? _shown;
 
     private void ShowCall(object row, bool open)
     {
-        if (row is not SpTraceEvent call)
+        if (row is not SpTraceCall shown)
             return;
-        if (ReferenceEquals(call, _shown) && !open)
+        if (ReferenceEquals(shown, _shown) && !open)
             return;
-        _shown = call;
+        Follow(shown);
+        var call = shown.Event;
         List<DrawerPlan> plans = [];
         if (call.ObjectName is { Length: > 0 } objectName)
             plans.Add(new("Cached plan of the procedure", () => ViewModel.PlanOfAsync(objectName), $"Execution plan · {objectName}"));
         _detailsView ??= new RowDetailsView();
-        _detailsView.Show(RowDetails.Rows(call), string.IsNullOrEmpty(call.ObjectName) ? "Statement" : $"Statement — {call.ObjectName}",
+        _detailsView.Show(RowDetails.Rows(call, shown.Nesting), string.IsNullOrEmpty(call.ObjectName) ? "Statement" : $"Statement — {call.ObjectName}",
                           call.Statement, plans, isQuery: true);
         Details = new(string.IsNullOrEmpty(call.ObjectName) ? "Call" : call.ObjectName, _detailsView, SelectHint);
         DetailsChanged?.Invoke(open);
     }
 
+    // The call shown, followed: its caller can come in on a later poll (#238), and the drawer's
+    // rows say it then, leaving its statement and plan as they are.
+    private void Follow(SpTraceCall? call)
+    {
+        _shown?.PropertyChanged -= OnShownChanged;
+        _shown = call;
+        _shown?.PropertyChanged += OnShownChanged;
+    }
+
+    private void OnShownChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SpTraceCall.Nesting) && _shown is { } call)
+            _detailsView?.ShowRows(RowDetails.Rows(call.Event, call.Nesting));
+    }
+
     // Cleared: the drawer says to select a call again.
     private void ClearDetail()
     {
-        _shown  = null;
+        Follow(null);
         Details = new("Call details", null, SelectHint);
         DetailsChanged?.Invoke(false);
     }

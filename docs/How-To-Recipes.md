@@ -24,6 +24,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Plan routine index and statistics maintenance](#plan-routine-index-and-statistics-maintenance)
 - [TempDB or the log is filling up](#tempdb-or-the-log-is-filling-up)
 - [Find out what an application is calling](#find-out-what-an-application-is-calling)
+- [Find which procedure called a slow one](#find-which-procedure-called-a-slow-one)
 - [Get a second opinion from an AI assistant](#get-a-second-opinion-from-an-ai-assistant)
 - [Keep an eye on several servers](#keep-an-eye-on-several-servers)
 - [Run SP Trace without monitoring the server](#run-sp-trace-without-monitoring-the-server)
@@ -260,6 +261,13 @@ An application that opens connections and doesn't close them fills its pool with
 3. Tick the application (or its hosts) in the **Application** or **Host** box; tick several to compare them. Untick **Hide sp_executesql** if the application uses an ORM. SqlVitals's own calls are hidden while **Hide SqlVitals calls** is on.
 4. **By Procedure** summarises what was called and what it cost.
 5. **■ Stop Trace** when done.
+
+## Find which procedure called a slow one
+
+1. **🛰️ SP Trace** → **● Start Trace**, then run the application until the slow procedure shows up.
+2. Find its row on **Live Calls** (type its name in **Search**). **Called by** names the procedure that called it, and **Level** how deep it ran: *(client)* and 1 mean the application called it directly.
+3. To follow the chain up, search for the caller and look at its **Called by** in turn.
+4. Adding up durations? Tick **Top-level only** first: a nested call's time is already in its caller's. See [SP Trace → Called by and Level](SP-Trace.md#called-by-and-level).
 
 ## Get a second opinion from an AI assistant
 

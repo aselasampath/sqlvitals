@@ -18,7 +18,7 @@
 
 ### Live Calls tab
 
-One row per call: **Time, Procedure, Dur (ms), CPU (ms), Reads, Writes, Rows, SPID, Login, Application, Host, Event**.
+One row per call: **Time, Procedure, Called by, Level, Dur (ms), CPU (ms), Reads, Writes, Rows, SPID, Login, Application, Host, Event**. A procedure another one called has its own row too; [Called by and Level](#called-by-and-level) say which.
 
 Narrow the list with the filters above it:
 
@@ -30,13 +30,40 @@ Narrow the list with the filters above it:
 | **Dur ≥ / CPU ≥ / Reads ≥** | Only calls at least this heavy |
 | **Hide sp_reset_connection** | Hides connection-pool resets, which are noise for most investigations |
 | **Hide sp_executesql** | Hides parameterised ad-hoc batches. Their statement text is often the real query, so untick this if you're hunting an ORM's SQL. |
+| **Top-level only** | Off by default (from 0.84.0). Shows only the calls the application made (**Level** 1), each once: the `rpc_completed` row, not its procedure's `module_end` row too. Totals over the rows then aren't counted twice. A call whose caller isn't known yet stays (see [below](#called-by-and-level)). |
 | **Hide SqlVitals calls** | On by default (from 0.83.0). Hides the calls SqlVitals itself makes while the trace runs: reading the trace's ring buffer, refreshing its pages, and the [collector service](Collector-Service.md) if it watches this server. They show as application **SqlVitals** or **SqlVitals Collector**. Untick it to see them again: the trace keeps running. |
 
 A closed box shows what's ticked: **(All)**, the value itself when one is ticked, or **3 selected**; hover it for the full list. Values you've ticked stay in the list after their calls have left the buffer (it keeps the newest 5,000), and the list stays open, with its ticks, while new calls arrive. **Esc** closes it.
 
 > **Known limit:** **Hide SqlVitals calls** knows SqlVitals's calls by their application name. If you gave a connection its own `Application Name` in its [additional connection parameters](Connections.md), SqlVitals keeps that name, so its calls aren't recognised and still show. To hide them too, take `Application Name` out of that connection's additional parameters, so its calls are named **SqlVitals** again.
 
-**Clear filters** puts every filter back to how the page opens: nothing ticked, **Hide sp_reset_connection** and **Hide SqlVitals calls** on, **Hide sp_executesql** off. Click a row to open it in the [details drawer](Working-with-Grids.md#details-beside-the-grid) (from 0.65.0, instead of the statement pane under the list): its figures, its **Statement** with **Copy**, and the procedure's cached execution plan as a [graphical plan](Execution-Plans.md), drawn there by **Show the plan** or in a window by **Open in window** (what **View Plan** did).
+**Clear filters** puts every filter back to how the page opens: nothing ticked, **Hide sp_reset_connection** and **Hide SqlVitals calls** on, **Hide sp_executesql** and **Top-level only** off. Click a row to open it in the [details drawer](Working-with-Grids.md#details-beside-the-grid) (from 0.65.0, instead of the statement pane under the list): its figures, its **Statement** with **Copy**, and the procedure's cached execution plan as a [graphical plan](Execution-Plans.md), drawn there by **Show the plan** or in a window by **Open in window** (what **View Plan** did). The drawer shows **Called by** and **Level** too, and fills them in if the caller is read while the call is open. **Copy All** and **Export to CSV** on the grid include both columns.
+
+### Called by and Level
+
+From 0.84.0. When `dbo.A` calls `dbo.B`, each one ends and gets its own row. These two columns say how the rows belong together:
+
+| Column | Shows |
+|---|---|
+| **Called by** | The procedure that called it, as the trace names it (usually without its schema). ***(client)*** for a call the application made: the `rpc_completed` row, and the `module_end` row of the same procedure. **Empty** when the caller isn't known (below). |
+| **Level** | 1 for the application's call, 2 for a procedure that one called, 3 for one called by that, and so on. Empty when the call can't be tied to its request. |
+
+The `rpc_completed` row and the `module_end` row of the procedure the application called are one call read twice, so both are level 1 and neither calls the other; **Top-level only** keeps the `rpc_completed` row, which has the reads and writes. A procedure that calls itself shows the outer call as its caller.
+
+> **Durations add up twice.** `B`'s duration is already in `A`'s. To total the time over the grid, tick **Top-level only** first.
+
+**How the caller is found.** The trace runs with causality tracking on, so every event carries an *activity id*: one GUID for every event of a request, and a number that counts up as they fire. A procedure ends after every procedure it called, so within one request a call's caller is the next call to end whose time span (its end, less its duration) holds it. Nothing more is asked of the server: this is worked out in the app, again at every poll.
+
+**When Called by is empty:**
+
+- **The caller hasn't ended yet.** A caller's event comes in after its children's, so a procedure still running leaves its children without one. Until it ends they show level 1, and **Top-level only** shows them; Called by and Level fill in at the poll after it ends, on the same rows.
+- **The procedure was run from a batch** (`EXEC dbo.A` typed in a query window). The trace captures RPC calls and procedures, not batches, so it can't tell the batch from a caller not read yet. Its level shows as 1, and the procedures it calls 2 and so on: Level counts the callers captured.
+- **The caller's event was lost**: dropped by the ring buffer under load (the status strip says so), or the caller is in another database (the trace captures only the connected one).
+- **The event has no activity id.** Then Level is empty too; an `rpc_completed` row is still the client's.
+
+**Min duration** doesn't break it: a procedure never runs longer than the one that called it, so if a call was captured, its caller was too. A function or trigger in between isn't captured, so a procedure it called shows the procedure above it as its caller.
+
+> **Known limit:** the server's event timestamps are in whole milliseconds. A call that took under a millisecond, made straight before another one, can be read as called by that next one (its level one too deep). It's still counted as nested, so **Top-level only** totals stay right.
 
 ### By Procedure tab
 
@@ -100,6 +127,8 @@ Tracing a busy server isn't free, so SP Trace:
 **DMV fallback** diffs two snapshots of `sys.dm_exec_procedure_stats` (`ProcedureStatsDelta`) to get per-window activity.
 
 **Parsing.** Ring-buffer XML is shredded in C# (`SpTraceXmlParser`), not with T-SQL `.nodes()`, so the monitored server doesn't spend CPU on it. Both helpers are pure and carry most of the unit tests.
+
+**Called by and Level** come from `SpTraceNesting.Resolve`, a pure function over the calls kept. It groups them by the GUID of `attach_activity_id` (`GUID-sequence`), orders each request's calls by sequence (the order they ended), and walks them once: each call adopts the latest calls without a caller that began after it began (1 ms slack for the timestamps' precision) and ended after it began. An `rpc_completed` row's longest `module_end` of the same name (of any name, if the row named none), among those it adopted, is the same call (`CallNesting.RepeatsRpc`), which **Top-level only** leaves out. Durations are kept in microseconds (`SpTraceEvent.DurationUs`) for the spans. `SpTraceViewModel` runs it after every poll over all calls kept and updates each `SpTraceCall` row in place.
 
 **Removing a leftover session by hand** (should never be needed):
 

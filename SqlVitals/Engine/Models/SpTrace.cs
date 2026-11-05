@@ -49,6 +49,16 @@ public record SpTraceEvent(
     string?  ActivityId)       // dedup key, present when TRACK_CAUSALITY = ON
 {
     /// <summary>
+    /// The duration as XE reports it, in microseconds (#238); 0 when it wasn't read, as for an event
+    /// made in a test, and <see cref="DurationMs"/> stands in. Spans are worked out from it: in
+    /// whole milliseconds, a call's start could be read up to a millisecond late.
+    /// </summary>
+    public long DurationUs { get; init; }
+
+    /// <summary>When the call began: its completion less its duration.</summary>
+    public DateTime StartTime => EventTime - TimeSpan.FromMicroseconds(DurationUs > 0 ? DurationUs : DurationMs * 1000);
+
+    /// <summary>
     /// Stable identity for de-duplicating events across ring-buffer polls. The ring
     /// buffer is a rolling snapshot, so each poll re-returns events already seen.
     /// </summary>
@@ -65,6 +75,32 @@ public record SpTraceEvent(
         !EventName.Equals("module_end", StringComparison.OrdinalIgnoreCase)
         || ObjectType is null
         || ObjectType is "P" or "PC" or "RF" or "8272";
+}
+
+/// <summary>
+/// What called a captured call, and how deep it ran (#238), worked out by
+/// <see cref="Repositories.SpTraceNesting"/>.
+/// </summary>
+/// <param name="CalledBy">The calling procedure's name; <see cref="Client"/> for a call the client
+/// made; null when the caller isn't known.</param>
+/// <param name="Level">1 for a call the client made, 2 for a procedure that one called, and so on,
+/// counting the callers captured (a call whose caller isn't known is 1); null when the call can't
+/// be tied to its request.</param>
+/// <param name="RepeatsRpc">The module_end of the procedure the client called: the same call as its
+/// rpc_completed row, so its time is in that row's.</param>
+public readonly record struct CallNesting(string? CalledBy, int? Level, bool RepeatsRpc = false)
+{
+    /// <summary>Called by for a call the client made: the rpc_completed row, and its own module_end.</summary>
+    public const string Client = "(client)";
+
+    /// <summary>A call another procedure made: its time is in its caller's too.</summary>
+    public bool IsNested => Level > 1;
+
+    /// <summary>
+    /// The client's call, read once (Top-level only): not nested, and not the module_end that
+    /// repeats an rpc_completed row.
+    /// </summary>
+    public bool IsTopLevel => !IsNested && !RepeatsRpc;
 }
 
 /// <summary>Per-procedure rollup — populated by both capture modes.</summary>
