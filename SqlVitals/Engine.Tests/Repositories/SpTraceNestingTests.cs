@@ -67,6 +67,21 @@ public class SpTraceNestingTests
     }
 
     [Fact]
+    public void SpResetConnection_InTheSameRequest_IsTheClients_NotCalledByTheRpc()
+    {
+        // As SQL Server 2022 sent it: the pool's reset (7 us) is sequence 1 of the request, and it
+        // ends in the millisecond the 61 ms RPC's span begins.
+        var reset = new SpTraceEvent(T0.AddMilliseconds(435), "rpc_completed", "sp_reset_connection", null, "SalesDb", 0, 0, 0, 0, 0, 0,
+                                     61, "app", "OrderService", "WEB01", null, $"{Request}-1") { DurationUs = 7 };
+        var outer = new SpTraceEvent(T0.AddMilliseconds(496), "rpc_completed", "NestOuter", null, "SalesDb", 61, 0, 0, 0, 0, 0,
+                                     61, "app", "OrderService", "WEB01", null, $"{Request}-7") { DurationUs = 61_114 };
+
+        var nesting = Resolve(reset, outer);
+
+        Assert.All(nesting, n => Assert.Equal(new CallNesting(CallNesting.Client, 1), n));
+    }
+
+    [Fact]
     public void TwoCallsOneAfterTheOther_AreSiblings_NotNested()
     {
         // A calls B, then C: C began after B ended, so it isn't B's.

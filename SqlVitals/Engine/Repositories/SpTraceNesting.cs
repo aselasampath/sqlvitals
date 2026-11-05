@@ -89,8 +89,12 @@ public static class SpTraceNesting
     // began. The timestamps are whole milliseconds, so a call under a millisecond that ended just
     // before the next began can still read as inside it: reading it as nested keeps it out of
     // Top-level only, where reading a real child as its caller's sibling would count it twice.
+    // An rpc_completed row is never inside another call: the client made it. sp_reset_connection
+    // comes in the same request, just before the call it resets for, and would otherwise read as
+    // called by it (seen on SQL Server 2019-2025).
     private static bool Inside(Call call, Call caller) =>
-        call.Event.StartTime >= caller.Event.StartTime - Slack && call.Event.EventTime >= caller.Event.StartTime;
+        !call.IsRpc
+        && call.Event.StartTime >= caller.Event.StartTime - Slack && call.Event.EventTime >= caller.Event.StartTime;
 
     private static string? CalledBy(Call call)
     {

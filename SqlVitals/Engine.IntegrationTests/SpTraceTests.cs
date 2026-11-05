@@ -77,7 +77,17 @@ public class SpTraceTests(SqlServerFixture server)
             Assert.All(calls, c => Assert.NotNull(SpTraceNesting.ReadActivity(c.ActivityId)?.Sequence));
             var nesting = SpTraceNesting.Resolve(calls);
             var rows = calls.Select((c, i) => (c.EventName, Name: Last(c.ObjectName), nesting[i].CalledBy, nesting[i].Level)).ToList();
-            var described = string.Join(Environment.NewLine, rows) + Environment.NewLine + Describe(calls);
+            var described = string.Join(Environment.NewLine, rows) + Environment.NewLine + Describe(calls) + Environment.NewLine +
+                await server.DescribeAsync(
+                    "SELECT e.name, e.predicate FROM sys.server_event_session_events e " +
+                    "JOIN sys.server_event_sessions s ON s.event_session_id = e.event_session_id WHERE s.name = N'SqlVitals_SpTrace'") +
+                Environment.NewLine +
+                await server.DescribeAsync("SELECT map_key, map_value FROM sys.dm_xe_map_values WHERE name = N'object_type' AND map_key IN (8272, 20816, 17232)") +
+                Environment.NewLine +
+                await server.DescribeAsync(
+                    @"SELECT CAST(t.target_data AS xml).value('count(/RingBufferTarget/event[@name=""module_end""])', 'int') AS ModuleEnds, " +
+                    @"CAST(t.target_data AS xml).value('(/RingBufferTarget/event[@name=""module_end""]/data[@name=""object_type""]/text)[1]', 'nvarchar(60)') AS ObjectTypeText " +
+                    "FROM sys.dm_xe_session_targets t JOIN sys.dm_xe_sessions s ON s.address = t.event_session_address WHERE s.name = N'SqlVitals_SpTrace'");
 
             Assert.True(rows.Count == 6, described);
             Assert.True(rows.Count(r => r is { EventName: "rpc_completed", Name: "NestOuter", CalledBy: CallNesting.Client, Level: 1 }) == 1, described);
