@@ -216,6 +216,12 @@
                                           Foreground="{StaticResource TextMuted}"
                                           FontFamily="Segoe UI" FontSize="11"
                                           ToolTip="Hide the calls SqlVitals itself makes while the trace runs (application SqlVitals or SqlVitals Collector). A connection given its own Application Name keeps it, so its calls aren't recognised."/>
+
+                                <CheckBox x:Name="ChkTopLevelOnly" Content="Top-level only"
+                                          IsChecked="{Binding TopLevelOnly}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                          Foreground="{StaticResource TextMuted}"
+                                          FontFamily="Segoe UI" FontSize="11"
+                                          ToolTip="Show only the calls the client made (Level 1), once each: the rpc_completed row, not its procedure's module_end row too. A procedure another one called is in its caller's time already, so totals over these rows aren't counted twice."/>
                             </WrapPanel>
                         </DockPanel>
                     </Border>
@@ -225,18 +231,20 @@
                             <DataGrid x:Name="CallsGrid" IsReadOnly="True" ItemsSource="{Binding Calls}" SelectedItem="{Binding SelectedCall}"
                                       AutoGenerateColumns="False">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Time"      Binding="{Binding EventTime, StringFormat=HH:mm:ss.fff}" Width="92"/>
-                                    <DataGridTextColumn Header="Procedure" Binding="{Binding ObjectName}"    Width="230"/>
-                                    <DataGridTextColumn Header="Dur (ms)"  Binding="{Binding DurationMs, StringFormat=N0}"   Width="75"/>
-                                    <DataGridTextColumn Header="CPU (ms)"  Binding="{Binding CpuTimeMs, StringFormat=N0}"    Width="75"/>
-                                    <DataGridTextColumn Header="Reads"     Binding="{Binding LogicalReads, StringFormat=N0}" Width="85"/>
-                                    <DataGridTextColumn Header="Writes"    Binding="{Binding Writes, StringFormat=N0}"       Width="70"/>
-                                    <DataGridTextColumn Header="Rows"      Binding="{Binding RowsReturned, StringFormat=N0}" Width="70"/>
-                                    <DataGridTextColumn Header="SPID"      Binding="{Binding SessionId}"      Width="55"/>
-                                    <DataGridTextColumn Header="Login"     Binding="{Binding LoginName}"      Width="110"/>
-                                    <DataGridTextColumn Header="Application" Binding="{Binding ClientAppName}" Width="140"/>
-                                    <DataGridTextColumn Header="Host"      Binding="{Binding ClientHostName}" Width="110"/>
-                                    <DataGridTextColumn Header="Event"     Binding="{Binding EventName}"      Width="120"/>
+                                    <DataGridTextColumn Header="Time"      Binding="{Binding Event.EventTime, StringFormat=HH:mm:ss.fff}" Width="92"/>
+                                    <DataGridTextColumn Header="Procedure" Binding="{Binding Event.ObjectName}"    Width="230"/>
+                                    <DataGridTextColumn Header="Called by" Binding="{Binding CalledBy}"           Width="170"/>
+                                    <DataGridTextColumn Header="Level"     Binding="{Binding Level}"              Width="50"/>
+                                    <DataGridTextColumn Header="Dur (ms)"  Binding="{Binding Event.DurationMs, StringFormat=N0}"   Width="75"/>
+                                    <DataGridTextColumn Header="CPU (ms)"  Binding="{Binding Event.CpuTimeMs, StringFormat=N0}"    Width="75"/>
+                                    <DataGridTextColumn Header="Reads"     Binding="{Binding Event.LogicalReads, StringFormat=N0}" Width="85"/>
+                                    <DataGridTextColumn Header="Writes"    Binding="{Binding Event.Writes, StringFormat=N0}"       Width="70"/>
+                                    <DataGridTextColumn Header="Rows"      Binding="{Binding Event.RowsReturned, StringFormat=N0}" Width="70"/>
+                                    <DataGridTextColumn Header="SPID"      Binding="{Binding Event.SessionId}"      Width="55"/>
+                                    <DataGridTextColumn Header="Login"     Binding="{Binding Event.LoginName}"      Width="110"/>
+                                    <DataGridTextColumn Header="Application" Binding="{Binding Event.ClientAppName}" Width="140"/>
+                                    <DataGridTextColumn Header="Host"      Binding="{Binding Event.ClientHostName}" Width="110"/>
+                                    <DataGridTextColumn Header="Event"     Binding="{Binding Event.EventName}"      Width="120"/>
                                 </DataGrid.Columns>
                             </DataGrid>
 

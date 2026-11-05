@@ -11,11 +11,12 @@ using SqlVitals.Engine.Verdicts;
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>
-/// Live SP Trace (#149, #188, #237): stored-procedure calls streamed from an Extended Events session when
+/// Live SP Trace (#149, #188, #237, #238): stored-procedure calls streamed from an Extended Events session when
 /// the login can create one, per-procedure figures from the DMVs when it can't
 /// (<see cref="ISpTraceRepository"/>). Opening the page or Refresh never starts a trace: that runs
 /// a session on the server, so only Start Trace does, and leaving the page drops it. While it runs,
-/// the timer polls it. The verdict says what the capture is doing.
+/// the timer polls it. The verdict says what the capture is doing. Each call says what called it
+/// (<see cref="SpTraceNesting"/>), worked out again as calls arrive.
 /// </summary>
 public sealed partial class SpTraceViewModel : PageViewModel
 {
@@ -30,7 +31,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
     private readonly IDialogService _dialogs;
 
     // Every call kept, oldest first; the grid shows those the filters let through, newest first.
-    private readonly List<SpTraceEvent> _allCalls = [];
+    private readonly List<SpTraceCall> _allCalls = [];
 
     private TraceSessionStatus _status = TraceSessionStatus.Stopped("SqlVitals_SpTrace");
 
@@ -219,10 +220,11 @@ public sealed partial class SpTraceViewModel : PageViewModel
             var fresh = await _trace.PollTraceEventsAsync(cancel);
             if (fresh.Count > 0)
             {
-                _allCalls.AddRange(fresh);
+                _allCalls.AddRange(fresh.Select(call => new SpTraceCall(call)));
                 var excess = _allCalls.Count - MaxRowsRetained;
                 if (excess > 0)
                     _allCalls.RemoveRange(0, excess);
+                ResolveCallers();
                 RefreshFilterChoices();   // and filters them again
                 UpdateVerdict();
             }
@@ -252,20 +254,20 @@ public sealed partial class SpTraceViewModel : PageViewModel
     private int _tabIndex = CallsTab;
 
     /// <summary>The calls the filters let through, newest first.</summary>
-    public GridRows<SpTraceEvent> Calls { get; } = [];
+    public GridRows<SpTraceCall> Calls { get; } = [];
 
     [ObservableProperty]
-    private SpTraceEvent? _selectedCall;
+    private SpTraceCall? _selectedCall;
 
     /// <summary>The newest call stays in view as calls arrive.</summary>
     [ObservableProperty]
     private bool _autoScroll = true;
 
     /// <summary>A call to scroll into view: the newest, while <see cref="AutoScroll"/> is on.</summary>
-    public event Action<SpTraceEvent>? ScrollTo;
+    public event Action<SpTraceCall>? ScrollTo;
 
     /// <summary>A call to show: the verdict's Show the slowest selected it. The page opens it in the drawer.</summary>
-    public event Action<SpTraceEvent>? ShowRow;
+    public event Action<SpTraceCall>? ShowRow;
 
     /// <summary>The calls were cleared: the drawer says to select one again.</summary>
     public event Action? Cleared;
@@ -282,7 +284,16 @@ public sealed partial class SpTraceViewModel : PageViewModel
     private string _filterCount = "";
 
     /// <summary>Every call kept; for tests.</summary>
-    internal IReadOnlyList<SpTraceEvent> AllCalls => _allCalls;
+    internal IReadOnlyList<SpTraceCall> AllCalls => _allCalls;
+
+    // What called each call (#238). A caller ends after the calls it made, so a call read before
+    // its caller gets it on a later poll: all of them are worked out again, each row changed in place.
+    private void ResolveCallers()
+    {
+        var nesting = SpTraceNesting.Resolve(_allCalls.ConvertAll(c => c.Event));
+        for (int i = 0; i < _allCalls.Count; i++)
+            _allCalls[i].Nesting = nesting[i];
+    }
 
     [RelayCommand]
     private void Clear()
@@ -351,6 +362,14 @@ public sealed partial class SpTraceViewModel : PageViewModel
     [ObservableProperty]
     private bool _hideSqlVitals = true;
 
+    /// <summary>
+    /// Only the calls the client made, once each (#238): a nested call's time is in its caller's
+    /// too, and so is the module_end that repeats an rpc_completed row, so totals over the grid
+    /// aren't counted twice. A call whose level isn't known stays.
+    /// </summary>
+    [ObservableProperty]
+    private bool _topLevelOnly;
+
     /// <summary>The application names SqlVitals's connections and the collector service's show on the server.</summary>
     internal static bool IsSqlVitals(string? clientAppName) =>
         Same(clientAppName, ConnectionSettings.ApplicationName) || Same(clientAppName, CollectorServer.ApplicationName);
@@ -360,7 +379,8 @@ public sealed partial class SpTraceViewModel : PageViewModel
     {
         base.OnPropertyChanged(e);
         if (e.PropertyName is nameof(Search) or nameof(SpidText) or nameof(MinDurationFilterText) or nameof(MinCpuText)
-                           or nameof(MinReadsText) or nameof(HideResets) or nameof(HideExecuteSql) or nameof(HideSqlVitals))
+                           or nameof(MinReadsText) or nameof(HideResets) or nameof(HideExecuteSql) or nameof(HideSqlVitals)
+                           or nameof(TopLevelOnly))
         {
             ApplyFilter();
             if (e.PropertyName == nameof(HideSqlVitals))
@@ -386,6 +406,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
         HideResets            = true;   // back to the default, not "show everything"
         HideExecuteSql        = false;
         HideSqlVitals         = true;
+        TopLevelOnly          = false;
         foreach (var box in FilterBoxes)
             box.Clear();
     });
@@ -410,7 +431,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
     private void RefreshFilterChoices() => HoldingFilters(() =>
     {
         foreach (var (box, value) in FilterFields)
-            box.Replace(_allCalls.Select(value));
+            box.Replace(_allCalls.Select(c => value(c.Event)));
     });
 
     private static long? ReadLong(string text) => long.TryParse(text.Trim(), out var n) && n >= 0 ? n : null;
@@ -428,25 +449,27 @@ public sealed partial class SpTraceViewModel : PageViewModel
         var minCpu   = ReadLong(MinCpuText);
         var minReads = ReadLong(MinReadsText);
 
-        IEnumerable<SpTraceEvent> query = _allCalls;
+        IEnumerable<SpTraceCall> query = _allCalls;
         if (search.Length > 0)
-            query = query.Where(c => c.ObjectName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
-                                     c.Statement?.Contains(search, StringComparison.OrdinalIgnoreCase) == true);
+            query = query.Where(c => c.Event.ObjectName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                                     c.Event.Statement?.Contains(search, StringComparison.OrdinalIgnoreCase) == true);
         foreach (var (box, value) in FilterFields.Where(f => !f.Box.IsAll))
-            query = query.Where(c => box.Matches(value(c)));
-        if (spid is not null)                query = query.Where(c => c.SessionId    == spid);
-        if (minDur is not null)              query = query.Where(c => c.DurationMs   >= minDur);
-        if (minCpu is not null)              query = query.Where(c => c.CpuTimeMs    >= minCpu);
-        if (minReads is not null)            query = query.Where(c => c.LogicalReads >= minReads);
+            query = query.Where(c => box.Matches(value(c.Event)));
+        if (spid is not null)                query = query.Where(c => c.Event.SessionId    == spid);
+        if (minDur is not null)              query = query.Where(c => c.Event.DurationMs   >= minDur);
+        if (minCpu is not null)              query = query.Where(c => c.Event.CpuTimeMs    >= minCpu);
+        if (minReads is not null)            query = query.Where(c => c.Event.LogicalReads >= minReads);
         if (HideResets)
-            query = query.Where(c => c.ObjectName?.EndsWith("sp_reset_connection", StringComparison.OrdinalIgnoreCase) != true);
+            query = query.Where(c => c.Event.ObjectName?.EndsWith("sp_reset_connection", StringComparison.OrdinalIgnoreCase) != true);
         if (HideExecuteSql)
-            query = query.Where(c => c.ObjectName?.EndsWith("sp_executesql", StringComparison.OrdinalIgnoreCase) != true);
+            query = query.Where(c => c.Event.ObjectName?.EndsWith("sp_executesql", StringComparison.OrdinalIgnoreCase) != true);
         if (HideSqlVitals)
-            query = query.Where(c => !IsSqlVitals(c.ClientAppName));
+            query = query.Where(c => !IsSqlVitals(c.Event.ClientAppName));
+        if (TopLevelOnly)
+            query = query.Where(c => c.Nesting.IsTopLevel);
 
         // Newest first: the interesting row on a live trace is the one that just arrived.
-        var filtered = query.OrderByDescending(c => c.EventTime).ToList();
+        var filtered = query.OrderByDescending(c => c.Event.EventTime).ToList();
         var selected = SelectedCall;
         Calls.Replace(filtered);
         SelectedCall = selected is not null && filtered.Contains(selected) ? selected : null;
@@ -512,8 +535,9 @@ public sealed partial class SpTraceViewModel : PageViewModel
 
     // The calls the verdict speaks of, and Show the slowest picks from: all of them, but SqlVitals's
     // own while they're hidden (#237), or its ring-buffer read would often be the slowest.
-    private IReadOnlyList<SpTraceEvent> VerdictCalls =>
-        HideSqlVitals ? _allCalls.Where(c => !IsSqlVitals(c.ClientAppName)).ToList() : _allCalls;
+    private IReadOnlyList<SpTraceEvent> VerdictCalls => [.. VerdictRows.Select(c => c.Event)];
+
+    private IEnumerable<SpTraceCall> VerdictRows => _allCalls.Where(c => !HideSqlVitals || !IsSqlVitals(c.Event.ClientAppName));
 
     protected override Task OnActionAsync(VerdictAction action) => action.Key switch
     {
@@ -530,7 +554,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
     // filters cleared first if they hide it.
     private Task ShowSlowest()
     {
-        if (VerdictCalls.OrderByDescending(c => c.DurationMs).ThenByDescending(c => c.EventTime).FirstOrDefault() is not { } slowest)
+        if (VerdictRows.OrderByDescending(c => c.Event.DurationMs).ThenByDescending(c => c.Event.EventTime).FirstOrDefault() is not { } slowest)
             return Task.CompletedTask;
         if (!Calls.Contains(slowest))
             ClearFilters();

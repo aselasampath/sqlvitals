@@ -6,6 +6,7 @@ using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 
@@ -179,6 +180,58 @@ public sealed class Wave4PagesTests : IDisposable
         new(DateTime.Now.AddSeconds(-secondsAgo), "rpc_completed", proc, "P", "SalesDb", ms, ms / 3, ms * 41, 0, ms / 100, 12, spid, "svc_orders",
             app, "APP-WEB03", $"EXEC {proc} @CustomerId = 1042", Guid.NewGuid().ToString());
 
+    // One request: the client calls dbo.usp_PlaceOrder, which calls usp_PriceBasket (#238).
+    private static SpTraceEvent Nested(string ev, string proc, double startMs, double durationMs, int seq) =>
+        new(DateTime.Today.AddHours(10).AddMilliseconds(Math.Floor(startMs + durationMs)), ev, proc, ev == "module_end" ? "P" : null,
+            "SalesDb", (long)durationMs, 1, 10, 0, 0, 1, 61, "svc_orders", "OrderService", "APP-WEB03", "EXEC x",
+            $"5A4D5C9E-1B2C-4D3E-8F90-0A1B2C3D4E5F-{seq}")
+        {
+            DurationUs = (long)(durationMs * 1000),
+        };
+
+    [Fact]
+    public void SpTrace_TheDrawer_SaysTheCaller_OnceItsEventIsRead() => UiThread.Run(() =>
+    {
+        var running = new TraceSessionStatus(true, TraceMode.ExtendedEvents, "SqlVitals_SpTrace", null, 3, 0, false);
+        var polls = new Queue<IReadOnlyList<SpTraceEvent>>(
+        [
+            [Nested("module_end", "usp_PriceBasket", 3, 15, 1)],
+            [Nested("module_end", "usp_PlaceOrder", 0.1, 20, 2), Nested("rpc_completed", "dbo.usp_PlaceOrder", 0, 20.3, 3)],
+        ]);
+        var page = Wave4Pages.SpTrace(new FakeRepository
+        {
+            StartTraceAsync         = _ => Task.FromResult(running),
+            StopTraceAsync          = () => Task.FromResult(TraceSessionStatus.Stopped("SqlVitals_SpTrace")),
+            GetTraceStatusAsync     = () => Task.FromResult(running),
+            PollTraceEventsAsync    = () => Task.FromResult(polls.Count > 0 ? polls.Dequeue() : []),
+            PollProcedureStatsAsync = () => Task.FromResult<IReadOnlyList<SpAggregateRow>>([]),
+            GetObjectQueryPlanAsync = _ => Task.FromResult<string?>("<ShowPlanXML/>"),
+        }, Settings());
+        var source = (IDetailsSource)page;
+
+        UiThread.Wait(page.ViewModel.ToggleTraceCommand.ExecuteAsync(null));   // Start
+        page.ViewModel.PrepareForShutdown();   // no timed poll during the test
+        UiThread.Wait(page.ViewModel.RefreshAsync());
+        page.CallsGrid.SelectedItem = page.CallsGrid.Items[0];
+        var view = Assert.IsType<RowDetailsView>(source.Details.Body);
+        Assert.Contains("Called by: — (not known)", view.RowTexts);   // usp_PlaceOrder hasn't ended yet
+        var drawn = 0;
+        source.DetailsChanged += _ => drawn++;
+
+        UiThread.Wait(page.ViewModel.RefreshAsync());
+
+        Assert.Equal("usp_PriceBasket", ((SpTraceCall)page.CallsGrid.SelectedItem).Event.ObjectName);
+        Assert.Contains("Called by: usp_PlaceOrder", view.RowTexts);
+        Assert.Contains("Level: 2: its time is in its caller's too", view.RowTexts);
+        Assert.Equal(0, drawn);   // the rows only: the statement and the plan stay as they were
+
+        // Top-level only: the client's call once, its rpc_completed row.
+        page.ChkTopLevelOnly.IsChecked = true;
+        var top = Assert.Single(page.CallsGrid.Items.Cast<SpTraceCall>());
+        Assert.Equal(("rpc_completed", 1), (top.Event.EventName, top.Level));
+        page.ViewModel.OnNavigatedFrom();
+    });
+
     [Theory, MemberData(nameof(Themes))]
     public void SpTrace_Renders_TheButtonAndBadgeInTheirColours_AndTheDrawerFollowsTheCall(string theme) => UiThread.Run(() =>
     {
@@ -220,7 +273,7 @@ public sealed class Wave4PagesTests : IDisposable
             Assert.Equal(Colour(page, "Success"), ((SolidColorBrush)page.TxtModeBadge.Foreground).Color);
             Assert.StartsWith("Capturing live calls via session 'SqlVitals_SpTrace'", page.TxtTraceStatus.Text);
             Assert.Equal(4, page.CallsGrid.Items.Count);
-            Assert.Equal("dbo.usp_ShipOrder", ((SpTraceEvent)page.CallsGrid.Items[0]).ObjectName);   // newest first
+            Assert.Equal("dbo.usp_ShipOrder", ((SpTraceCall)page.CallsGrid.Items[0]).Event.ObjectName);   // newest first
             Assert.Equal(Visibility.Collapsed, page.TxtNoCalls.Visibility);
             Assert.Single(page.AggregateGrid.Items);
             Assert.Equal(Visibility.Collapsed, page.TxtNoAggregates.Visibility);
@@ -245,7 +298,7 @@ public sealed class Wave4PagesTests : IDisposable
             page.CallsGrid.SelectedItem = page.CallsGrid.Items[1];
             Assert.Equal("dbo.usp_BillOrder", source.Details.Title);
             TemplateRolloutTests.Press(page.Shell.VerdictView, 1);   // Show the slowest
-            Assert.Equal("dbo.usp_GetOrderHistory", ((SpTraceEvent)page.CallsGrid.SelectedItem).ObjectName);
+            Assert.Equal("dbo.usp_GetOrderHistory", ((SpTraceCall)page.CallsGrid.SelectedItem).Event.ObjectName);
             Assert.Equal("dbo.usp_GetOrderHistory", source.Details.Title);
             var view = Assert.IsType<RowDetailsView>(source.Details.Body);
             Assert.Equal(["Cached plan of the procedure"], view.PlanHeadings);
@@ -255,7 +308,7 @@ public sealed class Wave4PagesTests : IDisposable
             source.DetailsChanged += _ => drawn++;
             UiThread.Wait(page.ViewModel.RefreshAsync());
             Assert.Equal(8, page.CallsGrid.Items.Count);
-            Assert.Equal("dbo.usp_GetOrderHistory", ((SpTraceEvent)page.CallsGrid.SelectedItem).ObjectName);
+            Assert.Equal("dbo.usp_GetOrderHistory", ((SpTraceCall)page.CallsGrid.SelectedItem).Event.ObjectName);
             Assert.Equal(0, drawn);
 
             // Stop, then Clear: the button and the badge go back, the drawer says to select a call.

@@ -485,4 +485,20 @@ public class TemplateVerdictsTests
 
         Assert.Contains(Invariant(() => RowDetails.Rows(Call("dbo.usp_A", 1_250))), r => r is { Label: "Duration", Value: "1,250 ms" });
     }
+
+    [Fact]
+    public void DrawerRows_OfACall_SayWhatCalledIt()
+    {
+        var nested = Invariant(() => RowDetails.Rows(Call("usp_B", 40), new CallNesting("usp_A", 2)));
+        Assert.Contains(nested, r => r is { Label: "Called by", Value: "usp_A" });
+        Assert.Contains(nested, r => r is { Label: "Level", Value: "2: its time is in its caller's too" });
+
+        var client = Invariant(() => RowDetails.Rows(Call("dbo.usp_A", 40), new CallNesting(CallNesting.Client, 1)));
+        Assert.Contains(client, r => r is { Label: "Called by", Value: "(client)" });
+        Assert.Contains(client, r => r is { Label: "Level", Value: "1" });
+
+        var unknown = Invariant(() => RowDetails.Rows(Call("usp_B", 40)));
+        Assert.Contains(unknown, r => r is { Label: "Called by", Value: "— (not known)" });
+        Assert.Contains(unknown, r => r is { Label: "Level", Value: "—" });
+    }
 }

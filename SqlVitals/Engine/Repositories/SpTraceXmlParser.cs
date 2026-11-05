@@ -104,13 +104,14 @@ public static partial class SpTraceXmlParser
         var objectName = Get(fields, "object_name") ?? ExtractProcedureName(statement);
 
         // module_end does not expose logical_reads / writes at all; missing means zero.
+        var durationUs = ReadLong(fields, "duration");
         return new SpTraceEvent(
             EventTime:      ReadTimestamp(el),
             EventName:      eventName,
             ObjectName:     objectName,
             ObjectType:     Get(texts, "object_type") ?? Get(fields, "object_type"),
             DatabaseName:   Get(fields, "database_name"),
-            DurationMs:     MicrosecondsToMilliseconds(ReadLong(fields, "duration")),
+            DurationMs:     MicrosecondsToMilliseconds(durationUs),
             CpuTimeMs:      MicrosecondsToMilliseconds(ReadLong(fields, "cpu_time")),
             LogicalReads:   ReadLong(fields, "logical_reads"),
             PhysicalReads:  ReadLong(fields, "physical_reads"),
@@ -121,7 +122,10 @@ public static partial class SpTraceXmlParser
             ClientAppName:  Get(fields, "client_app_name"),
             ClientHostName: Get(fields, "client_hostname"),
             Statement:      statement,
-            ActivityId:     Get(fields, "attach_activity_id"));
+            ActivityId:     Get(fields, "attach_activity_id"))
+        {
+            DurationUs = durationUs,
+        };
     }
 
     // ── Field helpers ────────────────────────────────────────────────────

@@ -94,6 +94,25 @@ SELECT o.OrderId, o.CreatedAt, c.Name
 FROM dbo.Orders o JOIN dbo.Customers c ON c.CustomerId = o.CustomerId
 WHERE o.Amount = @Amount;
 GO
+-- SP Trace's Called by and Level (#238): NestOuter calls NestMiddle twice, which calls NestInner.
+CREATE PROCEDURE dbo.NestInner
+AS
+WAITFOR DELAY '00:00:00.020';
+GO
+CREATE PROCEDURE dbo.NestMiddle
+AS
+BEGIN
+    EXEC dbo.NestInner;
+    WAITFOR DELAY '00:00:00.010';
+END
+GO
+CREATE PROCEDURE dbo.NestOuter
+AS
+BEGIN
+    EXEC dbo.NestMiddle;
+    EXEC dbo.NestMiddle;
+END
+GO
 EXEC sp_create_plan_guide
     @name = N'PG_Orders_MaxDop1',
     @stmt = N'SELECT COUNT(*) FROM dbo.Orders WHERE Amount > 100',

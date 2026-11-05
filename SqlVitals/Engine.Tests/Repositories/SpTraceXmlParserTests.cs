@@ -51,6 +51,7 @@ public class SpTraceXmlParserTests
         var ev = Assert.Single(SpTraceXmlParser.Parse(RpcCompletedXml).Events);
 
         Assert.Equal(842, ev.DurationMs);
+        Assert.Equal(842_000, ev.DurationUs);   // kept to the microsecond for the call's span (#238)
         Assert.Equal(120, ev.CpuTimeMs);
     }
 
@@ -173,6 +174,9 @@ public class SpTraceXmlParserTests
     [InlineData("P",    true)]    // stored procedure
     [InlineData("PC",   true)]    // CLR stored procedure
     [InlineData("8272", true)]    // numeric form, when no <text> was present
+    [InlineData("P ",   true)]    // as SQL Server 2017-2025 write it: an ansi_string, padded (#238)
+    [InlineData("PC ",  true)]
+    [InlineData("TR ",  false)]
     [InlineData("TR",   false)]   // trigger
     [InlineData("FN",   false)]   // scalar function
     [InlineData("TF",   false)]   // table-valued function

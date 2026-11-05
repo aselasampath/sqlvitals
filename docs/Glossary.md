@@ -13,6 +13,7 @@ Plain-language definitions of the terms used in SqlVitals and this wiki.
 | **Baseline** | A reference period to compare against. On trend pages: the same time last week. On Query Regressions: *the 7 days before* or *the same time last week*. |
 | **Blocking** | One session waiting for a lock held by another. A **blocking chain** is a session and everything waiting behind it; the **head blocker** is the session at its root, blocking others and waiting on nothing. See [Processes](Live-Monitoring.md#processes-blocking-chains). |
 | **Buffer cache hit ratio** | % of page reads served from memory instead of disk. Should be close to 100 %. |
+| **Called by / Level** | From 0.84.0, two columns of [SP Trace](SP-Trace.md#called-by-and-level)'s Live Calls: the procedure that called each call, or *(client)* for a call the application made, and how deep it ran (1 for the client's call, 2 for a procedure it called, and so on). A nested call's time is in its caller's too. |
 | **Cardinality estimate** | The optimizer's guess of how many rows an operation returns. Bad guesses lead to bad plans. |
 | **Clustered index / heap** | A clustered index stores the table in key order. A heap is a table without one. |
 | **Collector** | SqlVitals' background task that reads Live Metrics for one monitored connection at an interval. |

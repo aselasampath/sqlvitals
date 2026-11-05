@@ -69,11 +69,15 @@ public static class RowDetails
 
     private static string Plan(long? id) => id is { } p ? $"plan {p}" : "no plan";
 
-    /// <summary>One captured stored-procedure call.</summary>
-    public static IReadOnlyList<DetailRow> Rows(SpTraceEvent call) =>
+    /// <summary>One captured stored-procedure call, with what called it (#238).</summary>
+    public static IReadOnlyList<DetailRow> Rows(SpTraceEvent call, CallNesting nesting = default) =>
     [
         new("Time", call.EventTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.CurrentCulture)),
         new("Procedure", string.IsNullOrWhiteSpace(call.ObjectName) ? "—" : call.ObjectName),
+        new("Called by", nesting.CalledBy ?? "— (not known)"),
+        new("Level", nesting.Level is { } level
+            ? level.ToString(CultureInfo.CurrentCulture) + (level > 1 ? ": its time is in its caller's too" : "")
+            : "—"),
         new("Event", call.EventName),
         new("Database", call.DatabaseName ?? "—"),
         new("Duration", $"{N(call.DurationMs)} ms"),

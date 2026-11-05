@@ -259,6 +259,14 @@ public sealed partial class SqlServerFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>Calls dbo.NestOuter as an RPC (#238): it calls NestMiddle twice, which calls NestInner.</summary>
+    public async Task RunNestedProceduresAsync()
+    {
+        await using var conn = await OpenAsync(Target.ConnectionString);
+        await using var cmd = new SqlCommand("dbo.NestOuter", conn) { CommandType = CommandType.StoredProcedure, CommandTimeout = 60 };
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     /// <summary>A query's rows as text, for a failed assertion's message: what the server holds.</summary>
     public async Task<string> DescribeAsync(string sql)
     {

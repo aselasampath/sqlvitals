@@ -11,6 +11,7 @@ using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Pages;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.Tests.Fakes;
+using SqlVitals.Desktop.ViewModels;
 using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Deadlocks;
 using SqlVitals.Engine.History;
@@ -621,6 +622,30 @@ public sealed class TemplateRolloutTests : IDisposable
 
     // ── SP Trace ─────────────────────────────────────────────────────────
 
+    // A check box's label as drawn: the runs of the TextBlock its access text makes.
+    private static string Shown(ContentControl box)
+    {
+        static IEnumerable<TextBlock> Texts(DependencyObject parent)
+        {
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is TextBlock text)
+                    yield return text;
+                foreach (var deeper in Texts(child))
+                    yield return deeper;
+            }
+        }
+        static string Of(IEnumerable<System.Windows.Documents.Inline> inlines) => string.Concat(inlines.Select(inline => inline switch
+        {
+            System.Windows.Documents.Run run   => run.Text,
+            System.Windows.Documents.Span span => Of(span.Inlines),
+            _                                  => "",
+        }));
+        var shown = Texts(box).First();
+        return shown.Inlines.Count > 0 ? Of(shown.Inlines) : shown.Text;
+    }
+
     private static SpTraceEvent Call(DateTime at, string proc, long ms, int spid, string app) =>
         new(at, "rpc_completed", proc, "P", "SalesDb", ms, ms / 3, ms * 41, 0, ms / 100, 12, spid, "svc_orders", app, "APP-WEB03",
             $"EXEC {proc} @CustomerId = 1042", Guid.NewGuid().ToString());
@@ -665,7 +690,18 @@ public sealed class TemplateRolloutTests : IDisposable
         {
             AssertLaidOut(page.Shell, page.CallsGrid, minDetail: 300);
             Press(page.Shell.VerdictView, 1);   // Show the slowest
-            Assert.Equal("dbo.usp_GetOrderHistory", ((SpTraceEvent)page.CallsGrid.SelectedItem).ObjectName);
+            Assert.Equal("dbo.usp_GetOrderHistory", ((SpTraceCall)page.CallsGrid.SelectedItem).Event.ObjectName);
+
+            // Copy All and Export to CSV take each column's clipboard value: Called by and Level are in them (#238).
+            object? Copied(string header) =>
+                page.CallsGrid.Columns.Single(c => Equals(c.Header, header)).OnCopyingCellClipboardContent(page.CallsGrid.SelectedItem);
+            Assert.Equal("(client)", Copied("Called by"));
+            Assert.Equal(1, Copied("Level"));
+
+            // The labels as drawn: an underscore not doubled would be taken for an access key.
+            Assert.Equal("Hide sp_reset_connection", Shown(page.ChkHideResets));
+            Assert.Equal("Hide sp_executesql", Shown(page.ChkHideExecuteSql));
+            Assert.Equal("Top-level only", Shown(page.ChkTopLevelOnly));
         });
 
         Assert.Equal((VerdictLevel.Ok, "Capturing: 5 calls so far"), (page.Shell.Verdict!.Level, page.Shell.Verdict.Headline));
@@ -674,7 +710,9 @@ public sealed class TemplateRolloutTests : IDisposable
         Assert.StartsWith("EXEC dbo.usp_GetOrderHistory", view.Text);
         Assert.Contains("Duration: " + 1_840.ToString("N0", CultureInfo.CurrentCulture) + " ms", view.RowTexts);
         Assert.Equal(["Cached plan of the procedure"], view.PlanHeadings);
-        Assert.Equal(12, page.CallsGrid.Columns.Count);
+        Assert.Contains("Called by: (client)", view.RowTexts);   // an RPC: the client's (#238)
+        Assert.Contains("Level: 1", view.RowTexts);
+        Assert.Equal(14, page.CallsGrid.Columns.Count);   // with Called by and Level (#238)
         Assert.Equal(9, page.AggregateGrid.Columns.Count);
     });
 

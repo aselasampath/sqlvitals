@@ -133,6 +133,9 @@ public sealed class RowDetailsView : StackPanel
         }
     }
 
+    /// <summary>New figures for the row shown, its text and plans left as they are (#238).</summary>
+    public void ShowRows(IEnumerable<DetailRow> rows) => DrawerParts.Fill(_rows, rows);
+
     // One plan: its heading, Show the plan and Open in window, a line about it, and the diagram.
     private sealed class PlanPart
     {
