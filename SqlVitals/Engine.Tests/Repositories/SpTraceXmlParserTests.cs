@@ -174,6 +174,10 @@ public class SpTraceXmlParserTests
     [InlineData("P",    true)]    // stored procedure
     [InlineData("PC",   true)]    // CLR stored procedure
     [InlineData("8272", true)]    // numeric form, when no <text> was present
+    [InlineData("PROC", true)]    // the object_type map's name, as SQL Server 2017-2025 write it (#238)
+    [InlineData("PROCASM", true)] // CLR stored procedure, the map's name
+    [InlineData("17232", true)]   // CLR stored procedure, numeric
+    [InlineData("TRIGGER", false)]
     [InlineData("TR",   false)]   // trigger
     [InlineData("FN",   false)]   // scalar function
     [InlineData("TF",   false)]   // table-valued function

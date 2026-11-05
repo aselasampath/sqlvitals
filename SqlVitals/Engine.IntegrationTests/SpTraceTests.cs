@@ -86,7 +86,8 @@ public class SpTraceTests(SqlServerFixture server)
                 Environment.NewLine +
                 await server.DescribeAsync(
                     @"SELECT CAST(t.target_data AS xml).value('count(/RingBufferTarget/event[@name=""module_end""])', 'int') AS ModuleEnds, " +
-                    @"CAST(t.target_data AS xml).value('(/RingBufferTarget/event[@name=""module_end""]/data[@name=""object_type""]/text)[1]', 'nvarchar(60)') AS ObjectTypeText " +
+                    @"CAST(t.target_data AS xml).value('(/RingBufferTarget/event[@name=""module_end""]/data[@name=""object_type""]/text)[1]', 'nvarchar(60)') AS ObjectTypeText, " +
+                    @"CAST(CAST(t.target_data AS xml).query('(/RingBufferTarget/event[@name=""module_end""]/data[@name=""object_type""])[1]') AS nvarchar(max)) AS ObjectTypeXml " +
                     "FROM sys.dm_xe_session_targets t JOIN sys.dm_xe_sessions s ON s.address = t.event_session_address WHERE s.name = N'SqlVitals_SpTrace'");
 
             Assert.True(rows.Count == 6, described);
