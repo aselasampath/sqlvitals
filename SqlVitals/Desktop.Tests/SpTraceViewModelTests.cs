@@ -12,7 +12,8 @@ namespace SqlVitals.Desktop.Tests;
 /// SP Trace's view model on its own (#188): no page, no STA thread, a fake repository. Opening it
 /// never starts a trace; Start and Stop keep their safety (a failed start drops what it left, a
 /// failed stop says the session may be left, leaving the page drops it); the timer polls only while
-/// a trace runs; the filters, the call selected across a poll, and what it couldn't read.
+/// a trace runs; the filters (#237: several values a box, SqlVitals's own calls hidden), the call
+/// selected across a poll, and what it couldn't read.
 /// </summary>
 public sealed class SpTraceViewModelTests
 {
@@ -72,6 +73,8 @@ public sealed class SpTraceViewModelTests
         _ui.RunPosted();
     }
 
+    private static void Tick(MultiFilterChoices box, params string[] values) => MultiFilterChoicesTests.Tick(box, values);
+
     [Fact]
     public async Task Opened_ReadsTheProcedures_AndStartsNothing()
     {
@@ -116,7 +119,7 @@ public sealed class SpTraceViewModelTests
         Assert.Equal(["dbo.usp_ShipOrder", "dbo.usp_BillOrder", "dbo.usp_PriceBasket", "dbo.usp_GetOrderHistory"],
                      model.Calls.Select(c => c.ObjectName));
         Assert.Equal("Showing 4 of 5", model.FilterCount);
-        Assert.Equal(["(All)", "BillingDb", "SalesDb"], model.Database.Items);
+        Assert.Equal(["BillingDb", "SalesDb"], model.Database.Items.Select(i => i.Value));
         Assert.Equal("Capturing: 5 calls so far", model.Verdict!.Headline);
         Assert.Equal("Read Timed", shell.Reports[^1]);
 
@@ -270,7 +273,7 @@ public sealed class SpTraceViewModelTests
         await model.ToggleTraceCommand.ExecuteAsync(null);
         Tick(2);
 
-        model.ClientApp.Selected = "OrderService";
+        Tick(model.ClientApp, "OrderService");
         Assert.Equal(["dbo.usp_ShipOrder", "dbo.usp_PriceBasket", "dbo.usp_GetOrderHistory"], model.Calls.Select(c => c.ObjectName));
         model.MinDurationFilterText = "90";
         Assert.Equal(["dbo.usp_ShipOrder", "dbo.usp_GetOrderHistory"], model.Calls.Select(c => c.ObjectName));
@@ -283,7 +286,7 @@ public sealed class SpTraceViewModelTests
         model.ClearFiltersCommand.Execute(null);
 
         Assert.Equal(4, model.Calls.Count);   // sp_reset_connection hidden again, as the page opens
-        Assert.Equal(FilterChoices.All, model.ClientApp.Selected);
+        Assert.True(model.ClientApp.IsAll);
         Assert.Equal("", model.Search);
         model.HideResets = false;
         Assert.Equal("5 calls", model.FilterCount);
@@ -291,21 +294,127 @@ public sealed class SpTraceViewModelTests
     }
 
     [Fact]
-    public async Task AFilterPicked_StaysAChoice_AfterItsCallsAreCleared()
+    public async Task AFilterTicked_StaysAChoice_AfterItsCallsAreCleared()
     {
         var (model, _) = Connected(Repo());
         await model.OnNavigatedToAsync();
         await model.ToggleTraceCommand.ExecuteAsync(null);
         Tick(2);
-        model.Database.Selected = "BillingDb";
+        Tick(model.Database, "BillingDb");
 
         model.ClearCommand.Execute(null);
 
-        Assert.Equal(["(All)", "BillingDb"], model.Database.Items);
-        Assert.Equal("BillingDb", model.Database.Selected);
+        Assert.Equal(["BillingDb"], model.Database.Items.Select(i => i.Value));
+        Assert.Equal("BillingDb", model.Database.Summary);
         Assert.Equal("No calls captured yet.", model.NoCalls);
         model.OnNavigatedFrom();
     }
+
+    [Fact]
+    public async Task SeveralValuesTicked_AnyMatchesInABox_AndEveryBoxMustMatch()
+    {
+        var (model, _) = Connected(Repo());
+        await model.OnNavigatedToAsync();
+        await model.ToggleTraceCommand.ExecuteAsync(null);
+        Tick(2);
+        model.HideResets = false;
+
+        Tick(model.ClientApp, "BillingService", "OrderService");
+        Assert.Equal("5 calls", model.FilterCount);
+        Assert.Equal("2 selected", model.ClientApp.Summary);
+
+        Tick(model.Database, "BillingDb");
+        Assert.Equal(["dbo.usp_BillOrder"], model.Calls.Select(c => c.ObjectName));
+        Assert.Equal("Showing 1 of 5", model.FilterCount);
+
+        model.ClientApp.Items.Single(i => i.Value == "BillingService").IsChecked = false;
+        Assert.Equal("No captured calls match the current filters.", model.NoCalls);
+
+        Tick(model.Database, "SalesDb");
+        Assert.Equal(4, model.Calls.Count);   // OrderService's, in either database
+        Tick(model.Event, "rpc_completed");
+        Tick(model.Login, "SVC_ORDERS");
+        Tick(model.Host, "APP-WEB03");
+        Assert.Equal("Showing 4 of 5", model.FilterCount);
+
+        model.ClearFiltersCommand.Execute(null);
+
+        Assert.All(new[] { model.Database, model.Login, model.ClientApp, model.Host, model.Event }, box => Assert.True(box.IsAll));
+        Assert.Equal("Showing 4 of 5", model.FilterCount);   // sp_reset_connection hidden again
+        model.OnNavigatedFrom();
+    }
+
+    [Fact]
+    public async Task TheTicks_SurviveTheBufferRollingOver()
+    {
+        var repo  = Repo();
+        var flood = Enumerable.Range(0, SpTraceViewModel.MaxRowsRetained).Select(i => Call(0, $"dbo.usp_Step{i}", 5, 90, "OrderService")).ToList();
+        var polls = new Queue<IReadOnlyList<SpTraceEvent>>([Calls, flood]);
+        repo.PollTraceEventsAsync = () => Task.FromResult(polls.Count > 0 ? polls.Dequeue() : []);
+        var (model, _) = Connected(repo);
+        await model.OnNavigatedToAsync();
+        await model.ToggleTraceCommand.ExecuteAsync(null);
+        Tick(2);
+        Tick(model.Database, "BillingDb");
+        Assert.Single(model.Calls);
+
+        Tick(2);   // 5,000 more: every BillingDb call is dropped
+
+        Assert.DoesNotContain(model.AllCalls, c => c.DatabaseName == "BillingDb");
+        Assert.Equal(["BillingDb", "SalesDb"], model.Database.Items.Select(i => i.Value));
+        Assert.Equal("BillingDb", model.Database.Summary);
+        Assert.Equal("No captured calls match the current filters.", model.NoCalls);
+        Assert.Equal($"Showing 0 of {SpTraceViewModel.MaxRowsRetained:N0}", model.FilterCount);
+        model.OnNavigatedFrom();
+    }
+
+    [Fact]
+    public async Task SqlVitalsOwnCalls_AreHiddenByDefault_AndShownAgainWithoutRestarting()
+    {
+        var repo  = Repo();
+        var calls = new List<string>();
+        var own   = new[]
+        {
+            Call(8, "sys.sp_executesql", 3, 55, "SqlVitals"),
+            Call(6, "sys.sp_executesql", 4, 56, "sqlvitals collector"),   // either name, in any case
+            Call(5, "dbo.usp_Report", 20, 57, "SqlVitals - Prod"),         // the user's own Application Name: not ours
+        };
+        var polls = new Queue<IReadOnlyList<SpTraceEvent>>([[.. Calls, .. own]]);
+        repo.PollTraceEventsAsync = () => Task.FromResult(polls.Count > 0 ? polls.Dequeue() : []);
+        repo.StartTraceAsync      = _ => { calls.Add("start"); return Task.FromResult(Running); };
+        var (model, _) = Connected(repo);
+        Assert.True(model.HideSqlVitals);
+        await model.OnNavigatedToAsync();
+        await model.ToggleTraceCommand.ExecuteAsync(null);
+        Tick(2);
+
+        Assert.DoesNotContain(model.Calls, c => c.SessionId is 55 or 56);
+        Assert.Contains(model.Calls, c => c.SessionId == 57);
+        Assert.Equal("Showing 5 of 8", model.FilterCount);   // and sp_reset_connection
+
+        model.HideSqlVitals = false;
+
+        Assert.Contains(model.Calls, c => c.SessionId == 55);
+        Assert.Contains(model.Calls, c => c.SessionId == 56);
+        Assert.Equal(["start"], calls);   // the same trace
+        Assert.Contains("SqlVitals", model.ClientApp.Items.Select(i => i.Value));
+
+        model.ClearFiltersCommand.Execute(null);
+
+        Assert.True(model.HideSqlVitals);
+        Assert.Equal("Showing 5 of 8", model.FilterCount);
+        model.OnNavigatedFrom();
+    }
+
+    [Theory]
+    [InlineData("SqlVitals", true)]
+    [InlineData("SQLVITALS", true)]
+    [InlineData("SqlVitals Collector", true)]
+    [InlineData("SqlVitals - Prod", false)]
+    [InlineData("Core Microsoft SqlClient Data Provider", false)]
+    [InlineData(null, false)]
+    public void IsSqlVitals_KnowsOurApplicationNames(string? app, bool ours) =>
+        Assert.Equal(ours, SpTraceViewModel.IsSqlVitals(app));
 
     [Fact]
     public async Task APoll_KeepsTheCallSelected_AndScrollsToTheNewest()
@@ -433,6 +542,34 @@ public sealed class SpTraceViewModelTests
         Assert.Equal(["start", "stop"], calls);
         Assert.False(model.IsTracing);
         Assert.False(model.IsPolling);
+    }
+
+    [Fact]
+    public async Task SqlVitalsOwnCalls_WhileHidden_AreLeftOutOfTheVerdict_AndTheSlowest()
+    {
+        var repo  = Repo();
+        var ours  = Call(3, "sys.sp_executesql", 9_000, 55, "SqlVitals");
+        var polls = new Queue<IReadOnlyList<SpTraceEvent>>([[Calls[0], ours]]);
+        repo.PollTraceEventsAsync = () => Task.FromResult(polls.Count > 0 ? polls.Dequeue() : []);
+        var (model, _) = Connected(repo);
+        await model.OnNavigatedToAsync();
+        await model.ToggleTraceCommand.ExecuteAsync(null);
+        Tick(2);
+        Tick(model.ClientApp, "OrderService");
+
+        Assert.Equal("Capturing: 1 call so far", model.Verdict!.Headline);
+        Assert.Contains("dbo.usp_GetOrderHistory", model.Verdict.Why);
+        await model.ActCommand.ExecuteAsync(new VerdictAction(SpTraceVerdict.ShowSlowest, "Show the slowest"));
+        Assert.Same(Calls[0], model.SelectedCall);
+        Assert.Equal("OrderService", model.ClientApp.Summary);   // shown already: the ticks stay
+
+        // Shown: the verdict counts them, and the slowest is SqlVitals's own.
+        model.HideSqlVitals = false;
+        Assert.Equal("Capturing: 2 calls so far", model.Verdict!.Headline);
+        await model.ActCommand.ExecuteAsync(new VerdictAction(SpTraceVerdict.ShowSlowest, "Show the slowest"));
+        Assert.Same(ours, model.SelectedCall);
+        Assert.False(model.HideSqlVitals);
+        model.OnNavigatedFrom();
     }
 
     [Fact]

@@ -257,7 +257,7 @@ An application that opens connections and doesn't close them fills its pool with
 
 1. **🛰️ SP Trace**. Set **Min duration** (e.g. 0 on a quiet test server, 100+ on production).
 2. **● Start Trace**, then use the application.
-3. Filter by **Application** or **Host**. Untick **Hide sp_executesql** if the application uses an ORM.
+3. Tick the application (or its hosts) in the **Application** or **Host** box; tick several to compare them. Untick **Hide sp_executesql** if the application uses an ORM. SqlVitals's own calls are hidden while **Hide SqlVitals calls** is on.
 4. **By Procedure** summarises what was called and what it cost.
 5. **■ Stop Trace** when done.
 

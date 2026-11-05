@@ -39,20 +39,6 @@
             <Setter Property="FontSize"        Value="11"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
-
-        <Style x:Key="TraceFilterCombo" TargetType="ComboBox">
-            <Setter Property="Height"      Value="26"/>
-            <Setter Property="Background"  Value="{StaticResource BgCard}"/>
-            <Setter Property="Foreground"  Value="{StaticResource TextPrimary}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
-            <Setter Property="FontFamily"  Value="Segoe UI"/>
-            <Setter Property="FontSize"    Value="11"/>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Page.Resources>
 
     <!-- The page template (#149): the verdict on what the capture is doing first, then the trace's
@@ -170,29 +156,24 @@
                                          ToolTip="Procedure name or statement text contains…"/>
 
                                 <TextBlock Text="Database:" Style="{StaticResource TraceLabel}"/>
-                                <ComboBox x:Name="CmbDatabase" Width="120"
-                                          Style="{StaticResource TraceFilterCombo}"
-                                          ItemsSource="{Binding Database.Items}" SelectedItem="{Binding Database.Selected}"/>
+                                <controls:CheckListFilter x:Name="FilterDatabase" Width="120" DataContext="{Binding Database}"
+                                                          AutomationProperties.Name="Database filter"/>
 
                                 <TextBlock Text="Login:" Style="{StaticResource TraceLabel}"/>
-                                <ComboBox x:Name="CmbLogin" Width="110"
-                                          Style="{StaticResource TraceFilterCombo}"
-                                          ItemsSource="{Binding Login.Items}" SelectedItem="{Binding Login.Selected}"/>
+                                <controls:CheckListFilter x:Name="FilterLogin" Width="110" DataContext="{Binding Login}"
+                                                          AutomationProperties.Name="Login filter"/>
 
                                 <TextBlock Text="Application:" Style="{StaticResource TraceLabel}"/>
-                                <ComboBox x:Name="CmbApp" Width="150"
-                                          Style="{StaticResource TraceFilterCombo}"
-                                          ItemsSource="{Binding ClientApp.Items}" SelectedItem="{Binding ClientApp.Selected}"/>
+                                <controls:CheckListFilter x:Name="FilterApp" Width="150" DataContext="{Binding ClientApp}"
+                                                          AutomationProperties.Name="Application filter"/>
 
                                 <TextBlock Text="Host:" Style="{StaticResource TraceLabel}"/>
-                                <ComboBox x:Name="CmbHost" Width="110"
-                                          Style="{StaticResource TraceFilterCombo}"
-                                          ItemsSource="{Binding Host.Items}" SelectedItem="{Binding Host.Selected}"/>
+                                <controls:CheckListFilter x:Name="FilterHost" Width="110" DataContext="{Binding Host}"
+                                                          AutomationProperties.Name="Host filter"/>
 
                                 <TextBlock Text="Event:" Style="{StaticResource TraceLabel}"/>
-                                <ComboBox x:Name="CmbEvent" Width="140"
-                                          Style="{StaticResource TraceFilterCombo}"
-                                          ItemsSource="{Binding Event.Items}" SelectedItem="{Binding Event.Selected}"/>
+                                <controls:CheckListFilter x:Name="FilterEvent" Width="140" DataContext="{Binding Event}"
+                                                          AutomationProperties.Name="Event filter"/>
 
                                 <TextBlock Text="SPID:" Style="{StaticResource TraceLabel}"/>
                                 <TextBox x:Name="TxtSpidFilter" Width="50"
@@ -218,17 +199,23 @@
                                          Text="{Binding MinReadsText, UpdateSourceTrigger=PropertyChanged}"
                                          ToolTip="Show calls with at least this many logical reads"/>
 
-                                <CheckBox x:Name="ChkHideResets" Content="Hide sp_reset_connection"
+                                <CheckBox x:Name="ChkHideResets" Content="Hide sp__reset_connection"
                                           IsChecked="{Binding HideResets}" Margin="10,0,0,0" VerticalAlignment="Center"
                                           Foreground="{StaticResource TextMuted}"
                                           FontFamily="Segoe UI" FontSize="11"
                                           ToolTip="Connection-pool resets are noise for most investigations"/>
 
-                                <CheckBox x:Name="ChkHideExecuteSql" Content="Hide sp_executesql"
+                                <CheckBox x:Name="ChkHideExecuteSql" Content="Hide sp__executesql"
                                           IsChecked="{Binding HideExecuteSql}" Margin="10,0,0,0" VerticalAlignment="Center"
                                           Foreground="{StaticResource TextMuted}"
                                           FontFamily="Segoe UI" FontSize="11"
                                           ToolTip="Hide parameterised ad-hoc batches — note their statement text is often the real query"/>
+
+                                <CheckBox x:Name="ChkHideSqlVitals" Content="Hide SqlVitals calls"
+                                          IsChecked="{Binding HideSqlVitals}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                          Foreground="{StaticResource TextMuted}"
+                                          FontFamily="Segoe UI" FontSize="11"
+                                          ToolTip="Hide the calls SqlVitals itself makes while the trace runs (application SqlVitals or SqlVitals Collector). A connection given its own Application Name keeps it, so its calls aren't recognised."/>
                             </WrapPanel>
                         </DockPanel>
                     </Border>

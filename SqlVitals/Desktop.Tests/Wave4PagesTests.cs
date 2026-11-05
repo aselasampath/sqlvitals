@@ -226,13 +226,20 @@ public sealed class Wave4PagesTests : IDisposable
             Assert.Equal(Visibility.Collapsed, page.TxtNoAggregates.Visibility);
             Assert.Equal("2s", page.CmbInterval.SelectedItem);
 
-            // A filter box picked narrows the grid; Clear filters puts it back.
-            page.CmbApp.SelectedItem = "BillingService";
+            // A value ticked in a filter box narrows the grid; Clear filters puts it back (#237).
+            Assert.Equal(true, page.ChkHideSqlVitals.IsChecked);
+            page.FilterApp.IsOpen = true;
+            ((FrameworkElement)page.FilterApp.DropList.Child).UpdateLayout();
+            var billing = (CheckBox)VisualTreeHelper.GetChild(page.FilterApp.ChoiceList.ItemContainerGenerator.ContainerFromIndex(0), 0);
+            TemplateRolloutTests.Click(billing);   // BillingService
             Assert.Single(page.CallsGrid.Items);
             Assert.Equal("Showing 1 of 4", page.TxtFilterCount.Text);
+            Assert.Equal("BillingService", page.FilterApp.BtnOpen.ToolTip);
+            page.FilterApp.IsOpen = false;
             TemplateRolloutTests.Click(page.BtnClearFilters);
             Assert.Equal(4, page.CallsGrid.Items.Count);
-            Assert.Equal("(All)", page.CmbApp.SelectedItem);
+            Assert.Equal(false, billing.IsChecked);
+            Assert.Equal("(All)", page.FilterApp.BtnOpen.ToolTip);
 
             // A call selected goes to the drawer; the verdict's Show the slowest opens it there.
             page.CallsGrid.SelectedItem = page.CallsGrid.Items[1];
