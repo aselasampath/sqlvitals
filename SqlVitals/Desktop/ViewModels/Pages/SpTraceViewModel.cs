@@ -5,12 +5,13 @@ using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 using SqlVitals.Engine.Repositories;
+using SqlVitals.Engine.Service;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>
-/// Live SP Trace (#149, #188): stored-procedure calls streamed from an Extended Events session when
+/// Live SP Trace (#149, #188, #237): stored-procedure calls streamed from an Extended Events session when
 /// the login can create one, per-procedure figures from the DMVs when it can't
 /// (<see cref="ISpTraceRepository"/>). Opening the page or Refresh never starts a trace: that runs
 /// a session on the server, so only Start Trace does, and leaving the page drops it. While it runs,
@@ -222,8 +223,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
                 var excess = _allCalls.Count - MaxRowsRetained;
                 if (excess > 0)
                     _allCalls.RemoveRange(0, excess);
-                RefreshFilterChoices();
-                ApplyFilter();
+                RefreshFilterChoices();   // and filters them again
                 UpdateVerdict();
             }
 
@@ -288,8 +288,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
     private void Clear()
     {
         _allCalls.Clear();
-        RefreshFilterChoices();
-        ApplyFilter();
+        RefreshFilterChoices();   // and filters them again
         Cleared?.Invoke();
         UpdateVerdict();
     }
@@ -308,13 +307,21 @@ public sealed partial class SpTraceViewModel : PageViewModel
     [ObservableProperty]
     private string _search = "";
 
-    public FilterChoices Database { get; } = new();
-    public FilterChoices Login { get; } = new();
-    public FilterChoices ClientApp { get; } = new();
-    public FilterChoices Host { get; } = new();
-    public FilterChoices Event { get; } = new();
+    // Each box ticks any of the values seen (#237): a call matches one of them, and every box.
+    public MultiFilterChoices Database { get; } = new();
+    public MultiFilterChoices Login { get; } = new();
+    public MultiFilterChoices ClientApp { get; } = new();
+    public MultiFilterChoices Host { get; } = new();
+    public MultiFilterChoices Event { get; } = new();
 
-    private FilterChoices[] FilterBoxes => [Database, Login, ClientApp, Host, Event];
+    // Each box, and the value of a call it filters on.
+    private (MultiFilterChoices Box, Func<SpTraceEvent, string?> Value)[] FilterFields =>
+    [
+        (Database, c => c.DatabaseName), (Login, c => c.LoginName), (ClientApp, c => c.ClientAppName),
+        (Host, c => c.ClientHostName), (Event, c => c.EventName),
+    ];
+
+    private IEnumerable<MultiFilterChoices> FilterBoxes => FilterFields.Select(f => f.Box);
 
     [ObservableProperty]
     private string _spidText = "";
@@ -336,22 +343,38 @@ public sealed partial class SpTraceViewModel : PageViewModel
     [ObservableProperty]
     private bool _hideExecuteSql;
 
+    /// <summary>
+    /// SqlVitals's own calls while the trace runs (#237): the ring buffer read, page refreshes, the
+    /// collector service. Hidden by default; told by their application name, so not those of a
+    /// connection given its own Application Name.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hideSqlVitals = true;
+
+    /// <summary>The application names SqlVitals's connections and the collector service's show on the server.</summary>
+    internal static bool IsSqlVitals(string? clientAppName) =>
+        Same(clientAppName, ConnectionSettings.ApplicationName) || Same(clientAppName, CollectorServer.ApplicationName);
+
     // Any filter changed: the calls are filtered again.
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
         base.OnPropertyChanged(e);
         if (e.PropertyName is nameof(Search) or nameof(SpidText) or nameof(MinDurationFilterText) or nameof(MinCpuText)
-                           or nameof(MinReadsText) or nameof(HideResets) or nameof(HideExecuteSql))
+                           or nameof(MinReadsText) or nameof(HideResets) or nameof(HideExecuteSql) or nameof(HideSqlVitals))
+        {
             ApplyFilter();
+            if (e.PropertyName == nameof(HideSqlVitals))
+                UpdateVerdict();
+        }
     }
 
     private void OnFilterBoxChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(FilterChoices.Selected))
+        if (e.PropertyName == nameof(MultiFilterChoices.Values))
             ApplyFilter();
     }
 
-    /// <summary>Every filter back to how the page opens: nothing hidden but sp_reset_connection.</summary>
+    /// <summary>Every filter back to how the page opens: nothing hidden but sp_reset_connection and SqlVitals's own calls.</summary>
     [RelayCommand]
     private void ClearFilters() => HoldingFilters(() =>
     {
@@ -362,6 +385,7 @@ public sealed partial class SpTraceViewModel : PageViewModel
         MinReadsText          = "";
         HideResets            = true;   // back to the default, not "show everything"
         HideExecuteSql        = false;
+        HideSqlVitals         = true;
         foreach (var box in FilterBoxes)
             box.Clear();
     });
@@ -381,15 +405,12 @@ public sealed partial class SpTraceViewModel : PageViewModel
         ApplyFilter();
     }
 
-    // Each box's choices are the values in the calls kept, keeping the one picked even if its
-    // calls have since gone.
+    // Each box's values are those in the calls kept, keeping those ticked even if their calls have
+    // since gone.
     private void RefreshFilterChoices() => HoldingFilters(() =>
     {
-        Database.Replace(_allCalls.Select(c => c.DatabaseName));
-        Login.Replace(_allCalls.Select(c => c.LoginName));
-        ClientApp.Replace(_allCalls.Select(c => c.ClientAppName));
-        Host.Replace(_allCalls.Select(c => c.ClientHostName));
-        Event.Replace(_allCalls.Select(c => c.EventName));
+        foreach (var (box, value) in FilterFields)
+            box.Replace(_allCalls.Select(value));
     });
 
     private static long? ReadLong(string text) => long.TryParse(text.Trim(), out var n) && n >= 0 ? n : null;
@@ -411,11 +432,8 @@ public sealed partial class SpTraceViewModel : PageViewModel
         if (search.Length > 0)
             query = query.Where(c => c.ObjectName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
                                      c.Statement?.Contains(search, StringComparison.OrdinalIgnoreCase) == true);
-        if (Database.Value is { } database)  query = query.Where(c => Same(c.DatabaseName,   database));
-        if (Login.Value is { } login)        query = query.Where(c => Same(c.LoginName,      login));
-        if (ClientApp.Value is { } app)      query = query.Where(c => Same(c.ClientAppName,  app));
-        if (Host.Value is { } host)          query = query.Where(c => Same(c.ClientHostName, host));
-        if (Event.Value is { } evt)          query = query.Where(c => Same(c.EventName,      evt));
+        foreach (var (box, value) in FilterFields.Where(f => !f.Box.IsAll))
+            query = query.Where(c => box.Matches(value(c)));
         if (spid is not null)                query = query.Where(c => c.SessionId    == spid);
         if (minDur is not null)              query = query.Where(c => c.DurationMs   >= minDur);
         if (minCpu is not null)              query = query.Where(c => c.CpuTimeMs    >= minCpu);
@@ -424,6 +442,8 @@ public sealed partial class SpTraceViewModel : PageViewModel
             query = query.Where(c => c.ObjectName?.EndsWith("sp_reset_connection", StringComparison.OrdinalIgnoreCase) != true);
         if (HideExecuteSql)
             query = query.Where(c => c.ObjectName?.EndsWith("sp_executesql", StringComparison.OrdinalIgnoreCase) != true);
+        if (HideSqlVitals)
+            query = query.Where(c => !IsSqlVitals(c.ClientAppName));
 
         // Newest first: the interesting row on a live trace is the one that just arrived.
         var filtered = query.OrderByDescending(c => c.EventTime).ToList();
@@ -488,7 +508,12 @@ public sealed partial class SpTraceViewModel : PageViewModel
 
     // ── The verdict ───────────────────────────────────────────────────────
 
-    private void UpdateVerdict() => Verdict = SpTraceVerdict.From(_status, _allCalls, Procedures.Count, MinDurationMs);
+    private void UpdateVerdict() => Verdict = SpTraceVerdict.From(_status, VerdictCalls, Procedures.Count, MinDurationMs);
+
+    // The calls the verdict speaks of, and Show the slowest picks from: all of them, but SqlVitals's
+    // own while they're hidden (#237), or its ring-buffer read would often be the slowest.
+    private IReadOnlyList<SpTraceEvent> VerdictCalls =>
+        HideSqlVitals ? _allCalls.Where(c => !IsSqlVitals(c.ClientAppName)).ToList() : _allCalls;
 
     protected override Task OnActionAsync(VerdictAction action) => action.Key switch
     {
@@ -505,12 +530,12 @@ public sealed partial class SpTraceViewModel : PageViewModel
     // filters cleared first if they hide it.
     private Task ShowSlowest()
     {
-        if (_allCalls.OrderByDescending(c => c.DurationMs).ThenByDescending(c => c.EventTime).FirstOrDefault() is not { } slowest)
+        if (VerdictCalls.OrderByDescending(c => c.DurationMs).ThenByDescending(c => c.EventTime).FirstOrDefault() is not { } slowest)
             return Task.CompletedTask;
         if (!Calls.Contains(slowest))
             ClearFilters();
         if (!Calls.Contains(slowest))
-            HoldingFilters(() => (HideResets, HideExecuteSql) = (false, false));   // the defaults hide it too
+            HoldingFilters(() => (HideResets, HideExecuteSql, HideSqlVitals) = (false, false, false));   // the defaults hide it too
         TabIndex     = CallsTab;
         SelectedCall = slowest;
         ShowRow?.Invoke(slowest);

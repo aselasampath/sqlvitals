@@ -25,13 +25,18 @@ Narrow the list with the filters above it:
 | Filter | Shows |
 |---|---|
 | **Search** | Procedure name or statement text contains… |
-| **Database / Login / Application / Host / Event** | Only that value |
+| **Database / Login / Application / Host / Event** | Only the values ticked (from 0.83.0). Each box opens a list with a check box per value captured, and **(All)** at the top. Tick as many as you like: a call shows when its value is any of those ticked, and when it matches every box. Nothing ticked, or **(All)**, means no filter. |
 | **SPID** | One session |
 | **Dur ≥ / CPU ≥ / Reads ≥** | Only calls at least this heavy |
 | **Hide sp_reset_connection** | Hides connection-pool resets, which are noise for most investigations |
 | **Hide sp_executesql** | Hides parameterised ad-hoc batches. Their statement text is often the real query, so untick this if you're hunting an ORM's SQL. |
+| **Hide SqlVitals calls** | On by default (from 0.83.0). Hides the calls SqlVitals itself makes while the trace runs: reading the trace's ring buffer, refreshing its pages, and the [collector service](Collector-Service.md) if it watches this server. They show as application **SqlVitals** or **SqlVitals Collector**. Untick it to see them again: the trace keeps running. |
 
-**Clear filters** resets them. Click a row to open it in the [details drawer](Working-with-Grids.md#details-beside-the-grid) (from 0.65.0, instead of the statement pane under the list): its figures, its **Statement** with **Copy**, and the procedure's cached execution plan as a [graphical plan](Execution-Plans.md), drawn there by **Show the plan** or in a window by **Open in window** (what **View Plan** did).
+A closed box shows what's ticked: **(All)**, the value itself when one is ticked, or **3 selected**; hover it for the full list. Values you've ticked stay in the list after their calls have left the buffer (it keeps the newest 5,000), and the list stays open, with its ticks, while new calls arrive. **Esc** closes it.
+
+> **Known limit:** **Hide SqlVitals calls** knows SqlVitals's calls by their application name. If you gave a connection its own `Application Name` in its [additional connection parameters](Connections.md), SqlVitals keeps that name, so its calls aren't recognised and still show. To hide them too, take `Application Name` out of that connection's additional parameters, so its calls are named **SqlVitals** again.
+
+**Clear filters** puts every filter back to how the page opens: nothing ticked, **Hide sp_reset_connection** and **Hide SqlVitals calls** on, **Hide sp_executesql** off. Click a row to open it in the [details drawer](Working-with-Grids.md#details-beside-the-grid) (from 0.65.0, instead of the statement pane under the list): its figures, its **Statement** with **Copy**, and the procedure's cached execution plan as a [graphical plan](Execution-Plans.md), drawn there by **Show the plan** or in a window by **Open in window** (what **View Plan** did).
 
 ### By Procedure tab
 
