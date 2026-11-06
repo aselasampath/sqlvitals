@@ -1,6 +1,7 @@
 -- Waits on a schema change even under READ UNCOMMITTED: 1222 means locked. range_high_key comes back as
 -- text made here: as sql_variant, SqlClient overflows on a large decimal. Dates and times are in ISO
--- form, binary in hex, and each number at its full precision, whatever the server's language.
+-- form, binary in hex, and each number at its full precision, whatever the server's language. Only FORMAT
+-- reads a float as 0.1: CONVERT makes that 0.1 at six digits, or 1.0000000000000001e-001 at all of them.
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET LOCK_TIMEOUT 2000;
 SELECT h.step_number AS Number,
@@ -13,8 +14,8 @@ SELECT h.step_number AS Number,
         WHEN N'time'           THEN CONVERT(nvarchar(20), CONVERT(time(7), h.range_high_key), 121)
         WHEN N'binary'         THEN CONVERT(nvarchar(4000), CONVERT(varbinary(8000), h.range_high_key), 1)
         WHEN N'varbinary'      THEN CONVERT(nvarchar(4000), CONVERT(varbinary(8000), h.range_high_key), 1)
-        WHEN N'float'          THEN CONVERT(nvarchar(40), CONVERT(float, h.range_high_key), 3)
-        WHEN N'real'           THEN CONVERT(nvarchar(40), CONVERT(real, h.range_high_key), 3)
+        WHEN N'float'          THEN FORMAT(CONVERT(float, h.range_high_key), 'R', 'en-US')
+        WHEN N'real'           THEN FORMAT(CONVERT(real, h.range_high_key), 'R', 'en-US')
         WHEN N'money'          THEN CONVERT(nvarchar(40), CONVERT(money, h.range_high_key), 2)
         WHEN N'smallmoney'     THEN CONVERT(nvarchar(40), CONVERT(smallmoney, h.range_high_key), 2)
         ELSE CONVERT(nvarchar(4000), h.range_high_key)

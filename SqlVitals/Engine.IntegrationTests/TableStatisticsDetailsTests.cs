@@ -37,24 +37,41 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
     [SqlServerFact]
     public async Task Probe()
     {
-        var text = await server.DescribeAsync("""
-            SELECT OBJECT_NAME(st.object_id) AS t, st.name, st.stats_id, i.type, i.is_hypothetical, p.last_updated, p.rows, p.rows_sampled, p.steps, p.modification_counter, CASE WHEN p.object_id IS NULL THEN 'no row' ELSE 'row' END AS hasrow
-            FROM sys.stats st LEFT JOIN sys.indexes i ON i.object_id = st.object_id AND i.index_id = st.stats_id
-            OUTER APPLY sys.dm_db_stats_properties(st.object_id, st.stats_id) p
-            WHERE st.object_id IN (OBJECT_ID(N'stats.NoHistogram'), OBJECT_ID(N'sizes.ColumnstoreTable'), OBJECT_ID(N'stats.EmptyTable'), OBJECT_ID(N'stats.NeverBuilt'), OBJECT_ID(N'stats.Steps'))
-            """);
-        foreach (var (table, statistics) in new[] { ("sizes.ColumnstoreTable", "CCI_ColumnstoreTable"), ("stats.NoHistogram", "NCCI_NoHistogram"), ("stats.NoHistogram", "PX_NoHistogram"), ("stats.NoHistogram", "SX_NoHistogram"), ("stats.EmptyTable", "PK_EmptyTable"), ("stats.NeverBuilt", "IX_NeverBuilt_V") })
+        var text = "";
+        await AsLoginAsync("GRANT VIEW DEFINITION TO {0};", async (limited, login) =>
         {
-            text += $"\nDBCC {statistics}: ";
+            var orders = await ObjectIdAsync("dbo.Orders");
+            text += await server.DescribeAsync($"""
+                EXECUTE AS LOGIN = N'{login}';
+                SELECT (SELECT COUNT(*) FROM sys.stats WHERE object_id = {orders}) AS stats_seen,
+                    (SELECT COUNT(*) FROM sys.dm_db_stats_properties({orders}, 1)) AS properties_rows,
+                    (SELECT COUNT(*) FROM sys.dm_db_stats_histogram({orders}, 1)) AS histogram_rows,
+                    HAS_PERMS_BY_NAME(N'[dbo].[Orders]', N'OBJECT', N'SELECT') AS can_select;
+                REVERT;
+                """);
             try
             {
-                text += await server.DescribeAsync($"DBCC SHOW_STATISTICS (N'{table}', N'{statistics}') WITH DENSITY_VECTOR, NO_INFOMSGS");
+                text += "\nDBCC: " + await server.DescribeAsync($"EXECUTE AS LOGIN = N'{login}'; DBCC SHOW_STATISTICS (N'dbo.Orders', N'PK_Orders') WITH DENSITY_VECTOR, NO_INFOMSGS; REVERT;");
             }
             catch (SqlException ex)
             {
-                text += $"error {ex.Number}: {ex.Message}";
+                text += $"\nDBCC error {ex.Number}: {ex.Message}";
             }
-        }
+
+            var locked = await ObjectIdAsync("sizes.LockedTable");
+            await using var holder = new SqlConnection(server.Target.ConnectionString);
+            await holder.OpenAsync();
+            await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync();
+            await using (var hold = new SqlCommand("ALTER TABLE sizes.LockedTable ADD Extra int NULL", holder, transaction))
+                await hold.ExecuteNonQueryAsync();
+            var clock = Stopwatch.StartNew();
+            var batch = await limited.GetTableStatisticsHealthAsync(null, [locked]);
+            text += $"\nLocked table, no SELECT: {batch.Tables[0].State} in {clock.ElapsedMilliseconds} ms, {batch.Failures.Count} failures";
+            clock.Restart();
+            var details = await limited.GetStatisticsDetailsAsync(null, locked, 1);
+            text += $"\nDetails: locked={details.IsLocked} in {clock.ElapsedMilliseconds} ms, {string.Join("; ", details.Failures)}";
+            await transaction.RollbackAsync();
+        });
         Assert.Fail(text);
     }
 
@@ -115,7 +132,7 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
 
         var density = Assert.Single(details.Density);
         Assert.Equal("K", density.Columns);
-        Assert.Equal(5000, density.DistinctValues!.Value, 0);
+        Assert.Equal(1024, density.DistinctValues!.Value, 0);
         Assert.True(density.AverageLength > 0);
         Assert.NotNull(StatisticsFindings.UnknownEstimate(details));
 
@@ -151,8 +168,6 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
     [SqlServerTheory]
     [InlineData("sizes.ColumnstoreTable", "CCI_ColumnstoreTable")]
     [InlineData("stats.NoHistogram", "NCCI_NoHistogram")]
-    [InlineData("stats.NoHistogram", "PX_NoHistogram")]
-    [InlineData("stats.NoHistogram", "SX_NoHistogram")]
     public async Task AnIndexWithNoHistogram_IsListed_AndReadsEmpty(string table, string statistics)
     {
         var details = await DetailsAsync(table, statistics);
@@ -193,7 +208,7 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
         Assert.Equal("PK_Orders", list.Statistics[0].Name);
         Assert.True(list.Statistics[0].IsClustered);
         Assert.Equal("OrderId", list.Statistics[0].LeadingColumn);
-        Assert.Equal(list.Statistics.Skip(1).Select(s => s.Name).Order(StringComparer.OrdinalIgnoreCase), list.Statistics.Skip(1).Select(s => s.Name));
+        Assert.Equal(["IX_Orders_CustomerCode", "IX_Orders_Unused", "ST_Orders_Amount"], list.Statistics.Select(s => s.Name).Where(n => !n.StartsWith("_WA_Sys", StringComparison.Ordinal)).Skip(1));
 
         var column = list.Statistics.Single(s => s.Name == "ST_Orders_Amount");
         Assert.False(column.IsIndex);
@@ -212,6 +227,9 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
         var noHistogram = await _repo.GetTableStatisticsAsync(null, await ObjectIdAsync("stats.NoHistogram"));
         Assert.DoesNotContain(noHistogram.Statistics, s => s.Name == "IX_NoHistogram_Hypothetical");
         Assert.Contains(noHistogram.Statistics, s => s.Name == "NCCI_NoHistogram");
+
+        // XML and spatial indexes have no statistics of their own in the catalog.
+        Assert.DoesNotContain(noHistogram.Statistics, s => s.Name is "PX_NoHistogram" or "SX_NoHistogram");
         Assert.Equal("PK_NoHistogram", noHistogram.Statistics[0].Name);
 
         var columnstore = await _repo.GetTableStatisticsAsync(null, await ObjectIdAsync("sizes.ColumnstoreTable"));

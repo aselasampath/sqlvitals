@@ -224,10 +224,10 @@ CREATE STATISTICS S_KReal ON stats.KeyTypes (KReal) WITH FULLSCAN;
 CREATE STATISTICS S_KMoney ON stats.KeyTypes (KMoney) WITH FULLSCAN;
 CREATE STATISTICS S_KEmpty ON stats.KeyTypes (KEmpty) WITH FULLSCAN;
 
--- Uneven counts per value keep the histogram from merging steps; some NULLs give it a NULL step.
+-- Counts per value that differ widely keep the histogram from merging steps; some NULLs give it a NULL step.
 CREATE TABLE stats.Steps (K int NULL);
-WITH n AS (SELECT TOP (5000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns a CROSS JOIN sys.all_columns b),
-     counts AS (SELECT N AS K, 1 + (N * 7919) % 50 AS Times FROM n)
+WITH n AS (SELECT TOP (1024) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns),
+     counts AS (SELECT N AS K, POWER(2, (N * 7) % 11) AS Times FROM n)
 INSERT stats.Steps
 SELECT c.K FROM counts c JOIN n ON n.N <= c.Times;
 INSERT stats.Steps SELECT TOP (100) NULL FROM sys.all_columns;
