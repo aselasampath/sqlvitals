@@ -19,7 +19,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
     private const string StartTime  = "when the server restarted";
     private const string StatisticsRead = "table statistics";
 
-    // What "lacks SELECT" means here, and what else would do: a monitoring login may well not want SELECT.
+    // What "lacks SELECT" means here, and what else would do: a monitoring login may well not want to read rows.
     private const string WhySelect = " SQL Server shows a table's statistics only to a login with SELECT on their columns, or that owns the table, or in db_owner or db_ddladmin.";
 
     private readonly string? _login = target.Login;
@@ -126,22 +126,14 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         try
         {
             var rows = (await In(conn, database, SqlScripts.Get("TableStatistics/TableHealth"), cancellationToken, objectId)).ToList();
-            var properties = rows.Select(r => (StatisticsProperties?)PropertiesOf(r)).ToList();
-
-            // No row reads the same as never built, so that's when to ask whether the login may read them.
-            var neverBuilt = rows.Where((_, i) => properties[i] is null).Select(r => (int)r.StatsId).ToHashSet();
-            if (neverBuilt.Count > 0 && (await NotReadableAsync(conn, database, objectId, cancellationToken)).Any(r => neverBuilt.Contains((int)r.StatsId)))
+            if (rows.Any(r => !(bool)r.Readable))
                 return new TableStatisticsHealth(objectId, StatisticsHealthState.NotReadable, null, null, null);
 
-            return StatisticsFindings.RateTable(objectId, properties, level);
+            return StatisticsFindings.RateTable(objectId, rows.Select(r => (StatisticsProperties?)PropertiesOf(r)).ToList(), level);
         }
         catch (WaitStatsException ex) when (ex.Failure.Kind == SqlFailureKind.LockTimeout)
         {
             return new TableStatisticsHealth(objectId, StatisticsHealthState.Locked, null, null, null);
-        }
-        catch (WaitStatsException ex) when (ex.Failure.Kind == SqlFailureKind.MissingPermission)
-        {
-            return new TableStatisticsHealth(objectId, StatisticsHealthState.NotReadable, null, null, null);
         }
     }
 
@@ -183,12 +175,16 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
 
         var level = await CompatibilityLevelAsync(conn, database, failures, cancellationToken);
         var header = await PartAsync(SqlScripts.Get("TableStatistics/StatisticsProperties"), StatisticsRead);
-        var properties = header.Select(r => (StatisticsProperties?)PropertiesOf(r)).FirstOrDefault();
 
-        // No header reads the same as never built, so that's when to ask whether the login may read it.
-        if (properties is null && !isLocked && await WhyNotReadableAsync(conn, database, objectId, statsId, cancellationToken) is { } denied)
-            return new StatisticsDetails(null, [], [], level, false, [.. failures, denied]);
+        // No row at all, and no error: the login may not read it. The rest would say the same.
+        if (header.Count == 0 && !isLocked && !failures.Exists(f => f.What == StatisticsRead))
+        {
+            if (await NoSelectAsync(conn, database, objectId, statsId, cancellationToken) is { } denied)
+                failures.Add(denied);
+            return new StatisticsDetails(null, [], [], level, false, failures);
+        }
 
+        StatisticsProperties? properties = header.Count > 0 ? PropertiesOf(header[0]) : null;
         var histogram = await PartAsync(SqlScripts.Get("TableStatistics/StatisticsHistogram"), "the histogram");
         var density = await PartAsync(SqlScripts.Get("TableStatistics/StatisticsDensity"), "the density vector");
 
@@ -198,7 +194,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
             level, isLocked, failures);
     }
 
-    // Never built: the function has no row, or one with nothing in it.
+    // Never built: the function's row has nothing in it.
     private static StatisticsProperties? PropertiesOf(dynamic row) =>
         row.LastUpdated is null && row.RowsInStats is null
             ? null
@@ -222,16 +218,13 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         return rows is { Count: > 0 } ? (int)rows[0].CompatibilityLevel : null;
     }
 
-    private async Task<IReadOnlyList<dynamic>> NotReadableAsync(IDbConnection conn, string? database, int objectId, CancellationToken cancellationToken) =>
-        (await In(conn, database, SqlScripts.Get("TableStatistics/StatisticsNotReadable"), cancellationToken, objectId)).ToList();
-
-    // Names the one table in the GRANT, so a DBA doesn't have to open up the whole database for it.
-    private async Task<TableReadFailure?> WhyNotReadableAsync(IDbConnection conn, string? database, int objectId, int statsId, CancellationToken cancellationToken)
+    // Names the one table in the GRANT, so a DBA doesn't have to open up the whole database for it. Null if the statistics are gone.
+    private async Task<TableReadFailure?> NoSelectAsync(IDbConnection conn, string? database, int objectId, int statsId, CancellationToken cancellationToken)
     {
-        var denied = (await NotReadableAsync(conn, database, objectId, cancellationToken)).FirstOrDefault(r => (int)r.StatsId == statsId);
-        if (denied is null)
+        var owner = (await In(conn, database, SqlScripts.Get("TableStatistics/StatisticsOwner"), cancellationToken, objectId, statsId)).ToList();
+        if (owner.Count == 0)
             return null;
-        var permission = new PermissionNeeded("SELECT", PermissionScope.OnObject, await NamedAsync(conn, database, cancellationToken), (string)denied.SchemaName, (string)denied.TableName);
+        var permission = new PermissionNeeded("SELECT", PermissionScope.OnObject, await NamedAsync(conn, database, cancellationToken), (string)owner[0].SchemaName, (string)owner[0].TableName);
         return new TableReadFailure(StatisticsRead, Explained(permission, out var fix) + WhySelect, fix);
     }
 

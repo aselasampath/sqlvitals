@@ -32,33 +32,6 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
         return await _repo.GetStatisticsDetailsAsync(null, objectId, statsId);
     }
 
-    // ── Probe (temporary) ──────────
-
-    [SqlServerFact]
-    public async Task Probe()
-    {
-        await using var holder = new SqlConnection(server.Target.ConnectionString);
-        await holder.OpenAsync();
-        await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync();
-        await using (var hold = new SqlCommand("ALTER TABLE sizes.LockedTable ADD Extra int NULL", holder, transaction))
-            await hold.ExecuteNonQueryAsync();
-        var text = "";
-        foreach (var isolation in new[] { "READ UNCOMMITTED", "READ COMMITTED" })
-            foreach (var call in new[] { "HAS_PERMS_BY_NAME(N'[sizes].[LockedTable]', N'OBJECT', N'SELECT', N'V', N'COLUMN')", "HAS_PERMS_BY_NAME(N'[sizes].[LockedTable]', N'OBJECT', N'SELECT')", "IS_ROLEMEMBER(N'db_ddladmin')" })
-            {
-                try
-                {
-                    text += $"\n{isolation} {call}: " + await server.DescribeAsync($"SET TRANSACTION ISOLATION LEVEL {isolation}; SET LOCK_TIMEOUT 500; SELECT {call} AS v");
-                }
-                catch (SqlException ex)
-                {
-                    text += $"\n{isolation} {call}: error {ex.Number}";
-                }
-            }
-        await transaction.RollbackAsync();
-        Assert.Fail(text);
-    }
-
     // ── Histogram keys ────────────────────────────────────────────────
 
     [SqlServerTheory]
@@ -116,7 +89,8 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
 
         var density = Assert.Single(details.Density);
         Assert.Equal("K", density.Columns);
-        Assert.Equal(1024, density.DistinctValues!.Value, 0);
+        // The 1,024 keys, and NULL.
+        Assert.Equal(1025, density.DistinctValues!.Value, 0);
         Assert.True(density.AverageLength > 0);
         Assert.NotNull(StatisticsFindings.UnknownEstimate(details));
 
@@ -376,13 +350,7 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
 
             var batch = await limited.GetTableStatisticsHealthAsync(null, [orders, stale, empty]);
 
-            var why = await server.DescribeAsync($"""
-                EXECUTE AS LOGIN = N'{login}';
-                SELECT st.name, p.last_updated, p.rows, HAS_PERMS_BY_NAME(N'[dbo].[Orders]', N'OBJECT', N'SELECT') AS can_select
-                FROM sys.stats st OUTER APPLY sys.dm_db_stats_properties(st.object_id, st.stats_id) p WHERE st.object_id = {orders};
-                REVERT;
-                """);
-            Assert.True(batch.Tables[0].State == StatisticsHealthState.NotReadable, $"{batch.Tables[0]} {why}");
+            Assert.Equal(StatisticsHealthState.NotReadable, batch.Tables[0].State);
             Assert.Equal(StatisticsHealthState.NotReadable, batch.Tables[1].State);
             Assert.Equal(StatisticsHealthState.NoStatistics, batch.Tables[2].State);
 

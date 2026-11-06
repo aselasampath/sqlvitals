@@ -24,7 +24,7 @@ public enum StatisticsHealthState
     NotReadable,
 }
 
-/// <summary>A row of <c>sys.dm_db_stats_properties</c>. The function has none for statistics never built.</summary>
+/// <summary>A row of <c>sys.dm_db_stats_properties</c>. For statistics never built, the function's row is all NULL.</summary>
 /// <param name="LastUpdated">When it was last built.</param>
 /// <param name="Rows">Rows in the table (or the filter) when it was last built.</param>
 /// <param name="RowsSampled">Rows read to build it.</param>
@@ -62,6 +62,7 @@ public sealed record TableStatisticsList(IReadOnlyList<StatisticsObject> Statist
 /// A row of <c>sys.dm_db_stats_histogram</c>. <paramref name="Key"/> is a real value from the table,
 /// so it stays on the screen: see the privacy note on <see cref="StatisticsFinding"/>.
 /// </summary>
+/// <param name="Number">Its place in the histogram, from 1; the NULL step comes first when there is one.</param>
 /// <param name="Key"><c>RANGE_HI_KEY</c> as text, whatever the column's type; null for the NULL step.</param>
 /// <param name="RangeRows"><c>RANGE_ROWS</c>: rows between the last step's key and this one's.</param>
 /// <param name="EqRows"><c>EQ_ROWS</c>: rows equal to this key.</param>
