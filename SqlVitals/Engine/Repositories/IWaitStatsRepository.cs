@@ -10,6 +10,6 @@ public interface IWaitStatsRepository : ITempDbRepository, IPlanCacheHealthRepos
                                         ISecurityAuditRepository, IQueryStoreRepository,
                                         IServerRepository, IWaitsRepository, IMemoryRepository, IIndexRepository,
                                         IResourceQueryRepository, IStorageRepository, ISessionRepository, ILiveMetricsRepository,
-                                        IServerChecksRepository
+                                        IServerChecksRepository, ITableStatisticsRepository
 {
 }

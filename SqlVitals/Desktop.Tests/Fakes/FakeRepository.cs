@@ -10,6 +10,7 @@ using SqlVitals.Engine.Regressions;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
 using SqlVitals.Engine.Security;
+using SqlVitals.Engine.TableStatistics;
 
 namespace SqlVitals.Desktop.Tests.Fakes;
 
@@ -277,4 +278,16 @@ internal sealed class FakeRepository : IWaitStatsRepository
     public Func<Task<IEnumerable<TopWaitType>>>? GetTopWaitTypesAsync { get; set; }
     Task<IEnumerable<TopWaitType>> IWaitsRepository.GetTopWaitTypesAsync(CancellationToken cancellationToken) =>
         GetTopWaitTypesAsync is { } answer ? Answered(nameof(GetTopWaitTypesAsync), answer(), cancellationToken) : Unanswered<Task<IEnumerable<TopWaitType>>>(nameof(GetTopWaitTypesAsync), cancellationToken);
+
+    public Func<Task<TableDatabases>>? GetTableDatabasesAsync { get; set; }
+    Task<TableDatabases> ITableStatisticsRepository.GetTableDatabasesAsync(CancellationToken cancellationToken) =>
+        GetTableDatabasesAsync is { } answer ? Answered(nameof(GetTableDatabasesAsync), answer(), cancellationToken) : Unanswered<Task<TableDatabases>>(nameof(GetTableDatabasesAsync), cancellationToken);
+
+    public Func<string?, Task<TableSizeList>>? GetTableSizesAsync { get; set; }
+    Task<TableSizeList> ITableStatisticsRepository.GetTableSizesAsync(string? database, CancellationToken cancellationToken) =>
+        GetTableSizesAsync is { } answer ? Answered(nameof(GetTableSizesAsync), answer(database), cancellationToken) : Unanswered<Task<TableSizeList>>(nameof(GetTableSizesAsync), cancellationToken);
+
+    public Func<string?, int, Task<TableIndexList>>? GetTableIndexesAsync { get; set; }
+    Task<TableIndexList> ITableStatisticsRepository.GetTableIndexesAsync(string? database, int objectId, CancellationToken cancellationToken) =>
+        GetTableIndexesAsync is { } answer ? Answered(nameof(GetTableIndexesAsync), answer(database, objectId), cancellationToken) : Unanswered<Task<TableIndexList>>(nameof(GetTableIndexesAsync), cancellationToken);
 }
