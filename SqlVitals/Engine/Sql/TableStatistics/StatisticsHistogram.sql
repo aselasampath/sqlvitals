@@ -1,10 +1,11 @@
 -- Waits on a schema change even under READ UNCOMMITTED: 1222 means locked. range_high_key comes back as
 -- text made here: as sql_variant, SqlClient overflows on a large decimal. Dates and times are in ISO
--- form, binary in hex, and each number at its full precision, whatever the server's language. Only FORMAT
--- reads a float as 0.1: CONVERT makes that 0.1 at six digits, or 1.0000000000000001e-001 at all of them.
+-- form, binary in hex, and each number at its full precision, whatever the server's language. FORMAT is
+-- for a float: CONVERT keeps six digits of it, or at full precision writes 0.1 as 1.0000000000000001e-001.
+-- step_number starts from 0 with a NULL step and from 1 without, so steps are numbered here, always from 1.
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET LOCK_TIMEOUT 2000;
-SELECT h.step_number AS Number,
+SELECT ROW_NUMBER() OVER (ORDER BY h.step_number) AS Number,
     CASE CONVERT(sysname, SQL_VARIANT_PROPERTY(h.range_high_key, 'BaseType'))
         WHEN N'date'           THEN CONVERT(nvarchar(10), CONVERT(date, h.range_high_key), 23)
         WHEN N'datetime'       THEN CONVERT(nvarchar(30), CONVERT(datetime, h.range_high_key), 121)

@@ -32,46 +32,30 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
         return await _repo.GetStatisticsDetailsAsync(null, objectId, statsId);
     }
 
-    // ── Probe (temporary): what the server does, in the log of a failed run ──────────
+    // ── Probe (temporary) ──────────
 
     [SqlServerFact]
     public async Task Probe()
     {
+        await using var holder = new SqlConnection(server.Target.ConnectionString);
+        await holder.OpenAsync();
+        await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync();
+        await using (var hold = new SqlCommand("ALTER TABLE sizes.LockedTable ADD Extra int NULL", holder, transaction))
+            await hold.ExecuteNonQueryAsync();
         var text = "";
-        await AsLoginAsync("GRANT VIEW DEFINITION TO {0};", async (limited, login) =>
-        {
-            var orders = await ObjectIdAsync("dbo.Orders");
-            text += await server.DescribeAsync($"""
-                EXECUTE AS LOGIN = N'{login}';
-                SELECT (SELECT COUNT(*) FROM sys.stats WHERE object_id = {orders}) AS stats_seen,
-                    (SELECT COUNT(*) FROM sys.dm_db_stats_properties({orders}, 1)) AS properties_rows,
-                    (SELECT COUNT(*) FROM sys.dm_db_stats_histogram({orders}, 1)) AS histogram_rows,
-                    HAS_PERMS_BY_NAME(N'[dbo].[Orders]', N'OBJECT', N'SELECT') AS can_select;
-                REVERT;
-                """);
-            try
+        foreach (var isolation in new[] { "READ UNCOMMITTED", "READ COMMITTED" })
+            foreach (var call in new[] { "HAS_PERMS_BY_NAME(N'[sizes].[LockedTable]', N'OBJECT', N'SELECT', N'V', N'COLUMN')", "HAS_PERMS_BY_NAME(N'[sizes].[LockedTable]', N'OBJECT', N'SELECT')", "IS_ROLEMEMBER(N'db_ddladmin')" })
             {
-                text += "\nDBCC: " + await server.DescribeAsync($"EXECUTE AS LOGIN = N'{login}'; DBCC SHOW_STATISTICS (N'dbo.Orders', N'PK_Orders') WITH DENSITY_VECTOR, NO_INFOMSGS; REVERT;");
+                try
+                {
+                    text += $"\n{isolation} {call}: " + await server.DescribeAsync($"SET TRANSACTION ISOLATION LEVEL {isolation}; SET LOCK_TIMEOUT 500; SELECT {call} AS v");
+                }
+                catch (SqlException ex)
+                {
+                    text += $"\n{isolation} {call}: error {ex.Number}";
+                }
             }
-            catch (SqlException ex)
-            {
-                text += $"\nDBCC error {ex.Number}: {ex.Message}";
-            }
-
-            var locked = await ObjectIdAsync("sizes.LockedTable");
-            await using var holder = new SqlConnection(server.Target.ConnectionString);
-            await holder.OpenAsync();
-            await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync();
-            await using (var hold = new SqlCommand("ALTER TABLE sizes.LockedTable ADD Extra int NULL", holder, transaction))
-                await hold.ExecuteNonQueryAsync();
-            var clock = Stopwatch.StartNew();
-            var batch = await limited.GetTableStatisticsHealthAsync(null, [locked]);
-            text += $"\nLocked table, no SELECT: {batch.Tables[0].State} in {clock.ElapsedMilliseconds} ms, {batch.Failures.Count} failures";
-            clock.Restart();
-            var details = await limited.GetStatisticsDetailsAsync(null, locked, 1);
-            text += $"\nDetails: locked={details.IsLocked} in {clock.ElapsedMilliseconds} ms, {string.Join("; ", details.Failures)}";
-            await transaction.RollbackAsync();
-        });
+        await transaction.RollbackAsync();
         Assert.Fail(text);
     }
 
@@ -422,6 +406,30 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
             var denied = Assert.Single(details.Failures);
             Assert.Contains("SELECT", denied.Explanation, StringComparison.Ordinal);
             Assert.Contains($"GRANT SELECT ON [dbo].[Orders] TO [{login}]", denied.FixScript, StringComparison.Ordinal);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task ALoginWithoutSelect_FindsALockedTableLocked_AsTheLockIsMetBeforeThePermission()
+    {
+        await AsLoginAsync("GRANT VIEW DEFINITION TO {0};", async (limited, _) =>
+        {
+            var locked = await ObjectIdAsync("sizes.LockedTable");
+            await using var holder = new SqlConnection(server.Target.ConnectionString);
+            await holder.OpenAsync();
+            await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync();
+            await using (var hold = new SqlCommand("ALTER TABLE sizes.LockedTable ADD Extra int NULL", holder, transaction))
+                await hold.ExecuteNonQueryAsync();
+
+            var batch = await limited.GetTableStatisticsHealthAsync(null, [locked]);
+            Assert.Equal(StatisticsHealthState.Locked, Assert.Single(batch.Tables).State);
+            Assert.Empty(batch.Failures);
+
+            var details = await limited.GetStatisticsDetailsAsync(null, locked, 1);
+            Assert.True(details.IsLocked);
+            Assert.Empty(details.Failures);
+
+            await transaction.RollbackAsync();
         });
     }
 

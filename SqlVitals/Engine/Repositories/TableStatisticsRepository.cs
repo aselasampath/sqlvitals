@@ -193,7 +193,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         var density = await PartAsync(SqlScripts.Get("TableStatistics/StatisticsDensity"), "the density vector");
 
         return new StatisticsDetails(properties,
-            histogram.Select(r => new HistogramStep((int)r.Number, (string?)r.RangeHiKey, Real(r.RangeRows), Real(r.EqRows), Real(r.DistinctRangeRows), Real(r.AvgRangeRows))).ToList(),
+            histogram.Select(r => new HistogramStep((int)(long)r.Number, (string?)r.RangeHiKey, Real(r.RangeRows), Real(r.EqRows), Real(r.DistinctRangeRows), Real(r.AvgRangeRows))).ToList(),
             density.Select(r => DensityOf(r)).OfType<DensityEntry>().ToList(),
             level, isLocked, failures);
     }
