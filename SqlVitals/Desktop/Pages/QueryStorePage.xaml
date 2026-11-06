@@ -2,9 +2,11 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
       x:Name="Root" Background="{StaticResource BgDeep}" Title="Query Store">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="Visible"/>
+        <helpers:FractionOf x:Key="FractionOf"/>
         <Style x:Key="SingleLineText" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="NoWrap"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -131,8 +133,12 @@
     </Page.Resources>
 
     <!-- The page template (#146): the verdict on regressed queries first, the health cards folding
-         to one line, then the period and the reports. -->
-    <controls:PageShell x:Name="Shell" Margin="20" Title="{Binding Title}" PageKey="QueryStore">
+         to one line, then the period and the reports. It fills the window, and scrolls where the
+         window is too short for the reports to be read (#245). -->
+    <ScrollViewer x:Name="PageScroller" Margin="20" Focusable="False"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <controls:PageShell x:Name="Shell" KeepsDetailMinHeight="True" Title="{Binding Title}" PageKey="QueryStore"
+                        Height="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
         <controls:PageShell.Actions>
             <Button Content="🐢 Regressed queries" Style="{StaticResource LinkButton}"
                     VerticalAlignment="Center" Command="{Binding RegressionsCommand}"
@@ -227,7 +233,7 @@
         <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="260"/>
+            <RowDefinition x:Name="TabsRow" Height="*" MinHeight="300"/>
         </Grid.RowDefinitions>
 
         <!-- Period, how far back the data goes, and a query by ID -->
@@ -430,17 +436,20 @@
             <!-- ── Waits (SSMS: Query Wait Statistics) ─────────────────────── -->
             <TabItem x:Name="TabWaits" Header="Waits">
                 <Border Style="{StaticResource KpiCard}" Margin="0,8,0,0">
-                    <Grid>
+                    <Grid x:Name="WaitsLayout">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto" MaxHeight="280"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="120"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*" MinHeight="80"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" x:Name="TxtWaitsStatus" Style="{StaticResource TabStatus}" Margin="0,0,0,6" Text="{Binding WaitsStatus}"/>
                         <controls:ScriptNotice Grid.Row="1" x:Name="WaitsNotice" Message="{Binding WaitsNotice.Message}" Script="{Binding WaitsNotice.Script}"/>
+                        <!-- The limit is on the list, not its row: an Auto row measures the list at any height,
+                             so it would never scroll, only be cut off (#245). -->
                         <ListBox Grid.Row="2" x:Name="WaitCategoriesList" Background="Transparent" BorderThickness="0"
+                                 MaxHeight="{Binding ActualHeight, ElementName=WaitsLayout, Converter={StaticResource FractionOf}, ConverterParameter=0.33}"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ItemsSource="{Binding WaitBars}" SelectedItem="{Binding SelectedWaitBar}"
                                  Visibility="{Binding ShowsWaitBars, Converter={StaticResource Visible}}">
@@ -503,14 +512,14 @@
             <!-- ── Forced Plans (SSMS: Queries With Forced Plans) ─────────── -->
             <TabItem x:Name="TabForced" Header="Forced Plans">
                 <Border Style="{StaticResource KpiCard}" Margin="0,8,0,0">
-                    <Grid>
+                    <Grid x:Name="ForcedLayout">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="120"/>
+                            <RowDefinition Height="*" MinHeight="80"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto" MaxHeight="220"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <DockPanel Grid.Row="0" Margin="0,0,0,6">
                             <controls:GridFilterBox DockPanel.Dock="Right" Target="{Binding ElementName=ForcedGrid}"/>
@@ -565,6 +574,7 @@
                                    ToolTip="Hints set with sys.sp_query_store_set_hints, or by the system (SQL Server 2022+ and Azure SQL)."/>
                         <controls:ScriptNotice Grid.Row="4" x:Name="HintsNotice" Message="{Binding HintsNotice.Message}" Script="{Binding HintsNotice.Script}"/>
                         <DataGrid Grid.Row="5" x:Name="HintsGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  MaxHeight="{Binding ActualHeight, ElementName=ForcedLayout, Converter={StaticResource FractionOf}, ConverterParameter=0.33}"
                                   ItemsSource="{Binding HintRows}" SelectedItem="{Binding SelectedHintRow}"
                                   SelectionMode="Single" MouseDoubleClick="Grid_MouseDoubleClick"
                                   Visibility="{Binding ShowsHints, Converter={StaticResource Visible}}">
@@ -583,4 +593,5 @@
         </TabControl>
     </Grid>
     </controls:PageShell>
+    </ScrollViewer>
 </Page>

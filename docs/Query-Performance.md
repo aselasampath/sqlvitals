@@ -130,6 +130,8 @@ SQL Server 2017+ and Azure SQL. A bar per [wait category](Glossary.md) (Lock, Bu
 
 If wait stats capture is off, the tab says so and gives `ALTER DATABASE … SET QUERY_STORE (WAIT_STATS_CAPTURE_MODE = ON);` to copy. On SQL Server 2016 it says that version doesn't record waits.
 
+The categories take at most a third of the tab and scroll past that; the queries take the rest and scroll too (from 0.84.1). The same goes for the hints on **Forced Plans**. If the window is too short for the tabs, the page itself scrolls, and the mouse wheel moves it once the list under the pointer reaches its end. Folding **Health and settings** leaves the tabs more room.
+
 ### Forced Plans
 
 Every [forced plan](Glossary.md) as it is now (the period only sets the executions and avg duration columns): Query ID, Plan ID, Object, **Forced by** (*Manual* or *Automatic plan correction*), **Failures** and **Last failure reason** (e.g. `NO_INDEX` when an index the plan uses was dropped), Last executed, the plan's executions and avg duration in the period, and View Plan. A plan whose forcing fails is a **Warning**: while it fails, the query runs with whatever plan the optimizer picks.

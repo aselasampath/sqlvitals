@@ -40,6 +40,18 @@ public partial class QueryStorePage : Page, IPageContext, IFocusPage, IDetailsSo
 
         ViewModel.Attach(Shell);
         Shell.Folds = folds;
+        NestedScrolling.Attach(PageScroller);
+        _tabsMinHeight = TabsRow.MinHeight;
+        Tabs.SelectionChanged += (_, e) =>
+        {
+            if (ReferenceEquals(e.Source, Tabs))
+                MakeRoomForNotice();
+        };
+        foreach (var notice in new[] { WaitsNotice, ForcedNotice })
+        {
+            notice.SizeChanged      += (_, _) => MakeRoomForNotice();
+            notice.IsVisibleChanged += (_, _) => MakeRoomForNotice();
+        }
         ShowTopColumns();
         ShowVariationColumns();
         ViewModel.CustomPeriodOpened += () => FromTime.Focus();
@@ -62,6 +74,17 @@ public partial class QueryStorePage : Page, IPageContext, IFocusPage, IDetailsSo
                     break;
             }
         };
+    }
+
+    // The open tab's notice comes on top of what its lists need (#245): wait stats capture being off
+    // says so above the bars, and the page must grow for it or the query grid is cut off. By half as
+    // much again: the tab's list takes up to a third of any height added.
+    private readonly double _tabsMinHeight;
+
+    private void MakeRoomForNotice()
+    {
+        ScriptNotice? notice = Tabs.SelectedItem == TabWaits ? WaitsNotice : Tabs.SelectedItem == TabForced ? ForcedNotice : null;
+        TabsRow.MinHeight = _tabsMinHeight + (notice is { IsVisible: true } ? notice.ActualHeight * 1.5 : 0);
     }
 
     // ── The top bar (#140) and a link's focus (#145) ──────────────────────────

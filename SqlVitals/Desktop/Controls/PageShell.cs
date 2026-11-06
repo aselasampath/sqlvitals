@@ -35,6 +35,7 @@ public sealed class PageShell : Decorator
                 shell.ShowPlaceholder();
             }));
 
+    private readonly Grid        _layout  = new();
     private readonly TextBlock   _title   = new() { Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, FontSize = 20 };
     // A ContentControl, not a ContentPresenter: the page's buttons are its logical children from the
     // start, so they bind to the page's view model before the page is first laid out (#186).
@@ -69,23 +70,48 @@ public sealed class PageShell : Decorator
         _placeholderText.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
         _placeholder.Child = _placeholderText;
 
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(VerdictView, 1);
         Grid.SetRow(_placeholder, 1);
         Grid.SetRow(_sections, 2);
         Grid.SetRow(_detail, 3);
-        grid.Children.Add(header);
-        grid.Children.Add(VerdictView);
-        grid.Children.Add(_placeholder);
-        grid.Children.Add(_sections);
-        grid.Children.Add(_detail);
-        Child = grid;
+        _layout.Children.Add(header);
+        _layout.Children.Add(VerdictView);
+        _layout.Children.Add(_placeholder);
+        _layout.Children.Add(_sections);
+        _layout.Children.Add(_detail);
+        Child = _layout;
 
         Sections.CollectionChanged += Sections_CollectionChanged;
+
+        Loaded += (_, _) =>
+        {
+            LayoutUpdated -= KeepDetailMinHeight;
+            if (KeepsDetailMinHeight)
+                LayoutUpdated += KeepDetailMinHeight;
+        };
+        Unloaded += (_, _) => LayoutUpdated -= KeepDetailMinHeight;
+    }
+
+    /// <summary>
+    /// For a page in a <see cref="ScrollViewer"/> (#245): never shorter than what's above the detail
+    /// plus the least height the detail's rows ask for, so a short window scrolls the page rather
+    /// than cut the detail off. Follows the cards as they wrap and the sections as they fold.
+    /// </summary>
+    public bool KeepsDetailMinHeight { get; set; }
+
+    // After layout, as the rows' heights are only known then; a change lays the page out once more.
+    private void KeepDetailMinHeight(object? sender, EventArgs e)
+    {
+        var above  = _layout.RowDefinitions.Take(3).Sum(r => r.ActualHeight);
+        var detail = _detail.Child is Grid grid
+            ? grid.RowDefinitions.Sum(r => r.Height.IsStar ? r.MinHeight : r.ActualHeight)
+            : 0;
+        if (Math.Abs(MinHeight - (above + detail)) >= 0.5)
+            MinHeight = above + detail;
     }
 
     public string Title
