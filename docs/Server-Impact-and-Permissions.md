@@ -88,12 +88,17 @@ The most expensive reads, worth knowing on very large servers:
 
 Most of what SqlVitals reads is DMVs and system views, which user schema changes don't touch. The screens that read user objects are Index Health (fragmentation, `sys.dm_db_index_physical_stats`), DB Storage and Stale Stats; they run only when opened.
 
+**Table Statistics** is built not to wait (from 0.85.0). Checked on SQL Server 2017 to 2025 with a schema change held: under `READ UNCOMMITTED`, `sys.tables`, `sys.schemas` and `sys.indexes` and an unfiltered scan of `sys.dm_db_partition_stats` go past the lock, and `sys.dm_tran_locks` says which tables hold one; so the table list doesn't wait. A read filtered on the locked table waits at most 2 s (`LOCK_TIMEOUT 2000`), then shows it as *Locked*. `OBJECT_ID`, `OBJECT_NAME`, `OBJECTPROPERTY`, `sys.dm_db_stats_properties`, a full scan of `sys.partitions` and a scan of `sys.dm_db_index_usage_stats` all wait, so the page doesn't use them that way. Under `READ COMMITTED` the catalog views wait too.
+
 ## Permissions
 
 | Feature | SQL Server / Managed Instance | Azure SQL Database |
 |---|---|---|
 | Every screen except SP Trace per-call mode | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
 | SP Trace, DMV fallback mode | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
+| Table Statistics: table sizes | `VIEW DATABASE STATE` in the database chosen (or `VIEW SERVER STATE`) | `VIEW DATABASE STATE` |
+| Table Statistics: every table listed | `VIEW DEFINITION` in the database chosen; without it, only the tables the login has a permission on | `VIEW DEFINITION` |
+| Table Statistics: Locked, reads and writes, last restart | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
 | SP Trace, Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
 | Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
 | Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups; none are in msdb |
@@ -172,6 +177,8 @@ GRANT VIEW ANY DEFINITION TO [sqlvitals_login];   -- SQL Server / MI
 It shows the definitions of logins, users, roles and objects, but no data, and changes nothing. The sa login and TRUSTWORTHY are checked without it. Orphaned users are looked for only in databases the login can open.
 
 Some screens read database-scoped views (Index Health, Stale Stats, Query Store, DB Storage → Top Tables) for the **connection's database**. The login needs to be able to connect to that database. The Query Store page's hints grid (SQL Server 2022+) also needs `VIEW SERVER STATE` (`VIEW SERVER PERFORMANCE STATE` on 2022), which the other screens already need; without it the grid says so and the rest of the tab still loads.
+
+**Table Statistics** can read other databases than the connection's: the Database box offers those the login can open (`HAS_DBACCESS`). A login without the permissions above still sees the names of the tables and indexes it can see; the page says which permission is missing and shows the `GRANT`.
 
 **DB Storage → Database Files** shows each file's used and free space only for databases the login can open (`HAS_DBACCESS`); for the rest they're blank. Sizes, growth and settings are shown for every database either way.
 

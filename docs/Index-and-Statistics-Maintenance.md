@@ -1,11 +1,12 @@
 # Index and Statistics Maintenance
 
-Two screens find index and statistics problems **and write the T-SQL to fix them**:
+Two screens find index and statistics problems **and write the T-SQL to fix them**, and a third shows where the space goes:
 
 | Screen | Finds | Generates |
 |---|---|---|
 | [🔍 Index Health](#index-health) | Missing, unused and fragmented indexes | `CREATE INDEX`, `DROP INDEX`, `ALTER INDEX … REORGANIZE / REBUILD` |
 | [📉 Stale Stats](#stale-statistics) | Out-of-date statistics | `UPDATE STATISTICS` |
+| [📏 Table Statistics](#table-statistics) | Which tables are largest, and how much of each goes to its indexes | Nothing: it only reads |
 
 > 🛡️ **SqlVitals never runs these scripts.** Each one opens in a preview window where you read it, then **Copy Script** or **Save as .sql**. You decide when and where to run it, ideally in a maintenance window, after testing.
 
@@ -128,3 +129,47 @@ Change them and press **↻ Refresh** (or **Enter**). Only this tab reloads, and
 - Names from the server (tables, indexes, statistics, users) can hold line breaks. In a script's `--` comments a line break would end the comment and run the rest of the name, so every name in a comment is kept to one line (`Engine/Scripting/ScriptText`). In live statements a name stays inside `[...]` or `N'...'`, where a line break is part of it. Added in 0.44.1 (#109).
 - A statistic that has never been updated has no `STATS_DATE` and no row counts in `sys.dm_db_stats_properties`; they read as blank. Before 0.44.1 such a statistic made the whole page fail. `sys.stats.is_incremental` is SQL Server 2014+, so it's only named where `sys.all_columns` says it exists.
 - The **usage** tab takes the table's name from `sys.indexes`: before 0.44.1 it came from the usage row, which an index that was never used doesn't have, so exactly the *Unused* rows had no table name.
+
+---
+
+## Table Statistics
+
+> **Where:** sidebar → Maintenance → Table Statistics · **Use it when:** finding where a database's space goes, and which indexes may not be worth it
+
+From 0.85.0. Nothing runs until you open the page, and it never polls: it reads again on **Refresh**, or when you choose another database or table. It uses documented views only, reads no table rows and changes nothing.
+
+### Choose a database
+
+On SQL Server the **Database** box at the top right lists the online databases the login can open, starting on the connection's. Choosing one reads that database for this page only: the connection and the other pages stay where they were. On Azure SQL Database, where a connection can't change database, the page shows the connected database and no box.
+
+### The tables
+
+One row per user table, largest first:
+
+| Column | Meaning |
+|---|---|
+| **Rows** | Rows in the heap or clustered index, added up across partitions |
+| **Data size** | Space reserved for the heap or clustered index, LOB and row-overflow included. A clustered index is the table's data, so it counts here |
+| **Index size** | Space reserved for its other indexes |
+| **Total size** | Data + index size, with a bar against the largest table. It matches `sp_spaceused`'s *reserved* for a table with no XML or spatial index |
+
+The verdict names the largest table and how much of it its indexes take; **Show it** selects it. Memory-optimized tables show as 0, because their memory isn't in these pages.
+
+**Locked** means a schema change (`ALTER TABLE`, an offline rebuild, `TRUNCATE`) holds the table right now. The other tables still load, without waiting for it, and **Refresh** reads it again once the change is over.
+
+### A table's sizes
+
+Select a table to see its data, indexes, total and rows, then:
+
+- **A bar** of the whole table: its data, each index, and any flagged index in amber. Hover a part for its name and size. It always shows the whole table, whatever the grid's filters hide.
+- **A grid of its indexes:** name, type, rows, reserved and used size, share of the table's total, **Reads** (seeks + scans + lookups) and **Writes**.
+
+Reads and writes count from the last restart, and the page says when that was. A count that's low soon after a restart doesn't mean much.
+
+**A flagged index** reads *Few reads, many writes*, with a link to [Index Health](#index-health). It's flagged when it's a nonclustered index of at least 100 MB that doesn't enforce uniqueness, written at least 1,000 times, and read at most once per 10 writes. That makes it worth a look, not a reason to drop it. Index Health reads the connection's database: when another one is chosen here, the page says so.
+
+Choosing another table or database cancels what's still being read for the last one, on the server too. Space used by XML and spatial indexes' internal tables isn't counted.
+
+### Filters
+
+Both grids work as described in [Working with Grids](Working-with-Grids.md#filter): **Copy**, **Copy All** and **Export to CSV** take the rows shown, and **Refresh** and leaving the page keep the filters. The tables also have a **Schema** filter that takes several values. The indexes have a **Type** filter and **Flagged only**. **Clear filters** turns off every filter on its grid. Filtering the tables never changes the table selected, even when it hides that row.

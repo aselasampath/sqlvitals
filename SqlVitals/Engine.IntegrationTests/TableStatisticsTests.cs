@@ -205,6 +205,7 @@ public class TableStatisticsTests(SqlServerFixture server)
             Assert.Contains("GRANT VIEW DATABASE", missing.FixScript);
             Assert.Contains(login, missing.FixScript);
             Assert.Contains(sizes.Failures, f => f.What == "which tables are locked" && f.Explanation.Contains("VIEW SERVER", StringComparison.Ordinal));
+            Assert.Contains(sizes.Failures, f => f.What == TableReadFailure.Names && f.Explanation.Contains("VIEW DEFINITION", StringComparison.Ordinal));
 
             var indexes = await limited.GetTableIndexesAsync(null, orders.ObjectId);
 
@@ -237,6 +238,13 @@ public class TableStatisticsTests(SqlServerFixture server)
             {
                 UserID = login, Password = password, IntegratedSecurity = false, Pooling = false,
             }.ConnectionString));
+
+            // Its own database: sys.tables shows it nothing, and the list says why, not that there are none.
+            var own = await limited.GetTableSizesAsync(null);
+            Assert.Empty(own.Tables);
+            var hidden = own.Failures.Single(f => f.What == TableReadFailure.Names);
+            Assert.Contains("VIEW DEFINITION", hidden.Explanation);
+            Assert.Contains($"USE [{SqlServerFixture.Database}]", hidden.FixScript);
 
             // HAS_DBACCESS keeps it off the list, so it can only be asked for by name.
             Assert.DoesNotContain(Other, (await limited.GetTableDatabasesAsync()).Names);

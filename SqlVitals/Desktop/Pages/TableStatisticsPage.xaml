@@ -1,0 +1,370 @@
+<Page x:Class="SqlVitals.Desktop.Pages.TableStatisticsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+      xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
+      xmlns:vm="clr-namespace:SqlVitals.Desktop.ViewModels"
+      Background="{StaticResource BgDeep}" Title="Table Statistics">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible"/>
+        <helpers:Shown x:Key="Shown"/>
+        <Style x:Key="Number" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <Style x:Key="TotalCell" TargetType="TextBlock" BasedOn="{StaticResource Number}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource Warning}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="NoteCell" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Warning}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="ToolbarLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="12,0,6,0"/>
+        </Style>
+        <Style x:Key="ToolbarCombo" TargetType="ComboBox">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Background" Value="{StaticResource BgCard}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboItem}"/>
+                </Setter.Value>
+            </Setter>
+            <!-- Its own template: Windows' draws a light box whatever the Background, unreadable on the dark theme. -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Box" Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="1">
+                                            <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" Foreground="{StaticResource TextMuted}"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="Chosen" IsHitTestVisible="False" Margin="6,0,20,0" VerticalAlignment="Center"
+                                              Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            <Border x:Name="FocusEdge" BorderBrush="{StaticResource Accent}" BorderThickness="1" IsHitTestVisible="False" Visibility="Collapsed"/>
+                            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" Focusable="False" AllowsTransparency="True">
+                                <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                        MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer><ItemsPresenter/></ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="FocusEdge" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="FlatButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="Margin" Value="10,0,0,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" TextDecorations="Underline"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Figure" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="Footnote" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,6,0,0"/>
+        </Style>
+        <Style x:Key="EmptyGrid" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="0,42,0,0"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+        </Style>
+        <Style x:Key="LegendSwatch" TargetType="Border">
+            <Setter Property="Width" Value="10"/>
+            <Setter Property="Height" Value="10"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="Margin" Value="0,0,5,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Page.Resources>
+
+    <!-- The page template (#146): the verdict on the largest table first, then the tables and, for the
+         one selected, where its space goes. It fills the window, and scrolls where the window is too
+         short for both grids (#245). Bound to TableStatisticsViewModel. -->
+    <ScrollViewer x:Name="PageScroller" Margin="20" Focusable="False"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <controls:PageShell x:Name="Shell" KeepsDetailMinHeight="True" Title="Table Statistics" PageKey="TableStats"
+                        Height="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+        <controls:PageShell.Actions>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Database" Style="{StaticResource ToolbarLabel}"/>
+                <ComboBox x:Name="CmbDatabase" Width="190" Style="{StaticResource ToolbarCombo}"
+                          ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                          Visibility="{Binding CanSwitch, Converter={StaticResource Visible}}"
+                          AutomationProperties.Name="Database"
+                          ToolTip="The database to read: the online ones this login can open. Only this page changes: the connection and the other pages stay on theirs."/>
+                <TextBlock x:Name="TxtConnectedDatabase" Text="{Binding ConnectedDatabase}" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextPrimary}" FontSize="12"
+                           ToolTip="Azure SQL Database: a connection stays in its database."
+                           Visibility="{Binding CanSwitch, Converter={StaticResource Shown}, ConverterParameter=Not}"/>
+            </StackPanel>
+        </controls:PageShell.Actions>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" MinHeight="180"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="300"/>
+            </Grid.RowDefinitions>
+
+            <!-- ── The tables ── -->
+            <Border Grid.Row="0" Style="{StaticResource KpiCard}" Margin="0">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Button Content="&#x2398; Copy All" DockPanel.Dock="Right" Style="{StaticResource RefreshButton}" Padding="10,5"
+                                ToolTip="Copy every row shown, in the grid's current order, with headers."
+                                Command="{x:Static helpers:DataGridExport.CopyAll}" CommandParameter="{Binding ElementName=TablesGrid}"/>
+                        <Button x:Name="BtnClearTableFilters" Content="Clear filters" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Margin="0,0,10,0"
+                                Command="{Binding ClearTableFiltersCommand}" ToolTip="Turn off every filter on this grid. The table selected stays selected."/>
+                        <controls:CheckListFilter x:Name="SchemaFilter" DockPanel.Dock="Right" Width="130" Margin="10,0,10,0"
+                                                  DataContext="{Binding Schema}" AutomationProperties.Name="Schema filter"/>
+                        <TextBlock Text="Schema" DockPanel.Dock="Right" Style="{StaticResource ToolbarLabel}" Margin="10,0,0,0"/>
+                        <controls:GridFilterBox x:Name="TablesFilter" DockPanel.Dock="Right" Target="{Binding ElementName=TablesGrid}"/>
+                        <TextBlock Text="{Binding TablesHeader}" Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Grid>
+                        <DataGrid x:Name="TablesGrid" ItemsSource="{Binding Tables}"
+                                  SelectionChanged="TablesGrid_SelectionChanged"
+                                  EnableRowVirtualization="True" EnableColumnVirtualization="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Schema" Binding="{Binding SchemaName}" Width="120"/>
+                                <DataGridTextColumn Header="Table"  Binding="{Binding TableName}"  Width="*" MinWidth="180"/>
+                                <DataGridTextColumn Header="Rows"   Binding="{Binding RowsInTable, StringFormat=N0, TargetNullValue=&#x2013;}" Width="110"
+                                                    ElementStyle="{StaticResource Number}"/>
+                                <DataGridTextColumn Header="Data size" Binding="{Binding DataText}" SortMemberPath="DataPages" Width="90" ElementStyle="{StaticResource Number}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Reserved space of the heap or clustered index, LOB and row-overflow included. A clustered index is the table's data."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Index size" Binding="{Binding IndexText}" SortMemberPath="IndexPages" Width="90" ElementStyle="{StaticResource Number}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Reserved space of the table's other indexes. XML and spatial indexes' internal tables aren't counted."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Total size" Binding="{Binding TotalText}" SortMemberPath="TotalPages" Width="90" ElementStyle="{StaticResource TotalCell}">
+                                    <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Data size + index size. Locked: a schema change (ALTER TABLE, an offline rebuild, TRUNCATE) holds the table now."/></Style></DataGridTextColumn.HeaderStyle>
+                                </DataGridTextColumn>
+                                <DataGridTemplateColumn Header="" Width="136" CanUserSort="False">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type vm:TableSizeRow}">
+                                            <Border Height="6" CornerRadius="3" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="6,0"
+                                                    Background="{StaticResource Accent}" Width="{Binding BarWidth}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock x:Name="TxtNoTables" Text="{Binding NoTablesText}" Style="{StaticResource EmptyGrid}"
+                                   Visibility="{Binding NoTablesText, Converter={StaticResource Shown}}"/>
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource Border}" Margin="0,4"/>
+
+            <!-- ── The selected table ── -->
+            <TabControl x:Name="DetailTabs" Grid.Row="2" Background="Transparent" BorderThickness="0">
+                <TabItem x:Name="TabSizes" Header="Sizes">
+                    <Border Style="{StaticResource KpiCard}" Margin="0,8,0,0">
+                        <Grid>
+                            <TextBlock x:Name="TxtSelectTable" Text="Select a table to see where its space goes." Style="{StaticResource EmptyGrid}" Margin="0,24,0,0"
+                                       Visibility="{Binding HasSelection, Converter={StaticResource Shown}, ConverterParameter=Not}"/>
+                            <!-- Hidden, not collapsed, until a table is selected: a grid first measured as its panel
+                                 appears can keep its columns squeezed. -->
+                            <Grid x:Name="DetailPanel">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasSelection}" Value="False">
+                                                <Setter Property="Visibility" Value="Hidden"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*" MinHeight="90"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <DockPanel Grid.Row="0">
+                                    <TextBlock x:Name="TxtSelected" DockPanel.Dock="Right" Text="{Binding SelectedText}" Style="{StaticResource ToolbarLabel}" VerticalAlignment="Top" Margin="12,0,0,0"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel Margin="0,0,28,0">
+                                            <TextBlock x:Name="TxtData" Text="{Binding DataText}" Style="{StaticResource Figure}"/>
+                                            <TextBlock Text="Data" Style="{StaticResource KpiLabel}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,28,0">
+                                            <TextBlock x:Name="TxtIndexes" Text="{Binding IndexesText}" Style="{StaticResource Figure}"/>
+                                            <TextBlock Text="Indexes" Style="{StaticResource KpiLabel}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,28,0">
+                                            <TextBlock x:Name="TxtTotal" Text="{Binding TotalText}" Style="{StaticResource Figure}"/>
+                                            <TextBlock Text="Total" Style="{StaticResource KpiLabel}"/>
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock x:Name="TxtRows" Text="{Binding RowsText}" Style="{StaticResource Figure}"/>
+                                            <TextBlock Text="Rows" Style="{StaticResource KpiLabel}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <!-- The whole table, whatever the grid's filters hide. -->
+                                <StackPanel Grid.Row="1" Margin="0,8,0,0" Visibility="{Binding SpaceBar, Converter={StaticResource Shown}}">
+                                    <ItemsControl x:Name="SpaceBarParts" ItemsSource="{Binding SpaceBar}" Height="12" Focusable="False">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><controls:ShareBarPanel/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:SpaceBarPart}">
+                                                <Border Margin="0,0,1,0" ToolTip="{Binding Tip}">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="Index">
+                                                                    <Setter Property="Background" Value="{StaticResource TextMuted}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="Costly">
+                                                                    <Setter Property="Background" Value="{StaticResource Warning}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Border Style="{StaticResource LegendSwatch}" Background="{StaticResource Accent}"/>
+                                        <TextBlock Text="Data" Style="{StaticResource Footnote}" Margin="0,0,14,0"/>
+                                        <Border Style="{StaticResource LegendSwatch}" Background="{StaticResource TextMuted}"/>
+                                        <TextBlock Text="Index" Style="{StaticResource Footnote}" Margin="0,0,14,0"/>
+                                        <Border Style="{StaticResource LegendSwatch}" Background="{StaticResource Warning}"/>
+                                        <TextBlock Text="Flagged index" Style="{StaticResource Footnote}" Margin="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <TextBlock x:Name="TxtDetailProblem" Grid.Row="2" Text="{Binding DetailProblem}" Foreground="{StaticResource Warning}"
+                                           FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
+                                           Visibility="{Binding DetailProblem, Converter={StaticResource Shown}}"/>
+
+                                <DockPanel Grid.Row="3" Margin="0,8,0,8">
+                                    <Button Content="&#x2398; Copy All" DockPanel.Dock="Right" Style="{StaticResource RefreshButton}" Padding="10,5"
+                                            ToolTip="Copy every row shown, in the grid's current order, with headers."
+                                            Command="{x:Static helpers:DataGridExport.CopyAll}" CommandParameter="{Binding ElementName=IndexesGrid}"/>
+                                    <Button x:Name="BtnClearIndexFilters" Content="Clear filters" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Margin="0,0,10,0"
+                                            Command="{Binding ClearIndexFiltersCommand}" ToolTip="Turn off every filter on this grid."/>
+                                    <CheckBox x:Name="ChkFlaggedOnly" Content="Flagged only" DockPanel.Dock="Right" IsChecked="{Binding FlaggedOnly}"
+                                              VerticalAlignment="Center" Margin="10,0,10,0" Foreground="{StaticResource TextMuted}" FontSize="12"
+                                              ToolTip="Only large indexes that are read little and written much."/>
+                                    <controls:CheckListFilter x:Name="TypeFilter" DockPanel.Dock="Right" Width="150"
+                                                              DataContext="{Binding IndexType}" AutomationProperties.Name="Index type filter"/>
+                                    <TextBlock Text="Type" DockPanel.Dock="Right" Style="{StaticResource ToolbarLabel}" Margin="10,0,6,0"/>
+                                    <controls:GridFilterBox x:Name="IndexesFilter" DockPanel.Dock="Left" HorizontalAlignment="Left" Target="{Binding ElementName=IndexesGrid}"/>
+                                </DockPanel>
+
+                                <Grid Grid.Row="4">
+                                    <DataGrid x:Name="IndexesGrid" ItemsSource="{Binding Indexes}">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Index"    Binding="{Binding Name}" Width="*" MinWidth="170"/>
+                                            <DataGridTextColumn Header="Type"     Binding="{Binding Type}" Width="130"/>
+                                            <DataGridTextColumn Header="Rows"     Binding="{Binding RowsInIndex, StringFormat=N0, TargetNullValue=&#x2013;}" Width="100" ElementStyle="{StaticResource Number}"/>
+                                            <DataGridTextColumn Header="Reserved" Binding="{Binding ReservedText}" SortMemberPath="ReservedPages" Width="80" ElementStyle="{StaticResource Number}"/>
+                                            <DataGridTextColumn Header="Used"     Binding="{Binding UsedText}" SortMemberPath="UsedPages" Width="80" ElementStyle="{StaticResource Number}"/>
+                                            <DataGridTextColumn Header="Share"    Binding="{Binding ShareText}" SortMemberPath="SharePct" Width="70" ElementStyle="{StaticResource Number}">
+                                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Its reserved space as a share of the table's total."/></Style></DataGridTextColumn.HeaderStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Reads"    Binding="{Binding Reads, StringFormat=N0, TargetNullValue=&#x2013;}" Width="90" ElementStyle="{StaticResource Number}">
+                                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Seeks + scans + lookups by user queries since the server restarted."/></Style></DataGridTextColumn.HeaderStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Writes"   Binding="{Binding Writes, StringFormat=N0, TargetNullValue=&#x2013;}" Width="90" ElementStyle="{StaticResource Number}">
+                                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Updates by user queries since the server restarted."/></Style></DataGridTextColumn.HeaderStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Note"     Binding="{Binding Note}" Width="150" ElementStyle="{StaticResource NoteCell}">
+                                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Flagged: a nonclustered index of at least 100 MB, not enforcing uniqueness, written at least 1,000 times and read no more than once per 10 writes."/></Style></DataGridTextColumn.HeaderStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTemplateColumn Header="" Width="90" CanUserSort="False">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:TableIndexRow}">
+                                                        <Button Content="Index Health" Style="{StaticResource LinkButton}" HorizontalAlignment="Left"
+                                                                Visibility="{Binding IsCostly, Converter={StaticResource Visible}}"
+                                                                Command="{Binding DataContext.OpenIndexHealthCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                                ToolTip="Open Index Health, to see this index's usage and its DROP script."/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <TextBlock x:Name="TxtNoIndexes" Text="{Binding NoIndexesText}" Style="{StaticResource EmptyGrid}"
+                                               Visibility="{Binding NoIndexesText, Converter={StaticResource Shown}}"/>
+                                </Grid>
+
+                                <StackPanel Grid.Row="5">
+                                    <TextBlock x:Name="TxtUsageNote" Text="{Binding UsageNote}" Style="{StaticResource Footnote}"
+                                               Visibility="{Binding UsageNote, Converter={StaticResource Shown}}"/>
+                                    <TextBlock x:Name="TxtIndexHealthNote" Text="{Binding IndexHealthNote}" Style="{StaticResource Footnote}" Margin="0,2,0,0"
+                                               Visibility="{Binding IndexHealthNote, Converter={StaticResource Shown}}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </controls:PageShell>
+    </ScrollViewer>
+</Page>

@@ -31,6 +31,7 @@ public static class PageCatalog
         ["ResourceQueries"]  = typeof(ResourceQueriesPage),
         ["PlanCacheHealth"]  = typeof(PlanCacheHealthPage),
         ["StaleStats"]       = typeof(StaleStatisticsPage),
+        ["TableStats"]       = typeof(TableStatisticsPage),
         ["DbStorage"]        = typeof(DatabaseStoragePage),
         ["AppConnections"]   = typeof(ApplicationConnectionsPage),
         ["Perfmon"]          = typeof(PerfmonPage),

@@ -13,7 +13,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
     : BaseRepository(target, capabilities), ITableStatisticsRepository
 {
     private const string LockedList = "which tables are locked";
-    private const string SizeList   = "table sizes";
+    private const string SizeList   = TableReadFailure.Sizes;
     private const string UsageList  = "index reads and writes";
     private const string StartTime  = "when the server restarted";
 
@@ -24,7 +24,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         var isAzure = (await CapabilitiesAsync(cancellationToken)).IsAzureSqlDatabase;
         using var conn = CreateConnection();
         var rows = (await Q(conn, SqlScripts.Get("TableStatistics/Databases"), cancellationToken)).ToList();
-        var connected = (string)(await QFirst(conn, "SELECT DB_NAME() AS Connected", cancellationToken))!.Connected;
+        var connected = await ConnectedAsync(conn, cancellationToken);
         var names = rows.Select(r => (string)r.Name).ToList();
         return isAzure
             ? new TableDatabases(connected, [connected], false)
@@ -36,11 +36,14 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         using var conn = CreateConnection();
         var failures = new List<TableReadFailure>();
 
-        var tables = (await In(conn, database, "TableStatistics/Tables", cancellationToken))
+        var tables = (await In(conn, database, SqlScripts.Get("TableStatistics/Tables"), cancellationToken))
             .Select(r => ((int)r.ObjectId, (string)r.SchemaName, (string)r.TableName)).ToList();
 
-        var sizeRows = await PartlyAsync(conn, database, "TableStatistics/TableSizes", null, SizeList, DatabaseState, failures, cancellationToken);
-        var lockRows = await PartlyAsync(conn, database, "TableStatistics/LockedTables", null, LockedList, ServerState, failures, cancellationToken);
+        if (!await SeesAllTablesAsync(conn, database, cancellationToken))
+            failures.Add(new TableReadFailure(TableReadFailure.Names, Explained(new PermissionNeeded("VIEW DEFINITION", PermissionScope.Database, await NamedAsync(conn, database, cancellationToken)), out var fix), fix));
+
+        var sizeRows = await PartlyAsync(conn, database, SqlScripts.Get("TableStatistics/TableSizes"), null, SizeList, DatabaseState, failures, cancellationToken);
+        var lockRows = await PartlyAsync(conn, database, SqlScripts.Get("TableStatistics/LockedTables"), null, LockedList, ServerState, failures, cancellationToken);
 
         var sizes = sizeRows?.ToDictionary(r => (int)r.ObjectId, r => ((long)r.RowsInTable, (long)r.DataPages, (long)r.IndexPages));
         var locked = (lockRows ?? []).Select(r => (int)r.ObjectId).ToHashSet();
@@ -52,14 +55,14 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         using var conn = CreateConnection();
         var failures = new List<TableReadFailure>();
 
-        var indexes = (await In(conn, database, "TableStatistics/Indexes", cancellationToken, objectId)).ToList();
+        var indexes = (await In(conn, database, SqlScripts.Get("TableStatistics/Indexes"), cancellationToken, objectId)).ToList();
 
         // This read waits for the table's lock, for no longer than its LOCK_TIMEOUT.
         IReadOnlyList<dynamic>? sizeRows = null;
         var isLocked = false;
         try
         {
-            sizeRows = (await In(conn, database, "TableStatistics/IndexSizes", cancellationToken, objectId)).ToList();
+            sizeRows = (await In(conn, database, SqlScripts.Get("TableStatistics/IndexSizes"), cancellationToken, objectId)).ToList();
         }
         catch (WaitStatsException ex) when (ex.Failure.Kind == SqlFailureKind.LockTimeout)
         {
@@ -67,10 +70,10 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         }
         catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
-            failures.Add(await FailureAsync(SizeList, ex, DatabaseState, database, cancellationToken));
+            failures.Add(await FailureAsync(conn, SizeList, ex, DatabaseState, database, cancellationToken));
         }
 
-        var usageRows = isLocked ? null : await PartlyAsync(conn, database, "TableStatistics/IndexUsage", objectId, UsageList, ServerState, failures, cancellationToken);
+        var usageRows = isLocked ? null : await PartlyAsync(conn, database, SqlScripts.Get("TableStatistics/IndexUsage"), objectId, UsageList, ServerState, failures, cancellationToken);
         var started = await ServerStartedAsync(conn, database, failures, cancellationToken);
 
         var sizes = sizeRows?.ToDictionary(r => (int)r.IndexId);
@@ -94,26 +97,23 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
     }
 
     // Runs one of the area's queries in the database chosen, or as it is in the connection's.
-    private Task<IEnumerable<dynamic>> In(IDbConnection conn, string? database, string script, CancellationToken cancellationToken, int? objectId = null)
-    {
-        var sql = SqlScripts.Get(script);
-        return database is null
+    private Task<IEnumerable<dynamic>> In(IDbConnection conn, string? database, string sql, CancellationToken cancellationToken, int? objectId = null) =>
+        database is null
             ? Q(conn, sql, cancellationToken, new { ObjectId = objectId })
             : Q(conn, SqlScripts.Get("TableStatistics/InDatabase"), cancellationToken, new { Database = database, Sql = sql, ObjectId = objectId });
-    }
 
     // A read the page can do without: what it couldn't read goes in failures, and the rest goes on.
-    private async Task<IReadOnlyList<dynamic>?> PartlyAsync(IDbConnection conn, string? database, string script, int? objectId, string what,
+    private async Task<IReadOnlyList<dynamic>?> PartlyAsync(IDbConnection conn, string? database, string sql, int? objectId, string what,
                                                             Func<string?, ServerCapabilities, PermissionNeeded> needed,
                                                             List<TableReadFailure> failures, CancellationToken cancellationToken)
     {
         try
         {
-            return (await In(conn, database, script, cancellationToken, objectId)).ToList();
+            return (await In(conn, database, sql, cancellationToken, objectId)).ToList();
         }
         catch (WaitStatsException ex) when (ex.Failure.IsPermission || ex.Failure.Kind == SqlFailureKind.LockTimeout)
         {
-            failures.Add(await FailureAsync(what, ex, needed, database, cancellationToken));
+            failures.Add(await FailureAsync(conn, what, ex, needed, database, cancellationToken));
             return null;
         }
     }
@@ -126,7 +126,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         }
         catch (WaitStatsException ex) when (ex.Failure.IsPermission)
         {
-            failures.Add(await FailureAsync(StartTime, ex, ServerState, database, cancellationToken));
+            failures.Add(await FailureAsync(conn, StartTime, ex, ServerState, database, cancellationToken));
             return null;
         }
     }
@@ -139,12 +139,33 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         server.IsAzureSqlDatabase ? DatabaseState(database, server) : new("VIEW SERVER STATE", PermissionScope.Server);
 
     // Error 297 doesn't name the permission, so what this read needs is named instead of guessed.
-    private async Task<TableReadFailure> FailureAsync(string what, WaitStatsException error, Func<string?, ServerCapabilities, PermissionNeeded> needed,
+    private async Task<TableReadFailure> FailureAsync(IDbConnection conn, string what, WaitStatsException error,
+                                                      Func<string?, ServerCapabilities, PermissionNeeded> needed,
                                                       string? database, CancellationToken cancellationToken)
     {
         var failure = error.Failure;
         if (failure.Kind == SqlFailureKind.MissingPermission && failure.Permission is null or { Inferred: true })
-            failure = failure with { Permission = needed(database, await CapabilitiesAsync(cancellationToken)) };
+            failure = failure with { Permission = needed(await NamedAsync(conn, database, cancellationToken), await CapabilitiesAsync(cancellationToken)) };
         return new TableReadFailure(what, failure.Explanation ?? error.Message, failure.FixScript(_login));
     }
+
+    private string Explained(PermissionNeeded permission, out string? fix)
+    {
+        var failure = new SqlFailure(SqlFailureKind.MissingPermission, 0, permission, permission.Database);
+        fix = failure.FixScript(_login);
+        return failure.Explanation!;
+    }
+
+    private async Task<bool> SeesAllTablesAsync(IDbConnection conn, string? database, CancellationToken cancellationToken)
+    {
+        var row = (await In(conn, database, SqlScripts.Get("TableStatistics/SeesAllTables"), cancellationToken)).FirstOrDefault();
+        return row is null || Convert.ToInt32(row.SeesAllTables) == 1;
+    }
+
+    // The database a GRANT goes in: the one chosen, or the connection's, which on Azure SQL Database is the only one.
+    private async Task<string> NamedAsync(IDbConnection conn, string? database, CancellationToken cancellationToken) =>
+        database ?? await ConnectedAsync(conn, cancellationToken);
+
+    private async Task<string> ConnectedAsync(IDbConnection conn, CancellationToken cancellationToken) =>
+        (string)(await QFirst(conn, "SELECT DB_NAME() AS Connected", cancellationToken))!.Connected;
 }

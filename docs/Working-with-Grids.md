@@ -42,7 +42,7 @@ Click a column header to sort, and click again to reverse. **Refresh keeps your 
 
 ## Filter
 
-**Resource Queries** (all tabs), **Index Health** (all tabs), **Query Store** and **Query Regressions** have a **Filter rows…** box above each grid.
+**Resource Queries** (all tabs), **Index Health** (all tabs), **Query Store**, **Query Regressions** and **[Table Statistics](Index-and-Statistics-Maintenance.md#filters)** have a **Filter rows…** box above each grid. On Table Statistics, **N of M rows** counts its other filters too, and the grid says so when nothing matches.
 
 | You type | Shows rows that… |
 |---|---|

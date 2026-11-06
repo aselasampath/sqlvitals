@@ -107,7 +107,7 @@ public sealed class WorkspaceShellTests
         var texts = UiThread.Find<TextBlock>(flyout).Select(t => t.Text).ToList();
         Assert.Contains("Maintenance", texts);
         Assert.Contains("Are indexes, statistics, backups and jobs looked after?", texts);
-        Assert.Equal(["IndexHealth", "StaleStats", "Backups", "AgentJobs"], flyout.Pages.Select(p => (string)p.Tag));
+        Assert.Equal(["IndexHealth", "StaleStats", "TableStats", "Backups", "AgentJobs"], flyout.Pages.Select(p => (string)p.Tag));
         Assert.Equal("Pin the menu open", AutomationProperties.GetName(flyout.PinButton));
         // A page the server lacks is the same as in the pinned sidebar.
         var backups = flyout.Pages.Single(p => (string)p.Tag == "Backups");

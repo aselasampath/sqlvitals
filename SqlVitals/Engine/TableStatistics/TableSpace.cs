@@ -10,7 +10,14 @@ public sealed record TableDatabases(string Connected, IReadOnlyList<string> Name
 /// <param name="What">What couldn't be read: "table sizes".</param>
 /// <param name="Explanation">Why, naming the permission: "The login lacks VIEW DATABASE STATE in Sales."</param>
 /// <param name="FixScript">The GRANT that fixes it; null when it isn't a permission.</param>
-public sealed record TableReadFailure(string What, string Explanation, string? FixScript);
+public sealed record TableReadFailure(string What, string Explanation, string? FixScript)
+{
+    /// <summary>The read the table list's sizes come from.</summary>
+    public const string Sizes = "table sizes";
+
+    /// <summary>The login may not see every table: the list holds those it can.</summary>
+    public const string Names = "the names of every table";
+}
 
 /// <summary>A user table's space. Sizes are null while it's locked, or when the login can't read them.</summary>
 /// <param name="DataPages">Reserved pages of its heap or clustered index, LOB and row-overflow included.</param>

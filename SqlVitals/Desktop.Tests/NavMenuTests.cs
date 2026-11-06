@@ -31,7 +31,7 @@ public sealed class NavMenuTests : IDisposable
             "Waits: Waits",
             "Queries: Resource Queries, Query Store, Query Regressions, Plan Cache Health, SP Trace",
             "Resources: Memory, TempDB, File I/O, DB Storage, Perfmon",
-            "Maintenance: Index Health, Stale Stats, Backups, Agent Jobs",
+            "Maintenance: Index Health, Stale Stats, Table Statistics, Backups, Agent Jobs",
             "Configuration: Config Checks, Security Audit",
         ], layout);
 
@@ -53,7 +53,7 @@ public sealed class NavMenuTests : IDisposable
             {
                 "Home", "Overview", "LiveMetrics", "Alerts", "Waits", "Processes", "Deadlocks", "AgentJobs",
                 "Backups", "FileIo", "ConfigChecks", "SecurityAudit", "TempDb", "Memory", "QueryStore",
-                "QueryRegressions", "IndexHealth", "ResourceQueries", "PlanCacheHealth", "StaleStats",
+                "QueryRegressions", "IndexHealth", "ResourceQueries", "PlanCacheHealth", "StaleStats", "TableStats",
                 "DbStorage", "AppConnections", "Perfmon", "SpTrace", "Export", "Settings",
             }.Order(), tags.Order());
     }
