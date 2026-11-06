@@ -255,4 +255,13 @@ public class WaitStatsRepository(SqlTarget target, ServerCapabilitiesCache capab
 
     public Task<TableStatistics.TableIndexList> GetTableIndexesAsync(string? database, int objectId, CancellationToken cancellationToken = default)
         => _tableStatistics.GetTableIndexesAsync(database, objectId, cancellationToken: cancellationToken);
+
+    public Task<TableStatistics.TableHealthBatch> GetTableStatisticsHealthAsync(string? database, IReadOnlyList<int> objectIds, CancellationToken cancellationToken = default)
+        => _tableStatistics.GetTableStatisticsHealthAsync(database, objectIds, cancellationToken: cancellationToken);
+
+    public Task<TableStatistics.TableStatisticsList> GetTableStatisticsAsync(string? database, int objectId, CancellationToken cancellationToken = default)
+        => _tableStatistics.GetTableStatisticsAsync(database, objectId, cancellationToken: cancellationToken);
+
+    public Task<TableStatistics.StatisticsDetails> GetStatisticsDetailsAsync(string? database, int objectId, int statsId, CancellationToken cancellationToken = default)
+        => _tableStatistics.GetStatisticsDetailsAsync(database, objectId, statsId, cancellationToken: cancellationToken);
 }

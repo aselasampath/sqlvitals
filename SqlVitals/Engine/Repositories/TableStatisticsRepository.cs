@@ -96,6 +96,15 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         return new TableIndexList(list, isLocked, started, failures);
     }
 
+    public Task<TableHealthBatch> GetTableStatisticsHealthAsync(string? database, IReadOnlyList<int> objectIds, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
+    public Task<TableStatisticsList> GetTableStatisticsAsync(string? database, int objectId, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
+    public Task<StatisticsDetails> GetStatisticsDetailsAsync(string? database, int objectId, int statsId, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
     // Runs one of the area's queries in the database chosen, or as it is in the connection's.
     private Task<IEnumerable<dynamic>> In(IDbConnection conn, string? database, string sql, CancellationToken cancellationToken, int? objectId = null) =>
         database is null
