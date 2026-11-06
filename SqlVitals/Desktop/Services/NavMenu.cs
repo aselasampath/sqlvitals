@@ -93,6 +93,8 @@ public static class NavMenu
                 "Missing and unused indexes, index usage and fragmentation, with CREATE, DROP and REBUILD scripts"),
             new("StaleStats",  "\uE81C", "Stale Stats",
                 "Statistics with many rows changed since they were last updated, with UPDATE STATISTICS scripts"),
+            new("TableStats",  "\uF0E2", "Table Statistics",
+                "Any database's tables, largest first; each table's indexes with their size, reads and writes"),
             new("Backups",     "\uE74E", "Backups",
                 "Each database's last full, differential and log backup from msdb, with a warning when one is older than your RPO"),
             new("AgentJobs",   "\uE823", "Agent Jobs",

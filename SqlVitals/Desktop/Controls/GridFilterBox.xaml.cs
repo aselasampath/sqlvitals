@@ -30,7 +30,19 @@ public partial class GridFilterBox : UserControl
     /// <summary>Raised after the filter text has been applied to the grid.</summary>
     public event EventHandler? FilterChanged;
 
-    public bool IsActive => _terms.Count > 0;
+    public bool IsActive => _terms.Count > 0 || _alsoRequire is not null;
+
+    private Func<object, bool>? _alsoRequire;
+
+    /// <summary>
+    /// Filters the rows by more than the words typed too: a page's other filters (#242), so the count
+    /// says "N of M" of them all and Copy follows what shows. Null when they filter nothing.
+    /// </summary>
+    public void Refilter(Func<object, bool>? alsoRequire)
+    {
+        _alsoRequire = alsoRequire;
+        Apply();
+    }
 
     /// <summary>
     /// Text a row is also matched on that no visible column shows, such as the login the Processes
@@ -133,7 +145,7 @@ public partial class GridFilterBox : UserControl
         var grid = Target;
         if (grid is null || !grid.Items.CanFilter) return;
 
-        if (_terms.Count == 0)
+        if (!IsActive)
         {
             if (grid.Items.Filter is not null) grid.Items.Filter = null;
         }
@@ -172,6 +184,7 @@ public partial class GridFilterBox : UserControl
 
     private bool Matches(object item)
     {
+        if (_alsoRequire?.Invoke(item) == false) return false;
         if (_terms.Count == 0) return true;
 
         if (!_rowText.TryGetValue(item, out var text))

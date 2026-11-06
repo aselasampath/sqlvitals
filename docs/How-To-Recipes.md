@@ -249,6 +249,13 @@ An application that opens connections and doesn't close them fills its pool with
 4. **🔍 Index Health → Missing Indexes**. Filter by table, and review overlapping suggestions before you **Generate CREATE Script**.
 5. **Save as .sql**, test on a non-production copy, and run in a maintenance window. SqlVitals never runs scripts for you.
 
+## Find where a database's space goes
+
+1. **Maintenance → Table Statistics**, and choose the database at the top right. Tables are largest first.
+2. Select a table. The bar shows its data and each index, and the grid each index's size, reads and writes.
+3. An index marked *Few reads, many writes* costs more than it gives. Check how long the server has been up (the page says), then follow the link to **🔍 Index Health** before you drop anything.
+4. To compare several tables, filter by **Schema**, or sort by **Index size**.
+
 ## TempDB or the log is filling up
 
 - **TempDB:** **🗄️ TempDB → Top Sessions by TempDB Allocation**. *Internal KB* = sorts and hashes from big queries; *User Obj KB* = temp tables. Find the session and its query.

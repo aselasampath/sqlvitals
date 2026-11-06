@@ -202,6 +202,16 @@ public sealed class LifetimeRepository(IWaitStatsRepository inner, Func<Cancella
     public Task<Monitoring.ServerCheckFigures> GetServerChecksAsync(Monitoring.ServerChecksRequest request, CancellationToken cancellationToken = default)
         => Run(c => inner.GetServerChecksAsync(request, cancellationToken: c), cancellationToken);
 
+    // ── Table Statistics ──────────────────────────────────────────────────
+    public Task<TableStatistics.TableDatabases> GetTableDatabasesAsync(CancellationToken cancellationToken = default)
+        => Run(c => inner.GetTableDatabasesAsync(cancellationToken: c), cancellationToken);
+
+    public Task<TableStatistics.TableSizeList> GetTableSizesAsync(string? database, CancellationToken cancellationToken = default)
+        => Run(c => inner.GetTableSizesAsync(database, cancellationToken: c), cancellationToken);
+
+    public Task<TableStatistics.TableIndexList> GetTableIndexesAsync(string? database, int objectId, CancellationToken cancellationToken = default)
+        => Run(c => inner.GetTableIndexesAsync(database, objectId, cancellationToken: c), cancellationToken);
+
     // ── File I/O latency ──────────────────────────────────────────────────
     public Task<FileIo.FileIoReading> ReadFileIoAsync(CancellationToken cancellationToken = default)
         => Run(c => inner.ReadFileIoAsync(cancellationToken: c), cancellationToken);

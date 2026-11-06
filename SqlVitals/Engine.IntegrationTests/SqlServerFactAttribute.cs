@@ -29,6 +29,17 @@ public sealed class SqlServerFactAttribute : FactAttribute
     }
 }
 
+/// <summary>A theory that runs SQL: skipped on a machine with no <see cref="TestServer.Variable"/>.</summary>
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class SqlServerTheoryAttribute : TheoryAttribute
+{
+    public SqlServerTheoryAttribute()
+    {
+        if (TestServer.ConnectionString is null && !TestServer.Required)
+            Skip = $"No SQL Server: set {TestServer.Variable} to a connection string whose login is sysadmin.";
+    }
+}
+
 /// <summary>
 /// The repository methods a test runs. <see cref="RepositoryCoverageTests"/> checks that every
 /// method of <see cref="Repositories.IWaitStatsRepository"/> is named by one.

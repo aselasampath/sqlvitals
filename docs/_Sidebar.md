@@ -31,6 +31,7 @@
 
 **Maintenance and resources**
 - [Index and Statistics Maintenance](Index-and-Statistics-Maintenance.md)
+- [Table Statistics](Index-and-Statistics-Maintenance.md#table-statistics)
 - [Server Resources](Server-Resources.md)
 
 **Everyday tools**

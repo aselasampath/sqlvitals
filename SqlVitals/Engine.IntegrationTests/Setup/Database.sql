@@ -6,6 +6,11 @@
 --   FindOrdersByCode compares the varchar column with an nvarchar (an implicit conversion);
 --   the orphaned user's login is dropped; Held, LockA and LockB are for blocking and a deadlock.
 
+IF DB_ID(N'SqlVitalsITOther') IS NOT NULL
+    DROP DATABASE SqlVitalsITOther;
+IF DB_ID(N'SqlVitalsITOffline') IS NOT NULL
+    DROP DATABASE SqlVitalsITOffline;
+GO
 IF DB_ID(N'SqlVitalsIT') IS NOT NULL
 BEGIN
     ALTER DATABASE SqlVitalsIT SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
@@ -134,4 +139,67 @@ GO
 BACKUP DATABASE SqlVitalsIT TO DISK = N'SqlVitalsIT_full.bak' WITH INIT, CHECKSUM;
 BACKUP DATABASE SqlVitalsIT TO DISK = N'SqlVitalsIT_diff.bak' WITH DIFFERENTIAL, INIT;
 BACKUP LOG SqlVitalsIT TO DISK = N'SqlVitalsIT_log.trn' WITH INIT;
+GO
+GO
+-- Table Statistics (#242): one table of each shape, to compare with sp_spaceused, and one to lock.
+USE SqlVitalsIT;
+GO
+CREATE SCHEMA sizes;
+GO
+CREATE TABLE sizes.HeapTable (Id int NOT NULL, Filler char(500) NOT NULL);
+CREATE INDEX IX_HeapTable_Id ON sizes.HeapTable (Id);
+
+-- Its nvarchar(max) goes off the row as LOB; its two varchar(5000) can't share a row: row-overflow.
+CREATE TABLE sizes.ClusteredTable
+(
+    Id int NOT NULL CONSTRAINT PK_ClusteredTable PRIMARY KEY,
+    Doc nvarchar(max) NOT NULL,
+    A varchar(5000) NOT NULL,
+    B varchar(5000) NOT NULL
+);
+CREATE INDEX IX_ClusteredTable_A ON sizes.ClusteredTable (Id) INCLUDE (A);
+
+CREATE PARTITION FUNCTION PF_Sizes (int) AS RANGE RIGHT FOR VALUES (1000, 2000);
+CREATE PARTITION SCHEME PS_Sizes AS PARTITION PF_Sizes ALL TO ([PRIMARY]);
+CREATE TABLE sizes.PartitionedTable (Id int NOT NULL, Filler char(500) NOT NULL) ON PS_Sizes (Id);
+CREATE CLUSTERED INDEX CX_PartitionedTable ON sizes.PartitionedTable (Id) ON PS_Sizes (Id);
+CREATE INDEX IX_PartitionedTable_Filler ON sizes.PartitionedTable (Filler) ON PS_Sizes (Id);
+
+CREATE TABLE sizes.ColumnstoreTable (Id int NOT NULL, V int NOT NULL);
+CREATE CLUSTERED COLUMNSTORE INDEX CCI_ColumnstoreTable ON sizes.ColumnstoreTable;
+
+CREATE TABLE sizes.LockedTable (Id int NOT NULL CONSTRAINT PK_LockedTable PRIMARY KEY, V int NOT NULL);
+CREATE INDEX IX_LockedTable_V ON sizes.LockedTable (V);
+GO
+WITH n AS (SELECT TOP (3000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns a CROSS JOIN sys.all_columns b)
+INSERT sizes.HeapTable SELECT N, 'x' FROM n;
+
+WITH n AS (SELECT TOP (300) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns)
+INSERT sizes.ClusteredTable SELECT N, REPLICATE(CAST(N'd' AS nvarchar(max)), 20000), REPLICATE('a', 5000), REPLICATE('b', 5000) FROM n;
+
+WITH n AS (SELECT TOP (3000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns a CROSS JOIN sys.all_columns b)
+INSERT sizes.PartitionedTable SELECT N, 'x' FROM n;
+
+-- Enough rows for a compressed row group, and some deleted, so its delete bitmap holds something.
+WITH n AS (SELECT TOP (150000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns a CROSS JOIN sys.all_columns b)
+INSERT sizes.ColumnstoreTable WITH (TABLOCK) SELECT N, N % 100 FROM n;
+ALTER INDEX CCI_ColumnstoreTable ON sizes.ColumnstoreTable REBUILD;
+DELETE sizes.ColumnstoreTable WHERE Id <= 500;
+
+INSERT sizes.LockedTable VALUES (1, 1), (2, 2);
+GO
+-- Another database, to read without connecting to it, and one that's offline, never to be offered.
+CREATE DATABASE SqlVitalsITOther;
+GO
+USE SqlVitalsITOther;
+GO
+CREATE TABLE dbo.OnlyInOther (Id int NOT NULL CONSTRAINT PK_OnlyInOther PRIMARY KEY, V int NOT NULL);
+CREATE INDEX IX_OnlyInOther_V ON dbo.OnlyInOther (V);
+INSERT dbo.OnlyInOther VALUES (1, 1);
+GO
+USE master;
+GO
+CREATE DATABASE SqlVitalsITOffline;
+GO
+ALTER DATABASE SqlVitalsITOffline SET OFFLINE WITH ROLLBACK IMMEDIATE;
 GO

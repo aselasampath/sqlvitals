@@ -55,6 +55,8 @@ public class WaitStatsRepository(SqlTarget target, ServerCapabilitiesCache capab
 
     private readonly ServerChecksRepository _serverChecks = new(target, capabilities);
 
+    private readonly TableStatisticsRepository _tableStatistics = new(target, capabilities);
+
     // Remembers which volume each file is on, so one instance per connection.
     private readonly FileIoRepository _fileIo = new(target, capabilities);
 
@@ -243,4 +245,14 @@ public class WaitStatsRepository(SqlTarget target, ServerCapabilitiesCache capab
     // ── Security audit (delegated to SecurityAuditRepository) ─────────
     public Task<Security.SecurityFindingList> GetSecurityAuditAsync(CancellationToken cancellationToken = default)
         => _securityAudit.GetSecurityAuditAsync(cancellationToken: cancellationToken);
+
+    // ── Table Statistics (delegated to TableStatisticsRepository) ─────
+    public Task<TableStatistics.TableDatabases> GetTableDatabasesAsync(CancellationToken cancellationToken = default)
+        => _tableStatistics.GetTableDatabasesAsync(cancellationToken: cancellationToken);
+
+    public Task<TableStatistics.TableSizeList> GetTableSizesAsync(string? database, CancellationToken cancellationToken = default)
+        => _tableStatistics.GetTableSizesAsync(database, cancellationToken: cancellationToken);
+
+    public Task<TableStatistics.TableIndexList> GetTableIndexesAsync(string? database, int objectId, CancellationToken cancellationToken = default)
+        => _tableStatistics.GetTableIndexesAsync(database, objectId, cancellationToken: cancellationToken);
 }
