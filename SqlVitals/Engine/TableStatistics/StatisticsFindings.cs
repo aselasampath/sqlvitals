@@ -188,9 +188,9 @@ public static class StatisticsFindings
     private static StatisticsFinding? Skew(IReadOnlyList<HistogramStep> histogram, double? estimate)
     {
         var total = histogram.Sum(s => s.TotalRows);
-        var average = estimate ?? 0;
+        // Without an average per value to compare with, a huge range can be an identity column: only a key's own rows say it's skew.
         var skewed = histogram.Where(s => !s.IsNullStep && s.TotalRows >= SkewShare * total
-                                          && Math.Max(s.EqRows, s.AvgRangeRows) >= average * FarFactor)
+                                          && (estimate is > 0 ? Math.Max(s.EqRows, s.AvgRangeRows) >= estimate * FarFactor : s.EqRows >= SkewShare * total))
                               .OrderByDescending(s => s.TotalRows).ToList();
         if (skewed.Count == 0)
             return null;
