@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
 using SqlVitals.Engine.Models;
@@ -39,6 +41,13 @@ public partial class StaleStatisticsPage : Page, IPageContext
     {
         if (!_matching)
             ViewModel.SelectedStatistics = StatsGrid.SelectedItems.OfType<StaleStatistic>().ToList();
+    }
+
+    // A row double-clicked: not the header or the scroll bar.
+    private void StatsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(StatsGrid, source) is DataGridRow { Item: StaleStatistic row })
+            ViewModel.OpenTableStatisticsCommand.Execute(row);
     }
 
     // The view model kept the rows selected across a refresh: the grid selects them all again.

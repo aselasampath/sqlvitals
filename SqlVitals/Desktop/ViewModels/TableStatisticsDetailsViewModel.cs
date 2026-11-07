@@ -51,6 +51,10 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     // The object to choose again on the first read after coming back.
     private string? _restoredName;
 
+    // The object a link asked for, until it's found or the user chooses another: said if the table doesn't have it.
+    private string? _wantedName;
+    private string? _missingObject;
+
     /// <param name="showReading">The loading bar: what it says, what it says when done, and what its Stop does.</param>
     /// <param name="reportError">A failed read beside the page's own: the top bar and the log.</param>
     public TableStatisticsDetailsViewModel(ITableStatisticsRepository repo, IDialogService dialogs, TimeProvider time,
@@ -97,8 +101,25 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     partial void OnSelectedObjectChanged(StatisticsObject? value)
     {
         if (!_holding && value is not null)
+        {
+            _wantedName = _missingObject = null;
             _ = ReadChosenObjectAsync(value);
+        }
     }
+
+    /// <summary>A link asks for this object, on the table about to be chosen (#244).</summary>
+    public void Want(string statisticsName) => _wantedName = statisticsName;
+
+    /// <summary>
+    /// The login isn't allowed to read the chosen object (#244): its header, findings, chart and script
+    /// are off, and <see cref="Problem"/> says what would allow it and what that also allows.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRead))]
+    [NotifyCanExecuteChangedFor(nameof(GenerateScriptCommand))]
+    private bool _readDenied;
+
+    public bool CanRead => !ReadDenied;
 
     // ── What it holds ─────────────────────────────────────────────────────
 
@@ -234,7 +255,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     }
 
     // UPDATE STATISTICS fails on a columnstore index.
-    private bool CanGenerateScript() => SelectedObject is { IsColumnstore: false };
+    private bool CanGenerateScript() => SelectedObject is { IsColumnstore: false } && !ReadDenied;
 
     // ── Choosing and reading ──────────────────────────────────────────────
 
@@ -254,7 +275,10 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         _read = false;
         TableShown = table;
         if (!same)
+        {
+            _wantedName = _missingObject = null;
             ClearObjects();
+        }
     }
 
     /// <summary>Stops what's being read: another choice, leaving, or the loading bar's Stop.</summary>
@@ -370,8 +394,15 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     private void ShowList(TableSize table, TableStatisticsList list)
     {
         var before = SelectedObject;
-        var wanted = _restoredName ?? before?.Name;
+        var wanted = _wantedName ?? _restoredName ?? before?.Name;
         _restoredName = null;
+        if (_wantedName is { } asked)
+        {
+            var found = TableStatisticsTarget.Named(list.Statistics, s => s.Name, asked) is not null;
+            _missingObject = found ? null : $"{table.FullName} has no statistics object named {asked}: it may have been dropped or renamed.";
+            if (found)
+                _wantedName = null;
+        }
 
         _holding = true;
         try
@@ -382,7 +413,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
                 foreach (var statistic in list.Statistics)
                     Objects.Add(statistic);
             }
-            SelectedObject = list.Statistics.FirstOrDefault(s => s.Name == wanted)
+            SelectedObject = (wanted is null ? null : TableStatisticsTarget.Named(list.Statistics, s => s.Name, wanted))
                           ?? list.Statistics.FirstOrDefault(s => s.IsClustered && !s.IsColumnstore)
                           ?? list.Statistics.FirstOrDefault(s => !s.IsColumnstore)
                           ?? (list.Statistics.Count > 0 ? list.Statistics[0] : null);
@@ -407,6 +438,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         ShowHeader(details.Properties);
 
         var couldRead = !details.IsLocked && details.Failures.Count == 0;
+        ReadDenied = details.Properties is null && details.Histogram.Count == 0 && details.Failures.Any(f => f.IsDenied);
         var estimate = StatisticsFindings.UnknownEstimate(details);
 
         UnknownEstimate = estimate;
@@ -428,9 +460,11 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         StepFiltersChanged?.Invoke();
     }
 
-    private static string? Problems(TableSize table, bool locked, IReadOnlyList<TableReadFailure> failures)
+    private string? Problems(TableSize table, bool locked, IReadOnlyList<TableReadFailure> failures)
     {
         var problems = failures.Select(TableStatisticsVerdict.Describe).ToList();
+        if (_missingObject is { } missing)
+            problems.Insert(0, missing);
         if (locked)
             problems.Insert(0, $"{table.FullName} is under a schema change, so its statistics can't be read now. Refresh reads them again.");
         return problems.Count == 0 ? null : string.Join(' ', problems);
@@ -467,6 +501,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     private void ClearDetails()
     {
         _properties = null;
+        ReadDenied = false;
         ShowHeader(null);
         ObjectVerdict = null;
         Findings = [];

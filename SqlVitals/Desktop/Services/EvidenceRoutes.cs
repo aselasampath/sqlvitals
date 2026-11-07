@@ -1,6 +1,7 @@
 using System.Globalization;
 using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Engine.TableStatistics;
 
 namespace SqlVitals.Desktop.Services;
 
@@ -27,12 +28,16 @@ public enum FocusKind
 
     /// <summary>Query Store: one query.</summary>
     Query,
+
+    /// <summary>Table Statistics (#244): one table, and its statistics object when known.</summary>
+    Table,
 }
 
 /// <summary>A page's filter (#145).</summary>
 /// <param name="Id">The head blocker's or the session's id, or the query id; null for the chain waiting longest.</param>
 /// <param name="Name">The database's name.</param>
-public sealed record FocusFilter(FocusKind Kind, long? Id = null, string? Name = null)
+/// <param name="Table">The table to open Table Statistics on.</param>
+public sealed record FocusFilter(FocusKind Kind, long? Id = null, string? Name = null, TableStatisticsTarget? Table = null)
 {
     public static FocusFilter None { get; } = new(FocusKind.None);
 
@@ -175,6 +180,7 @@ public static class EvidenceRoutes
         FocusKind.Session  => $"session {filter.Id}",
         FocusKind.Query    => $"query {filter.Id}",
         FocusKind.Database => filter.Name ?? "a database",
+        FocusKind.Table    => filter.Table?.FullName ?? "a table",
         _                  => filter.Kind.ToString(),
     };
 }

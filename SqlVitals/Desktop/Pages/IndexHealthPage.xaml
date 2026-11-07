@@ -89,12 +89,16 @@
                                     IsEnabled="{Binding UnusedScope.HasRows}" Command="{Binding DropScriptCommand}"
                                     CommandParameter="{Binding Items, ElementName=UnusedGrid}"
                                     ToolTip="Generate a T-SQL script that drops the selected unused indexes (or every row shown if none are selected). The script is shown for review — nothing is executed." />
+                            <Button x:Name="BtnUnusedTable" DockPanel.Dock="Right" Content="Open in Table Statistics" Margin="0,0,10,0"
+                                    Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
+                                    Command="{Binding OpenUnusedTableCommand}"
+                                    ToolTip="See this table's size, its indexes' sizes and its statistics. Double-clicking a row does the same." />
                             <controls:GridFilterBox x:Name="UnusedFilter" DockPanel.Dock="Right" Margin="0,0,10,0"
                                                     Target="{Binding ElementName=UnusedGrid}" />
                             <TextBlock Text="Unused Indexes (zero reads since last restart)" Style="{StaticResource SectionHeader}"
                                        VerticalAlignment="Center" />
                         </DockPanel>
-                        <DataGrid x:Name="UnusedGrid" ItemsSource="{Binding Unused}" SelectedItem="{Binding SelectedUnused}"
+                        <DataGrid x:Name="UnusedGrid" ItemsSource="{Binding Unused}" SelectedItem="{Binding SelectedUnused}" MouseDoubleClick="Grid_MouseDoubleClick"
                                   IsReadOnly="True" CanUserAddRows="False"
                                   ClipboardCopyMode="IncludeHeader" SelectionMode="Extended" SelectionUnit="FullRow">
                             <DataGrid.Columns>
@@ -215,6 +219,10 @@
                                     IsEnabled="{Binding FragmentationScope.HasRows}" Command="{Binding MaintenanceScriptCommand}"
                                     CommandParameter="{Binding Items, ElementName=FragGrid}"
                                     ToolTip="Generate a T-SQL ALTER INDEX script for the selected rows (or every row shown if none are selected). The script is shown for review — nothing is executed." />
+                            <Button x:Name="BtnFragTable" Content="Open in Table Statistics" Margin="10,0,0,0"
+                                    Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
+                                    Command="{Binding OpenFragmentedTableCommand}"
+                                    ToolTip="See this table's size, its indexes' sizes and its statistics. Double-clicking a row does the same." />
                         </WrapPanel>
 
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="True">
@@ -224,7 +232,7 @@
                                        TextWrapping="Wrap" VerticalAlignment="Center" />
                         </DockPanel>
 
-                        <DataGrid x:Name="FragGrid" ItemsSource="{Binding Fragmentation}" SelectedItem="{Binding SelectedFragmentation}" CanUserAddRows="False"
+                        <DataGrid x:Name="FragGrid" ItemsSource="{Binding Fragmentation}" SelectedItem="{Binding SelectedFragmentation}" CanUserAddRows="False" MouseDoubleClick="Grid_MouseDoubleClick"
                                   IsReadOnly="True" AutoGenerateColumns="False"
                                   SelectionMode="Extended" SelectionUnit="FullRow"
                                   RowBackground="{StaticResource BgDeep}"

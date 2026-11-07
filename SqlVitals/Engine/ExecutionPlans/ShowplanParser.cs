@@ -155,7 +155,10 @@ public static class ShowplanParser
             Properties = props,
         };
 
-        return new PlanStatement(number, type, text, cost, pctOfBatch, root, ParseMissingIndexes(queryPlan));
+        return new PlanStatement(number, type, text, cost, pctOfBatch, root, ParseMissingIndexes(queryPlan))
+        {
+            StatisticsUsed = ParseStatisticsUsed(queryPlan),
+        };
     }
 
     private static XElement? FindQueryPlan(XElement stmt)
@@ -208,6 +211,10 @@ public static class ShowplanParser
             LogicalOp = logical,
             IndexKind = Attr(objectElement, "IndexKind"),
             ObjectName = FormatObject(objectElement),
+            ObjectDatabase = NamePart(objectElement, "Database"),
+            ObjectSchema = NamePart(objectElement, "Schema"),
+            ObjectTable = NamePart(objectElement, "Table"),
+            ObjectIndex = NamePart(objectElement, "Index"),
             EstimatedOperatorCost = operatorCost,
             EstimatedSubtreeCost = subtreeCost,
             CostPercent = costPercent,
@@ -398,6 +405,18 @@ public static class ShowplanParser
             warnings.Select(w => PlanProperty.Leaf(Humanize(w.Kind.ToString()), w.Message)).ToList());
 
     // ── Missing indexes ──────────────────────────────────────────────────
+
+    private static List<PlanStatisticsUsed> ParseStatisticsUsed(XElement? queryPlan) =>
+        Child(queryPlan, "OptimizerStatsUsage")?.Elements()
+            .Where(e => Is(e, "StatisticsInfo"))
+            .Select(e => (Info: e, Table: NamePart(e, "Table"), Statistics: NamePart(e, "Statistics")))
+            .Where(s => s.Table is not null && s.Statistics is not null)
+            .Select(s => new PlanStatisticsUsed(NamePart(s.Info, "Database"), NamePart(s.Info, "Schema"), s.Table!, s.Statistics!))
+            .ToList() ?? [];
+
+    // A name in the plan, as "[dbo]": without its brackets, or null when it's missing.
+    private static string? NamePart(XElement? element, string name) =>
+        Attr(element, name) is { Length: > 0 } value ? UnquoteName(value) : null;
 
     private static List<PlanMissingIndex> ParseMissingIndexes(XElement? queryPlan)
     {

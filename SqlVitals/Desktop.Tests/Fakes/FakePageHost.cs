@@ -31,6 +31,10 @@ internal sealed class FakePageHost : IPageHost
 
     public void KeepViewState(Route route) => Calls.Add($"Keep {route.Tag}");
 
+    public void ForgetViewState(Route route) => Calls.Add($"Forget {route.Tag}");
+
+    public void ShowWindow() => Calls.Add("Show window");
+
     public void RestoreViewState(Route route, bool scrolling) => Calls.Add($"{(scrolling ? "Scroll" : "Restore")} {route.Tag}");
 }
 

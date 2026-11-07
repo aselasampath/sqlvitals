@@ -10,6 +10,8 @@ namespace SqlVitals.Desktop.Services.Wpf;
 /// <param name="shell">The shell's view model, once its window shows it.</param>
 internal sealed class ShellNavigator(Func<ShellViewModel?> shell) : INavigator
 {
+    public Guid? ActiveServer => shell()?.ActiveServer;
+
     public Task GoToAsync(string tag, Guid? serverId = null)
     {
         Check(tag);
@@ -24,6 +26,8 @@ internal sealed class ShellNavigator(Func<ShellViewModel?> shell) : INavigator
 
     public Task InvestigateAsync(Alert alert, string source) =>
         shell() is { } main ? main.OpenEvidenceAsync(alert, source) : Task.CompletedTask;
+
+    public void ShowMainWindow() => shell()?.ShowWindow();
 
     public Task BackAsync() => shell() is { } main ? main.GoAsync(back: true) : Task.CompletedTask;
 

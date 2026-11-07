@@ -30,6 +30,7 @@ Plans from the plan cache and Query Store are *estimated* plans, so they don't h
 |---|---|
 | See an operator's key figures | **Hover** it, as with the SSMS tooltip. Hover an arrow for its rows, row size and data size. |
 | See **every** property | **Click** the operator. The **Properties** panel lists a summary first, then every attribute and child element as an expandable tree. Right-click a value to **Copy value**. |
+| See the statistics behind an estimate | **Click** an operator on a table, then **Open Table Statistics** in **Properties** (from 0.87.0). In an actual plan an estimate 10× or more off says **Bad estimate**. [Table Statistics](Index-and-Statistics-Maintenance.md#opened-from-another-page) opens on its database and table, on the statistics object the optimizer used if the plan says: the operator's own index's if it used those, otherwise the first the plan lists. A plan from before SQL Server 2017 CU3 doesn't say, so it opens on the table. Operators with no table, table variables, temporary tables, system tables and indexed views have no link. A plan's window stays open behind the main one. |
 | Find an operator | Type in **Find** (Ctrl+F). Matching operators (name, object or predicate) are highlighted; **Enter** / **Shift+Enter** move between them, **Esc** clears. |
 | Zoom | **−** / **+**, **Ctrl+mouse wheel** (zooms around the pointer), **Fit** for the whole plan, **1:1** for actual size (Ctrl+0) |
 | Pan | Drag the background, or middle-drag anywhere |

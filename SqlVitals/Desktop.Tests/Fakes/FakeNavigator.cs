@@ -6,6 +6,16 @@ namespace SqlVitals.Desktop.Tests.Fakes;
 /// <summary>An <see cref="INavigator"/> that writes down where it was asked to go (#182).</summary>
 internal sealed class FakeNavigator : INavigator
 {
+    public Guid? ActiveServer { get; set; }
+
+    /// <summary>How many times the main window was brought to the front.</summary>
+    public int WindowShown { get; private set; }
+
+    public void ShowMainWindow() => WindowShown++;
+
+    /// <summary>The last filter a link carried.</summary>
+    public FocusFilter? LastFilter { get; private set; }
+
     /// <summary>Each move, as "Processes", "QueryStore ⟵ Query Regressions: Query 42", "Back".</summary>
     public List<string> Moves { get; } = [];
 
@@ -20,6 +30,7 @@ internal sealed class FakeNavigator : INavigator
 
     public Task GoToAsync(string tag, FocusFilter filter, string fromPage)
     {
+        LastFilter = filter;
         Moves.Add($"{tag} ⟵ {fromPage}: {filter.Kind}{(filter.Id is { } id ? $" {id}" : "")}");
         return Task.CompletedTask;
     }

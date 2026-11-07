@@ -9,6 +9,9 @@ namespace SqlVitals.Desktop.Services;
 /// </summary>
 public interface INavigator
 {
+    /// <summary>The connection open now; null when none is. A window that outlives a switch compares it (#244).</summary>
+    Guid? ActiveServer { get; }
+
     /// <summary>Opens a page as its sidebar button would.</summary>
     /// <param name="serverId">The server a page is about (#141): an Overview's, or the connection a
     /// server's page queries, made active first; null for the active connection.</param>
@@ -27,6 +30,9 @@ public interface INavigator
     /// </summary>
     /// <param name="source">Why, in the activity log: <see cref="SqlVitals.Engine.Activity.ActivitySources"/>.</param>
     Task InvestigateAsync(Alert alert, string source);
+
+    /// <summary>The main window in front, even from the tray or minimized: a separate window's link opens a page in it (#244).</summary>
+    void ShowMainWindow();
 
     /// <summary>Back to the page before, as the top bar's Back does.</summary>
     Task BackAsync();

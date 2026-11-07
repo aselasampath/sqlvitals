@@ -33,7 +33,7 @@ public sealed class StaleStatisticsViewModelTests
     {
         var time = new FakeTimeProvider(new DateTimeOffset(Now, TimeSpan.Zero));
         time.SetLocalTimeZone(TimeZoneInfo.Utc);
-        var model = new StaleStatisticsViewModel(repo, _dialogs, time);
+        var model = new StaleStatisticsViewModel(repo, _dialogs, new FakeNavigator(), time);
         model.Connect("StaleStats", _shell, new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
         return model;
     }

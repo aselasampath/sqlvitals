@@ -358,6 +358,9 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
             var failure = Assert.Single(batch.Failures);
             Assert.Contains("SELECT", failure.Explanation, StringComparison.Ordinal);
             Assert.Contains("db_ddladmin", failure.Explanation, StringComparison.Ordinal);
+            Assert.Equal(TableReadFailure.Statistics, failure.What);
+            Assert.True(failure.IsDenied);
+            Assert.Contains(TableReadFailure.SelectWarning, failure.Explanation, StringComparison.Ordinal);
             Assert.Contains($"USE [{SqlServerFixture.Database}]", failure.FixScript, StringComparison.Ordinal);
             Assert.Contains($"GRANT SELECT TO [{login}]", failure.FixScript, StringComparison.Ordinal);
 

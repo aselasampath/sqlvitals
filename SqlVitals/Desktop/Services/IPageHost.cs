@@ -21,6 +21,12 @@ public interface IPageHost
     /// <summary>Keeps how the page on screen is being looked at, for when <paramref name="route"/> is opened again.</summary>
     void KeepViewState(Route route);
 
+    /// <summary>The window in front, even from the tray or minimized (#244).</summary>
+    void ShowWindow();
+
+    /// <summary>Forgets how <paramref name="route"/>'s page was being looked at: a link opens it afresh (#244).</summary>
+    void ForgetViewState(Route route);
+
     /// <summary>
     /// Puts back how <paramref name="route"/>'s page was being looked at, if it was: its tab and
     /// grids before it loads, then, once loaded, its scroll position.

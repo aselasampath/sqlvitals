@@ -190,6 +190,10 @@ public partial class MainWindow : Window, IPageHost
             _viewStates.Save(route, ViewState.Capture(_page, _viewStates.Get(route)));
     }
 
+    public void ForgetViewState(Route route) => _viewStates.Remove(route);
+
+    public void ShowWindow() => ShowFromTray();
+
     public void RestoreViewState(Route route, bool scrolling)
     {
         if (_page is not { } page || _viewStates.Get(route) is not { } state)

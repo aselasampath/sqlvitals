@@ -14,7 +14,7 @@ namespace SqlVitals.Desktop.Services.Wpf;
 /// in front (<see cref="OwnerWindow"/>), so it stays over it and closes with it. Each window has
 /// its view model (#191), which copies and saves through the clipboard and file dialogs.
 /// </summary>
-internal sealed class WpfDialogService(IClipboard clipboard, IFileDialogs files) : IDialogService
+internal sealed class WpfDialogService(IClipboard clipboard, IFileDialogs files, INavigator navigator) : IDialogService
 {
     public bool Confirm(string message, string caption) =>
         Show(message, caption, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
@@ -44,7 +44,7 @@ internal sealed class WpfDialogService(IClipboard clipboard, IFileDialogs files)
 
     public void ShowQueryPlan(string? planXml, string? queryText, string? title = null)
     {
-        new QueryExecutionPlanWindow(new QueryPlanViewModel(planXml, queryText, title, clipboard, files, this)) { Owner = OwnerWindow() }.Show();
+        new QueryExecutionPlanWindow(new QueryPlanViewModel(planXml, queryText, title, clipboard, files, this, navigator)) { Owner = OwnerWindow() }.Show();
     }
 
     public void ShowQueryStoreQuery(IWaitStatsRepository repo, long queryId, QueryStorePeriod period, QueryStoreStatus status) =>

@@ -253,8 +253,8 @@ An application that opens connections and doesn't close them fills its pool with
 ## Why did this query get a bad row estimate?
 
 1. Find the operator that's off, and note its table, the column it filters on and the value. In an [actual plan](Execution-Plans.md#actual-plans) an estimate 10× or more off is in red. Plans from the plan cache and Query Store have estimates only, so compare with the rows the query returns.
-2. **Maintenance → Table Statistics**. Choose the database, and find the table with **Filter rows…**.
-3. Select it and open the **Statistics** tab. In **Statistics object**, choose one whose line says *histogram on* that column. A histogram covers only the leading column.
+2. Click the operator and press **Open Table Statistics** in **Properties**. It opens on the table, and on the statistics the optimizer used if the plan says. Without a plan to hand: **Maintenance → Table Statistics**, choose the database, and find the table with **Filter rows…**.
+3. On the **Statistics** tab, check **Statistics object**, and choose one whose line says *histogram on* that column if it isn't already. A histogram covers only the leading column. If it says *This login can't read these statistics*, see [what that takes](Server-Impact-and-Permissions.md#table-statistics-reading-statistics) before asking for a GRANT.
 4. Read the verdict and **What to look at**. Each finding says what to try. Poor or Fair means the statistics may be what misled the optimizer.
 5. Work out where the estimate came from: `EQ_ROWS` for a key, `AVG_RANGE_ROWS` for a value between two keys, the dashed line for a local variable ([Reading a histogram](Index-and-Statistics-Maintenance.md#reading-a-histogram)). Hover the step, or find it in the histogram grid. Does that number match the plan's estimate?
 6. **It matches, and the real count is far from it:** the statistics explain the estimate.

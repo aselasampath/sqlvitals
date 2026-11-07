@@ -35,7 +35,7 @@
                 <Button x:Name="BtnScript" Content="Generate UPDATE STATISTICS Script" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Margin="10,0,0,0"
                         Command="{Binding GenerateScriptCommand}"
                         ToolTip="Show an UPDATE STATISTICS script for this object, to review and run yourself. SqlVitals never runs it."/>
-                <CheckBox x:Name="ChkFullScan" Content="FULLSCAN" DockPanel.Dock="Right" IsChecked="{Binding FullScan}" VerticalAlignment="Center"
+                <CheckBox x:Name="ChkFullScan" Content="FULLSCAN" DockPanel.Dock="Right" IsChecked="{Binding FullScan}" IsEnabled="{Binding CanRead}" VerticalAlignment="Center"
                           Margin="10,0,0,0" Foreground="{StaticResource TextMuted}" FontSize="12"
                           ToolTip="The script reads every row: the most accurate histogram, and the most I/O. Off, SQL Server chooses the sample size."/>
                 <StackPanel Orientation="Horizontal">
@@ -47,11 +47,13 @@
                 </StackPanel>
             </DockPanel>
 
+            <TextBlock x:Name="TxtDenied" Text="This login can't read these statistics" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold" Margin="0,12,0,0"
+                       Visibility="{Binding ReadDenied, Converter={StaticResource Shown}}"/>
             <TextBlock x:Name="TxtProblem" Text="{Binding Problem}" Foreground="{StaticResource StaleText}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
                        Visibility="{Binding Problem, Converter={StaticResource Shown}}"/>
 
             <!-- ── Its header ── -->
-            <WrapPanel Margin="0,12,0,0">
+            <WrapPanel x:Name="HeaderFigures" Margin="0,12,0,0" Visibility="{Binding CanRead, Converter={StaticResource Shown}}">
                 <StackPanel Margin="0,0,28,4" ToolTip="When these statistics were last built. Plans compiled since use what they said then.">
                     <TextBlock x:Name="TxtLastUpdated" Text="{Binding LastUpdatedText}" Style="{StaticResource Figure}"/>
                     <TextBlock Text="Last updated" Style="{StaticResource KpiLabel}"/>

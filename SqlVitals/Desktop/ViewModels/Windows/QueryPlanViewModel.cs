@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.ExecutionPlans;
+using SqlVitals.Engine.TableStatistics;
 
 namespace SqlVitals.Desktop.ViewModels.Windows;
 
@@ -27,12 +28,18 @@ public sealed partial class QueryPlanViewModel : ObservableObject
     private readonly IClipboard _clipboard;
     private readonly IFileDialogs _files;
     private readonly IDialogService _dialogs;
+    private readonly INavigator? _navigator;
+    private readonly Guid? _server;
     private bool _xmlShown;
 
     /// <param name="planXml">The showplan XML; null or blank when there is none.</param>
     /// <param name="title">The window's title; null for its own.</param>
-    public QueryPlanViewModel(string? planXml, string? queryText, string? title, IClipboard clipboard, IFileDialogs files, IDialogService dialogs)
+    /// <param name="navigator">Where an operator's table opens (#244); none, and nothing opens.</param>
+    public QueryPlanViewModel(string? planXml, string? queryText, string? title, IClipboard clipboard, IFileDialogs files, IDialogService dialogs,
+                              INavigator? navigator = null)
     {
+        _navigator = navigator;
+        _server    = navigator?.ActiveServer;
         _planXml   = planXml;
         _clipboard = clipboard;
         _files     = files;
@@ -125,6 +132,35 @@ public sealed partial class QueryPlanViewModel : ObservableObject
         catch (Exception ex)
         {
             _dialogs.Error($"Failed to export the diagram:\n{ex.Message}", "Export Failed");
+        }
+    }
+
+    /// <summary>Table Statistics is about to open: this window stops holding itself over the main one, and stays open.</summary>
+    public event Action? TableStatisticsOpening;
+
+    /// <summary>
+    /// Opens Table Statistics on an operator's table (#244), without changing the connection. The window
+    /// outlives a switch of server, so a plan from another server says so rather than finding a namesake.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenTableStatistics(TableStatisticsTarget target)
+    {
+        if (_navigator is null)
+            return;
+        TableStatisticsOpening?.Invoke();
+        _navigator.ShowMainWindow();
+        try
+        {
+            await _navigator.GoToAsync("TableStats",
+                new FocusFilter(FocusKind.Table, Table: target with { FromAnotherServer = _navigator.ActiveServer != _server }), "the execution plan");
+        }
+        catch (OperationCanceledException)
+        {
+            // Another page was opened meanwhile.
+        }
+        catch (Exception ex)
+        {
+            _dialogs.Error($"Couldn't open Table Statistics:\n{ex.Message}", "Table Statistics");
         }
     }
 
