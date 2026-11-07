@@ -1,0 +1,187 @@
+<UserControl x:Class="SqlVitals.Desktop.Controls.TableStatisticsDetailsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:SqlVitals.Desktop.Controls"
+             xmlns:helpers="clr-namespace:SqlVitals.Desktop.Helpers"
+             xmlns:engine="clr-namespace:SqlVitals.Engine.TableStatistics;assembly=SqlVitals.Engine">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SqlVitals.Desktop;component/Pages/TableStatisticsStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <helpers:Shown x:Key="Shown"/>
+            <!-- A column header reads an underscore as an access key: this shows it, and Copy All still takes the plain name. -->
+            <DataTemplate x:Key="PlainHeader">
+                <TextBlock Text="{Binding}"/>
+            </DataTemplate>
+            <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource SectionHeader}">
+                <Setter Property="Margin" Value="0"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- The Statistics tab of Table Statistics (#243), bound to TableStatisticsDetailsViewModel. The grids have
+         a height of their own, inside a page that scrolls: an Auto row with a MaxHeight never scrolls (#245). -->
+    <Grid>
+        <TextBlock x:Name="TxtSelectTable" Text="Select a table to see its statistics." Style="{StaticResource EmptyGrid}" Margin="0,24,0,24"
+                   Visibility="{Binding HasTable, Converter={StaticResource Shown}, ConverterParameter=Not}"/>
+        <controls:KeptInLayout Shows="{Binding HasTable}">
+        <StackPanel x:Name="Panel">
+
+            <!-- ── The object, and its script ── -->
+            <DockPanel>
+                <TextBlock x:Name="TxtSelected" DockPanel.Dock="Right" Text="{Binding SelectedText}" Style="{StaticResource ToolbarLabel}" Margin="12,0,0,0"/>
+                <Button x:Name="BtnScript" Content="Generate UPDATE STATISTICS Script" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Margin="10,0,0,0"
+                        Command="{Binding GenerateScriptCommand}"
+                        ToolTip="Show an UPDATE STATISTICS script for this object, to review and run yourself. SqlVitals never runs it."/>
+                <CheckBox x:Name="ChkFullScan" Content="FULLSCAN" DockPanel.Dock="Right" IsChecked="{Binding FullScan}" VerticalAlignment="Center"
+                          Margin="10,0,0,0" Foreground="{StaticResource TextMuted}" FontSize="12"
+                          ToolTip="The script reads every row: the most accurate histogram, and the most I/O. Off, SQL Server chooses the sample size."/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Statistics object" Style="{StaticResource ToolbarLabel}" Margin="0,0,6,0"/>
+                    <ComboBox x:Name="CmbObject" Width="260" Style="{StaticResource ToolbarCombo}" ItemsSource="{Binding Objects}"
+                              SelectedItem="{Binding SelectedObject}" DisplayMemberPath="Name" AutomationProperties.Name="Statistics object"
+                              ToolTip="The table's statistics: those of its indexes, and those on single columns."/>
+                    <TextBlock x:Name="TxtKind" Text="{Binding KindText}" Style="{StaticResource ToolbarLabel}"/>
+                </StackPanel>
+            </DockPanel>
+
+            <TextBlock x:Name="TxtProblem" Text="{Binding Problem}" Foreground="{StaticResource StaleText}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
+                       Visibility="{Binding Problem, Converter={StaticResource Shown}}"/>
+
+            <!-- ── Its header ── -->
+            <WrapPanel Margin="0,12,0,0">
+                <StackPanel Margin="0,0,28,4" ToolTip="When these statistics were last built. Plans compiled since use what they said then.">
+                    <TextBlock x:Name="TxtLastUpdated" Text="{Binding LastUpdatedText}" Style="{StaticResource Figure}"/>
+                    <TextBlock Text="Last updated" Style="{StaticResource KpiLabel}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,28,4" ToolTip="Rows in the table, or in the filter, when they were last built.">
+                    <TextBlock x:Name="TxtRows" Text="{Binding RowsText}" Style="{StaticResource Figure}"/>
+                    <TextBlock Text="Rows" Style="{StaticResource KpiLabel}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,28,4" ToolTip="Rows read to build them.">
+                    <TextBlock x:Name="TxtRowsSampled" Text="{Binding RowsSampledText}" Style="{StaticResource Figure}"/>
+                    <TextBlock Text="Rows sampled" Style="{StaticResource KpiLabel}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,28,4" ToolTip="Rows sampled as a share of rows. A low rate can miss values, or misjudge how often they occur.">
+                    <TextBlock x:Name="TxtSampleRate" Text="{Binding SampleRateText}" Style="{StaticResource Figure}"/>
+                    <TextBlock Text="Sample rate" Style="{StaticResource KpiLabel}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,28,4" ToolTip="Steps in the histogram: at most 200, and one for NULL.">
+                    <TextBlock x:Name="TxtSteps" Text="{Binding StepsText}" Style="{StaticResource Figure}"/>
+                    <TextBlock Text="Steps" Style="{StaticResource KpiLabel}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,4" ToolTip="Changes to the leading column since they were last built. Enough of them start an automatic update.">
+                    <TextBlock x:Name="TxtModifications" Text="{Binding ModificationsText}" Style="{StaticResource Figure}"/>
+                    <TextBlock Text="Modifications" Style="{StaticResource KpiLabel}"/>
+                </StackPanel>
+            </WrapPanel>
+
+            <!-- ── What to look at ── -->
+            <controls:VerdictView x:Name="ObjectVerdict" Margin="0,10,0,8"/>
+            <StackPanel Visibility="{Binding Findings, Converter={StaticResource Shown}}" Margin="0,0,0,4">
+                <TextBlock Text="What to look at" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+                <ItemsControl x:Name="FindingsList" ItemsSource="{Binding Findings}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type engine:StatisticsFinding}">
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="{Binding What}" Foreground="{StaticResource TextPrimary}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Try}" Foreground="{StaticResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <TextBlock x:Name="TxtNoHistogram" Text="{Binding NoHistogramText}" Style="{StaticResource EmptyGrid}" Margin="0,16,0,16" TextWrapping="Wrap"
+                       Visibility="{Binding NoHistogramText, Converter={StaticResource Shown}}"/>
+
+            <!-- ── The histogram ── -->
+            <controls:KeptInLayout Shows="{Binding HasHistogram}">
+            <StackPanel x:Name="HistogramPanel">
+                <DockPanel Margin="0,6,0,6">
+                    <CheckBox x:Name="ChkLogScale" Content="Log scale" DockPanel.Dock="Right" IsChecked="{Binding LogScale}" VerticalAlignment="Center"
+                              Foreground="{StaticResource TextMuted}" FontSize="12"
+                              ToolTip="Keeps small steps visible next to a huge one. A column's height is then the log of its rows, split by EQ_ROWS' and RANGE_ROWS' share of them."/>
+                    <TextBlock Text="Histogram" Style="{StaticResource SectionTitle}"/>
+                </DockPanel>
+                <controls:HistogramChart x:Name="Chart" Height="250" Steps="{Binding ChartSteps}" UnknownEstimate="{Binding UnknownEstimate}" LogScale="{Binding LogScale}"
+                                         AutomationProperties.Name="Histogram chart: rows per step, in step order. The histogram grid below holds the same values."/>
+                <TextBlock Text="The chart and the findings always show the whole statistics object, whatever the grid below filters. The unknown-value estimate is what a value the optimizer can't see gets, such as a local variable: all density × rows."
+                           Style="{StaticResource Footnote}"/>
+
+                <DockPanel Margin="0,12,0,8">
+                    <Button Content="&#x2398; Copy All" DockPanel.Dock="Right" Style="{StaticResource RefreshButton}" Padding="10,5"
+                            ToolTip="Copy every row shown, in the grid's current order, with headers."
+                            Command="{x:Static helpers:DataGridExport.CopyAll}" CommandParameter="{Binding ElementName=HistogramGrid}"/>
+                    <controls:GridFilterBox x:Name="HistogramFilter" DockPanel.Dock="Left" Target="{Binding ElementName=HistogramGrid}"/>
+                    <TextBlock Text="Steps" DockPanel.Dock="Left" Style="{StaticResource ToolbarLabel}"/>
+                    <ComboBox x:Name="CmbSteps" DockPanel.Dock="Left" Width="300" HorizontalAlignment="Left" Style="{StaticResource ToolbarCombo}" ItemsSource="{Binding StepChoices}"
+                              SelectedItem="{Binding StepChoice}" AutomationProperties.Name="Steps shown"
+                              ToolTip="Which steps the grid shows. Copy, Copy All and export follow it; the chart and the findings don't."/>
+                </DockPanel>
+                <Grid>
+                    <DataGrid x:Name="HistogramGrid" Height="300" ItemsSource="{Binding Histogram}" EnableRowVirtualization="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Step" Binding="{Binding Number}" Width="60" ElementStyle="{StaticResource Number}"/>
+                            <DataGridTextColumn Header="RANGE_HI_KEY" HeaderTemplate="{StaticResource PlainHeader}" Binding="{Binding KeyText}" Width="*" MinWidth="170">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The step's upper key, a real value from the table. The optimizer uses it to find the step a value falls in."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="RANGE_ROWS" HeaderTemplate="{StaticResource PlainHeader}" Binding="{Binding RangeRows, StringFormat=N0}" Width="110" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Rows between the last step's key and this one, not counting either key. The optimizer uses it for a range that covers the step."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="EQ_ROWS" HeaderTemplate="{StaticResource PlainHeader}" Binding="{Binding EqRows, StringFormat=N0}" Width="100" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Rows equal to this key. The optimizer's estimate for = this value, when it can see the value."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="DISTINCT_RANGE_ROWS" HeaderTemplate="{StaticResource PlainHeader}" Binding="{Binding DistinctRangeRows, StringFormat=N0}" Width="165" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Distinct values between the last step's key and this one. With RANGE_ROWS it gives AVG_RANGE_ROWS."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="AVG_RANGE_ROWS" HeaderTemplate="{StaticResource PlainHeader}" Binding="{Binding AvgRangeRows, StringFormat=N1}" Width="140" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="RANGE_ROWS / DISTINCT_RANGE_ROWS. The optimizer's estimate for = a value between two keys, whatever that value's real count. Far above its neighbours, a frequent value may be hidden in the range."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock x:Name="TxtNoSteps" Text="{Binding NoStepsText}" Style="{StaticResource EmptyGrid}"
+                               Visibility="{Binding NoStepsText, Converter={StaticResource Shown}}"/>
+                </Grid>
+            </StackPanel>
+            </controls:KeptInLayout>
+
+            <!-- ── The density vector ── -->
+            <controls:KeptInLayout Shows="{Binding HasDensity}">
+            <StackPanel x:Name="DensityPanel">
+                <DockPanel Margin="0,14,0,8">
+                    <Button Content="&#x2398; Copy All" DockPanel.Dock="Right" Style="{StaticResource RefreshButton}" Padding="10,5"
+                            ToolTip="Copy every row shown, in the grid's current order, with headers."
+                            Command="{x:Static helpers:DataGridExport.CopyAll}" CommandParameter="{Binding ElementName=DensityGrid}"/>
+                    <controls:GridFilterBox x:Name="DensityFilter" DockPanel.Dock="Right" Margin="0,0,10,0" Target="{Binding ElementName=DensityGrid}"/>
+                    <TextBlock Text="Density vector" Style="{StaticResource SectionTitle}"/>
+                </DockPanel>
+                <Grid>
+                    <DataGrid x:Name="DensityGrid" Height="160" ItemsSource="{Binding Density}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Column prefix" Binding="{Binding Columns}" Width="*" MinWidth="200">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="The leading column, then it with the next, and so on."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="All density" Binding="{Binding AllDensity, StringFormat=G6}" Width="110" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="1 / the distinct values of the prefix. All density × rows is the estimate for = a value the optimizer can't see."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Distinct values" Binding="{Binding DistinctValues, StringFormat=N0, TargetNullValue=&#x2013;}" Width="120" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="1 / all density: also the estimate for GROUP BY on the prefix."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Average rows per value" Binding="{Binding RowsPerValue, StringFormat=N1, TargetNullValue=&#x2013;}" Width="170" ElementStyle="{StaticResource Number}">
+                                <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="All density × rows."/></Style></DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock x:Name="TxtNoDensity" Text="{Binding NoDensityText}" Style="{StaticResource EmptyGrid}"
+                               Visibility="{Binding NoDensityText, Converter={StaticResource Shown}}"/>
+                </Grid>
+                <TextBlock Text="A nonclustered index's vector also includes the clustering keys, which SQL Server adds to its rows." Style="{StaticResource Footnote}"/>
+            </StackPanel>
+            </controls:KeptInLayout>
+        </StackPanel>
+        </controls:KeptInLayout>
+    </Grid>
+</UserControl>

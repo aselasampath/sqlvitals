@@ -104,6 +104,9 @@
     <Color x:Key="ChartSeries9Color">#FF3498DB</Color>
     <Color x:Key="ChartSeries10Color">#FFF39C12</Color>
     <Color x:Key="ChartSeries11Color">#FFE74C3C</Color>
+    <!-- The histogram on Table Statistics (#243): blue and orange stay apart in colour blindness. -->
+    <Color x:Key="HistogramEqColor">#FF3498DB</Color>
+    <Color x:Key="HistogramRangeColor">#FFE8890C</Color>
 
     <!-- The top bar's Live / Snapshot / History badge, and a snapshot's age once it is old (#140). -->
     <SolidColorBrush x:Key="LiveBadgeText" Color="#FF4ADE80" />
