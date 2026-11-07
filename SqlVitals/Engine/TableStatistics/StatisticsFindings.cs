@@ -206,8 +206,8 @@ public static class StatisticsFindings
         if (far.Count == 0)
             return null;
         return new StatisticsFinding(StatisticsFindingKind.ParameterSensitivity, StatisticsRating.Good,
-            string.Format(CultureInfo.CurrentCulture, "{0} have rows {1:0}x or more from the unknown-value estimate of {2:N1}.",
-                          Sizes.Plural(far.Count, "step key", "step keys"), FarFactor, estimate),
+            string.Format(CultureInfo.CurrentCulture, "{0} rows {1:0}x or more from the unknown-value estimate of {2:N1}.",
+                          Sizes.Plural(far.Count, "step key has", "step keys have"), FarFactor, estimate),
             "A plan compiled for one of these values can suit others badly, and a local variable always gets the estimate. Try OPTION (RECOMPILE) on the query or OPTIMIZE FOR, and compare the plans.",
             far.Select(s => s.Number).ToList());
     }
