@@ -45,6 +45,17 @@ public partial class GridFilterBox : UserControl
     }
 
     /// <summary>
+    /// What the rows' cells show changed in place, without new rows (#243): the words typed are
+    /// matched again on what they show now. Nothing to do with no words typed.
+    /// </summary>
+    public void RowTextChanged()
+    {
+        _rowText.Clear();
+        if (_terms.Count > 0)
+            Apply();
+    }
+
+    /// <summary>
     /// Text a row is also matched on that no visible column shows, such as the login the Processes
     /// grid shows only in its group headers.
     /// </summary>

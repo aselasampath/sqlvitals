@@ -4,7 +4,7 @@
 
 ## Summary
 
-- **Read-only.** SqlVitals reads DMVs and catalog views. It creates no objects, jobs, tables or agents on the server. (DB Storage collects each database's used space in a `#temporary` table that lives only for the one batch.)
+- **Read-only.** SqlVitals reads DMVs and catalog views, and on [Table Statistics](Index-and-Statistics-Maintenance.md#table-statistics) runs `DBCC SHOW_STATISTICS ... WITH DENSITY_VECTOR`, which only reads. It creates no objects, jobs, tables or agents on the server. (DB Storage collects each database's used space in a `#temporary` table that lives only for the one batch.)
 - **One exception:** [SP Trace](SP-Trace.md) creates a temporary Extended Events session **only when a user presses Start**, and drops it on Stop, on leaving the page, and when the app exits.
 - **Never runs generated scripts.** Index and statistics scripts are shown for review only.
 - **Takes no shared locks, and stops when it isn't wanted.** Every read runs under `READ UNCOMMITTED`, so it doesn't wait on, or block, the workload's row and page locks. It can still wait on a schema change (see [Locks](#locks-what-can-still-wait)): monitoring for at most 2 s, then it skips the sample; a screen up to its command timeout (30 s by default). From 0.69.0 leaving a screen, switching server or stopping monitoring cancels its queries on the server.
@@ -34,6 +34,7 @@
 | **Security Audit** | A user opens the page, presses Audit again or Refresh | On demand, no timer | Light catalog queries: `sys.server_principals`, `sys.server_role_members`, `sys.server_permissions`, `sys.sql_logins`, `sys.databases`, the connection's own `sys.login_token`, and `sys.database_principals` once per database for orphaned users; **active connection only** |
 | **DB Storage** | A user opens the page or presses Refresh | On demand, no timer | `sys.master_files`, `sys.databases`, `sys.configurations`; the used space of each database the login can open, read with one light `sys.database_files` query in that database (through its `sys.sp_executesql`) into a temporary table that is dropped at the end of the batch; **active connection only** |
 | **Deadlocks** | A user opens the page or presses Refresh | On demand, no timer | Reads the existing **system_health** session: its `.xel` files through `sys.fn_xe_file_target_read_file`, filtered to `xml_deadlock_report` on the server, or its ring buffer. Creates nothing; timeout raised to 2 min |
+| **Table Statistics** | A user opens the page or presses Refresh, or chooses a database, table or statistics object | On demand, no timer | Table and index sizes from catalog views. **Statistics health** (from 0.86.0): one short query per table, one table at a time, largest first, 50 tables to a connection, each with a 500 ms lock timeout. **The Statistics tab:** read only while the tab is showing, each read with a 2 s lock timeout. Reads no table rows and changes nothing |
 | **SP Trace** | A user presses Start | Poll interval chosen by the user | Extended Events session, or `sys.dm_exec_procedure_stats` |
 | **Blocking right now** (a server's Overview) | The page is open, the connection is monitored, and its Blocking check is past its warning threshold | Once per sample, while all three hold | The Processes query (`sys.dm_exec_sessions`, `sys.dm_exec_requests`, `sys.dm_exec_connections`, `sys.dm_exec_sql_text`), through that connection's monitoring, so it may be a connection other than the active one |
 | **Since you last looked** (a server's Overview, from 0.59.0) | A user opens the Overview or presses Refresh, while the connection is monitored and answering | Once per opening or Refresh | The Deadlocks query (system_health) and the Agent Jobs query (msdb), through that connection's monitoring; regressed queries come from the local history, not the server |
@@ -88,7 +89,9 @@ The most expensive reads, worth knowing on very large servers:
 
 Most of what SqlVitals reads is DMVs and system views, which user schema changes don't touch. The screens that read user objects are Index Health (fragmentation, `sys.dm_db_index_physical_stats`), DB Storage and Stale Stats; they run only when opened.
 
-**Table Statistics** is built not to wait (from 0.85.0). Checked on SQL Server 2017 to 2025 with a schema change held: under `READ UNCOMMITTED`, `sys.tables`, `sys.schemas` and `sys.indexes` and an unfiltered scan of `sys.dm_db_partition_stats` go past the lock, and `sys.dm_tran_locks` says which tables hold one; so the table list doesn't wait. A read filtered on the locked table waits at most 2 s (`LOCK_TIMEOUT 2000`), then shows it as *Locked*. `OBJECT_ID`, `OBJECT_NAME`, `OBJECTPROPERTY`, `sys.dm_db_stats_properties`, a full scan of `sys.partitions` and a scan of `sys.dm_db_index_usage_stats` all wait, so the page doesn't use them that way. Under `READ COMMITTED` the catalog views wait too.
+**Table Statistics** is built not to wait (from 0.85.0). Checked on SQL Server 2017 to 2025 with a schema change held: under `READ UNCOMMITTED`, `sys.tables`, `sys.schemas` and `sys.indexes` and an unfiltered scan of `sys.dm_db_partition_stats` go past the lock, and `sys.dm_tran_locks` says which tables hold one; so the table list doesn't wait. A read filtered on the locked table waits at most 2 s (`LOCK_TIMEOUT 2000`), then shows it as *Locked*. `OBJECT_ID`, `OBJECT_NAME`, `OBJECTPROPERTY`, a full scan of `sys.partitions` and a scan of `sys.dm_db_index_usage_stats` all wait, so the page doesn't use them that way. Under `READ COMMITTED` the catalog views wait too.
+
+Its **statistics reads** (from 0.86.0) can't avoid the wait: `sys.dm_db_stats_properties`, `sys.dm_db_stats_histogram` and `DBCC SHOW_STATISTICS` wait on a schema change even under `READ UNCOMMITTED`. So Statistics health asks one table at a time with `LOCK_TIMEOUT 500`: a locked table costs its own answer and shows as *Locked*, and the others still get a rating. On the Statistics tab each read waits at most 2 s, and once one finds the table locked the rest aren't sent. Besides those three it uses `sys.stats`, `sys.stats_columns`, `sys.columns`, `sys.indexes`, `sys.objects`, `sys.schemas`, `sys.dm_tran_locks` and `sys.databases`. Verified in CI on SQL Server 2017 to 2025, not on Azure SQL Database.
 
 ## Permissions
 
@@ -99,6 +102,7 @@ Most of what SqlVitals reads is DMVs and system views, which user schema changes
 | Table Statistics: table sizes | `VIEW DATABASE STATE` in the database chosen (or `VIEW SERVER STATE`) | `VIEW DATABASE STATE` |
 | Table Statistics: every table listed | `VIEW DEFINITION` in the database chosen; without it, only the tables the login has a permission on | `VIEW DEFINITION` |
 | Table Statistics: Locked, reads and writes, last restart | `VIEW SERVER STATE` | `VIEW DATABASE STATE` |
+| Table Statistics: Statistics health and the Statistics tab (from 0.86.0) | `SELECT` on the statistics' columns, or owning the table, or `db_owner`, `db_ddladmin` or sysadmin. See [Reading statistics](#table-statistics-reading-statistics) | Not verified on Azure SQL Database |
 | SP Trace, Extended Events mode | `VIEW SERVER STATE` **+** `ALTER ANY EVENT SESSION` | `VIEW DATABASE STATE` **+** `ALTER ANY DATABASE EVENT SESSION` |
 | Agent Jobs | `SELECT` on msdb's job tables (sysadmin has it) | ➖ no SQL Server Agent |
 | Backups | `SELECT` on `msdb.dbo.backupset` and `backupmediafamily` (sysadmin has it) | ➖ Azure takes the backups; none are in msdb |
@@ -134,6 +138,22 @@ GRANT VIEW SERVER STATE TO [CONTOSO\svc_vitals];
 ```
 
 It reads SQL Server's errors 229 (a `SELECT` denied on an object, such as an msdb table), 262 and 300 (a permission denied, which the message names), 297 (not named; `VIEW SERVER STATE` is the likely one, and the screen says so) and 916 (no user in the database, fixed with `CREATE USER … FOR LOGIN`). With Entra sign-in the login is the user name of the connection; with none, the script has a placeholder to replace. The error box when a screen first fails to open shows the same script.
+
+### Table Statistics: reading statistics
+
+From 0.86.0. What CI found on all four versions, SQL Server 2017 to 2025: SQL Server shows a table's statistics only to a login with `SELECT` on the statistics' columns, or that owns the table, or in `db_owner`, `db_ddladmin` or sysadmin. Without it, `sys.dm_db_stats_properties` and `sys.dm_db_stats_histogram` return no row and no error, and `DBCC SHOW_STATISTICS` raises error 229.
+
+SqlVitals tells that from statistics never built, where `sys.dm_db_stats_properties` returns a row of NULLs. It says what's missing and offers the script, for the database chosen:
+
+```sql
+USE [SalesDb];
+GRANT SELECT TO [CONTOSO\svc_vitals];                     -- Statistics health
+GRANT SELECT ON [dbo].[Orders] TO [CONTOSO\svc_vitals];   -- one table's details
+```
+
+> ⚠️ `SELECT` lets the login **read the table's rows**, even though SqlVitals doesn't. `db_ddladmin` reads statistics without `SELECT`, but it can change the schema. Choose what suits the login, or go without: sizes still show either way.
+
+A column-level grant reads only that column's statistics. Statistics health shows a dash for a table with any statistics the login can't read, so it needs them all. The Statistics tab reads the objects it can, and says what's missing for the rest.
 
 ### SQL Agent jobs
 
@@ -213,6 +233,8 @@ SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE')          
 | Config Checks | ✅ | ✅ (compatibility level held to the highest level in use) | ⚠️ This database's MAXDOP, auto-shrink, page verify and compatibility level only |
 | Security Audit | ✅ | ✅ (Microsoft Entra logins and groups too) | ➖ not available (the button is marked N/A) |
 | Index `ONLINE = ON` in scripts | Enterprise / Developer | ✅ | ✅ |
+
+Table Statistics' Statistics health and Statistics tab are verified in CI on SQL Server 2017 to 2025, not on Azure SQL Database.
 
 The edition is detected at runtime with `SERVERPROPERTY('EngineEdition')` (5 = Azure SQL Database, 8 = Managed Instance), and queries switch automatically.
 

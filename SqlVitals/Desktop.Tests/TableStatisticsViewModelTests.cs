@@ -19,6 +19,7 @@ public sealed class TableStatisticsViewModelTests
 
     private readonly FakeShellStatus _shell = new();
     private readonly FakeNavigator _navigator = new();
+    private readonly FakeDialogService _dialogs = new();
 
     internal static TableSize Table(int id, string name, long data, long index, string schema = "dbo") =>
         new(id, schema, name, 1000, data, index, false);
@@ -36,11 +37,13 @@ public sealed class TableStatisticsViewModelTests
         GetTableDatabasesAsync = () => Task.FromResult(new TableDatabases("SalesDb", ["AuditDb", "SalesDb"], true)),
         GetTableSizesAsync = _ => Task.FromResult(new TableSizeList(tables, [])),
         GetTableIndexesAsync = (_, _) => Task.FromResult(Indexes(Clustered(300 * Mb), Costly(200 * Mb), Plain(50 * Mb))),
+        GetTableStatisticsHealthAsync = (_, ids) => Task.FromResult(new TableHealthBatch(
+            ids.Select(id => new TableStatisticsHealth(id, StatisticsHealthState.Rated, StatisticsRating.Good, 1, Started)).ToList(), [])),
     };
 
     private TableStatisticsViewModel Connected(FakeRepository repo)
     {
-        var model = new TableStatisticsViewModel(repo, _navigator);
+        var model = new TableStatisticsViewModel(repo, _navigator, _dialogs);
         model.Connect("TableStats", _shell, new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
         return model;
     }

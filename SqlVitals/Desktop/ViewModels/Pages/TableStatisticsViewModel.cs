@@ -16,6 +16,8 @@ namespace SqlVitals.Desktop.ViewModels.Pages;
 /// database or table cancels what's being read for the last choice, so its answer can't appear for
 /// the new one. The filters here are those the box can't hold: the view applies them through
 /// <see cref="ShowsTable"/> and <see cref="ShowsIndex"/>, so Copy and export follow the rows shown.
+/// Statistics health (#243) is a second read after the sizes, that holds nothing up and costs nothing
+/// when it fails. The Statistics tab's state is in <see cref="TableStatisticsDetailsViewModel"/>.
 /// </summary>
 public sealed partial class TableStatisticsViewModel : PageViewModel
 {
@@ -25,6 +27,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     // The answers being waited for: cancelled by the next choice, and by leaving (through the page's read or lifetime).
     private CancellationTokenSource? _tablesRun;
     private CancellationTokenSource? _detailsRun;
+    private CancellationTokenSource? _healthRun;
 
     // The view model is choosing, not the user: nothing is read because of it.
     private bool _holding;
@@ -38,11 +41,14 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     // The table to select again on the first read, which the filter may hide from the grid's own memory.
     private int? _restoredTable;
 
-    public TableStatisticsViewModel(ITableStatisticsRepository repo, INavigator navigator)
+    public TableStatisticsViewModel(ITableStatisticsRepository repo, INavigator navigator, IDialogService dialogs, TimeProvider? time = null)
     {
         _repo = repo;
         _navigator = navigator;
+        Statistics = new TableStatisticsDetailsViewModel(repo, dialogs, time ?? TimeProvider.System, ShowReading, ReportSideError);
+        Health.Replace(TableStatisticsHealthText.Chips);
         Schema.PropertyChanged += (_, e) => Follow(e, TableFiltersChanged);
+        Health.PropertyChanged += (_, e) => Follow(e, TableFiltersChanged);
         IndexType.PropertyChanged += (_, e) => Follow(e, IndexFiltersChanged);
     }
 
@@ -83,6 +89,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
 
         // What's on screen is about the last database: it goes now, whatever is still being read.
         _tablesRun?.Cancel();
+        _healthRun?.Cancel();
         ForgetDatabase();
         ReportContextChanged();
         _ = ReportErrorsOf(RereadAsync());
@@ -96,6 +103,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         _restoredTable = null;
         _tablesRead = false;
         _noneVisible = false;
+        HealthProblem = null;
         _holding = true;
         Tables.Replace([]);
         Schema.Clear();
@@ -121,9 +129,23 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     /// <summary>A table to scroll into view, past any filter: the verdict's Show it selected it.</summary>
     public event Action<TableSizeRow>? ShowRow;
 
-    public bool HasTableFilters => Schema.Values is not null;
+    /// <summary>The Statistics health chips ticked. A table whose health hasn't arrived matches none.</summary>
+    public MultiFilterChoices Health { get; } = new();
 
-    public bool ShowsTable(object row) => row is TableSizeRow table && Schema.Matches(table.SchemaName);
+    public bool HasTableFilters => Schema.Values is not null || Health.Values is not null;
+
+    public bool ShowsTable(object row) => row is TableSizeRow table && Schema.Matches(table.SchemaName) && Health.Matches(table.HealthText);
+
+    /// <summary>What couldn't be read of the Statistics health, and the fix. The sizes aren't touched.</summary>
+    [ObservableProperty]
+    private string? _healthProblem;
+
+    /// <summary>How far the Statistics health has got; null when it's not being read.</summary>
+    [ObservableProperty]
+    private string? _healthProgress;
+
+    /// <summary>A batch of Statistics health arrived, or the read ended: what the view has from the rows' text is old.</summary>
+    public event Action? TableHealthArrived;
 
     /// <summary>Why the table grid is empty; null when it shows rows.</summary>
     [ObservableProperty]
@@ -133,6 +155,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     public void TablesShown(int shown)
     {
         NoTablesText = shown > 0 || !_tablesRead ? null
+            : Tables.Count > 0 && _healthRun is not null && Health.Values is not null ? "Reading Statistics health: tables show here as they're rated."
             : Tables.Count > 0 ? "No tables match the filters."
             : _noneVisible ? "This login can't see any tables in this database."
             : "This database has no user tables.";
@@ -143,6 +166,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     private void ClearTableFilters()
     {
         Schema.Clear();
+        Health.Clear();
         TableSearchCleared?.Invoke();
     }
 
@@ -157,6 +181,26 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     private TableSizeRow? _selectedTable;
 
     public bool HasSelection => SelectedTable is not null;
+
+    /// <summary>The Statistics tab: what it holds, for the table selected.</summary>
+    public TableStatisticsDetailsViewModel Statistics { get; }
+
+    /// <summary>The Statistics tab's place among the tabs.</summary>
+    public const int StatisticsTab = 1;
+
+    /// <summary>The tab chosen; Sizes is 0. The Statistics tab reads only once it's shown.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsStatistics))]
+    private int _detailTab;
+
+    public bool ShowsStatistics => DetailTab == StatisticsTab;
+
+    partial void OnDetailTabChanged(int value)
+    {
+        Statistics.IsShowing = value == StatisticsTab;
+        if (!_holding && Statistics.NeedsRead)
+            _ = ReportErrorsOf(Statistics.ReadWithBarAsync());
+    }
 
     public string SelectedText => SelectedTable is { } row ? $"Selected {row.Table.FullName}" : "";
 
@@ -250,6 +294,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     {
         using var run = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         _tablesRun = run;
+        _healthRun?.Cancel();
         try
         {
             ShowDatabases(await _repo.GetTableDatabasesAsync(run.Token));
@@ -273,6 +318,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     protected override void OnLeaving()
     {
         _detailsRun?.Cancel();
+        _healthRun?.Cancel();
+        Statistics.Cancel();
     }
 
     private void ShowDatabases(TableDatabases databases)
@@ -327,18 +374,108 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
             _holding = false;
         }
 
+        // Started before anything is awaited, and not awaited: the sizes are on screen, and the page has read.
+        StartHealth(rows);
+
         if (again is null)
+        {
             ShowNoTable();
-        else
-            await ReadDetailsAsync(again, cancel);
+            return;
+        }
+        Statistics.ChooseTable(again.Table, DatabaseRead, database);
+        await Task.WhenAll(ReadDetailsAsync(again, cancel), Statistics.ReadIfShowingAsync(cancel));
     }
+
+    // ── Statistics health ─────────────────────────────────────────────────
+
+    /// <summary>Tables asked for at a time: each answer shows as it comes.</summary>
+    internal const int HealthBatch = 50;
+
+    private void StartHealth(IReadOnlyList<TableSizeRow> rows)
+    {
+        _healthRun?.Cancel();
+        HealthProblem = null;
+        if (rows.Count == 0)
+            return;
+        var run = new CancellationTokenSource();
+        _healthRun = run;
+        // The grid said what its filters left before this read began: with a chip ticked, that's now "reading".
+        if (Health.Values is not null)
+            TableFiltersChanged?.Invoke();
+        _ = ReportErrorsOf(ReadHealthAsync(rows, DatabaseRead, run));
+    }
+
+    private async Task ReadHealthAsync(IReadOnlyList<TableSizeRow> rows, string? database, CancellationTokenSource run)
+    {
+        var byId = rows.ToDictionary(r => r.Table.ObjectId);
+        var failures = new List<TableReadFailure>();
+        var done = 0;
+        ShowHealthProgress(0, rows.Count);
+        try
+        {
+            foreach (var batch in rows.OrderByDescending(r => r.TotalPages ?? -1).Chunk(HealthBatch))
+            {
+                var answer = await _repo.GetTableStatisticsHealthAsync(database, batch.Select(r => r.Table.ObjectId).ToList(), run.Token);
+                if (run.IsCancellationRequested)
+                    return;
+
+                foreach (var health in answer.Tables)
+                    if (byId.TryGetValue(health.ObjectId, out var row))
+                        row.ShowHealth(health);
+
+                foreach (var failure in answer.Failures)
+                    if (!failures.Any(f => f.What == failure.What && f.Explanation == failure.Explanation))
+                        failures.Add(failure);
+                HealthProblem = failures.Count == 0 ? null : string.Join(' ', failures.Select(TableStatisticsVerdict.Describe));
+
+                done += batch.Length;
+                ShowHealthProgress(done, rows.Count);
+                if (Health.Values is not null)
+                    TableFiltersChanged?.Invoke();
+                TableHealthArrived?.Invoke();
+            }
+        }
+        catch (Exception) when (run.IsCancellationRequested)
+        {
+            // Refresh, another database, or leaving: the rest stays blank, and whoever cancelled reads again if it reads.
+        }
+        catch (Exception ex)
+        {
+            HealthProblem = "Statistics health wasn't read for every table. " + ErrorStatus.Format(ex)
+                          + (ErrorStatus.Fix(ex) is { } fix ? $"\nA DBA can grant it once:\n{fix}" : "");
+            ReportSideError("Table Statistics health", ex);
+        }
+        finally
+        {
+            if (ReferenceEquals(_healthRun, run))
+            {
+                _healthRun = null;
+                HealthProgress = null;
+                TableHealthArrived?.Invoke();
+            }
+            run.Dispose();
+        }
+    }
+
+    private void ShowHealthProgress(int done, int total) =>
+        HealthProgress = string.Format(CultureInfo.CurrentCulture, "Rating statistics: {0:N0} of {1:N0} tables", done, total);
 
     // The user chose a table: the loading bar shows its read, and its Stop ends it.
     private async Task ReadChosenTableAsync(TableSizeRow row)
     {
-        using var reading = ShowReading("Reading the table's indexes", "Indexes read", () => _detailsRun?.Cancel());
-        if (await ReadDetailsAsync(row, CancellationToken.None))
+        Statistics.ChooseTable(row.Table, DatabaseRead, SelectedDatabase ?? ConnectedDatabase ?? "");
+        using var reading = Statistics.IsShowing
+            ? ShowReading("Reading the table's indexes and statistics", "Indexes and statistics read", StopChosenTable)
+            : ShowReading("Reading the table's indexes", "Indexes read", StopChosenTable);
+        var read = await Task.WhenAll(ReadDetailsAsync(row, CancellationToken.None), Statistics.ReadIfShowingAsync(CancellationToken.None));
+        if (read.All(done => done))
             reading.Done();
+    }
+
+    private void StopChosenTable()
+    {
+        _detailsRun?.Cancel();
+        Statistics.Cancel();
     }
 
     // True when it read: not when another choice cancelled it, or it failed.
@@ -415,6 +552,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         SelectedTable = null;
         _holding = holding;
         Clear(null);
+        Statistics.ChooseTable(null, DatabaseRead, SelectedDatabase ?? ConnectedDatabase ?? "");
     }
 
     private void ShowDetails(TableSize table, TableIndexList list)
@@ -490,7 +628,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
 
     // ── Coming back ───────────────────────────────────────────────────────
 
-    private sealed record Saved(string? Database, IReadOnlyList<string> Schemas, IReadOnlyList<string> Types, bool Flagged, int? Table);
+    private sealed record Saved(string? Database, IReadOnlyList<string> Schemas, IReadOnlyList<string> Types, bool Flagged, int? Table,
+                                IReadOnlyList<string> HealthChips, int Tab, string? StatisticsName, string StepChoice, bool LogScale, bool FullScan);
 
     private static List<string> Ticked(MultiFilterChoices box) => box.Items.Where(i => i.IsChecked).Select(i => i.Value).ToList();
 
@@ -503,7 +642,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
 
     /// <summary>The database, the filters the view can't keep, and the table selected: the filter may hide it from the grid.</summary>
     public override object? SaveState() =>
-        new Saved(SelectedDatabase, Ticked(Schema), Ticked(IndexType), FlaggedOnly, SelectedTable?.Table.ObjectId);
+        new Saved(SelectedDatabase, Ticked(Schema), Ticked(IndexType), FlaggedOnly, SelectedTable?.Table.ObjectId,
+                  Ticked(Health), DetailTab, Statistics.ChosenName, Statistics.StepChoice, Statistics.LogScale, Statistics.FullScan);
 
     public override void RestoreState(object state)
     {
@@ -514,6 +654,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         {
             SelectedDatabase = saved.Database;
             _restoredTable = saved.Table;
+            DetailTab = saved.Tab;
         }
         finally
         {
@@ -522,5 +663,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         Tick(Schema, saved.Schemas);
         Tick(IndexType, saved.Types);
         FlaggedOnly = saved.Flagged;
+        Tick(Health, saved.HealthChips);
+        Health.Replace(TableStatisticsHealthText.Chips);
+        Statistics.Restore(saved.StatisticsName, saved.StepChoice, saved.LogScale, saved.FullScan);
     }
 }

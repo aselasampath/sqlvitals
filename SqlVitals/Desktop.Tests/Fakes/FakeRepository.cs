@@ -290,4 +290,16 @@ internal sealed class FakeRepository : IWaitStatsRepository
     public Func<string?, int, Task<TableIndexList>>? GetTableIndexesAsync { get; set; }
     Task<TableIndexList> ITableStatisticsRepository.GetTableIndexesAsync(string? database, int objectId, CancellationToken cancellationToken) =>
         GetTableIndexesAsync is { } answer ? Answered(nameof(GetTableIndexesAsync), answer(database, objectId), cancellationToken) : Unanswered<Task<TableIndexList>>(nameof(GetTableIndexesAsync), cancellationToken);
+
+    public Func<string?, IReadOnlyList<int>, Task<TableHealthBatch>>? GetTableStatisticsHealthAsync { get; set; }
+    Task<TableHealthBatch> ITableStatisticsRepository.GetTableStatisticsHealthAsync(string? database, IReadOnlyList<int> objectIds, CancellationToken cancellationToken) =>
+        GetTableStatisticsHealthAsync is { } answer ? Answered(nameof(GetTableStatisticsHealthAsync), answer(database, objectIds), cancellationToken) : Unanswered<Task<TableHealthBatch>>(nameof(GetTableStatisticsHealthAsync), cancellationToken);
+
+    public Func<string?, int, Task<TableStatisticsList>>? GetTableStatisticsAsync { get; set; }
+    Task<TableStatisticsList> ITableStatisticsRepository.GetTableStatisticsAsync(string? database, int objectId, CancellationToken cancellationToken) =>
+        GetTableStatisticsAsync is { } answer ? Answered(nameof(GetTableStatisticsAsync), answer(database, objectId), cancellationToken) : Unanswered<Task<TableStatisticsList>>(nameof(GetTableStatisticsAsync), cancellationToken);
+
+    public Func<string?, int, int, Task<StatisticsDetails>>? GetStatisticsDetailsAsync { get; set; }
+    Task<StatisticsDetails> ITableStatisticsRepository.GetStatisticsDetailsAsync(string? database, int objectId, int statsId, CancellationToken cancellationToken) =>
+        GetStatisticsDetailsAsync is { } answer ? Answered(nameof(GetStatisticsDetailsAsync), answer(database, objectId, statsId), cancellationToken) : Unanswered<Task<StatisticsDetails>>(nameof(GetStatisticsDetailsAsync), cancellationToken);
 }

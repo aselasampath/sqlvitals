@@ -42,7 +42,7 @@ Click a column header to sort, and click again to reverse. **Refresh keeps your 
 
 ## Filter
 
-**Resource Queries** (all tabs), **Index Health** (all tabs), **Query Store**, **Query Regressions** and **[Table Statistics](Index-and-Statistics-Maintenance.md#filters)** have a **Filter rows…** box above each grid. On Table Statistics, **N of M rows** counts its other filters too, and the grid says so when nothing matches.
+**Resource Queries** (all tabs), **Index Health** (all tabs), **Query Store**, **Query Regressions** and **[Table Statistics](Index-and-Statistics-Maintenance.md#filters)** have a **Filter rows…** box above each grid. On Table Statistics, **N of M rows** counts its other filters too, and the grid says so when nothing matches. From 0.86.0 that includes the histogram and density vector grids on its [Statistics tab](Index-and-Statistics-Maintenance.md#the-statistics-tab), the **Health** filter on its tables and the **Steps** choice on its histogram.
 
 | You type | Shows rows that… |
 |---|---|
@@ -56,6 +56,7 @@ Click a column header to sort, and click again to reverse. **Refresh keeps your 
 - While a filter is on, the box shows **N of M rows**.
 - **Esc** or **✕** clears it.
 - **Refresh keeps the filter**, and from 0.55.0 so does leaving the page and coming back.
+- A filter that takes several values, such as Table Statistics' **Health**, shows a row that has any value ticked. **Clear filters** turns it off too. A row whose value hasn't arrived yet matches nothing until it does.
 
 ## Coming back to a page
 
@@ -89,11 +90,13 @@ On **Refresh**, the rows stay on screen, dimmed, until the new ones replace them
 | **Copy with headers** | The same, with the column names first |
 | **Export to CSV…** | Every row shown, whatever is selected, saved as a UTF-8 CSV file. Text that Excel would run as a formula (starting with `=`, `+`, `-` or `@`) gets an apostrophe in front, so it opens as text |
 
-On **Resource Queries**, **⎘ Copy All** copies every row shown, with headers. A query's text is copied whole, line breaks and all, even though the grid shows it on [one line](#long-query-text).
+On **Resource Queries**, **⎘ Copy All** copies every row shown, with headers. A query's text is copied whole, line breaks and all, even though the grid shows it on [one line](#long-query-text). Table Statistics has it too, above each of its grids.
+
+Copying or exporting the histogram grid on Table Statistics includes its `RANGE_HI_KEY` values, which are [real values from the table](Index-and-Statistics-Maintenance.md#histogram-keys-are-real-values).
 
 ## What you see is what you get
 
-Copy, Export to CSV, Copy All and the **script buttons** on Index Health and Stale Stats all use **the rows the filter shows, in the current sort order**. For example, to script missing indexes for one table only, type the table name in the filter and click **Generate CREATE Script**. The button reads **(N shown)** while a filter is on.
+Copy, Export to CSV, Copy All and the **script buttons** on Index Health and Stale Stats all use **the rows the filter shows, in the current sort order**. For example, to script missing indexes for one table only, type the table name in the filter and click **Generate CREATE Script**. The button reads **(N shown)** while a filter is on. The histogram chart and findings on Table Statistics are the exception: they always show the whole statistics object, whatever the grid's filters hide.
 
 ---
 

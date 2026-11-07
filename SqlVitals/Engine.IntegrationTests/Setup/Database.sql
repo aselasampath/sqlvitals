@@ -188,6 +188,92 @@ DELETE sizes.ColumnstoreTable WHERE Id <= 500;
 
 INSERT sizes.LockedTable VALUES (1, 1), (2, 2);
 GO
+-- Table Statistics' details (#243): one column of each key type, a full histogram with a NULL step,
+-- statistics empty and never built, index types with no histogram, an awkward name, and stale ones.
+CREATE SCHEMA stats;
+GO
+CREATE TABLE stats.KeyTypes
+(
+    KInt int, KBigint bigint, KDecimal decimal(38, 10), KDate date, KDatetime datetime, KSmalldatetime smalldatetime,
+    KDatetime2 datetime2, KDatetimeoffset datetimeoffset, KTime time, KVarchar varchar(50), KNvarchar nvarchar(50),
+    KGuid uniqueidentifier, KVarbinary varbinary(50), KBinary binary(2), KBit bit, KFloat float, KReal real, KMoney money, KEmpty varchar(10)
+);
+INSERT stats.KeyTypes VALUES
+(
+    1234, 9007199254740993, 1234567890123456789012345678.0123456789, '2026-01-15', '2026-01-15T13:45:30.123', '2026-01-15T13:46:00',
+    '2026-01-15T13:45:30.1234567', '2026-01-15T13:45:30.1234567+05:30', '13:45:30.1234567', 'a varchar key', N'ключ nvarchar',
+    '6F9619FF-8B86-D011-B42D-00C04FC964FF', 0x0A0B0C, 0x0D0E, 1, 0.1, 1.5, 12345.6789, ''
+);
+CREATE STATISTICS S_KInt ON stats.KeyTypes (KInt) WITH FULLSCAN;
+CREATE STATISTICS S_KBigint ON stats.KeyTypes (KBigint) WITH FULLSCAN;
+CREATE STATISTICS S_KDecimal ON stats.KeyTypes (KDecimal) WITH FULLSCAN;
+CREATE STATISTICS S_KDate ON stats.KeyTypes (KDate) WITH FULLSCAN;
+CREATE STATISTICS S_KDatetime ON stats.KeyTypes (KDatetime) WITH FULLSCAN;
+CREATE STATISTICS S_KSmalldatetime ON stats.KeyTypes (KSmalldatetime) WITH FULLSCAN;
+CREATE STATISTICS S_KDatetime2 ON stats.KeyTypes (KDatetime2) WITH FULLSCAN;
+CREATE STATISTICS S_KDatetimeoffset ON stats.KeyTypes (KDatetimeoffset) WITH FULLSCAN;
+CREATE STATISTICS S_KTime ON stats.KeyTypes (KTime) WITH FULLSCAN;
+CREATE STATISTICS S_KVarchar ON stats.KeyTypes (KVarchar) WITH FULLSCAN;
+CREATE STATISTICS S_KNvarchar ON stats.KeyTypes (KNvarchar) WITH FULLSCAN;
+CREATE STATISTICS S_KGuid ON stats.KeyTypes (KGuid) WITH FULLSCAN;
+CREATE STATISTICS S_KVarbinary ON stats.KeyTypes (KVarbinary) WITH FULLSCAN;
+CREATE STATISTICS S_KBinary ON stats.KeyTypes (KBinary) WITH FULLSCAN;
+CREATE STATISTICS S_KBit ON stats.KeyTypes (KBit) WITH FULLSCAN;
+CREATE STATISTICS S_KFloat ON stats.KeyTypes (KFloat) WITH FULLSCAN;
+CREATE STATISTICS S_KReal ON stats.KeyTypes (KReal) WITH FULLSCAN;
+CREATE STATISTICS S_KMoney ON stats.KeyTypes (KMoney) WITH FULLSCAN;
+CREATE STATISTICS S_KEmpty ON stats.KeyTypes (KEmpty) WITH FULLSCAN;
+
+-- Counts per value that differ widely keep the histogram from merging steps; some NULLs give it a NULL step.
+CREATE TABLE stats.Steps (K int NULL);
+WITH n AS (SELECT TOP (1024) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns),
+     counts AS (SELECT N AS K, POWER(2, (N * 7) % 11) AS Times FROM n)
+INSERT stats.Steps
+SELECT c.K FROM counts c JOIN n ON n.N <= c.Times;
+INSERT stats.Steps SELECT TOP (100) NULL FROM sys.all_columns;
+CREATE STATISTICS S_Steps ON stats.Steps (K) WITH FULLSCAN;
+CREATE STATISTICS S_Steps_Filtered ON stats.Steps (K) WHERE K > 100 WITH FULLSCAN;
+
+CREATE TABLE stats.EmptyTable (Id int NOT NULL CONSTRAINT PK_EmptyTable PRIMARY KEY, V int NOT NULL);
+CREATE STATISTICS S_EmptyTable_V ON stats.EmptyTable (V) WITH FULLSCAN;
+
+-- IX_NeverBuilt_V was made on no rows and has had no reason to update; S_NeverBuilt_Id was made after them.
+CREATE TABLE stats.NeverBuilt (Id int NOT NULL, V int NOT NULL);
+CREATE INDEX IX_NeverBuilt_V ON stats.NeverBuilt (V);
+GO
+WITH n AS (SELECT TOP (1000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns)
+INSERT stats.NeverBuilt SELECT N, N FROM n;
+CREATE STATISTICS S_NeverBuilt_Id ON stats.NeverBuilt (Id) WITH FULLSCAN;
+
+-- Only the primary key has a histogram here.
+CREATE TABLE stats.NoHistogram (Id int NOT NULL CONSTRAINT PK_NoHistogram PRIMARY KEY, V int NOT NULL, Doc xml NULL, Place geography NULL);
+INSERT stats.NoHistogram (Id, V) VALUES (1, 1), (2, 2), (3, 3);
+UPDATE STATISTICS stats.NoHistogram WITH FULLSCAN;
+CREATE NONCLUSTERED COLUMNSTORE INDEX NCCI_NoHistogram ON stats.NoHistogram (V);
+CREATE PRIMARY XML INDEX PX_NoHistogram ON stats.NoHistogram (Doc);
+CREATE SPATIAL INDEX SX_NoHistogram ON stats.NoHistogram (Place);
+-- Not a real index: it has only a row in the catalog, for the Database Tuning Advisor.
+CREATE INDEX IX_NoHistogram_Hypothetical ON stats.NoHistogram (V) WITH STATISTICS_ONLY = -1;
+
+CREATE TABLE stats.ColumnOnly (Id int NOT NULL, V int NOT NULL);
+CREATE CLUSTERED COLUMNSTORE INDEX CCI_ColumnOnly ON stats.ColumnOnly;
+INSERT stats.ColumnOnly VALUES (1, 1), (2, 2);
+
+CREATE TABLE stats.NoIndex (Id int NOT NULL);
+
+CREATE TABLE stats.[Odd ]]name's table] (Id int NOT NULL, [V ]]'s] int NOT NULL);
+INSERT stats.[Odd ]]name's table] VALUES (1, 1), (2, 2), (3, 3);
+CREATE INDEX [IX odd ]]'s.stat] ON stats.[Odd ]]name's table] ([V ]]'s]);
+
+-- Past the auto-update threshold: 900 changes of 1,000 rows, with nothing since to recompile for.
+CREATE TABLE stats.Stale (Id int NOT NULL, K int NOT NULL);
+WITH n AS (SELECT TOP (1000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns)
+INSERT stats.Stale SELECT N, N FROM n;
+CREATE STATISTICS S_Stale_K ON stats.Stale (K) WITH FULLSCAN;
+CREATE STATISTICS S_Stale_Id ON stats.Stale (Id) WITH FULLSCAN;
+GO
+UPDATE stats.Stale SET K = K + 1 WHERE Id <= 900;
+GO
 -- Another database, to read without connecting to it, and one that's offline, never to be offered.
 CREATE DATABASE SqlVitalsITOther;
 GO
@@ -196,6 +282,10 @@ GO
 CREATE TABLE dbo.OnlyInOther (Id int NOT NULL CONSTRAINT PK_OnlyInOther PRIMARY KEY, V int NOT NULL);
 CREATE INDEX IX_OnlyInOther_V ON dbo.OnlyInOther (V);
 INSERT dbo.OnlyInOther VALUES (1, 1);
+UPDATE STATISTICS dbo.OnlyInOther WITH FULLSCAN;
+GO
+-- Its rule for automatic updates is the older one.
+ALTER DATABASE SqlVitalsITOther SET COMPATIBILITY_LEVEL = 120;
 GO
 USE master;
 GO
