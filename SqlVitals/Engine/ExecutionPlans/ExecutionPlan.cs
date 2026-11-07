@@ -30,7 +30,13 @@ public sealed record PlanStatement(
     IReadOnlyList<PlanMissingIndex> MissingIndexes)
 {
     public bool HasQueryPlan => Root.Children.Count > 0;
+
+    /// <summary>The statistics the optimizer says it used; empty when the plan doesn't say, as older servers' plans don't.</summary>
+    public IReadOnlyList<PlanStatisticsUsed> StatisticsUsed { get; init; } = [];
 }
+
+/// <summary>A <c>StatisticsInfo</c> of the plan's <c>OptimizerStatsUsage</c>, its names without brackets.</summary>
+public sealed record PlanStatisticsUsed(string? Database, string? Schema, string Table, string Statistics);
 
 public sealed record PlanMissingIndex(
     double Impact,
@@ -78,6 +84,12 @@ public sealed class PlanOperator
 
     /// <summary>For example <c>[dbo].[Orders].[IX_Orders_CustomerId] [o]</c>.</summary>
     public string? ObjectName { get; init; }
+
+    /// <summary>The parts of the operator's <c>Object</c>, without brackets; null when it has none.</summary>
+    public string? ObjectDatabase { get; init; }
+    public string? ObjectSchema { get; init; }
+    public string? ObjectTable { get; init; }
+    public string? ObjectIndex { get; init; }
 
     public double EstimatedOperatorCost { get; init; }
     public double EstimatedSubtreeCost { get; init; }

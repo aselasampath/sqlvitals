@@ -18,10 +18,10 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
     private const string UsageList  = "index reads and writes";
     private const string StartTime  = "when the server restarted";
     private const string SomeHealth = "the statistics of some tables";
-    private const string StatisticsRead = "table statistics";
+    private const string StatisticsRead = TableReadFailure.Statistics;
 
     // What "lacks SELECT" means here, and what else would do: a monitoring login may well not want to read rows.
-    private const string WhySelect = " SQL Server shows a table's statistics only to a login with SELECT on their columns, or that owns the table, or in db_owner or db_ddladmin.";
+    private const string WhySelect = " SQL Server shows a table's statistics only to a login with SELECT on their columns, or that owns the table, or in db_owner or db_ddladmin. " + TableReadFailure.SelectWarning;
 
     private readonly string? _login = target.Login;
 

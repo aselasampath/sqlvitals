@@ -43,10 +43,10 @@ public static class PageRegistrations
                                                                                   s.GetRequiredService<IClipboard>(), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("QueryRegressions", (s, a) => new QueryRegressionsPage(new QueryRegressionsViewModel(a.Repo, History(s, a), Settings(s), Navigator(s),
                                                                                                   Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
-            .AddPage("IndexHealth",      (s, a) => new IndexHealthPage(new IndexHealthViewModel(a.Repo, a.Repo, Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
+            .AddPage("IndexHealth",      (s, a) => new IndexHealthPage(new IndexHealthViewModel(a.Repo, a.Repo, Dialogs(s), Navigator(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("ResourceQueries",  (s, a) => new ResourceQueriesPage(new ResourceQueriesViewModel(a.Repo, Dialogs(s), a.ServerOffset), Settings(s)), p => p.ViewModel)
             .AddPage("PlanCacheHealth",  (s, a) => new PlanCacheHealthPage(new PlanCacheHealthViewModel(a.Repo, a.Repo, a.Route.View), Settings(s)), p => p.ViewModel)
-            .AddPage("StaleStats",       (s, a) => new StaleStatisticsPage(new StaleStatisticsViewModel(a.Repo, Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
+            .AddPage("StaleStats",       (s, a) => new StaleStatisticsPage(new StaleStatisticsViewModel(a.Repo, Dialogs(s), Navigator(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("TableStats",       (s, a) => new TableStatisticsPage(new TableStatisticsViewModel(a.Repo, Navigator(s), Dialogs(s), Time(s)), Settings(s)), p => p.ViewModel)
             .AddPage("DbStorage",        (s, a) => new DatabaseStoragePage(new DatabaseStorageViewModel(a.Repo), Settings(s)), p => p.ViewModel)
             .AddPage("AppConnections",   (s, a) => new ApplicationConnectionsPage(new ApplicationConnectionsViewModel(a.Repo), Settings(s)), p => p.ViewModel)

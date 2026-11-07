@@ -18,6 +18,8 @@ namespace SqlVitals.Desktop.ViewModels.Pages;
 /// <see cref="ShowsTable"/> and <see cref="ShowsIndex"/>, so Copy and export follow the rows shown.
 /// Statistics health (#243) is a second read after the sizes, that holds nothing up and costs nothing
 /// when it fails. The Statistics tab's state is in <see cref="TableStatisticsDetailsViewModel"/>.
+/// A link opens it on a table by name (#244, <see cref="OpenOn"/>); one it can't find is said in
+/// <see cref="TargetProblem"/>, and the page goes on with what it can show.
 /// </summary>
 public sealed partial class TableStatisticsViewModel : PageViewModel
 {
@@ -41,6 +43,9 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     // The table to select again on the first read, which the filter may hide from the grid's own memory.
     private int? _restoredTable;
 
+    // Where a link wants the page: until the table is found, or the user chooses something else.
+    private TableStatisticsTarget? _target;
+
     public TableStatisticsViewModel(ITableStatisticsRepository repo, INavigator navigator, IDialogService dialogs, TimeProvider? time = null)
     {
         _repo = repo;
@@ -56,6 +61,50 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     {
         if (e.PropertyName == nameof(MultiFilterChoices.Values))
             changed?.Invoke();
+    }
+
+    // ── Opened from a link ────────────────────────────────────────────────
+
+    /// <summary>Why the page isn't on what the link asked for; null when it is, or there was no link.</summary>
+    [ObservableProperty]
+    private string? _targetProblem;
+
+    /// <summary>
+    /// What to open on, before the first read; null forgets it. A plan from another server isn't looked
+    /// for, since a table of the same name here would be a different table.
+    /// </summary>
+    public void OpenOn(TableStatisticsTarget? target)
+    {
+        TargetProblem = target is { FromAnotherServer: true }
+            ? $"This plan came from another server, so {target.FullName} wasn't looked for on this one. Open that server to see it."
+            : null;
+        _target = target is { FromAnotherServer: true } ? null : target;
+    }
+
+    // The database the link asks for, if the page can read it; otherwise says why, and stays on the one it would have shown.
+    private string? TargetDatabase(TableDatabases databases)
+    {
+        if (_target is not { Database: { } wanted } target)
+            return null;
+        if (databases.Names.FirstOrDefault(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase)) is { } name)
+            return name;
+        TargetProblem = databases.CanSwitch
+            ? $"{target.FullName} is in {wanted}, which this login can't open on this server, or which is offline or gone. Showing {databases.Connected} instead."
+            : $"{target.FullName} is in {wanted}. On Azure SQL Database a connection reads only its own database, {databases.Connected}: connect to {wanted} to see it.";
+        _target = null;
+        return null;
+    }
+
+    // The table the link asks for among these rows; says so if it isn't. Asked again on Refresh, in case it has come back.
+    private TableSizeRow? TargetRow(IReadOnlyList<TableSizeRow> rows, string database)
+    {
+        if (_target is not { } target)
+            return null;
+        var row = rows.FirstOrDefault(r => string.Equals(r.Table.SchemaName, target.Schema, StringComparison.OrdinalIgnoreCase)
+                                        && string.Equals(r.Table.TableName, target.Table, StringComparison.OrdinalIgnoreCase));
+        TargetProblem = row is not null ? null
+            : $"{target.FullName} isn't in {database}. It may have been dropped or renamed, or this login can't see it.";
+        return row;
     }
 
     // ── The database ──────────────────────────────────────────────────────
@@ -86,6 +135,10 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         OnPropertyChanged(nameof(IndexHealthNote));
         if (_holding || value is null)
             return;
+
+        // The user chose: a link's table no longer has a say.
+        _target = null;
+        TargetProblem = null;
 
         // What's on screen is about the last database: it goes now, whatever is still being read.
         _tablesRun?.Cancel();
@@ -208,6 +261,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     {
         if (_holding)
             return;
+        _target = null;
+        TargetProblem = null;
         if (value is null)
             ShowNoTable();
         else
@@ -329,7 +384,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         {
             ConnectedDatabase = databases.Connected;
             CanSwitch = databases.CanSwitch;
-            var wanted = SelectedDatabase is { } kept && databases.Names.Contains(kept) ? kept : databases.Connected;
+            var wanted = TargetDatabase(databases)
+                      ?? (SelectedDatabase is { } kept && databases.Names.Contains(kept) ? kept : databases.Connected);
             if (SelectedDatabase is not null && wanted != SelectedDatabase)
                 ForgetDatabase();
             if (!Databases.SequenceEqual(databases.Names))
@@ -356,12 +412,22 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         var rows = list.Tables.Select(t => new TableSizeRow(t, largest)).ToList();
 
         // The grid clears its selection as the rows go: the choice is noted first, and made again.
-        var selected = _restoredTable ?? SelectedTable?.Table.ObjectId;
+        var target = _target;
+        var targetRow = TargetRow(rows, database);
+        var selected = targetRow?.Table.ObjectId ?? _restoredTable ?? SelectedTable?.Table.ObjectId;
         _restoredTable = null;
         _holding = true;
         TableSizeRow? again;
         try
         {
+            if (targetRow is not null)
+            {
+                // Found: it opens where the link said, once. A Refresh from here keeps what the user has chosen since.
+                _target = null;
+                DetailTab = target?.Statistics is null ? 0 : StatisticsTab;
+                if (target?.Statistics is { } statistics)
+                    Statistics.Want(statistics);
+            }
             _tablesRead = true;
             _noneVisible = list.Failures.Any(f => f.What == TableReadFailure.Names);
             Schema.Replace(rows.Select(r => r.SchemaName));
@@ -376,6 +442,9 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
 
         // Started before anything is awaited, and not awaited: the sizes are on screen, and the page has read.
         StartHealth(rows);
+
+        if (targetRow is not null)
+            ShowRow?.Invoke(targetRow);
 
         if (again is null)
         {
@@ -408,6 +477,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     private async Task ReadHealthAsync(IReadOnlyList<TableSizeRow> rows, string? database, CancellationTokenSource run)
     {
         var byId = rows.ToDictionary(r => r.Table.ObjectId);
+        var answered = new HashSet<int>();
         var failures = new List<TableReadFailure>();
         var done = 0;
         ShowHealthProgress(0, rows.Count);
@@ -420,13 +490,28 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
                     return;
 
                 foreach (var health in answer.Tables)
+                {
+                    answered.Add(health.ObjectId);
                     if (byId.TryGetValue(health.ObjectId, out var row))
                         row.ShowHealth(health);
+                }
 
                 foreach (var failure in answer.Failures)
                     if (!failures.Any(f => f.What == failure.What && f.Explanation == failure.Explanation))
                         failures.Add(failure);
                 HealthProblem = failures.Count == 0 ? null : string.Join(' ', failures.Select(TableStatisticsVerdict.Describe));
+
+                // The login isn't allowed to read any of the largest tables' statistics: the rest aren't asked for (#244).
+                if (answer.Tables.Count > 0 && answer.Failures.Any(f => f.What == TableReadFailure.Statistics)
+                    && answer.Tables.All(t => t.State == StatisticsHealthState.NotReadable))
+                {
+                    foreach (var row in rows.Where(r => !answered.Contains(r.Table.ObjectId)))
+                        row.ShowHealth(new TableStatisticsHealth(row.Table.ObjectId, StatisticsHealthState.NotReadable, null, null, null));
+                    HealthProblem = "Statistics health is off for this login, so the column shows a dash. " + HealthProblem;
+                    if (Health.Values is not null)
+                        TableFiltersChanged?.Invoke();
+                    return;
+                }
 
                 done += batch.Length;
                 ShowHealthProgress(done, rows.Count);
@@ -652,6 +737,9 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
         _holding = true;
         try
         {
+            // Back or Forward: as it was left, not where a link first opened it.
+            _target = null;
+            TargetProblem = null;
             SelectedDatabase = saved.Database;
             _restoredTable = saved.Table;
             DetailTab = saved.Tab;

@@ -111,6 +111,8 @@
                             <TextBlock x:Name="SelectedTitle" Foreground="{DynamicResource TextPrimary}"
                                        FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                        Text="Click an operator to see its properties." TextWrapping="Wrap" />
+                            <Button x:Name="BtnTableStatistics" Visibility="Collapsed" Margin="0,6,0,0" HorizontalAlignment="Left" Padding="10,3"
+                                    Style="{DynamicResource RefreshButton}" Click="BtnTableStatistics_Click" />
                         </StackPanel>
                     </Border>
 

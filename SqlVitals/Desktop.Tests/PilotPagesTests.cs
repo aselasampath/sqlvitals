@@ -136,7 +136,7 @@ public sealed class PilotPagesTests : IDisposable
             GetStaleStatisticsAsync = () => Task.FromResult<IEnumerable<StaleStatistic>>(
                 [Stat("Orders", "IX_Orders_Date", 48_000_000, 2_100_000, 9), Stat("OrderLines", "_WA_Sys_00000003_2A4B4B5E", 900_000, 410_000, 31),
                  Stat("Customers", "PK_Customers", 1_200_000, 12_000, 4)]),
-        }, dialogs);
+        }, dialogs, new FakeNavigator());
         var page = new StaleStatisticsPage(model, Settings());
         Assert.False(page.BtnUpdateStatsScript.IsEnabled);
 
@@ -177,7 +177,7 @@ public sealed class PilotPagesTests : IDisposable
                 [Stat("Orders", "IX_Orders_Date", 48_000_000, 2_100_000, 9), Stat("OrderLines", "_WA_Sys_00000003_2A4B4B5E", 900_000, 410_000, 31),
                  Stat("Customers", "PK_Customers", 1_200_000, 12_000, 4)]),
         };
-        var firstModel = new StaleStatisticsViewModel(repo, new FakeDialogService());
+        var firstModel = new StaleStatisticsViewModel(repo, new FakeDialogService(), new FakeNavigator());
         var first = new StaleStatisticsPage(firstModel);
         Helpers.ViewState? state = null;
         TemplateRolloutTests.Hosted(first, firstModel.OnNavigatedToAsync, null, () =>
@@ -193,7 +193,7 @@ public sealed class PilotPagesTests : IDisposable
         {
             GetStaleStatisticsAsync = async () => { await Task.Delay(200); return await repo.GetStaleStatisticsAsync!(); },
         };
-        var model = new StaleStatisticsViewModel(slow, new FakeDialogService());
+        var model = new StaleStatisticsViewModel(slow, new FakeDialogService(), new FakeNavigator());
         var again = new StaleStatisticsPage(model);
         state!.Restore(again);   // as the window does: built, not yet read
 

@@ -115,6 +115,8 @@
                     <StackPanel DockPanel.Dock="Bottom">
                         <TextBlock x:Name="TxtHealthProgress" Text="{Binding HealthProgress}" Style="{StaticResource Footnote}"
                                    Visibility="{Binding HealthProgress, Converter={StaticResource Shown}}"/>
+                        <TextBlock x:Name="TxtTargetProblem" Text="{Binding TargetProblem}" Foreground="{StaticResource StaleText}" FontSize="12" TextWrapping="Wrap"
+                                   Margin="0,6,0,0" Visibility="{Binding TargetProblem, Converter={StaticResource Shown}}"/>
                         <TextBlock x:Name="TxtHealthProblem" Text="{Binding HealthProblem}" Foreground="{StaticResource StaleText}"
                                    FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
                                    Visibility="{Binding HealthProblem, Converter={StaticResource Shown}}"/>

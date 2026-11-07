@@ -39,13 +39,17 @@
                             Style="{DynamicResource RefreshButton}" Padding="12,4" VerticalAlignment="Center"
                             Command="{Binding GenerateScriptCommand}" CommandParameter="{Binding Items, ElementName=StatsGrid}"
                             ToolTip="Generate a T-SQL UPDATE STATISTICS script for the selected rows (or all of them if none are selected). The script is shown for review — nothing is executed." />
+                    <Button x:Name="BtnTableStatistics" Content="Open in Table Statistics"
+                            Style="{DynamicResource RefreshButton}" Padding="12,4" Margin="10,0,0,0" VerticalAlignment="Center"
+                            Command="{Binding OpenTableStatisticsCommand}"
+                            ToolTip="See what the current row's statistics object holds: its histogram, density and findings. Double-clicking a row does the same." />
                 </WrapPanel>
 
                 <DataGrid x:Name="StatsGrid" CanUserAddRows="False"
                           ItemsSource="{Binding Statistics}" SelectedItem="{Binding SelectedStatistic}"
                           IsReadOnly="True" AutoGenerateColumns="False"
                           SelectionMode="Extended" SelectionUnit="FullRow"
-                          SelectionChanged="StatsGrid_SelectionChanged"
+                          SelectionChanged="StatsGrid_SelectionChanged" MouseDoubleClick="StatsGrid_MouseDoubleClick"
                           RowBackground="{StaticResource BgDeep}"
                           AlternatingRowBackground="{StaticResource BgSidebar}"
                           Foreground="{StaticResource TextPrimary}"

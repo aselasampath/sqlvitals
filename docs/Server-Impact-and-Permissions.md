@@ -151,7 +151,9 @@ GRANT SELECT TO [CONTOSO\svc_vitals];                     -- Statistics health
 GRANT SELECT ON [dbo].[Orders] TO [CONTOSO\svc_vitals];   -- one table's details
 ```
 
-> ⚠️ `SELECT` lets the login **read the table's rows**, even though SqlVitals doesn't. `db_ddladmin` reads statistics without `SELECT`, but it can change the schema. Choose what suits the login, or go without: sizes still show either way.
+> ⚠️ `SELECT` lets the login **read the table's rows**, even though SqlVitals doesn't. `db_ddladmin` reads statistics without `SELECT`, but it can change the schema. Choose what suits the login, or go without: sizes still show either way. From 0.87.0 the app says this next to the script as well.
+
+**Without the permission** (from 0.87.0), statistics are off rather than half-shown. The Statistics tab says *This login can't read these statistics* in place of the figures and chart, with the script off, for each object it can't read. If every table in the first batch of 50, the largest, is denied, Statistics health stops there, so no more queries are sent: every table shows a dash, and a table's Statistics tab can still read what its own grant allows.
 
 A column-level grant reads only that column's statistics. Statistics health shows a dash for a table with any statistics the login can't read, so it needs them all. The Statistics tab reads the objects it can, and says what's missing for the rest.
 

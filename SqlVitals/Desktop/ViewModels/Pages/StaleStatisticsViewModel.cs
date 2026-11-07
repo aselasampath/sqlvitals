@@ -5,15 +5,17 @@ using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
+using SqlVitals.Engine.TableStatistics;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.ViewModels.Pages;
 
 /// <summary>
 /// Stale Statistics (#184): the statistics with pending modifications, the script that updates the
-/// ones selected, and the verdict on the one with the most of its table changed (#150).
+/// ones selected, the verdict on the one with the most of its table changed (#150), and a link from a
+/// row to what its statistics object holds (#244).
 /// </summary>
-public sealed partial class StaleStatisticsViewModel(IIndexRepository repo, IDialogService dialogs, TimeProvider? time = null) : PageViewModel
+public sealed partial class StaleStatisticsViewModel(IIndexRepository repo, IDialogService dialogs, INavigator navigator, TimeProvider? time = null) : PageViewModel
 {
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
@@ -22,6 +24,7 @@ public sealed partial class StaleStatisticsViewModel(IIndexRepository repo, IDia
 
     /// <summary>The grid's current row; kept across a refresh by its database, schema, table and name.</summary>
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenTableStatisticsCommand))]
     private StaleStatistic? _selectedStatistic;
 
     /// <summary>
@@ -111,4 +114,14 @@ public sealed partial class StaleStatisticsViewModel(IIndexRepository repo, IDia
     }
 
     private bool CanGenerateScript(IEnumerable? shown) => Statistics.Count > 0;
+
+    /// <summary>Opens Table Statistics on a row's database, table and statistics object: <paramref name="row"/>, or the grid's current row.</summary>
+    [RelayCommand(CanExecute = nameof(CanOpenTableStatistics))]
+    private Task OpenTableStatistics(StaleStatistic? row) =>
+        (row ?? SelectedStatistic) is { } statistic
+            ? ReportErrorsOf(navigator.GoToAsync("TableStats", new FocusFilter(FocusKind.Table, Table: new TableStatisticsTarget(
+                  statistic.DatabaseName, statistic.SchemaName, statistic.TableName, statistic.StatisticsName)), "Stale Statistics"))
+            : Task.CompletedTask;
+
+    private bool CanOpenTableStatistics(StaleStatistic? row) => (row ?? SelectedStatistic) is not null;
 }

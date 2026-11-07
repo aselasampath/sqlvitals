@@ -1,5 +1,7 @@
 using System.Collections.Specialized;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Pages;
@@ -81,6 +83,18 @@ public partial class IndexHealthPage : Page, IPageContext, IDetailsSource
         MissingGrid.SelectedItem = top;
         MissingGrid.ScrollIntoView(top);
         ShowMissing(top, open: true);
+    }
+
+    // An unused or fragmented row double-clicked: its table on Table Statistics. Not the header or the scroll bar.
+    private void Grid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not DataGrid grid || e.OriginalSource is not DependencyObject source
+            || ItemsControl.ContainerFromElement(grid, source) is not DataGridRow { Item: var item })
+            return;
+        if (item is UnusedIndex unused)
+            ViewModel.OpenUnusedTableCommand.Execute(unused);
+        else if (item is IndexFragmentation fragmented)
+            ViewModel.OpenFragmentedTableCommand.Execute(fragmented);
     }
 
     // A value that can't be used: its box, ready to type over.

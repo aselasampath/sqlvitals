@@ -17,8 +17,17 @@ namespace SqlVitals.Desktop.Pages;
 /// hides it, which clears the grid's selection, leaves its details as they are. On the Statistics tab
 /// (#243), which holds more than fits, the tables take a fixed height and the page scrolls.
 /// </summary>
-public partial class TableStatisticsPage : Page, IPageContext
+public partial class TableStatisticsPage : Page, IPageContext, IFocusPage
 {
+    // A link opens it on a table (#244): every table stays listed, so there's nothing to show all of.
+    public void ShowFocus(PageFocus focus) => ViewModel.OpenOn(focus.Filter.Table);
+
+    public void ClearFocus() => ViewModel.OpenOn(null);
+
+    public string? FocusNote => null;
+
+    public string? ShowAllText => null;
+
     // Read once, and again on Refresh.
     public PageKind Kind => PageKind.Snapshot;
 

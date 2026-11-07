@@ -26,7 +26,7 @@ internal static class Wave3Pages
         new(new MemoryViewModel(repo), folds);
 
     public static IndexHealthPage IndexHealth(IWaitStatsRepository repo, ISectionFolds? folds = null, IDialogService? dialogs = null) =>
-        new(new IndexHealthViewModel(repo, repo, dialogs ?? new FakeDialogService()), folds);
+        new(new IndexHealthViewModel(repo, repo, dialogs ?? new FakeDialogService(), new FakeNavigator()), folds);
 
     public static FileIoPage FileIo(IWaitStatsRepository repo, ConnectionSettingsService settings) =>
         new(new FileIoViewModel(repo, settings), settings);

@@ -10,6 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Engine.ExecutionPlans;
+using SqlVitals.Engine.TableStatistics;
 using Path = System.Windows.Shapes.Path;
 
 namespace SqlVitals.Desktop.Controls;
@@ -56,9 +57,17 @@ public partial class ExecutionPlanView : UserControl
 
     public bool HasDiagram => _nodes.Count > 0;
 
+    /// <summary>The selected operator's link was pressed: its table on Table Statistics (#244).</summary>
+    public event Action<TableStatisticsTarget>? OpenTableRequested;
+
+    private ExecutionPlan _plan = ExecutionPlan.Empty;
+    private TableStatisticsTarget? _tableTarget;
+
     /// <summary>Shows a parsed plan, or <paramref name="emptyMessage"/> when there is nothing to draw.</summary>
     public void Show(ExecutionPlan plan, string emptyMessage)
     {
+        _plan = plan;
+        ShowTableLink(null, isBadEstimate: false);
         DiagramRoot.Children.Clear();
         _nodes.Clear();
         _matches = [];
@@ -575,6 +584,33 @@ public partial class ExecutionPlanView : UserControl
         var op = visual.Op;
         SelectedTitle.Text = op.Subtitle is { Length: > 0 } s ? $"{op.PhysicalOp} ({s})" : op.PhysicalOp;
         PropertiesTree.ItemsSource = op.Properties;
+        ShowTableLink(PlanTableTarget.For(_plan, op), op.IsBadEstimate);
+    }
+
+    /// <summary>Selects an operator, as a click on it does.</summary>
+    internal void SelectOperator(PlanOperator op)
+    {
+        if (_nodes.FirstOrDefault(n => ReferenceEquals(n.Op, op)) is { } visual)
+            Select(visual);
+    }
+
+    // On an operator with a table of its own: most plans in the cache have no actual rows to call an estimate bad by.
+    private void ShowTableLink(TableStatisticsTarget? target, bool isBadEstimate)
+    {
+        _tableTarget = target;
+        BtnTableStatistics.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
+        if (target is null)
+            return;
+        BtnTableStatistics.Content = isBadEstimate ? "Bad estimate: open Table Statistics" : "Open Table Statistics";
+        BtnTableStatistics.ToolTip = $"See the size and statistics of {target.FullName}"
+            + (target.Database is { } database ? $" in {database}" : "")
+            + (target.Statistics is { } statistics ? $", on the statistics object {statistics}, which the optimizer used." : ".");
+    }
+
+    private void BtnTableStatistics_Click(object sender, RoutedEventArgs e)
+    {
+        if (_tableTarget is { } target)
+            OpenTableRequested?.Invoke(target);
     }
 
     private void CopyProperty_Click(object sender, RoutedEventArgs e)

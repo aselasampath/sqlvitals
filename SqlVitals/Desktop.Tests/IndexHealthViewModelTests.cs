@@ -39,7 +39,7 @@ public sealed class IndexHealthViewModelTests
     private static (IndexHealthViewModel Model, FakeShellStatus Shell, FakeDialogService Dialogs) Connected(FakeRepository repo)
     {
         var dialogs = new FakeDialogService();
-        var model   = new IndexHealthViewModel(repo, repo, dialogs);
+        var model   = new IndexHealthViewModel(repo, repo, dialogs, new FakeNavigator());
         var shell   = new FakeShellStatus();
         model.Connect("IndexHealth", shell, new RefreshScheduler(TimeProvider.System, new FakeUiDispatcher()));
         return (model, shell, dialogs);

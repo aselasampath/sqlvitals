@@ -6,6 +6,7 @@ using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Repositories;
 using SqlVitals.Engine.Scripting;
+using SqlVitals.Engine.TableStatistics;
 using SqlVitals.Engine.Verdicts;
 
 namespace SqlVitals.Desktop.ViewModels.Pages;
@@ -15,10 +16,11 @@ namespace SqlVitals.Desktop.ViewModels.Pages;
 /// for, the unused ones, how each index is used, and the fragmented ones, each with a script to
 /// review (nothing is run). Read once and on Refresh; the fragmentation can be read again on its
 /// own with other criteria, cancelling a read of it still running. The verdict names the missing
-/// indexes asked for most, and the unused ones.
+/// indexes asked for most, and the unused ones. An unused or fragmented row links to its table on
+/// Table Statistics (#244).
 /// </summary>
 public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerRepository server, IDialogService dialogs,
-                                                 TimeProvider? time = null) : PageViewModel
+                                                 INavigator navigator, TimeProvider? time = null) : PageViewModel
 {
     /// <summary>The tabs: missing, unused, usage, fragmentation.</summary>
     internal const int MissingTab = 0, UnusedTab = 1, UsageTab = 2, FragmentationTab = 3;
@@ -45,6 +47,7 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
     public GridRows<UnusedIndex> Unused { get; } = [];
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenUnusedTableCommand))]
     private UnusedIndex? _selectedUnused;
 
     /// <summary>How each index is read and written.</summary>
@@ -135,6 +138,25 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
         ShowRow?.Invoke(top);
     }
 
+    // ── To the table's sizes and statistics (#244) ────────────────────────
+
+    private Task OpenTable(string database, string schema, string table) =>
+        ReportErrorsOf(navigator.GoToAsync("TableStats", new FocusFilter(FocusKind.Table, Table: new TableStatisticsTarget(database, schema, table)), "Index Health"));
+
+    /// <summary>Opens Table Statistics on an unused index's table: <paramref name="row"/>, or the grid's current row.</summary>
+    [RelayCommand(CanExecute = nameof(CanOpenUnusedTable))]
+    private Task OpenUnusedTable(UnusedIndex? row) =>
+        (row ?? SelectedUnused) is { } index ? OpenTable(index.DatabaseName, index.SchemaName, index.TableName) : Task.CompletedTask;
+
+    private bool CanOpenUnusedTable(UnusedIndex? row) => (row ?? SelectedUnused) is not null;
+
+    /// <summary>Opens Table Statistics on a fragmented index's table: <paramref name="row"/>, or the grid's current row.</summary>
+    [RelayCommand(CanExecute = nameof(CanOpenFragmentedTable))]
+    private Task OpenFragmentedTable(IndexFragmentation? row) =>
+        (row ?? SelectedFragmentation) is { } index ? OpenTable(index.DatabaseName, index.SchemaName, index.TableName) : Task.CompletedTask;
+
+    private bool CanOpenFragmentedTable(IndexFragmentation? row) => (row ?? SelectedFragmentation) is not null;
+
     // ── The scripts: shown for review, never run ──────────────────────────
 
     // Selected rows if the user picked some, otherwise every row the filter shows, in the grid's
@@ -220,6 +242,7 @@ public sealed partial class IndexHealthViewModel(IIndexRepository repo, IServerR
     public GridRows<IndexFragmentation> Fragmentation { get; } = [];
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenFragmentedTableCommand))]
     private IndexFragmentation? _selectedFragmentation;
 
     /// <summary>The boxes: the fragmentation read's criteria, and the maintenance script's thresholds.</summary>

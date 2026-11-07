@@ -83,7 +83,7 @@ Change them and press **↻ Refresh** (or **Enter**). Only this tab reloads, and
 
 > **Where:** sidebar → 📉 Stale Stats · **Use it when:** queries got slower after lots of data changed, or plans look badly estimated
 
-**Statistics** tell SQL Server's optimizer how data is distributed. When lots of rows change, they go out of date and the optimizer makes poor choices. This screen lists statistics with pending modifications, most-modified first. To see what one holds, open it on [Table Statistics](#the-statistics-tab).
+**Statistics** tell SQL Server's optimizer how data is distributed. When lots of rows change, they go out of date and the optimizer makes poor choices. This screen lists statistics with pending modifications, most-modified first. To see what one holds, double-click its row or press **Open in Table Statistics** (from 0.87.0): [Table Statistics](#opened-from-another-page) opens on that database, table and statistics object.
 
 **The verdict** (from 0.66.0) names the statistics with 20 % or more of their table's rows changed since they were updated, the largest share first (*1 statistic has 20 % or more of its table changed; the most, SalesDb.dbo.OrderLines (…)*), in amber, with how many rows changed and when it was last updated. With none that stale, it names the most changed one anyway. **Show it** selects it, so **Generate UPDATE STATISTICS Script** scripts just that one. From 0.79.1 a refresh keeps the statistic selected and the grid's sort. What statistics are for folds to one line. See [The page template](Getting-Started.md#verdict-first-then-the-detail).
 
@@ -190,6 +190,28 @@ Reads and writes count from the last restart, and the page says when that was. A
 
 Choosing another table or database cancels what's still being read for the last one, on the server too. Space used by XML and spatial indexes' internal tables isn't counted.
 
+### Opened from another page
+
+From 0.87.0 you can follow a problem here without finding the table again:
+
+| From | How | Opens on |
+|---|---|---|
+| [Stale Stats](#stale-statistics) | Double-click a row, or **Open in Table Statistics** | The database and table, on the **Statistics** tab with that statistics object |
+| [Index Health](#index-health): **Unused Indexes** or **Fragmentation** | Double-click a row, or **Open in Table Statistics** | The database and table, on **Sizes** |
+| An [execution plan](Execution-Plans.md#working-with-it) | Click an operator on a table, then **Open Table Statistics** in **Properties** | The database and table, on **Statistics** if the plan names the statistics the optimizer used |
+
+A banner says which page it was opened from, **Back** returns there with its selection as it was, and the active connection doesn't change.
+
+If it can't open what was asked for, it says so under the tables, and the page still works:
+
+| What happened | What it does |
+|---|---|
+| The table was dropped or renamed, or the login can't see it | Stays on the database, with no table selected. **Refresh** looks again |
+| The statistics object is gone | Opens the table on another statistics object |
+| The login can't open that database, or it's offline | Shows the connection's database |
+| Azure SQL Database, and the target is in another database | Shows the connected database, and says to connect to the other one |
+| The plan came from a server you've since switched away from | Doesn't look for the table here: one of the same name would be a different table |
+
 ### The Statistics tab
 
 Select a table and open **Statistics**. It reads only while the tab is showing, and choosing another object cancels what's still being read. From top to bottom:
@@ -197,6 +219,8 @@ Select a table and open **Statistics**. It reads only while the tab is showing, 
 **Statistics object** lists the table's statistics, index and column ones, with a line saying which kind it is and which column its histogram is on. The tab starts on the clustered index's statistics. With no clustered index, or a clustered columnstore index, it starts on the first statistics object that isn't on a columnstore index.
 
 **FULLSCAN** and **Generate UPDATE STATISTICS Script** open a script for the chosen object in a window for review, as on [Stale Stats](#stale-statistics). SqlVitals never runs it.
+
+**A login that can't read the object** (from 0.87.0) sees *This login can't read these statistics*, what would allow it and what that also allows, in place of the figures and chart, and the script is off. Another object on the same table may still be readable, as a grant can be per column. See [Reading statistics](Server-Impact-and-Permissions.md#table-statistics-reading-statistics).
 
 **The figures:**
 

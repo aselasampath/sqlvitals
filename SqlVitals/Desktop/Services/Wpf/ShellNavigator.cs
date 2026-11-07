@@ -10,6 +10,8 @@ namespace SqlVitals.Desktop.Services.Wpf;
 /// <param name="shell">The shell's view model, once its window shows it.</param>
 internal sealed class ShellNavigator(Func<ShellViewModel?> shell) : INavigator
 {
+    public Guid? ActiveServer => shell()?.ActiveServer;
+
     public Task GoToAsync(string tag, Guid? serverId = null)
     {
         Check(tag);

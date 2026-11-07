@@ -1081,7 +1081,16 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <param name="fromPage">The page the link is on, as its banner names it.</param>
     public Task OpenLinkAsync(string tag, FocusFilter filter, string fromPage) =>
         OpenAsync(EvidenceRoutes.Link(tag, _history.Current?.ConnectionId ?? _activeConnectionId, filter, fromPage),
-                  settingsMessage: null, _history.Visit, ActivitySources.Page(fromPage));
+                  settingsMessage: null, route =>
+                  {
+                      _history.Visit(route);
+                      // Table Statistics, again from the same row (#244): it opens on the row's table, not where it was left.
+                      if (filter.Kind == FocusKind.Table)
+                          _modelStates.Remove(route);
+                  }, ActivitySources.Page(fromPage));
+
+    /// <summary>The connection open now (<see cref="INavigator.ActiveServer"/>).</summary>
+    public Guid? ActiveServer => _activeConnectionId;
 
     /// <summary>Opens another page, as its sidebar button would; for links between pages (<see cref="INavigator"/>).</summary>
     /// <param name="serverId">The server a page is about; null for the active connection.</param>
