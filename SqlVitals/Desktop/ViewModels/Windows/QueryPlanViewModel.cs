@@ -135,7 +135,7 @@ public sealed partial class QueryPlanViewModel : ObservableObject
         }
     }
 
-    /// <summary>Table Statistics is about to open: the main window comes in front of this one, which stays open.</summary>
+    /// <summary>Table Statistics is about to open: this window stops holding itself over the main one, and stays open.</summary>
     public event Action? TableStatisticsOpening;
 
     /// <summary>
@@ -148,6 +148,7 @@ public sealed partial class QueryPlanViewModel : ObservableObject
         if (_navigator is null)
             return;
         TableStatisticsOpening?.Invoke();
+        _navigator.ShowMainWindow();
         try
         {
             await _navigator.GoToAsync("TableStats",

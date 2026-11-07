@@ -31,6 +31,9 @@ public interface INavigator
     /// <param name="source">Why, in the activity log: <see cref="SqlVitals.Engine.Activity.ActivitySources"/>.</param>
     Task InvestigateAsync(Alert alert, string source);
 
+    /// <summary>The main window in front, even from the tray or minimized: a separate window's link opens a page in it (#244).</summary>
+    void ShowMainWindow();
+
     /// <summary>Back to the page before, as the top bar's Back does.</summary>
     Task BackAsync();
 

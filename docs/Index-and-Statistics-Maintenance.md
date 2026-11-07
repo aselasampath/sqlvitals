@@ -198,7 +198,7 @@ From 0.87.0 you can follow a problem here without finding the table again:
 |---|---|---|
 | [Stale Stats](#stale-statistics) | Double-click a row, or **Open in Table Statistics** | The database and table, on the **Statistics** tab with that statistics object |
 | [Index Health](#index-health): **Unused Indexes** or **Fragmentation** | Double-click a row, or **Open in Table Statistics** | The database and table, on **Sizes** |
-| An [execution plan](Execution-Plans.md#working-with-it) | Click an operator on a table, then **Open Table Statistics** in **Properties** | The database and table, on **Statistics** if the plan names the statistics the optimizer used |
+| An [execution plan](Execution-Plans.md#working-with-it), in its window or the details drawer | Click an operator on a table, then **Open Table Statistics** in **Properties** | The database and table, on **Statistics** if the plan names the statistics the optimizer used |
 
 A banner says which page it was opened from, **Back** returns there with its selection as it was, and the active connection doesn't change.
 

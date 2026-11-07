@@ -39,6 +39,7 @@ public sealed class SessionDetailsView : StackPanel
     /// <param name="openWaits">Opens Processes' Waiting view filtered to a session (#145, #178).</param>
     public SessionDetailsView(Func<int, Task<SessionPlan>> loadPlan, Func<int, Task> openWaits)
     {
+        _plan.OpenTableRequested += DrawerParts.OpenTableStatistics;
         _loadPlan  = loadPlan;
         _openWaits = openWaits;
 

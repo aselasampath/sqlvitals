@@ -86,7 +86,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     {
         if (_target is not { Database: { } wanted } target)
             return null;
-        if (databases.Names.FirstOrDefault(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase)) is { } name)
+        if (TableStatisticsTarget.Named(databases.Names, n => n, wanted) is { } name)
             return name;
         TargetProblem = databases.CanSwitch
             ? $"{target.FullName} is in {wanted}, which this login can't open on this server, or which is offline or gone. Showing {databases.Connected} instead."
@@ -100,8 +100,7 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     {
         if (_target is not { } target)
             return null;
-        var row = rows.FirstOrDefault(r => string.Equals(r.Table.SchemaName, target.Schema, StringComparison.OrdinalIgnoreCase)
-                                        && string.Equals(r.Table.TableName, target.Table, StringComparison.OrdinalIgnoreCase));
+        var row = TableStatisticsTarget.Named(rows, r => r.Table.FullName, target.FullName);
         TargetProblem = row is not null ? null
             : $"{target.FullName} isn't in {database}. It may have been dropped or renamed, or this login can't see it.";
         return row;
@@ -425,8 +424,6 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
                 // Found: it opens where the link said, once. A Refresh from here keeps what the user has chosen since.
                 _target = null;
                 DetailTab = target?.Statistics is null ? 0 : StatisticsTab;
-                if (target?.Statistics is { } statistics)
-                    Statistics.Want(statistics);
             }
             _tablesRead = true;
             _noneVisible = list.Failures.Any(f => f.What == TableReadFailure.Names);
@@ -452,6 +449,8 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
             return;
         }
         Statistics.ChooseTable(again.Table, DatabaseRead, database);
+        if (targetRow is not null && target?.Statistics is { } statistics)
+            Statistics.Want(statistics);
         await Task.WhenAll(ReadDetailsAsync(again, cancel), Statistics.ReadIfShowingAsync(cancel));
     }
 
@@ -477,7 +476,6 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
     private async Task ReadHealthAsync(IReadOnlyList<TableSizeRow> rows, string? database, CancellationTokenSource run)
     {
         var byId = rows.ToDictionary(r => r.Table.ObjectId);
-        var answered = new HashSet<int>();
         var failures = new List<TableReadFailure>();
         var done = 0;
         ShowHealthProgress(0, rows.Count);
@@ -490,24 +488,23 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
                     return;
 
                 foreach (var health in answer.Tables)
-                {
-                    answered.Add(health.ObjectId);
                     if (byId.TryGetValue(health.ObjectId, out var row))
                         row.ShowHealth(health);
-                }
 
                 foreach (var failure in answer.Failures)
                     if (!failures.Any(f => f.What == failure.What && f.Explanation == failure.Explanation))
                         failures.Add(failure);
                 HealthProblem = failures.Count == 0 ? null : string.Join(' ', failures.Select(TableStatisticsVerdict.Describe));
 
-                // The login isn't allowed to read any of the largest tables' statistics: the rest aren't asked for (#244).
-                if (answer.Tables.Count > 0 && answer.Failures.Any(f => f.What == TableReadFailure.Statistics)
+                // The login isn't allowed to read any of the largest tables: the rest aren't asked for (#244). A grant on a
+                // smaller one still works on its own Statistics tab. Having read any table, it goes on: its grants differ.
+                if (done == 0 && answer.Tables.Count > 0 && answer.Failures.Any(f => f.IsDenied)
                     && answer.Tables.All(t => t.State == StatisticsHealthState.NotReadable))
                 {
-                    foreach (var row in rows.Where(r => !answered.Contains(r.Table.ObjectId)))
+                    foreach (var row in rows.Where(r => r.Health is null))
                         row.ShowHealth(new TableStatisticsHealth(row.Table.ObjectId, StatisticsHealthState.NotReadable, null, null, null));
-                    HealthProblem = "Statistics health is off for this login, so the column shows a dash. " + HealthProblem;
+                    HealthProblem = "Statistics health stopped: this login can't read the statistics of the largest tables, so the rest weren't asked for and show a dash. "
+                                  + "A table's Statistics tab still reads what its own grant allows. " + HealthProblem;
                     if (Health.Values is not null)
                         TableFiltersChanged?.Invoke();
                     return;

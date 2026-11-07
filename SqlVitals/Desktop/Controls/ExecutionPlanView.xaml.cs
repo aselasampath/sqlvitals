@@ -598,7 +598,8 @@ public partial class ExecutionPlanView : UserControl
     private void ShowTableLink(TableStatisticsTarget? target, bool isBadEstimate)
     {
         _tableTarget = target;
-        BtnTableStatistics.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
+        // Nobody to open it (a view on its own): a button that did nothing would be worse than none.
+        BtnTableStatistics.Visibility = target is null || OpenTableRequested is null ? Visibility.Collapsed : Visibility.Visible;
         if (target is null)
             return;
         BtnTableStatistics.Content = isBadEstimate ? "Bad estimate: open Table Statistics" : "Open Table Statistics";

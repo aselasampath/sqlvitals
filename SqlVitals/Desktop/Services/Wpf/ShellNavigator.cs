@@ -27,6 +27,8 @@ internal sealed class ShellNavigator(Func<ShellViewModel?> shell) : INavigator
     public Task InvestigateAsync(Alert alert, string source) =>
         shell() is { } main ? main.OpenEvidenceAsync(alert, source) : Task.CompletedTask;
 
+    public void ShowMainWindow() => shell()?.ShowWindow();
+
     public Task BackAsync() => shell() is { } main ? main.GoAsync(back: true) : Task.CompletedTask;
 
     public Task ForwardAsync() => shell() is { } main ? main.GoAsync(back: false) : Task.CompletedTask;

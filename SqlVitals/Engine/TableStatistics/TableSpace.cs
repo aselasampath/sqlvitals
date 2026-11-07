@@ -12,6 +12,9 @@ public sealed record TableDatabases(string Connected, IReadOnlyList<string> Name
 /// <param name="FixScript">The GRANT that fixes it; null when it isn't a permission.</param>
 public sealed record TableReadFailure(string What, string Explanation, string? FixScript)
 {
+    /// <summary>The login isn't allowed: not a timeout or a lost connection, which trying again may cure (#244).</summary>
+    public bool IsDenied { get; init; }
+
     /// <summary>The read the table list's sizes come from.</summary>
     public const string Sizes = "table sizes";
 

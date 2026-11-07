@@ -160,6 +160,7 @@ public sealed class RowDetailsView : StackPanel
             Panel.Children.Add(DrawerParts.Row(_show, _window));
             Panel.Children.Add(_note);
             Panel.Children.Add(View);
+            View.OpenTableRequested += DrawerParts.OpenTableStatistics;
         }
 
         public StackPanel Panel { get; } = new();

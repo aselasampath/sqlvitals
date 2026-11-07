@@ -9,13 +9,16 @@ public static class PlanTableTarget
 {
     /// <summary>
     /// Where the operator's link opens; null when it isn't on a table Table Statistics lists: an
-    /// operator with no object, a table variable, a temporary table or a system table. It opens on the
+    /// operator with no object, a table variable, a temporary table, a system table or an indexed view. It opens on the
     /// operator's own index's statistics if the optimizer used them, else on the first the plan lists
     /// for the table, and on the table alone when the plan lists none.
     /// </summary>
     public static TableStatisticsTarget? For(ExecutionPlan plan, PlanOperator op)
     {
         if (op.ObjectTable is not { Length: > 0 } table || op.ObjectSchema is not { Length: > 0 } schema || !IsUserTable(op.ObjectDatabase, schema, table))
+            return null;
+        // ViewClustered, ViewNonClustered.
+        if (op.IndexKind?.StartsWith("View", StringComparison.OrdinalIgnoreCase) == true)
             return null;
 
         var used = plan.Statements.FirstOrDefault(s => s.Root.Descendants().Contains(op))?.StatisticsUsed

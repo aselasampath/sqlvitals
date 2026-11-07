@@ -104,6 +104,7 @@ public class PlanTableTargetTests
     [InlineData("""Database="[SalesDb]" Schema="[sys]" Table="[sysrscols]" """)]
     [InlineData("""Database="[mssqlsystemresource]" Schema="[dbo]" Table="[spt_values]" """)]
     [InlineData("""Schema="[dbo]" """)]
+    [InlineData("""Database="[SalesDb]" Schema="[dbo]" Table="[vOrderTotals]" Index="[IX_v]" IndexKind="ViewClustered" """)]
     public void TablesThePageDoesntList_HaveNoTarget(string objectAttributes)
     {
         var (plan, seek, _, _) = Parsed(Plan(objectAttributes));

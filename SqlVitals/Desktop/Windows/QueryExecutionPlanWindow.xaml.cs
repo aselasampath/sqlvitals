@@ -24,13 +24,9 @@ public partial class QueryExecutionPlanWindow : Window
         };
         viewModel.CloseRequested += Close;
         PlanView.OpenTableRequested += target => viewModel.OpenTableStatisticsCommand.Execute(target);
-        viewModel.TableStatisticsOpening += ShowMainWindow;
+        viewModel.TableStatisticsOpening += FreeFromOwner;
     }
 
     // An owned window stays over its owner, and would hide the page just opened: this one goes free, and stays open.
-    private void ShowMainWindow()
-    {
-        Owner = null;
-        Application.Current?.MainWindow?.Activate();
-    }
+    private void FreeFromOwner() => Owner = null;
 }

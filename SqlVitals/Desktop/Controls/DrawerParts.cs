@@ -4,12 +4,20 @@ using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Monitoring;
+using SqlVitals.Engine.TableStatistics;
 
 namespace SqlVitals.Desktop.Controls;
 
 /// <summary>The pieces the details drawer's content is built from (#147), so every page's looks the same.</summary>
 internal static class DrawerParts
 {
+    /// <summary>A plan drawn in the drawer: its operator's table on Table Statistics (#244). The drawer goes with the page.</summary>
+    public static void OpenTableStatistics(TableStatisticsTarget target) =>
+        _ = OpenTableStatisticsAsync(target).Reported("open Table Statistics");
+
+    private static async Task OpenTableStatisticsAsync(TableStatisticsTarget target) =>
+        await CompositionRoot.Get<INavigator>().GoToAsync("TableStats", new FocusFilter(FocusKind.Table, Table: target), "the execution plan");
+
     /// <summary>A section's heading: "Last statement", "Plans".</summary>
     public static TextBlock Heading(string text)
     {

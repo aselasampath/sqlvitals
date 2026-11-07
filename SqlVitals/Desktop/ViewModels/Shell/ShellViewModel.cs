@@ -1086,8 +1086,14 @@ public sealed partial class ShellViewModel : ObservableObject
                       _history.Visit(route);
                       // Table Statistics, again from the same row (#244): it opens on the row's table, not where it was left.
                       if (filter.Kind == FocusKind.Table)
+                      {
                           _modelStates.Remove(route);
+                          _host.ForgetViewState(route);
+                      }
                   }, ActivitySources.Page(fromPage));
+
+    /// <summary>The window in front (<see cref="INavigator.ShowMainWindow"/>).</summary>
+    public void ShowWindow() => _host.ShowWindow();
 
     /// <summary>The connection open now (<see cref="INavigator.ActiveServer"/>).</summary>
     public Guid? ActiveServer => _activeConnectionId;
@@ -1484,6 +1490,8 @@ public sealed partial class ShellViewModel : ObservableObject
 
         public ShownPage Show(PageInstance page, PageFocus? focus) => new(null, null);
         public void KeepViewState(Route route) { }
+        public void ForgetViewState(Route route) { }
+        public void ShowWindow() { }
         public void RestoreViewState(Route route, bool scrolling) { }
     }
 }

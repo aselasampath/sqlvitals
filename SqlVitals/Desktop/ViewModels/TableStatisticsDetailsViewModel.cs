@@ -51,7 +51,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     // The object to choose again on the first read after coming back.
     private string? _restoredName;
 
-    // The object a link asked for: to say so if the table doesn't have it.
+    // The object a link asked for, until it's found or the user chooses another: said if the table doesn't have it.
     private string? _wantedName;
     private string? _missingObject;
 
@@ -102,17 +102,13 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     {
         if (!_holding && value is not null)
         {
-            _missingObject = null;
+            _wantedName = _missingObject = null;
             _ = ReadChosenObjectAsync(value);
         }
     }
 
     /// <summary>A link asks for this object, on the table about to be chosen (#244).</summary>
-    public void Want(string statisticsName)
-    {
-        _restoredName = statisticsName;
-        _wantedName = statisticsName;
-    }
+    public void Want(string statisticsName) => _wantedName = statisticsName;
 
     /// <summary>
     /// The login isn't allowed to read the chosen object (#244): its header, findings, chart and script
@@ -280,7 +276,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         TableShown = table;
         if (!same)
         {
-            _missingObject = null;
+            _wantedName = _missingObject = null;
             ClearObjects();
         }
     }
@@ -398,13 +394,14 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     private void ShowList(TableSize table, TableStatisticsList list)
     {
         var before = SelectedObject;
-        var wanted = _restoredName ?? before?.Name;
+        var wanted = _wantedName ?? _restoredName ?? before?.Name;
         _restoredName = null;
         if (_wantedName is { } asked)
         {
-            _missingObject = list.Statistics.Any(s => string.Equals(s.Name, asked, StringComparison.OrdinalIgnoreCase)) ? null
-                : $"{table.FullName} has no statistics object named {asked}: it may have been dropped or renamed.";
-            _wantedName = null;
+            var found = TableStatisticsTarget.Named(list.Statistics, s => s.Name, asked) is not null;
+            _missingObject = found ? null : $"{table.FullName} has no statistics object named {asked}: it may have been dropped or renamed.";
+            if (found)
+                _wantedName = null;
         }
 
         _holding = true;
@@ -416,7 +413,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
                 foreach (var statistic in list.Statistics)
                     Objects.Add(statistic);
             }
-            SelectedObject = list.Statistics.FirstOrDefault(s => string.Equals(s.Name, wanted, StringComparison.OrdinalIgnoreCase))
+            SelectedObject = (wanted is null ? null : TableStatisticsTarget.Named(list.Statistics, s => s.Name, wanted))
                           ?? list.Statistics.FirstOrDefault(s => s.IsClustered && !s.IsColumnstore)
                           ?? list.Statistics.FirstOrDefault(s => !s.IsColumnstore)
                           ?? (list.Statistics.Count > 0 ? list.Statistics[0] : null);
@@ -441,8 +438,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         ShowHeader(details.Properties);
 
         var couldRead = !details.IsLocked && details.Failures.Count == 0;
-        ReadDenied = details.Properties is null && details.Histogram.Count == 0
-                  && details.Failures.Any(f => f.What == TableReadFailure.Statistics);
+        ReadDenied = details.Properties is null && details.Histogram.Count == 0 && details.Failures.Any(f => f.IsDenied);
         var estimate = StatisticsFindings.UnknownEstimate(details);
 
         UnknownEstimate = estimate;

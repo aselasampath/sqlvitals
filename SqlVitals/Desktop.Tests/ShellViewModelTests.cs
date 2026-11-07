@@ -174,6 +174,31 @@ public sealed class ShellViewModelTests : IDisposable
     });
 
     [Fact]
+    public void ALinkToTableStatistics_OpensAfresh_OnTheSameConnection_AndBackPutsItBack() => OnDispatcher.Run(() =>
+    {
+        var shell = Started(_a);
+        var link = new FocusFilter(FocusKind.Table, Table: new Engine.TableStatistics.TableStatisticsTarget("Sales", "dbo", "Orders"));
+
+        UiThread.Wait(shell.OpenLinkAsync("TableStats", link, "Stale Statistics"));
+        Assert.Equal(_a.Id, shell.ActiveServer);
+        Page.Kept = "another table";
+
+        UiThread.Wait(shell.OpenPageAsync("Waits"));
+        _host.Calls.Clear();
+        UiThread.Wait(shell.OpenLinkAsync("TableStats", link, "Stale Statistics"));
+
+        Assert.Null(Page.Restored);
+        Assert.Contains("Forget TableStats", _host.Calls);
+        Assert.Equal(_a.Id, shell.ActiveServer);
+        Assert.Equal(link, _host.Focus[^1]?.Filter);
+
+        Page.Kept = "where it was left";
+        UiThread.Wait(shell.OpenPageAsync("Waits"));
+        UiThread.Wait(shell.GoAsync(back: true));
+        Assert.Equal("where it was left", Page.Restored);
+    });
+
+    [Fact]
     public void LeavingAPage_KeepsHowItWasLookedAt_AndOpeningItAgainPutsItBack() => OnDispatcher.Run(() =>
     {
         var shell = Started(_a);

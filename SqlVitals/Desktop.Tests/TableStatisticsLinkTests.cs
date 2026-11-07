@@ -40,7 +40,7 @@ public sealed class TableStatisticsLinkTests
     }
 
     private static TableReadFailure Denied => new(TableReadFailure.Statistics,
-        "The login lacks SELECT in SalesDb. " + TableReadFailure.SelectWarning, "USE [SalesDb];\nGRANT SELECT ON [dbo].[Orders] TO [svc];");
+        "The login lacks SELECT in SalesDb. " + TableReadFailure.SelectWarning, "USE [SalesDb];\nGRANT SELECT ON [dbo].[Orders] TO [svc];") { IsDenied = true };
 
     // ── The page, opened on a target ──────────────────────────────────────
 
@@ -272,9 +272,72 @@ public sealed class TableStatisticsLinkTests
         await Until(() => model.HealthProgress is null && model.HealthProblem is not null);
 
         Assert.Equal(1, batches);
-        Assert.Contains("off for this login", model.HealthProblem);
+        Assert.Contains("Statistics health stopped", model.HealthProblem);
         Assert.Contains("read the table's rows", model.HealthProblem);
         Assert.All(model.Tables, t => Assert.Equal(StatisticsHealthState.NotReadable, t.Health?.State));
+    }
+
+    [Fact]
+    public async Task ADeniedBatchAfterAReadOne_KeepsReading()
+    {
+        var tables = Enumerable.Range(1, TableStatisticsViewModel.HealthBatch * 2 + 5).Select(i => Table(i, $"T{i}", 1000 - i, 1)).ToArray();
+        var repo = Repo(tables);
+        var batches = 0;
+        repo.GetTableStatisticsHealthAsync = (_, ids) =>
+        {
+            var denied = ++batches > 1;
+            return Task.FromResult(new TableHealthBatch(
+                ids.Select(id => new TableStatisticsHealth(id, denied ? StatisticsHealthState.NotReadable : StatisticsHealthState.Rated, denied ? null : StatisticsRating.Good, null, null)).ToList(),
+                denied ? [Denied] : []));
+        };
+        var model = Connected(repo);
+
+        await model.OnNavigatedToAsync();
+        await Until(() => model.HealthProgress is null && batches > 0);
+
+        Assert.Equal(3, batches);
+        Assert.DoesNotContain("stopped", model.HealthProblem);
+    }
+
+    [Fact]
+    public async Task ATimeoutOnTheHeader_IsNotCalledDenied()
+    {
+        var failed = new TableReadFailure(TableReadFailure.Statistics, "The query timed out.", null);
+        var model = Connected(Repository(new StatisticsDetails(null, [], [], 160, false, [failed])), new TableStatisticsTarget("SalesDb", "dbo", "Orders", "PK_Orders"));
+
+        await model.OnNavigatedToAsync();
+
+        Assert.False(model.Statistics.ReadDenied);
+        Assert.Contains("timed out", model.Statistics.Problem);
+    }
+
+    [Fact]
+    public async Task ACaseSensitiveDatabase_OpensTheExactTable()
+    {
+        var repo = Repository();
+        repo.GetTableSizesAsync = _ => Task.FromResult(new TableSizeList([Table(1, "ORDERS", 900 * Mb, 1), Table(2, "Orders", 100 * Mb, 1)], []));
+        var model = Connected(repo, new TableStatisticsTarget("SalesDb", "dbo", "Orders"));
+
+        await model.OnNavigatedToAsync();
+
+        Assert.Equal(2, model.SelectedTable?.Table.ObjectId);
+    }
+
+    [Fact]
+    public async Task AnObjectThatComesBack_StopsBeingCalledMissing_OnRefresh()
+    {
+        var objects = new List<StatisticsObject> { Pk };
+        var repo = Repository();
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList(objects.ToList(), false));
+        var model = Connected(repo, new TableStatisticsTarget("SalesDb", "dbo", "Orders", "IX_Orders_Status"));
+        await model.OnNavigatedToAsync();
+        Assert.Contains("IX_Orders_Status", model.Statistics.Problem);
+
+        objects.Add(Status);
+        await model.RefreshAsync();
+
+        Assert.Null(model.Statistics.Problem);
+        Assert.Equal("IX_Orders_Status", model.Statistics.SelectedObject?.Name);
     }
 
     [Fact]
@@ -382,6 +445,7 @@ public sealed class TableStatisticsLinkTests
         Assert.Equal(["TableStats ⟵ the execution plan: Table"], _navigator.Moves);
         Assert.Equal(new TableStatisticsTarget("SalesDb", "dbo", "Orders", "PK_Orders"), _navigator.LastFilter?.Table);
         Assert.Equal(1, opening);
+        Assert.Equal(1, _navigator.WindowShown);
         Assert.Equal(server, _navigator.ActiveServer);
     }
 

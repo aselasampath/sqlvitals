@@ -131,7 +131,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         // One failure however many tables: the GRANT is the same, so the page says it once.
         if (denied)
             failures.Add(new TableReadFailure(StatisticsRead,
-                Explained(new PermissionNeeded("SELECT", PermissionScope.Database, await NamedAsync(conn, database, cancellationToken)), out var fix) + WhySelect, fix));
+                Explained(new PermissionNeeded("SELECT", PermissionScope.Database, await NamedAsync(conn, database, cancellationToken)), out var fix) + WhySelect, fix) { IsDenied = true });
         return new TableHealthBatch(tables, failures);
     }
 
@@ -239,7 +239,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         if (owner.Count == 0)
             return null;
         var permission = new PermissionNeeded("SELECT", PermissionScope.OnObject, await NamedAsync(conn, database, cancellationToken), (string)owner[0].SchemaName, (string)owner[0].TableName);
-        return new TableReadFailure(StatisticsRead, Explained(permission, out var fix) + WhySelect, fix);
+        return new TableReadFailure(StatisticsRead, Explained(permission, out var fix) + WhySelect, fix) { IsDenied = true };
     }
 
     // The list's names don't wait, so it asks. Without VIEW SERVER STATE, the read of the details still finds out.
@@ -308,7 +308,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         var failure = error.Failure;
         if (failure.Kind == SqlFailureKind.MissingPermission && failure.Permission is null or { Inferred: true })
             failure = failure with { Permission = needed(await NamedAsync(conn, database, cancellationToken), await CapabilitiesAsync(cancellationToken)) };
-        return new TableReadFailure(what, failure.Explanation ?? error.Message, failure.FixScript(_login));
+        return new TableReadFailure(what, failure.Explanation ?? error.Message, failure.FixScript(_login)) { IsDenied = failure.IsPermission };
     }
 
     private string Explained(PermissionNeeded permission, out string? fix)

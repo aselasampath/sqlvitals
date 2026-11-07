@@ -25,6 +25,27 @@ public sealed class TableStatisticsLinkViewTests : IDisposable
 
     public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };
 
+    private const string OnOrders = """
+        <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.5">
+          <BatchSequence><Batch><Statements>
+            <StmtSimple StatementId="1" StatementType="SELECT" StatementSubTreeCost="1">
+              <QueryPlan>
+                <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="1" EstimatedTotalSubtreeCost="1">
+                  <OutputList/>
+                  <NestedLoops Optimized="0">
+                    <RelOp NodeId="1" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="1" EstimatedTotalSubtreeCost="0.5">
+                      <OutputList/>
+                      <RunTimeInformation><RunTimeCountersPerThread Thread="0" ActualRows="5000" ActualExecutions="1"/></RunTimeInformation>
+                      <IndexScan><Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]"/></IndexScan>
+                    </RelOp>
+                  </NestedLoops>
+                </RelOp>
+              </QueryPlan>
+            </StmtSimple>
+          </Statements></Batch></BatchSequence>
+        </ShowPlanXML>
+        """;
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
@@ -88,7 +109,7 @@ public sealed class TableStatisticsLinkViewTests : IDisposable
         using var themed = MergedPagesTests.Themed(theme);
         using var errors = BindingErrors.Watch();
         var denied = new TableReadFailure(TableReadFailure.Statistics, "The login lacks SELECT in SalesDb. " + TableReadFailure.SelectWarning,
-                                          "USE [SalesDb];\nGRANT SELECT ON [dbo].[Orders] TO [svc];");
+                                          "USE [SalesDb];\nGRANT SELECT ON [dbo].[Orders] TO [svc];") { IsDenied = true };
         var (page, model) = Build(Repository(new StatisticsDetails(null, [], [], 160, false, [denied])));
         ((IFocusPage)page).ShowFocus(Focus(new TableStatisticsTarget("SalesDb", "dbo", "Orders", "PK_Orders")));
 
@@ -126,38 +147,36 @@ public sealed class TableStatisticsLinkViewTests : IDisposable
         Assert.Same(index.ViewModel.OpenFragmentedTableCommand, index.BtnFragTable.Command);
     });
 
+    [Fact]
+    public void ThePlansInTheDrawers_OfferTheLink() => UiThread.Run(() =>
+    {
+        // The event has a handler wherever a plan is drawn in a drawer: otherwise the button would do nothing.
+        using var themed = MergedPagesTests.Themed("DarkTheme");
+        var session = new SessionDetailsView(_ => Task.FromResult<SessionPlan>(null!), _ => Task.CompletedTask);
+        var plan = UiThread.Find<ExecutionPlanView>(session).Single();
+        var parsed = ShowplanParser.Parse(OnOrders);
+        plan.Show(parsed, "none");
+        plan.SelectOperator(parsed.Statements[0].Root.Children[0].Children[0]);
+
+        Assert.Equal(Visibility.Visible, plan.BtnTableStatistics.Visibility);
+    });
+
     [Theory, MemberData(nameof(Themes))]
     public void ThePlanView_OffersTheLinkOnlyOnAnOperatorWithATable(string theme) => UiThread.Run(() =>
     {
         using var themed = MergedPagesTests.Themed(theme);
-        var plan = ShowplanParser.Parse("""
-            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.5">
-              <BatchSequence><Batch><Statements>
-                <StmtSimple StatementId="1" StatementType="SELECT" StatementSubTreeCost="1">
-                  <QueryPlan>
-                    <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="1" EstimatedTotalSubtreeCost="1">
-                      <OutputList/>
-                      <NestedLoops Optimized="0">
-                        <RelOp NodeId="1" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="1" EstimatedTotalSubtreeCost="0.5">
-                          <OutputList/>
-                          <RunTimeInformation><RunTimeCountersPerThread Thread="0" ActualRows="5000" ActualExecutions="1"/></RunTimeInformation>
-                          <IndexScan><Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]"/></IndexScan>
-                        </RelOp>
-                      </NestedLoops>
-                    </RelOp>
-                  </QueryPlan>
-                </StmtSimple>
-              </Statements></Batch></BatchSequence>
-            </ShowPlanXML>
-            """);
+        var plan = ShowplanParser.Parse(OnOrders);
         var join = plan.Statements[0].Root.Children[0];
         var seek = join.Children[0];
 
         var view = new ExecutionPlanView();
         view.Show(plan, "none");
+        view.SelectOperator(seek);
+        Assert.Equal(Visibility.Collapsed, view.BtnTableStatistics.Visibility);
+
         TableStatisticsTarget? opened = null;
         view.OpenTableRequested += target => opened = target;
-
+        view.Show(plan, "none");
         Assert.Equal(Visibility.Collapsed, view.BtnTableStatistics.Visibility);
 
         view.SelectOperator(join);

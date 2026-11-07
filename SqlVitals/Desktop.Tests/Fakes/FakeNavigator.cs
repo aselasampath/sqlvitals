@@ -8,6 +8,11 @@ internal sealed class FakeNavigator : INavigator
 {
     public Guid? ActiveServer { get; set; }
 
+    /// <summary>How many times the main window was brought to the front.</summary>
+    public int WindowShown { get; private set; }
+
+    public void ShowMainWindow() => WindowShown++;
+
     /// <summary>The last filter a link carried.</summary>
     public FocusFilter? LastFilter { get; private set; }
 
