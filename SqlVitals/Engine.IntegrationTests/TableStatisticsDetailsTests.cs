@@ -162,7 +162,6 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
         var list = await _repo.GetTableStatisticsAsync(null, await ObjectIdAsync("dbo.Orders"));
 
         Assert.False(list.IsLocked);
-        Assert.Empty(list.Failures);
         Assert.Equal("PK_Orders", list.Statistics[0].Name);
         Assert.True(list.Statistics[0].IsClustered);
         Assert.Equal("OrderId", list.Statistics[0].LeadingColumn);
@@ -192,6 +191,7 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
 
         var columnstore = await _repo.GetTableStatisticsAsync(null, await ObjectIdAsync("sizes.ColumnstoreTable"));
         Assert.True(columnstore.Statistics.Single(s => s.Name == "CCI_ColumnstoreTable").IsClustered);
+        Assert.True(columnstore.Statistics.Single(s => s.Name == "CCI_ColumnstoreTable").IsColumnstore);
     }
 
     [SqlServerFact]
@@ -420,7 +420,6 @@ public class TableStatisticsDetailsTests(SqlServerFixture server)
             Assert.NotEmpty(details.Density);
 
             // Without VIEW SERVER STATE the list doesn't know of a lock, and doesn't complain.
-            Assert.Empty(list.Failures);
             Assert.False(list.IsLocked);
         });
     }

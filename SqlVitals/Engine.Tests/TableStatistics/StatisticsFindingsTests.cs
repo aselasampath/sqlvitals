@@ -125,10 +125,13 @@ public class StatisticsFindingsTests
     {
         var histogram = new[] { Step(1, avg: 1_000, key: null), Step(2, avg: 10), Step(3, avg: 30) };
 
-        Assert.True(StatisticsFindings.IsAboveAverageRange(histogram[2], histogram));
-        Assert.False(StatisticsFindings.IsAboveAverageRange(histogram[1], histogram));
-        Assert.False(StatisticsFindings.IsAboveAverageRange(histogram[0], histogram));
-        Assert.False(StatisticsFindings.IsAboveAverageRange(Step(1, avg: 5), []));
+        var average = StatisticsFindings.AverageRange(histogram);
+
+        Assert.Equal(20, average);
+        Assert.True(StatisticsFindings.IsAboveAverageRange(histogram[2], average));
+        Assert.False(StatisticsFindings.IsAboveAverageRange(histogram[1], average));
+        Assert.False(StatisticsFindings.IsAboveAverageRange(histogram[0], average));
+        Assert.False(StatisticsFindings.IsAboveAverageRange(Step(1, avg: 5), StatisticsFindings.AverageRange([])));
     }
 
     // ── A frequent value hidden in a range ────────────────────────────
@@ -279,11 +282,49 @@ public class StatisticsFindingsTests
         Assert.Equal(expected, StatisticsFindings.AutoUpdateThreshold(rows, level), 6);
 
     [Fact]
-    public void TheThreshold_OfNoRows_IsZeroFromLevel130_AndChangesAreNotCountedAgainstIt()
+    public void TheThreshold_OfAFewRows_Is500AtEveryLevel_AsMicrosoftDocumentsIt()
     {
-        Assert.Equal(0, StatisticsFindings.AutoUpdateThreshold(0, 160));
-        Assert.Equal(500, StatisticsFindings.AutoUpdateThreshold(0, 120));
-        Assert.False(StatisticsFindings.IsPastAutoUpdate(Built(0, modifications: 1_000), 160));
+        foreach (var rows in new long[] { 0, 1, 100, 500 })
+        {
+            Assert.Equal(500, StatisticsFindings.AutoUpdateThreshold(rows, 160));
+            Assert.Equal(500, StatisticsFindings.AutoUpdateThreshold(rows, 120));
+            Assert.Equal(500, StatisticsFindings.AutoUpdateThreshold(rows, null));
+        }
+        // Just above, the formula takes over: SQRT(1000 x 501) is about 707.8, 500 + 20 % is 600.2.
+        Assert.Equal(600.2, StatisticsFindings.AutoUpdateThreshold(501, 160), 6);
+    }
+
+    [Fact]
+    public void ASmallBusyTable_IsntPastIt_UntilThe500Changes()
+    {
+        Assert.False(StatisticsFindings.IsPastAutoUpdate(Built(1, modifications: 40), 160));
+        Assert.False(StatisticsFindings.IsPastAutoUpdate(Built(1, modifications: 500), 160));
+        Assert.True(StatisticsFindings.IsPastAutoUpdate(Built(1, modifications: 501), 160));
+    }
+
+    [Fact]
+    public void StatisticsBuiltOnAnEmptyTable_ArePastIt_OnceTheRowsCome() =>
+        Assert.Equal(StatisticsRating.Poor, StatisticsFindings.RateTable(7, [Built(0, sampled: 0, modifications: 10_000_000)], 160).Rating);
+
+    [Fact]
+    public void AllNeverBuilt_OnATableWithRows_IsFair()
+    {
+        Assert.Equal(StatisticsRating.Fair, StatisticsFindings.RateTable(7, [null, null], 160, tableRows: 10_000_000).Rating);
+        Assert.Equal(StatisticsRating.Good, StatisticsFindings.RateTable(7, [null, null], 160, tableRows: 0).Rating);
+    }
+
+    [Fact]
+    public void WithAPartNotRead_ItIsntCalledGood_ButAFindingStillRatesIt()
+    {
+        var read = new StatisticsProperties(new DateTime(2026, 1, 1), 1_000, 1_000, 3, 10);
+        var failure = new TableReadFailure("the histogram", "Couldn't read it.", null);
+
+        Assert.Equal(StatisticsRating.Good, StatisticsFindings.Assess(new StatisticsDetails(read, [], [], 160, false, [])).Rating);
+        Assert.Null(StatisticsFindings.Assess(new StatisticsDetails(read, [], [], 160, false, [failure])).Rating);
+        Assert.Null(StatisticsFindings.Assess(new StatisticsDetails(read, [], [], 160, true, [])).Rating);
+
+        var stale = read with { Modifications = 5_000 };
+        Assert.Equal(StatisticsRating.Poor, StatisticsFindings.Assess(new StatisticsDetails(stale, [], [], 160, true, [])).Rating);
     }
 
     [Theory]

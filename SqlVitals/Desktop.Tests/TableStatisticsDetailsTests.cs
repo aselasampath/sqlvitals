@@ -47,7 +47,7 @@ public sealed class TableStatisticsDetailsTests
     internal static FakeRepository Repository(StatisticsDetails? details = null)
     {
         var repo = Repo(Table(1, "Orders", 300 * Mb, 250 * Mb), Table(2, "Lines", 100 * Mb, 50 * Mb));
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Pk, Status, Region], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Pk, Status, Region], false));
         repo.GetStatisticsDetailsAsync = (_, _, _) => Task.FromResult(details ?? Sample());
         return repo;
     }
@@ -79,7 +79,7 @@ public sealed class TableStatisticsDetailsTests
         repo.GetTableStatisticsAsync = (_, _) =>
         {
             read++;
-            return Task.FromResult(new TableStatisticsList([Pk], false, []));
+            return Task.FromResult(new TableStatisticsList([Pk], false));
         };
         var model = Connected(repo);
         await model.OnNavigatedToAsync();
@@ -111,7 +111,7 @@ public sealed class TableStatisticsDetailsTests
         repo.GetTableStatisticsAsync = (_, _) =>
         {
             read++;
-            return Task.FromResult(new TableStatisticsList([Pk, Status], false, []));
+            return Task.FromResult(new TableStatisticsList([Pk, Status], false));
         };
         var model = await OnTheTab(repo);
         Assert.Equal(1, read);
@@ -157,7 +157,7 @@ public sealed class TableStatisticsDetailsTests
     {
         var repo = Repository();
         var asked = new List<int>();
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Region, Pk, Status], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Region, Pk, Status], false));
         repo.GetStatisticsDetailsAsync = (_, _, statsId) =>
         {
             asked.Add(statsId);
@@ -170,7 +170,7 @@ public sealed class TableStatisticsDetailsTests
         Assert.Contains("Clustered index statistics", model.Statistics.KindText);
         Assert.Contains("OrderId", model.Statistics.KindText);
 
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Status, Region], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Status, Region], false));
         model.SelectedTable = model.Tables[1];
         await Until(() => model.Statistics.SelectedObject == Status);
         Assert.Equal("Index statistics, histogram on Status", model.Statistics.KindText);
@@ -180,40 +180,43 @@ public sealed class TableStatisticsDetailsTests
         Assert.Equal("Column statistics, histogram on Region", model.Statistics.KindText);
     }
 
-    private static readonly StatisticsObject Columnstore = new(1, "CCI_Orders", true, true, false, null);
+    private static readonly StatisticsObject Columnstore = new(1, "CCI_Orders", true, true, false, null, IsColumnstore: true);
     private static readonly StatisticsDetails NoneHeld = new(null, [], [], 160, false, []);
 
     [Fact]
-    public async Task AClusteredColumnstore_IsPassedOver_ForAnObjectWithAHistogram()
+    public async Task AClusteredColumnstore_IsPassedOver_WithoutReadingIt()
     {
         var repo = Repository();
         var asked = new List<int>();
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Columnstore, Status, Region], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Columnstore, Status, Region], false));
         repo.GetStatisticsDetailsAsync = (_, _, statsId) =>
         {
             asked.Add(statsId);
-            return Task.FromResult(statsId == 3 ? Sample() : NoneHeld);
+            return Task.FromResult(statsId == 1 ? NoneHeld : Sample());
         };
         var page = await OnTheTab(repo);
 
-        Assert.Equal(Region, page.Statistics.SelectedObject);
-        Assert.Equal([1, 2, 3], asked);
+        Assert.Equal(Status, page.Statistics.SelectedObject);
+        Assert.Equal([2], asked);
         Assert.Equal(6, page.Statistics.ChartSteps.Count);
         Assert.Null(page.Statistics.NoHistogramText);
 
-        // Chosen by hand, it's what shows, and a Refresh keeps it.
+        // Chosen by hand, it's what shows, and a Refresh keeps it. No script: it would fail on one.
+        Assert.True(page.Statistics.GenerateScriptCommand.CanExecute(null));
         page.Statistics.SelectedObject = Columnstore;
         await Until(() => page.Statistics.NoHistogramText is not null);
         await page.RefreshAsync();
         Assert.Equal(Columnstore, page.Statistics.SelectedObject);
         Assert.Contains("columnstore", page.Statistics.NoHistogramText);
+        Assert.Contains("Columnstore index statistics", page.Statistics.KindText);
+        Assert.False(page.Statistics.GenerateScriptCommand.CanExecute(null));
     }
 
     [Fact]
     public async Task ATableWithOnlyAColumnstore_SaysThereIsNoHistogram()
     {
         var repo = Repository(NoneHeld);
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Columnstore], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Columnstore], false));
         var model = (await OnTheTab(repo)).Statistics;
 
         Assert.Equal(Columnstore, model.SelectedObject);
@@ -245,31 +248,6 @@ public sealed class TableStatisticsDetailsTests
         Assert.Equal([1], asked);
         Assert.Equal(Pk, model.SelectedObject);
         Assert.Contains("under a schema change", model.Problem);
-    }
-
-    [Fact]
-    public async Task ChoosingAnotherTable_WhilePassingOver_StopsAsking()
-    {
-        var repo = Repository();
-        var slow = new TaskCompletionSource<StatisticsDetails>();
-        repo.GetStatisticsDetailsAsync = (_, _, statsId) => statsId == 1 ? Task.FromResult(NoneHeld) : slow.Task;
-        repo.GetTableStatisticsAsync = (_, id) => Task.FromResult(id == 1 ? new TableStatisticsList([Columnstore, Status], false, []) : new TableStatisticsList([Pk], false, []));
-        var model = Connected(repo);
-        await model.OnNavigatedToAsync();
-        model.DetailTab = TableStatisticsViewModel.StatisticsTab;
-        model.SelectedTable = model.Tables.Single(t => t.Table.ObjectId == 1);
-        await Until(() => repo.Tokens.ContainsKey(nameof(FakeRepository.GetStatisticsDetailsAsync)));
-        var token = repo.Tokens[nameof(FakeRepository.GetStatisticsDetailsAsync)];
-
-        repo.GetStatisticsDetailsAsync = (_, _, _) => Task.FromResult(Sample());
-        model.SelectedTable = model.Tables.Single(t => t.Table.ObjectId == 2);
-
-        Assert.True(token.IsCancellationRequested);
-        await Until(() => model.Statistics.ChartSteps.Count == 6);
-        slow.SetResult(Sample("Late"));
-        await Task.Delay(20);
-        Assert.Equal(Pk, model.Statistics.SelectedObject);
-        Assert.DoesNotContain(model.Statistics.ChartSteps, s => s.Key == "Late");
     }
 
     [Fact]
@@ -385,7 +363,7 @@ public sealed class TableStatisticsDetailsTests
     public async Task ALockedTable_SaysSo_NotThatThereIsNoHistogram()
     {
         var repo = Repository(new StatisticsDetails(null, [], [], null, true, []));
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Pk], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Pk], false));
         var model = (await OnTheTab(repo)).Statistics;
 
         Assert.Contains("under a schema change", model.Problem);
@@ -397,7 +375,7 @@ public sealed class TableStatisticsDetailsTests
     public async Task ALockedList_SaysSo()
     {
         var repo = Repository();
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([], true, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([], true));
         var model = (await OnTheTab(repo)).Statistics;
 
         Assert.Contains("under a schema change", model.Problem);
@@ -405,11 +383,23 @@ public sealed class TableStatisticsDetailsTests
     }
 
     [Fact]
+    public async Task WithAPartNotRead_ItDoesntSayGood()
+    {
+        var failure = new TableReadFailure("the histogram", "Couldn't read it.", null);
+        var header = new StatisticsProperties(new DateTime(2026, 1, 1), 1_000, 1_000, 3, 10);
+        var model = (await OnTheTab(Repository(new StatisticsDetails(header, [], [], 160, false, [failure])))).Statistics;
+
+        Assert.Null(model.ObjectVerdict);
+        Assert.Contains("the histogram", model.Problem);
+        Assert.Null(model.NoHistogramText);
+    }
+
+    [Fact]
     public async Task APermissionMissing_ShowsTheGrant_AndTheSizesStay()
     {
         var failure = new TableReadFailure("the table's statistics", "The login lacks VIEW DEFINITION in SalesDb.", "GRANT VIEW DEFINITION TO [me];");
         var repo = Repository();
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([], false, [failure]));
+        repo.GetStatisticsDetailsAsync = (_, _, _) => Task.FromResult(new StatisticsDetails(null, [], [], 160, false, [failure]));
         var page = await OnTheTab(repo);
 
         Assert.Contains("VIEW DEFINITION in SalesDb", page.Statistics.Problem);
@@ -537,7 +527,7 @@ public sealed class TableStatisticsDetailsTests
         var saved = model.SaveState()!;
         model.OnNavigatedFrom();
 
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Pk, Region], false, []));
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Pk, Region], false));
         var back = Connected(repo);
         back.RestoreState(saved);
         await back.OnNavigatedToAsync();

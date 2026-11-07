@@ -7,7 +7,7 @@ namespace SqlVitals.Desktop.ViewModels;
 /// new rows. <see cref="KeyText"/> is a real value from the table, for the screen and the grid's own
 /// Copy and export only.
 /// </summary>
-public sealed class HistogramStepRow(HistogramStep step, double? unknownEstimate, IReadOnlyList<HistogramStep> histogram)
+public sealed class HistogramStepRow(HistogramStep step, double? unknownEstimate, double? averageRange)
 {
     public int Number => step.Number;
 
@@ -28,5 +28,5 @@ public sealed class HistogramStepRow(HistogramStep step, double? unknownEstimate
     public bool IsFarFromUnknown { get; } = StatisticsFindings.IsFarFromUnknown(step, unknownEstimate);
 
     /// <summary>The choice of steps "above-average AVG_RANGE_ROWS".</summary>
-    public bool IsAboveAverageRange { get; } = StatisticsFindings.IsAboveAverageRange(step, histogram);
+    public bool IsAboveAverageRange { get; } = StatisticsFindings.IsAboveAverageRange(step, averageRange);
 }

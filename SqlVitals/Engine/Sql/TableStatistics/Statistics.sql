@@ -5,6 +5,7 @@ SET LOCK_TIMEOUT 2000;
 SELECT st.stats_id AS StatsId, st.name AS Name,
     CAST(CASE WHEN i.index_id IS NULL THEN 0 ELSE 1 END AS bit) AS IsIndex,
     CAST(CASE WHEN i.type IN (1, 5) THEN 1 ELSE 0 END AS bit) AS IsClustered,
+    CAST(CASE WHEN i.type IN (5, 6) THEN 1 ELSE 0 END AS bit) AS IsColumnstore,
     st.has_filter AS IsFiltered,
     c.name AS LeadingColumn
 FROM sys.stats st

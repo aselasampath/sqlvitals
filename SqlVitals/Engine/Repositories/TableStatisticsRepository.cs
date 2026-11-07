@@ -17,6 +17,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
     private const string SizeList   = TableReadFailure.Sizes;
     private const string UsageList  = "index reads and writes";
     private const string StartTime  = "when the server restarted";
+    private const string SomeHealth = "the statistics of some tables";
     private const string StatisticsRead = "table statistics";
 
     // What "lacks SELECT" means here, and what else would do: a monitoring login may well not want to read rows.
@@ -108,14 +109,27 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
         var level = await CompatibilityLevelAsync(conn, database, failures, cancellationToken);
 
         var tables = new List<TableStatisticsHealth>(objectIds.Count);
+        var denied = false;
         foreach (var objectId in objectIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            tables.Add(await TableHealthAsync(conn, database, objectId, level, cancellationToken));
+            try
+            {
+                var health = await TableHealthAsync(conn, database, objectId, level, cancellationToken);
+                denied |= health.State == StatisticsHealthState.NotReadable;
+                tables.Add(health);
+            }
+            // One table's error, such as a deadlock, costs its own answer. A connection gone costs them all.
+            catch (WaitStatsException ex) when (conn.State == ConnectionState.Open)
+            {
+                tables.Add(new TableStatisticsHealth(objectId, StatisticsHealthState.NotReadable, null, null, null));
+                if (!failures.Exists(f => f.What == SomeHealth))
+                    failures.Add(new TableReadFailure(SomeHealth, ex.Failure.Explanation ?? ex.Message, ex.Failure.FixScript(_login)));
+            }
         }
 
         // One failure however many tables: the GRANT is the same, so the page says it once.
-        if (tables.Any(t => t.State == StatisticsHealthState.NotReadable))
+        if (denied)
             failures.Add(new TableReadFailure(StatisticsRead,
                 Explained(new PermissionNeeded("SELECT", PermissionScope.Database, await NamedAsync(conn, database, cancellationToken)), out var fix) + WhySelect, fix));
         return new TableHealthBatch(tables, failures);
@@ -129,7 +143,7 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
             if (rows.Any(r => !(bool)r.Readable))
                 return new TableStatisticsHealth(objectId, StatisticsHealthState.NotReadable, null, null, null);
 
-            return StatisticsFindings.RateTable(objectId, rows.Select(r => (StatisticsProperties?)PropertiesOf(r)).ToList(), level);
+            return StatisticsFindings.RateTable(objectId, rows.Select(r => (StatisticsProperties?)PropertiesOf(r)).ToList(), level, rows.Count > 0 ? (long?)rows[0].TableRows : null);
         }
         catch (WaitStatsException ex) when (ex.Failure.Kind == SqlFailureKind.LockTimeout)
         {
@@ -141,9 +155,9 @@ public sealed class TableStatisticsRepository(SqlTarget target, ServerCapabiliti
     {
         using var conn = CreateConnection();
         var rows = (await In(conn, database, SqlScripts.Get("TableStatistics/Statistics"), cancellationToken, objectId))
-            .Select(r => new StatisticsObject((int)r.StatsId, (string)r.Name, (bool)r.IsIndex, (bool)r.IsClustered, (bool)r.IsFiltered, (string?)r.LeadingColumn))
+            .Select(r => new StatisticsObject((int)r.StatsId, (string)r.Name, (bool)r.IsIndex, (bool)r.IsClustered, (bool)r.IsFiltered, (string?)r.LeadingColumn, (bool)r.IsColumnstore))
             .ToList();
-        return new TableStatisticsList(rows, await IsLockedAsync(conn, database, objectId, cancellationToken), []);
+        return new TableStatisticsList(rows, await IsLockedAsync(conn, database, objectId, cancellationToken));
     }
 
     public async Task<StatisticsDetails> GetStatisticsDetailsAsync(string? database, int objectId, int statsId, CancellationToken cancellationToken = default)

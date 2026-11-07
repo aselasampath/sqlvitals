@@ -170,10 +170,10 @@ Health rates each statistics object from its header only: changes, sample rate, 
 | Rating | When |
 |---|---|
 | **Poor** | Modifications are past the auto-update threshold |
-| **Fair** | A frequent value hidden in a range, or a low sample rate, as on the [Statistics tab](#the-statistics-tab). The grid can't see those, so there it means statistics never built while another on the table has rows, or a sample under 1 % of a million rows or more |
+| **Fair** | A frequent value hidden in a range, or a low sample rate, as on the [Statistics tab](#the-statistics-tab). The grid can't see those, so there it means statistics never built on a table with rows, or a sample under 1 % of a million rows or more |
 | **Good** | None of those. Skew, parameter sensitivity, few steps and NULL share leave it Good: the statistics describe the data correctly, and what to do is in the query |
 
-**The auto-update threshold:** at compatibility level 130 and later, the lower of `500 + 20 % of rows` and `SQRT(1000 × rows)`; below 130, `500 + 20 % of rows`. A million rows at level 130 gives 31,623.
+**The auto-update threshold:** 500 changes for a table of up to 500 rows, including statistics built on an empty table. Above that, at compatibility level 130 and later, the lower of `500 + 20 % of rows` and `SQRT(1000 × rows)`; below 130, `500 + 20 % of rows`. A million rows at level 130 gives 31,623.
 
 An object you open can rate differently from the grid. It usually rates lower, because the tab can see its density and histogram. It can also rate higher: a sample under 1 % is Fair in the grid, but does little harm on a nearly unique column, so the tab leaves it Good.
 
@@ -194,7 +194,7 @@ Choosing another table or database cancels what's still being read for the last 
 
 Select a table and open **Statistics**. It reads only while the tab is showing, and choosing another object cancels what's still being read. From top to bottom:
 
-**Statistics object** lists the table's statistics, index and column ones, with a line saying which kind it is and which column its histogram is on. The tab starts on the clustered index's statistics. When those have no histogram, or the table has no clustered index, it starts on the first that has one.
+**Statistics object** lists the table's statistics, index and column ones, with a line saying which kind it is and which column its histogram is on. The tab starts on the clustered index's statistics. With no clustered index, or a clustered columnstore index, it starts on the first statistics object that isn't on a columnstore index.
 
 **FULLSCAN** and **Generate UPDATE STATISTICS Script** open a script for the chosen object in a window for review, as on [Stale Stats](#stale-statistics). SqlVitals never runs it.
 
@@ -235,7 +235,7 @@ Only the first two apply to a histogram of under 1,000 rows, whose shape doesn't
 | **Distinct values** | 1 / all density: also the estimate for `GROUP BY` on the prefix |
 | **Average rows per value** | All density × rows |
 
-**No histogram:** a message says so instead of an empty chart: the statistics were never built, or the table is empty. A columnstore index has none.
+**No histogram:** a message says so instead of an empty chart: the statistics were never built, or the table is empty. A columnstore index has none, and has no script, as `UPDATE STATISTICS` fails on one.
 
 ### Reading a histogram
 

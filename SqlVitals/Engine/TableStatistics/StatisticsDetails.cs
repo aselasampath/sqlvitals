@@ -52,11 +52,12 @@ public sealed record TableHealthBatch(IReadOnlyList<TableStatisticsHealth> Table
 /// <param name="IsIndex">It belongs to an index, not to column statistics.</param>
 /// <param name="IsClustered">It belongs to the clustered index: the page starts on it.</param>
 /// <param name="LeadingColumn">The column its histogram is on; null if that couldn't be read.</param>
-public sealed record StatisticsObject(int StatsId, string Name, bool IsIndex, bool IsClustered, bool IsFiltered, string? LeadingColumn);
+/// <param name="IsColumnstore">It belongs to a columnstore index, which never has a histogram and can't be updated.</param>
+public sealed record StatisticsObject(int StatsId, string Name, bool IsIndex, bool IsClustered, bool IsFiltered, string? LeadingColumn, bool IsColumnstore = false);
 
 /// <summary>A table's statistics, the clustered index's first and then by name.</summary>
 /// <param name="IsLocked">The table was under a schema change.</param>
-public sealed record TableStatisticsList(IReadOnlyList<StatisticsObject> Statistics, bool IsLocked, IReadOnlyList<TableReadFailure> Failures);
+public sealed record TableStatisticsList(IReadOnlyList<StatisticsObject> Statistics, bool IsLocked);
 
 /// <summary>
 /// A row of <c>sys.dm_db_stats_histogram</c>. <paramref name="Key"/> is a real value from the table,
@@ -120,5 +121,5 @@ public enum StatisticsFindingKind
 public sealed record StatisticsFinding(StatisticsFindingKind Kind, StatisticsRating Severity, string What, string Try, IReadOnlyList<int> Steps);
 
 /// <summary>A statistics object's rating and findings.</summary>
-/// <param name="Rating">The worst finding's, or Good; null when there's nothing to rate: never built, or not read.</param>
+/// <param name="Rating">The worst finding's, or Good; null when there's nothing to rate: never built, or not all of it read.</param>
 public sealed record StatisticsAssessment(StatisticsRating? Rating, IReadOnlyList<StatisticsFinding> Findings);

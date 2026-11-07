@@ -35,11 +35,20 @@ public sealed class HistogramChart : FrameworkElement
 
     private static DependencyProperty Register(string name, Type type, object? value) =>
         DependencyProperty.Register(name, type, typeof(HistogramChart),
-            new FrameworkPropertyMetadata(value, FrameworkPropertyMetadataOptions.AffectsRender, (d, _) => ((HistogramChart)d).CloseTip()));
+            new FrameworkPropertyMetadata(value, FrameworkPropertyMetadataOptions.AffectsRender, (d, _) =>
+            {
+                var chart = (HistogramChart)d;
+                chart._layout = null;
+                chart.CloseTip();
+            }));
 
     private readonly ToolTip _tip;
     private readonly TextBlock _tipText = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 460 };
     private int? _hovered;
+
+    // The last layout, kept as the pointer moves: its labels' text is measured, and only the highlight changes.
+    private HistogramLayout? _layout;
+    private Size _layoutSize;
 
     public HistogramChart()
     {
@@ -75,8 +84,16 @@ public sealed class HistogramChart : FrameworkElement
     }
 
     /// <summary>What it draws at the size it has; for tests too.</summary>
-    internal HistogramLayout Layout() =>
-        HistogramLayout.Compute(Steps ?? [], LogScale, UnknownEstimate, ActualWidth, ActualHeight, t => Text(t, Colors.Black).Width);
+    internal HistogramLayout Layout()
+    {
+        var size = new Size(ActualWidth, ActualHeight);
+        if (_layout is null || size != _layoutSize)
+        {
+            _layout = HistogramLayout.Compute(Steps ?? [], LogScale, UnknownEstimate, ActualWidth, ActualHeight, t => Text(t, Colors.Black).Width);
+            _layoutSize = size;
+        }
+        return _layout;
+    }
 
     /// <summary>
     /// Every value of a step and how the optimizer uses it, in plain words, the key whole.

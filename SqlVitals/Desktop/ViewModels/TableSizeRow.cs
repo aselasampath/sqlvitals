@@ -52,7 +52,7 @@ public sealed class TableSizeRow(TableSize table, long largestPages) : Observabl
         { State: StatisticsHealthState.Locked } => "Under a schema change, so its statistics can't be read now. Refresh reads them again.",
         { State: StatisticsHealthState.NoStatistics } => "This table has no statistics object that can hold a histogram.",
         { State: StatisticsHealthState.NotReadable } => "This login can't read this table's statistics. The message under the grid says which permission is missing.",
-        { Rating: { } rating } => $"{rating}: the worst of this table's statistics, from each one's header. Open one on the Statistics tab: its histogram and density can rate it lower.",
+        { Rating: { } rating } => $"{rating}: the worst of this table's statistics, from each one's header. Open one on the Statistics tab: its histogram and density can rate it differently.",
         _ => TableSpace.Unknown,
     };
 

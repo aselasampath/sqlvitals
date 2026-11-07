@@ -90,7 +90,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
 
     /// <summary>Index or column statistics, and the column its histogram is on.</summary>
     public string KindText => SelectedObject is not { } chosen ? ""
-        : (chosen.IsClustered ? "Clustered index" : chosen.IsIndex ? "Index" : "Column") + " statistics"
+        : (chosen.IsColumnstore ? "Columnstore index" : chosen.IsClustered ? "Clustered index" : chosen.IsIndex ? "Index" : "Column") + " statistics"
           + (chosen.IsFiltered ? ", filtered" : "")
           + (chosen.LeadingColumn is { } column ? $", histogram on {column}" : "");
 
@@ -233,7 +233,8 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
             string.Create(CultureInfo.InvariantCulture, $"UpdateStatistics_{now:yyyyMMdd_HHmm}.sql")), modal: true);
     }
 
-    private bool CanGenerateScript() => SelectedObject is not null;
+    // UPDATE STATISTICS fails on a columnstore index.
+    private bool CanGenerateScript() => SelectedObject is { IsColumnstore: false };
 
     // ── Choosing and reading ──────────────────────────────────────────────
 
@@ -285,14 +286,12 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
             if (run.IsCancellationRequested)
                 return ShowStopped(table, run);
 
-            var kept = ShowList(table, list);
+            ShowList(table, list);
             if (SelectedObject is { } chosen)
             {
                 var details = await _repo.GetStatisticsDetailsAsync(_database, table.ObjectId, chosen.StatsId, run.Token);
                 if (run.IsCancellationRequested)
                     return ShowStopped(table, run);
-                if (!kept && HasNothing(details))
-                    (chosen, details) = await FirstWithHistogramAsync(table, list, chosen, details, run.Token);
                 ShowDetails(table, chosen, details);
             }
             _read = true;
@@ -313,30 +312,6 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
                 _run = null;
         }
     }
-
-    // What it starts on, when no object was chosen, is one with something to show if the table has one: a
-    // clustered columnstore index is the clustered one, and has no histogram. The list can't say which
-    // those are, so this asks. It stops at a lock or a failure, which is what there is to say.
-    private async Task<(StatisticsObject, StatisticsDetails)> FirstWithHistogramAsync(TableSize table, TableStatisticsList list, StatisticsObject first,
-                                                                                      StatisticsDetails firstDetails, CancellationToken cancel)
-    {
-        foreach (var other in list.Statistics.Where(s => s != first))
-        {
-            var details = await _repo.GetStatisticsDetailsAsync(_database, table.ObjectId, other.StatsId, cancel);
-            cancel.ThrowIfCancellationRequested();
-            if (!HasNothing(details))
-            {
-                _holding = true;
-                SelectedObject = other;
-                _holding = false;
-                return (other, details);
-            }
-        }
-        return (first, firstDetails);
-    }
-
-    private static bool HasNothing(StatisticsDetails details) =>
-        details.Histogram.Count == 0 && !details.IsLocked && details.Failures.Count == 0;
 
     // The user chose another object: the loading bar shows its read, and its Stop ends it.
     private async Task ReadChosenObjectAsync(StatisticsObject chosen)
@@ -392,7 +367,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
     }
 
     // True when the object chosen before is still there: it stays, whatever it holds.
-    private bool ShowList(TableSize table, TableStatisticsList list)
+    private void ShowList(TableSize table, TableStatisticsList list)
     {
         var before = SelectedObject;
         var wanted = _restoredName ?? before?.Name;
@@ -408,7 +383,8 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
                     Objects.Add(statistic);
             }
             SelectedObject = list.Statistics.FirstOrDefault(s => s.Name == wanted)
-                          ?? list.Statistics.FirstOrDefault(s => s.IsClustered)
+                          ?? list.Statistics.FirstOrDefault(s => s.IsClustered && !s.IsColumnstore)
+                          ?? list.Statistics.FirstOrDefault(s => !s.IsColumnstore)
                           ?? (list.Statistics.Count > 0 ? list.Statistics[0] : null);
         }
         finally
@@ -419,11 +395,10 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         // The same object, on a Refresh: what shows stays until its new answer, so the page doesn't jump.
         if (SelectedObject is null || SelectedObject.StatsId != before?.StatsId)
             ClearDetails();
-        var problems = Problems(table, list.IsLocked, list.Failures);
+        var problems = Problems(table, list.IsLocked, []);
         Problem = problems;
         if (list.Statistics.Count == 0 && problems is null)
             NoHistogramText = "This table has no statistics objects yet: nothing has needed one, and it has no index.";
-        return wanted is not null && SelectedObject?.Name == wanted;
     }
 
     private void ShowDetails(TableSize table, StatisticsObject chosen, StatisticsDetails details)
@@ -436,7 +411,8 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
 
         UnknownEstimate = estimate;
         ChartSteps = details.Histogram;
-        Histogram.Replace(details.Histogram.Select(s => new HistogramStepRow(s, estimate, details.Histogram)).ToList());
+        var averageRange = StatisticsFindings.AverageRange(details.Histogram);
+        Histogram.Replace(details.Histogram.Select(s => new HistogramStepRow(s, estimate, averageRange)).ToList());
         Density.Replace(details.Density.Select(d => new StatisticsDensityRow(d, details.Properties?.Rows)).ToList());
         HasDensity = Density.Count > 0;
 

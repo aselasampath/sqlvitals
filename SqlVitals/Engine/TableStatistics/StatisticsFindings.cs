@@ -42,22 +42,28 @@ public static class StatisticsFindings
 
     public const long GridLowSampleRows = 1_000_000;
 
+    /// <summary>Up to this many rows, the threshold is this many changes.</summary>
+    public const long SmallTableRows = 500;
+
     /// <summary>A NULL step holding this share of the rows is worth mentioning.</summary>
     public const double NullShare = 0.25;
 
     /// <summary>
-    /// How many changes start an automatic update. At compatibility level 130 and later, the lower of
-    /// 500 + 20 % of rows and SQRT(1000 x rows); below 130, 500 + 20 % of rows.
+    /// How many changes start an automatic update, as Microsoft documents it for a permanent table: 500 up
+    /// to 500 rows. Above that, at compatibility level 130 and later, the lower of 500 + 20 % of rows and
+    /// SQRT(1000 x rows); below 130, 500 + 20 % of rows.
     /// </summary>
     public static double AutoUpdateThreshold(long rows, int? compatibilityLevel)
     {
+        if (rows <= SmallTableRows)
+            return SmallTableRows;
         var classic = 500 + 0.2 * rows;
         return compatibilityLevel < 130 ? classic : Math.Min(classic, Math.Sqrt(1000.0 * rows));
     }
 
-    /// <summary>Past the threshold, in a statistics object that has rows to compare with.</summary>
+    /// <summary>Past the threshold. Statistics built on an empty table count: their histogram misses every row since.</summary>
     public static bool IsPastAutoUpdate(StatisticsProperties properties, int? compatibilityLevel) =>
-        properties.Rows > 0 && properties.Modifications > AutoUpdateThreshold(properties.Rows, compatibilityLevel);
+        properties.Modifications > AutoUpdateThreshold(properties.Rows, compatibilityLevel);
 
     /// <summary>The estimate for a value the optimizer can't see, such as a local variable: all density x rows of the leading column.</summary>
     public static double? UnknownEstimate(StatisticsDetails details) =>
@@ -73,25 +79,27 @@ public static class StatisticsFindings
         return step.EqRows >= known * FarFactor || step.EqRows * FarFactor <= known;
     }
 
-    /// <summary>The step's <c>AVG_RANGE_ROWS</c> is above the average of the histogram's steps with a key.</summary>
-    public static bool IsAboveAverageRange(HistogramStep step, IReadOnlyList<HistogramStep> histogram)
-    {
-        var keyed = histogram.Where(s => !s.IsNullStep).ToList();
-        return !step.IsNullStep && keyed.Count > 0 && step.AvgRangeRows > keyed.Average(s => s.AvgRangeRows);
-    }
+    /// <summary>The average <c>AVG_RANGE_ROWS</c> of the steps with a key; null with none.</summary>
+    public static double? AverageRange(IReadOnlyList<HistogramStep> histogram) =>
+        histogram.Where(s => !s.IsNullStep).Select(s => (double?)s.AvgRangeRows).Average();
+
+    /// <summary>The step's <c>AVG_RANGE_ROWS</c> is above <see cref="AverageRange"/>.</summary>
+    public static bool IsAboveAverageRange(HistogramStep step, double? averageRange) =>
+        !step.IsNullStep && step.AvgRangeRows > averageRange;
 
     /// <summary>
     /// A table's line in the health column, from the header of each statistics object it has, null
     /// for one never built. Reads no histogram, so it can run over a whole database: the rating an
-    /// object shows once opened can be lower, from what only its histogram and density can say.
+    /// object shows once opened can differ, from what only its histogram and density can say.
     /// </summary>
-    public static TableStatisticsHealth RateTable(int objectId, IReadOnlyList<StatisticsProperties?> statistics, int? compatibilityLevel)
+    /// <param name="tableRows">The rows in the table now, if known: statistics never built on a table with rows are Fair.</param>
+    public static TableStatisticsHealth RateTable(int objectId, IReadOnlyList<StatisticsProperties?> statistics, int? compatibilityLevel, long? tableRows = null)
     {
         if (statistics.Count == 0)
             return new TableStatisticsHealth(objectId, StatisticsHealthState.NoStatistics, null, null, null);
 
         var built = statistics.OfType<StatisticsProperties>().ToList();
-        var hasRows = built.Any(p => p.Rows > 0);
+        var hasRows = tableRows > 0 || built.Any(p => p.Rows > 0);
         var rating = StatisticsRating.Good;
         if (hasRows && built.Count < statistics.Count)
             rating = StatisticsRating.Fair;
@@ -104,7 +112,10 @@ public static class StatisticsFindings
                                          built.Max(p => p.ChangedPct), built.Min(p => p.LastUpdated));
     }
 
-    /// <summary>The rating and findings of one statistics object, from the whole of it.</summary>
+    /// <summary>
+    /// The rating and findings of one statistics object. Good needs all of it: with a part not read, a
+    /// finding against it still rates it, but the absence of one says nothing.
+    /// </summary>
     public static StatisticsAssessment Assess(StatisticsDetails details)
     {
         if (details.Properties is not { } properties)
@@ -128,7 +139,9 @@ public static class StatisticsFindings
         }
 
         var ordered = findings.OrderByDescending(f => f.Severity).ToList();
-        return new StatisticsAssessment(ordered.Count == 0 ? StatisticsRating.Good : ordered[0].Severity, ordered);
+        var worst = ordered.Count == 0 ? StatisticsRating.Good : ordered[0].Severity;
+        var partial = details.IsLocked || details.Failures.Count > 0;
+        return new StatisticsAssessment(partial && worst == StatisticsRating.Good ? null : worst, ordered);
     }
 
     /// <summary>The Good, Fair or Poor line above the findings.</summary>

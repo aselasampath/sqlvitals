@@ -399,6 +399,9 @@ public sealed partial class TableStatisticsViewModel : PageViewModel
             return;
         var run = new CancellationTokenSource();
         _healthRun = run;
+        // The grid said what its filters left before this read began: with a chip ticked, that's now "reading".
+        if (Health.Values is not null)
+            TableFiltersChanged?.Invoke();
         _ = ReportErrorsOf(ReadHealthAsync(rows, DatabaseRead, run));
     }
 

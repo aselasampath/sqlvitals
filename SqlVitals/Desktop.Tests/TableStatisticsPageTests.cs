@@ -328,6 +328,39 @@ public sealed class TableStatisticsPageTests : IDisposable
     });
 
     [Fact]
+    public void AChipTicked_OnRefresh_SaysItsReading_NotThatNothingMatches() => UiThread.Run(() =>
+    {
+        using var themed = MergedPagesTests.Themed("DarkTheme");
+        var repo = Rated();
+        var rated = repo.GetTableStatisticsHealthAsync!;
+        var (page, model) = Build(repo);
+
+        TemplateRolloutTests.Hosted(page, model.OnNavigatedToAsync, null, () =>
+        {
+            UiThread.WaitUntil(() => model.HealthProgress is null);
+            model.Health.Items.Single(i => i.Value == "Poor").IsChecked = true;
+
+            var slow = new TaskCompletionSource<bool>();
+            repo.GetTableStatisticsHealthAsync = async (database, ids) =>
+            {
+                await slow.Task;
+                return await rated(database, ids);
+            };
+            _ = model.RefreshAsync();
+            UiThread.WaitUntil(() => model.HealthProgress is not null);
+
+            Assert.Empty(page.TablesGrid.Items);
+            Assert.Contains("Reading Statistics health", model.NoTablesText);
+
+            slow.SetResult(true);
+            UiThread.WaitUntil(() => model.HealthProgress is null);
+            Assert.Equal(["OrderLines"], Names(page.TablesGrid));
+            Assert.Null(model.NoTablesText);
+        });
+        model.OnNavigatedFrom();
+    });
+
+    [Fact]
     public void WordsTyped_MatchTheHealth_AsItArrives() => UiThread.Run(() =>
     {
         using var themed = MergedPagesTests.Themed("DarkTheme");
@@ -408,7 +441,7 @@ public sealed class TableStatisticsPageTests : IDisposable
     {
         var repo = Rated();
         repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList(
-            [TableStatisticsDetailsTests.Pk, TableStatisticsDetailsTests.Status, TableStatisticsDetailsTests.Region], false, []));
+            [TableStatisticsDetailsTests.Pk, TableStatisticsDetailsTests.Status, TableStatisticsDetailsTests.Region], false));
         repo.GetStatisticsDetailsAsync = (_, _, _) => Task.FromResult(details);
         return repo;
     }
@@ -606,7 +639,7 @@ public sealed class TableStatisticsPageTests : IDisposable
         using var themed = MergedPagesTests.Themed(theme);
         var repo = WithStatistics(Large());
         var failure = new TableReadFailure("the table's statistics", "The login lacks VIEW DEFINITION in SalesDb.", "USE [SalesDb]; GRANT VIEW DEFINITION TO [reader];");
-        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([], false, [failure]));
+        repo.GetStatisticsDetailsAsync = (_, _, _) => Task.FromResult(new StatisticsDetails(null, [], [], 160, false, [failure]));
         repo.GetTableStatisticsHealthAsync = (_, ids) => Task.FromResult(new TableHealthBatch(
             ids.Select(id => new TableStatisticsHealth(id, StatisticsHealthState.NotReadable, null, null, null)).ToList(), [failure]));
         var (page, model) = Build(repo);
@@ -627,7 +660,7 @@ public sealed class TableStatisticsPageTests : IDisposable
     });
 
     [Fact]
-    public void AHeaderTip_SaysItRatesFromTheHeader_AndOpeningCanRateLower() => UiThread.Run(() =>
+    public void AHeaderTip_SaysItRatesFromTheHeader_AndOpeningCanDiffer() => UiThread.Run(() =>
     {
         using var themed = MergedPagesTests.Themed("DarkTheme");
         var (page, model) = Build(Rated());
@@ -636,7 +669,7 @@ public sealed class TableStatisticsPageTests : IDisposable
         var tip = column.HeaderStyle.Setters.OfType<Setter>().Single(s => s.Property == ToolTipService.ToolTipProperty).Value.ToString();
 
         Assert.Contains("header", tip);
-        Assert.Contains("rate it lower", tip);
+        Assert.Contains("rate it differently", tip);
         model.OnNavigatedFrom();
     });
 

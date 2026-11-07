@@ -211,6 +211,23 @@ public sealed class HistogramChartTests
         Assert.Equal(99, HistogramLayout.StepAt(right - 0.1, 100, right));
     }
 
+    [Fact]
+    public void ItsLayout_IsKept_UntilWhatItDrawsChanges() => UiThread.Run(() =>
+    {
+        var chart = Laid(Full());
+        var first = chart.Layout();
+
+        Assert.Same(first, chart.Layout());
+
+        chart.LogScale = true;
+        var log = chart.Layout();
+        Assert.NotSame(first, log);
+
+        chart.Measure(new Size(Width / 2, Height));
+        chart.Arrange(new Rect(0, 0, Width / 2, Height));
+        Assert.NotSame(log, chart.Layout());
+    });
+
     private static HistogramChart Laid(IReadOnlyList<HistogramStep>? steps, double? estimate = null, bool log = false)
     {
         var chart = new HistogramChart { Steps = steps, UnknownEstimate = estimate, LogScale = log };
