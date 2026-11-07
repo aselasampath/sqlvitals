@@ -180,6 +180,98 @@ public sealed class TableStatisticsDetailsTests
         Assert.Equal("Column statistics, histogram on Region", model.Statistics.KindText);
     }
 
+    private static readonly StatisticsObject Columnstore = new(1, "CCI_Orders", true, true, false, null);
+    private static readonly StatisticsDetails NoneHeld = new(null, [], [], 160, false, []);
+
+    [Fact]
+    public async Task AClusteredColumnstore_IsPassedOver_ForAnObjectWithAHistogram()
+    {
+        var repo = Repository();
+        var asked = new List<int>();
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Columnstore, Status, Region], false, []));
+        repo.GetStatisticsDetailsAsync = (_, _, statsId) =>
+        {
+            asked.Add(statsId);
+            return Task.FromResult(statsId == 3 ? Sample() : NoneHeld);
+        };
+        var page = await OnTheTab(repo);
+
+        Assert.Equal(Region, page.Statistics.SelectedObject);
+        Assert.Equal([1, 2, 3], asked);
+        Assert.Equal(6, page.Statistics.ChartSteps.Count);
+        Assert.Null(page.Statistics.NoHistogramText);
+
+        // Chosen by hand, it's what shows, and a Refresh keeps it.
+        page.Statistics.SelectedObject = Columnstore;
+        await Until(() => page.Statistics.NoHistogramText is not null);
+        await page.RefreshAsync();
+        Assert.Equal(Columnstore, page.Statistics.SelectedObject);
+        Assert.Contains("columnstore", page.Statistics.NoHistogramText);
+    }
+
+    [Fact]
+    public async Task ATableWithOnlyAColumnstore_SaysThereIsNoHistogram()
+    {
+        var repo = Repository(NoneHeld);
+        repo.GetTableStatisticsAsync = (_, _) => Task.FromResult(new TableStatisticsList([Columnstore], false, []));
+        var model = (await OnTheTab(repo)).Statistics;
+
+        Assert.Equal(Columnstore, model.SelectedObject);
+        Assert.Contains("columnstore", model.NoHistogramText);
+        Assert.False(model.HasHistogram);
+    }
+
+    [Fact]
+    public async Task WithNoHistogramAnywhere_ItStaysOnTheClustered()
+    {
+        var model = (await OnTheTab(Repository(NoneHeld))).Statistics;
+
+        Assert.Equal(Pk, model.SelectedObject);
+        Assert.Contains("No histogram yet", model.NoHistogramText);
+    }
+
+    [Fact]
+    public async Task ALock_IsNotPassedOver_AndAsksNoMore()
+    {
+        var repo = Repository();
+        var asked = new List<int>();
+        repo.GetStatisticsDetailsAsync = (_, _, statsId) =>
+        {
+            asked.Add(statsId);
+            return Task.FromResult(new StatisticsDetails(null, [], [], null, true, []));
+        };
+        var model = (await OnTheTab(repo)).Statistics;
+
+        Assert.Equal([1], asked);
+        Assert.Equal(Pk, model.SelectedObject);
+        Assert.Contains("under a schema change", model.Problem);
+    }
+
+    [Fact]
+    public async Task ChoosingAnotherTable_WhilePassingOver_StopsAsking()
+    {
+        var repo = Repository();
+        var slow = new TaskCompletionSource<StatisticsDetails>();
+        repo.GetStatisticsDetailsAsync = (_, _, statsId) => statsId == 1 ? Task.FromResult(NoneHeld) : slow.Task;
+        repo.GetTableStatisticsAsync = (_, id) => Task.FromResult(id == 1 ? new TableStatisticsList([Columnstore, Status], false, []) : new TableStatisticsList([Pk], false, []));
+        var model = Connected(repo);
+        await model.OnNavigatedToAsync();
+        model.DetailTab = TableStatisticsViewModel.StatisticsTab;
+        model.SelectedTable = model.Tables.Single(t => t.Table.ObjectId == 1);
+        await Until(() => repo.Tokens.ContainsKey(nameof(FakeRepository.GetStatisticsDetailsAsync)));
+        var token = repo.Tokens[nameof(FakeRepository.GetStatisticsDetailsAsync)];
+
+        repo.GetStatisticsDetailsAsync = (_, _, _) => Task.FromResult(Sample());
+        model.SelectedTable = model.Tables.Single(t => t.Table.ObjectId == 2);
+
+        Assert.True(token.IsCancellationRequested);
+        await Until(() => model.Statistics.ChartSteps.Count == 6);
+        slow.SetResult(Sample("Late"));
+        await Task.Delay(20);
+        Assert.Equal(Pk, model.Statistics.SelectedObject);
+        Assert.DoesNotContain(model.Statistics.ChartSteps, s => s.Key == "Late");
+    }
+
     [Fact]
     public async Task ChoosingAnotherObject_Cancels_AndTheLateAnswerIsIgnored()
     {

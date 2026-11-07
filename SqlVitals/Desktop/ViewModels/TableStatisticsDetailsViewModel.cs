@@ -285,12 +285,14 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
             if (run.IsCancellationRequested)
                 return ShowStopped(table, run);
 
-            ShowList(table, list);
+            var kept = ShowList(table, list);
             if (SelectedObject is { } chosen)
             {
                 var details = await _repo.GetStatisticsDetailsAsync(_database, table.ObjectId, chosen.StatsId, run.Token);
                 if (run.IsCancellationRequested)
                     return ShowStopped(table, run);
+                if (!kept && HasNothing(details))
+                    (chosen, details) = await FirstWithHistogramAsync(table, list, chosen, details, run.Token);
                 ShowDetails(table, chosen, details);
             }
             _read = true;
@@ -311,6 +313,30 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
                 _run = null;
         }
     }
+
+    // What it starts on, when no object was chosen, is one with something to show if the table has one: a
+    // clustered columnstore index is the clustered one, and has no histogram. The list can't say which
+    // those are, so this asks. It stops at a lock or a failure, which is what there is to say.
+    private async Task<(StatisticsObject, StatisticsDetails)> FirstWithHistogramAsync(TableSize table, TableStatisticsList list, StatisticsObject first,
+                                                                                      StatisticsDetails firstDetails, CancellationToken cancel)
+    {
+        foreach (var other in list.Statistics.Where(s => s != first))
+        {
+            var details = await _repo.GetStatisticsDetailsAsync(_database, table.ObjectId, other.StatsId, cancel);
+            cancel.ThrowIfCancellationRequested();
+            if (!HasNothing(details))
+            {
+                _holding = true;
+                SelectedObject = other;
+                _holding = false;
+                return (other, details);
+            }
+        }
+        return (first, firstDetails);
+    }
+
+    private static bool HasNothing(StatisticsDetails details) =>
+        details.Histogram.Count == 0 && !details.IsLocked && details.Failures.Count == 0;
 
     // The user chose another object: the loading bar shows its read, and its Stop ends it.
     private async Task ReadChosenObjectAsync(StatisticsObject chosen)
@@ -365,7 +391,8 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         _reportError("Table Statistics statistics", exception);
     }
 
-    private void ShowList(TableSize table, TableStatisticsList list)
+    // True when the object chosen before is still there: it stays, whatever it holds.
+    private bool ShowList(TableSize table, TableStatisticsList list)
     {
         var before = SelectedObject;
         var wanted = _restoredName ?? before?.Name;
@@ -396,6 +423,7 @@ public sealed partial class TableStatisticsDetailsViewModel : ObservableObject
         Problem = problems;
         if (list.Statistics.Count == 0 && problems is null)
             NoHistogramText = "This table has no statistics objects yet: nothing has needed one, and it has no index.";
+        return wanted is not null && SelectedObject?.Name == wanted;
     }
 
     private void ShowDetails(TableSize table, StatisticsObject chosen, StatisticsDetails details)

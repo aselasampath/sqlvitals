@@ -466,7 +466,6 @@ public sealed class TableStatisticsPageTests : IDisposable
             Assert.False(page.DetailSplitter.IsVisible);
             Assert.Equal(0, UiThread.Find<ScrollViewer>(page.TablesGrid).First().ScrollableWidth, 1);   // the page's scrollbar costs the grid no scrolling of its own
             page.PageScroller.ScrollToVerticalOffset(page.PageScroller.ScrollableHeight);
-            panel.DensityGrid.UpdateLayout();
             UiThread.Wait(Task.Delay(100));
             page.UpdateLayout();
             TemplateRolloutTests.Render(page, $"table-statistics-details-scrolled-{theme}.png");

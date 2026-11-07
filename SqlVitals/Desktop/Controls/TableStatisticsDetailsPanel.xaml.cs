@@ -2,7 +2,6 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using SqlVitals.Desktop.ViewModels;
 
 namespace SqlVitals.Desktop.Controls;
@@ -27,25 +26,16 @@ public partial class TableStatisticsDetailsPanel : UserControl
 
         DataContextChanged += (_, e) => Follow(e.NewValue as TableStatisticsDetailsViewModel);
 
-        HistogramGrid.SizeChanged += (_, _) => RestoreColumnsLater(HistogramGrid);
-        DensityGrid.SizeChanged += (_, _) => RestoreColumnsLater(DensityGrid);
-        ((INotifyCollectionChanged)HistogramGrid.Items).CollectionChanged += (_, _) => RestoreColumnsLater(HistogramGrid);
-        ((INotifyCollectionChanged)DensityGrid.Items).CollectionChanged += (_, _) => RestoreColumnsLater(DensityGrid);
+        KeepColumnWidths(HistogramGrid);
+        KeepColumnWidths(DensityGrid);
     }
 
     // A DataGrid takes width from its fixed columns when it's briefly given too little, as the page first
-    // lays out, and doesn't give it back (#243): once laid out, each has its width again.
-    private void RestoreColumnsLater(DataGrid grid) =>
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => RestoreColumns(grid));
-
-    private static void RestoreColumns(DataGrid grid)
+    // lays out, and doesn't give it back (#243). None to take: a window truly too narrow scrolls the grid.
+    private static void KeepColumnWidths(DataGrid grid)
     {
-        foreach (var column in grid.Columns.Where(c => c.Width.IsAbsolute && c.ActualWidth < c.Width.Value))
-        {
-            var width = column.Width;
-            column.Width = new DataGridLength(width.Value + 1);
-            column.Width = width;
-        }
+        foreach (var column in grid.Columns.Where(c => c.Width.IsAbsolute))
+            column.MinWidth = column.Width.Value;
     }
 
     private void Follow(TableStatisticsDetailsViewModel? model)
