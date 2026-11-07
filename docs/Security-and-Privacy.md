@@ -89,6 +89,10 @@ Every snapshot saves the numbers of the busiest queries (CPU, reads, executions)
 - **The collector service** keeps its own setting: the app passes its choice on when it hands a server over and whenever you change it, and `SqlVitals.Collector set --query-text full|without-literals|off` sets it by hand. A service set up before 0.77.0 keeps Full until then.
 - **Not covered:** the pages read query text live from the server and show it in full, and **Export for AI** writes it as the server has it (with secrets masked, below). Read an export before pasting it into an external service. **Clear history** deletes the history but keeps the activity log (with your Windows user and PC names); delete the file itself, with SqlVitals closed, to remove that too.
 
+## Histogram keys on Table Statistics
+
+A histogram's `RANGE_HI_KEY` values are real values from the table, and could be names or email addresses. From 0.86.0 [Table Statistics](Index-and-Statistics-Maintenance.md#histogram-keys-are-real-values) shows them in its chart, the chart's tooltip and the histogram grid only. They aren't written to the history database, the activity log or notifications, and Export for AI doesn't include them. **Copy**, **Copy All** and **Export to CSV** on that grid do include them, because you're plainly exporting that grid.
+
 ## Secrets in messages, logs and reports
 
 A driver, a parser or a web service can echo a secret back in an error message. From 0.77.0 (#175) one shared redaction is applied wherever text leaves SqlVitals: the **log files**, the **activity log** (old value, new value and detail), **error messages** (every message box, the top bar's errors and the Settings status lines) and **Export for AI** reports. It masks:

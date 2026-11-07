@@ -22,6 +22,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Is today normal?](#is-today-normal)
 - [CPU is high](#cpu-is-high)
 - [Plan routine index and statistics maintenance](#plan-routine-index-and-statistics-maintenance)
+- [Why did this query get a bad row estimate?](#why-did-this-query-get-a-bad-row-estimate)
 - [TempDB or the log is filling up](#tempdb-or-the-log-is-filling-up)
 - [Find out what an application is calling](#find-out-what-an-application-is-calling)
 - [Find which procedure called a slow one](#find-which-procedure-called-a-slow-one)
@@ -248,6 +249,20 @@ An application that opens connections and doesn't close them fills its pool with
 3. **🔍 Index Health → Unused Indexes**. Check how long the server has been up **first**. Review candidates with the application team before you **Generate DROP Script**.
 4. **🔍 Index Health → Missing Indexes**. Filter by table, and review overlapping suggestions before you **Generate CREATE Script**.
 5. **Save as .sql**, test on a non-production copy, and run in a maintenance window. SqlVitals never runs scripts for you.
+
+## Why did this query get a bad row estimate?
+
+1. Find the operator that's off, and note its table, the column it filters on and the value. In an [actual plan](Execution-Plans.md#actual-plans) an estimate 10× or more off is in red. Plans from the plan cache and Query Store have estimates only, so compare with the rows the query returns.
+2. **Maintenance → Table Statistics**. Choose the database, and find the table with **Filter rows…**.
+3. Select it and open the **Statistics** tab. In **Statistics object**, choose one whose line says *histogram on* that column. A histogram covers only the leading column.
+4. Read the verdict and **What to look at**. Each finding says what to try. Poor or Fair means the statistics may be what misled the optimizer.
+5. Work out where the estimate came from: `EQ_ROWS` for a key, `AVG_RANGE_ROWS` for a value between two keys, the dashed line for a local variable ([Reading a histogram](Index-and-Statistics-Maintenance.md#reading-a-histogram)). Hover the step, or find it in the histogram grid. Does that number match the plan's estimate?
+6. **It matches, and the real count is far from it:** the statistics explain the estimate.
+   - **A value between two keys** with a much higher real count: a frequent value is hidden in the range. Try a full scan, or filtered statistics.
+   - **A value past the last step's key, or rows added since:** look at **Last updated** and **Modifications**. The histogram doesn't have them yet.
+   - **Bars far from the dashed line:** one plan can't suit every value. **Steps: Keys 10x or more from the unknown-value estimate** lists them. See [parameter sniffing](#find-a-query-thats-sometimes-slow-parameter-sniffing).
+7. **It doesn't match:** something else set the estimate, such as several columns filtered together, a function on the column, or an [implicit conversion](Query-Performance.md#implicit-conversions).
+8. To update the statistics, tick **FULLSCAN** if the sample is the problem and press **Generate UPDATE STATISTICS Script**. Review it and run it yourself, then **Refresh** to see the new histogram. SqlVitals never runs it.
 
 ## Find where a database's space goes
 
