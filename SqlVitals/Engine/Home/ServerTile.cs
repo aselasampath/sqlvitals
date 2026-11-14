@@ -122,11 +122,12 @@ public sealed record ServerTile(
         _                      => "Off",
     };
 
-    /// <summary>The bar labels, short enough for nine across a tile.</summary>
+    /// <summary>The bar labels, short enough for ten across a tile.</summary>
     public static string ShortName(HealthIndicator indicator) => indicator switch
     {
         HealthIndicator.Cpu                 => "CPU",
         HealthIndicator.Blocking            => "Block",
+        HealthIndicator.OpenTransaction     => "Tran",
         HealthIndicator.PageLifeExpectancy  => "PLE",
         HealthIndicator.MemoryGrantsPending => "Grants",
         HealthIndicator.LogSpace            => "Log",

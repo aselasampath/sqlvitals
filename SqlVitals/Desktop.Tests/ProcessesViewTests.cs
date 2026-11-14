@@ -137,6 +137,17 @@ public sealed class ProcessesViewTests : IDisposable
         Assert.Equal(1.5, Row(Node(51, waitType: "LCK_M_X", waitMs: 1_500), head: 51).WaitSec);
     }
 
+    [Fact]
+    public void TransactionAge_IsTheOldestTransactionsAge_SortedInSeconds()
+    {
+        var now  = new DateTime(2026, 11, 14, 9, 0, 0);
+        var open = Node(51) with { OpenTran = 1, TransactionBegin = now.AddMinutes(-23), ServerNow = now };
+
+        var row = Row(open, head: 51);
+        Assert.Equal(("23 min", 23 * 60d), (row.TransactionAge, row.TransactionAgeSec));
+        Assert.Equal((null, null), (Row(Node(52), head: 52).TransactionAge, Row(Node(52), head: 52).TransactionAgeSec));
+    }
+
     [Theory]
     [InlineData(null, "")]
     [InlineData("   ", "")]

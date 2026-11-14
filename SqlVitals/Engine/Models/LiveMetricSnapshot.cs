@@ -50,6 +50,9 @@ public record LiveMetricSnapshot(
     double  LogSizeMb         = 0,
     string? LogReuseWait      = null,
 
+    // The oldest open transaction that holds locks or log (#252); null when there is none
+    OpenTransaction? OldestTransaction = null,
+
     // Azure SQL Database only (#234), from sys.dm_db_resource_stats: data IO and log write as
     // shares of the service tier's limits, and the DTU limit (null on a vCore tier). Null on
     // other editions, or while the view has no row (after a failover or a scale).

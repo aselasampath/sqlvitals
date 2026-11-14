@@ -193,6 +193,80 @@ public sealed class EvidencePagesTests : IDisposable
         Assert.Equal(ProcessesView.Waiting, new ConnectionSettingsService(_dir).Load().ProcessesView);
     });
 
+    // Sessions 5 and 6 sleep outside any chain; 5 has held a transaction for 23 min, 6 for 8.
+    private static readonly DateTime ServerNow = new(2026, 11, 14, 9, 0, 0);
+
+    private static ProcessNode Holding(ProcessNode node, double minutes) =>
+        node with { OpenTran = 1, TransactionBegin = ServerNow.AddMinutes(-minutes), ServerNow = ServerNow };
+
+    private ProcessesPage Transactions(params ProcessNode[] sessions) => Wave2Pages.Processes(new FakeRepository
+    {
+        GetProcessesAsync   = () => Task.FromResult<IEnumerable<ProcessNode>>(sessions),
+        GetActiveWaitsAsync = () => Task.FromResult<IEnumerable<ActiveWait>>([]),
+    }, new ConnectionSettingsService(_dir));
+
+    [Fact]
+    public void Processes_AnOpenTransactionAlert_SelectsItsSession_WithItsDetails_EvenOutsideAChain() => UiThread.Run(() =>
+    {
+        // Waiting last chosen, and Blocking chains only ticked: session 5, sleeping outside any
+        // chain, would be on neither. The focus comes before the first snapshot is read.
+        new ConnectionSettingsService(_dir).SetProcessesView(ProcessesView.Waiting, groupByLogin: true);
+        var page      = Transactions([.. Sessions.Where(s => s.SessionId is not (5 or 6)), Holding(Node(5), 23), Holding(Node(6), 8)]);
+        var focusPage = (IFocusPage)page;
+        page.ProcessMap.ShowChainsOnly();
+        var opened = new List<bool>();
+        page.DetailsChanged += opened.Add;
+
+        focusPage.ShowFocus(Focus(new FocusFilter(FocusKind.Transaction, 5)));
+        Assert.Null(focusPage.FocusNote);   // nothing read yet
+        UiThread.Wait(page.ViewModel.RefreshAsync());
+
+        Assert.Equal(ProcessesView.Map, page.View);
+        Assert.Equal(5, page.ProcessMap.SelectedSession);
+        Assert.Equal("Session 5", page.Details.Title);
+        Assert.NotNull(page.Details.Body);
+        Assert.Contains(true, opened);
+        Assert.False(page.ProcessMap.IsChainFocused);
+        Assert.Equal("session 5 selected, with its details", focusPage.FocusNote);
+
+        // Choosing another session ends the alert's selection: the banner says so no more.
+        page.ProcessMap.ShowSession(87);
+        Assert.Equal(87, page.ProcessMap.SelectedSession);
+        Assert.Null(focusPage.FocusNote);
+    });
+
+    [Fact]
+    public void Processes_AnOpenTransactionAlert_WhoseSessionHoldsNoneNow_SelectsTheOldestOpen() => UiThread.Run(() =>
+    {
+        // Session 87, named by the alert, has committed; 6 still holds one, past the threshold.
+        var page      = Transactions([.. Sessions.Where(s => s.SessionId != 6), Holding(Node(6), 8)]);
+        var focusPage = (IFocusPage)page;
+        UiThread.Wait(page.ViewModel.RefreshAsync());
+
+        focusPage.ShowFocus(Focus(new FocusFilter(FocusKind.Transaction, 87)));
+
+        Assert.Equal(6, page.ProcessMap.SelectedSession);
+        Assert.Equal("Session 6", page.Details.Title);
+        Assert.Equal("session 87 holds no transaction now: session 6 selected, which holds the oldest open", focusPage.FocusNote);
+    });
+
+    [Fact]
+    public void Processes_AnOpenTransactionAlert_ForASessionThatHasGone_SaysSo_AndSelectsNothingElse() => UiThread.Run(() =>
+    {
+        var page = Waiting();
+        UiThread.Wait(page.ViewModel.RefreshAsync());
+        page.ProcessMap.ShowSession(40);
+        Assert.Equal(40, page.ProcessMap.SelectedSession);
+
+        ((IFocusPage)page).ShowFocus(Focus(new FocusFilter(FocusKind.Transaction, 999)));
+
+        Assert.Equal(999, page.ProcessMap.SelectedSession);
+        Assert.Equal("Session 999", page.Details.Title);
+        Assert.Null(page.Details.Body);
+        Assert.Contains("has gone", page.Details.Hint);
+        Assert.Equal("session 999 holds no transaction now, and no other session holds one", ((IFocusPage)page).FocusNote);
+    });
+
     [Fact]
     public void Processes_ASessionsFilter_IsOnlyDescribedOnTheWaitingView_AndShowAllClearsIt() => UiThread.Run(() =>
     {

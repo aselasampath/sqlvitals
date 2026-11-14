@@ -80,9 +80,9 @@ public sealed class OverviewTests
         var costs = InCulture("en-GB", () => ScoreCosts.Lowering(score));
 
         Assert.Equal([HealthIndicator.Blocking, HealthIndicator.Cpu], costs.Select(c => c.Indicator));
-        Assert.Equal("Now 3 min, past critical (≥ 2 min): all 16 of its points.", costs[0].Why);
+        Assert.Equal("Now 3 min, past critical (≥ 2 min): all 12 of its points.", costs[0].Why);
         Assert.Equal("Now 82 %, past warning (≥ 75 %): half of its 16 points.", costs[1].Why);
-        Assert.Equal(["Page life expectancy", "Memory grants pending", "Log space used", "TempDB space used",
+        Assert.Equal(["Open transaction", "Page life expectancy", "Memory grants pending", "Log space used", "TempDB space used",
                       "Disk free", "Backups past RPO", "Failed Agent jobs"],
                      ScoreCosts.Passing(score).Select(p => p.Name));
     }

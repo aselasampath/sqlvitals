@@ -385,6 +385,8 @@
                                             ElementStyle="{StaticResource NumberCell}"/>
                         <DataGridTextColumn Header="Open tran" Binding="{Binding OpenTran}" Width="70"
                                             ElementStyle="{StaticResource NumberCell}"/>
+                        <DataGridTextColumn Header="Tran age" Binding="{Binding TransactionAge}" Width="75"
+                                            SortMemberPath="TransactionAgeSec" ElementStyle="{StaticResource NumberCell}"/>
                         <DataGridTextColumn Header="Login time" Binding="{Binding LoginTime, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="130"/>
                         <DataGridTextColumn Header="Last batch" Binding="{Binding LastBatch, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="130"/>
                         <DataGridTextColumn Header="Query text" Binding="{Binding QueryFirstLine}" Width="420"

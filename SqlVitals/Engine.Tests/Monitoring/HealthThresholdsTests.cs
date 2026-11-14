@@ -99,7 +99,7 @@ public class HealthThresholdsTests
     [InlineData(0,         250,  300,  HealthLevel.Warning)]  // buffer pool not reported: as typed
     public void Ple_ScalesWithTheBufferPoolByDefault(double bufferPoolMb, double ple, double expectedWarning, HealthLevel expected)
     {
-        var reading = HealthRules.Grade(Sample(ple: ple) with { BufferPoolMb = bufferPoolMb }, HealthThresholds.Default)[2];
+        var reading = HealthRules.Grade(Sample(ple: ple) with { BufferPoolMb = bufferPoolMb }, HealthThresholds.Default)[3];
 
         Assert.Equal(expectedWarning, reading.Limits.Warning);
         Assert.Null(reading.Limits.Critical);
@@ -111,7 +111,7 @@ public class HealthThresholdsTests
     {
         var fixedPle = HealthThresholds.Default with { PageLifeExpectancyFixed = true };
 
-        var reading = HealthRules.Grade(Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 }, fixedPle)[2];
+        var reading = HealthRules.Grade(Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 }, fixedPle)[3];
 
         Assert.Equal((HealthLevel.Healthy, new HealthThreshold(300, null)), (reading.Level, reading.Limits));
         Assert.Null(reading.Note);
@@ -122,7 +122,7 @@ public class HealthThresholdsTests
     {
         var thresholds = HealthThresholds.Default.With(HealthIndicator.PageLifeExpectancy, new HealthThreshold(300, 150));
 
-        var reading = InCulture("en-GB", () => HealthRules.Grade(Sample(ple: 1000) with { BufferPoolMb = 32 * 1024 }, thresholds)[2]);
+        var reading = InCulture("en-GB", () => HealthRules.Grade(Sample(ple: 1000) with { BufferPoolMb = 32 * 1024 }, thresholds)[3]);
 
         Assert.Equal((new HealthThreshold(2400, 1200), HealthLevel.Critical), (reading.Limits, reading.Level));
         Assert.Equal("Thresholds scaled to its 32 GB buffer pool: 300 / 150 s per 4 GB.", reading.Note);
@@ -141,7 +141,7 @@ public class HealthThresholdsTests
     public void Log_ASmallLogThatIsFullButReusable_IsntAWarning(double sizeMb, string? wait, HealthLevel expected)
     {
         var sample  = Sample(logPct: 95) with { LogSizeMb = sizeMb, LogReuseWait = wait };
-        var reading = HealthRules.Grade(sample, HealthThresholds.Default)[4];
+        var reading = HealthRules.Grade(sample, HealthThresholds.Default)[5];
 
         Assert.Equal(expected, reading.Level);
         Assert.Equal(expected == HealthLevel.Healthy, reading.Note is not null);
@@ -150,9 +150,9 @@ public class HealthThresholdsTests
     [Fact]
     public void Log_ReasonAndNoteNameTheDatabaseAndItsReuseWait()
     {
-        var waiting = HealthRules.Grade(Sample(logPct: 95) with { LogSizeMb = 200, LogReuseWait = "LOG_BACKUP" }, HealthThresholds.Default)[4];
+        var waiting = HealthRules.Grade(Sample(logPct: 95) with { LogSizeMb = 200, LogReuseWait = "LOG_BACKUP" }, HealthThresholds.Default)[5];
         var spared  = InCulture("en-GB", () =>
-            HealthRules.Grade(Sample(logPct: 95) with { LogSizeMb = 200, LogReuseWait = "NOTHING" }, HealthThresholds.Default)[4]);
+            HealthRules.Grade(Sample(logPct: 95) with { LogSizeMb = 200, LogReuseWait = "NOTHING" }, HealthThresholds.Default)[5]);
 
         Assert.Equal("Log 95% full (Sales, waiting on LOG_BACKUP)", waiting.Reason);
         Assert.Null(spared.Reason);
@@ -162,7 +162,7 @@ public class HealthThresholdsTests
     [Fact]
     public void Regrade_GradesTheFigureAgainWithTheSameFacts()
     {
-        var reading = HealthRules.Grade(Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 }, HealthThresholds.Default)[2];
+        var reading = HealthRules.Grade(Sample(ple: 3000) with { BufferPoolMb = 64 * 1024 }, HealthThresholds.Default)[3];
 
         var regraded = HealthRules.Regrade(reading, HealthThresholds.Default with { PageLifeExpectancyFixed = true });
 
@@ -399,7 +399,7 @@ public class HealthThresholdsTests
         var read = HealthThresholds.Normalize(JsonSerializer.Deserialize<HealthThresholds>(JsonSerializer.Serialize(original, options), options));
 
         Assert.Equal(original, read);
-        Assert.Equal((0, 30, 16), (read.Weight(HealthIndicator.Cpu), read.Weight(HealthIndicator.TempDbSpace), read.Weight(HealthIndicator.Blocking)));
+        Assert.Equal((0, 30, 12), (read.Weight(HealthIndicator.Cpu), read.Weight(HealthIndicator.TempDbSpace), read.Weight(HealthIndicator.Blocking)));
     }
 
     [Fact]
@@ -419,9 +419,9 @@ public class HealthThresholdsTests
     // ── Weights (#173) ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Weights_DefaultsAreTheNineChecksOutOf100_AndAzureIo()
+    public void Weights_DefaultsAreTheTenChecksOutOf100_AndAzureIo()
     {
-        Assert.Equal(new HealthWeights(16, 16, 10, 8, 14, 8, 14, 10, 4, AzureIo: 14), HealthWeights.Default);
+        Assert.Equal(new HealthWeights(16, 12, 8, 8, 14, 6, 14, 10, 4, AzureIo: 14, OpenTransaction: 8), HealthWeights.Default);
         Assert.Equal(HealthWeights.Default, HealthThresholds.Default.Weights);
     }
 
@@ -432,19 +432,35 @@ public class HealthThresholdsTests
         Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(20, 20, 16, 12, 20, 12)));
 
         // Changed ones are the user's: kept, and the new checks get their defaults.
-        Assert.Equal(new HealthWeights(30, 20, 16, 12, 20, 12, 14, 10, 4, 14), HealthWeights.Normalize(new HealthWeights(30, 20, 16, 12, 20, 12)));
+        Assert.Equal(new HealthWeights(30, 20, 16, 12, 20, 12, 14, 10, 4, 14, 8), HealthWeights.Normalize(new HealthWeights(30, 20, 16, 12, 20, 12)));
+    }
+
+    [Fact]
+    public void Weights_SavedBefore252Unchanged_TakeTodaysDefaults()
+    {
+        // A file from before #252 holds the ten defaults of then and nothing for the open transaction,
+        // or, saved before #234, nine and nothing for Azure IO either.
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(16, 16, 10, 8, 14, 8, 14, 10, 4, 14)));
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(16, 16, 10, 8, 14, 8, 14, 10, 4)));
+
+        // Changed ones are the user's: kept, and the open transaction gets its default.
+        Assert.Equal(new HealthWeights(16, 20, 10, 8, 14, 8, 14, 10, 4, 14, 8),
+                     HealthWeights.Normalize(new HealthWeights(16, 20, 10, 8, 14, 8, 14, 10, 4, 14)));
     }
 
     [Fact]
     public void Weights_NormalizeFixesOutOfRange_AndAllZeroGivesTheDefaults()
     {
         var fixedUp = HealthWeights.Normalize(new HealthWeights(Cpu: 0, Blocking: 101, TempDbSpace: -1, FailedJobs: 200));
-        Assert.Equal(new HealthWeights(0, 16, 10, 8, 14, 8, 14, 10, 4, 14), fixedUp);
+        Assert.Equal(new HealthWeights(0, 12, 8, 8, 14, 6, 14, 10, 4, 14, 8), fixedUp);
 
-        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 0)));
+        Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 0, OpenTransaction: 0)));
         // Only Azure IO above 0 (#234) is the user's, as Settings accepts it.
-        Assert.Equal(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 30),
-                     HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 30)));
+        Assert.Equal(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 30, OpenTransaction: 0),
+                     HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 30, OpenTransaction: 0)));
+        // A file from before #252 with every weight 0: the open transaction, new, takes its default.
+        Assert.Equal(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 0, OpenTransaction: 8),
+                     HealthWeights.Normalize(new HealthWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, AzureIo: 0)));
         Assert.Equal(HealthWeights.Default, HealthWeights.Normalize(null));
     }
 

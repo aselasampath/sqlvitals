@@ -28,6 +28,14 @@ public partial class ProcessesPage : Page, IPageContext, IFocusPage, IDetailsSou
     // so a refresh keeps its plan and script open.
     private void ShowSession(int sessionId, ProcessNode? node, bool open)
     {
+        // Another session chosen: the alert's selection is over, and the banner says so no more.
+        if (_transactionSession is { } named && ProcessMap.RevealedTransaction is { } revealed && revealed.Named == named
+            && sessionId != (revealed.Holder ?? named))
+        {
+            _transactionSession = null;
+            ViewModel.MapContextChanged();
+        }
+
         if (node is null)
         {
             Details = new($"Session {sessionId}", null,
@@ -45,6 +53,7 @@ public partial class ProcessesPage : Page, IPageContext, IFocusPage, IDetailsSou
     // ── Evidence (#145): a blocking alert's chain is the map's, a session's waits the view model's ──
     public void ShowFocus(PageFocus focus)
     {
+        _transactionSession = null;
         switch (focus.Filter)
         {
             case { Kind: FocusKind.BlockingChain }:
@@ -54,20 +63,46 @@ public partial class ProcessesPage : Page, IPageContext, IFocusPage, IDetailsSou
             case { Kind: FocusKind.Session, Id: { } id }:
                 ViewModel.FocusOnSession((int)id);
                 break;
+            // An open transaction (#252): its session on the map or the grid, with its details. A
+            // sleeping session waits on nothing, so Waiting would show nothing of it.
+            case { Kind: FocusKind.Transaction, Id: { } id }:
+                _transactionSession = (int)id;
+                ViewModel.ShowChainView();
+                if (ProcessMap.IsChainFocused)
+                    ProcessMap.ClearChainFocus();
+                ProcessMap.RevealTransaction((int)id);
+                break;
         }
     }
 
     public void ClearFocus()
     {
+        _transactionSession = null;
         ViewModel.ClearSession();
         if (ProcessMap.IsChainFocused)
             ProcessMap.ClearChainFocus();
     }
 
+    // The session an open transaction alert opened the page on (#252); nothing is hidden for it.
+    // Forgotten once another session is chosen.
+    private int? _transactionSession;
+
+    // What the banner says of it, once the snapshot has been read: null before.
+    private string? TransactionNote(int named) => ProcessMap.RevealedTransaction switch
+    {
+        { Named: var n } when n != named      => null,
+        { Holder: { } holder } when holder == named => $"session {named} selected, with its details",
+        { Holder: { } holder }                => $"session {named} holds no transaction now: session {holder} selected, which holds the oldest open",
+        { }                                   => $"session {named} holds no transaction now, and no other session holds one",
+        null                                  => null,
+    };
+
     // What the view on screen shows of its rows: the session's waits on Waiting, the chain on the
-    // map or the grid. A session's filter is kept while another view is shown, for Show all.
+    // map or the grid, the session holding an open transaction selected among the rest. A
+    // session's filter is kept while another view is shown, for Show all.
     public string? FocusNote => ViewModel.SessionShown
         ? ViewModel.SessionNote
+        : _transactionSession is { } held ? TransactionNote(held)
         : !ProcessMap.IsChainFocused || !ProcessMap.HasSnapshot ? null
         : ProcessMap.FocusedHead is { } head ? $"showing the blocking chain of session {head} only"
         : "nothing is blocked now";
@@ -108,7 +143,7 @@ public partial class ProcessesPage : Page, IPageContext, IFocusPage, IDetailsSou
             if (e.PropertyName == nameof(ProcessesViewModel.View))
                 ShowMapOrGrid();
         };
-        ViewModel.GoToSession          += ProcessMap.ShowSession;
+        ViewModel.GoToSession          += ProcessMap.RevealSession;
         ViewModel.ChainsOnly           += ProcessMap.ShowChainsOnly;
         ProcessMap.GroupByLoginChanged += (_, _) => ViewModel.GroupByLogin = ProcessMap.GroupByLogin;
         ProcessMap.FocusChanged        += (_, _) => ViewModel.MapContextChanged();

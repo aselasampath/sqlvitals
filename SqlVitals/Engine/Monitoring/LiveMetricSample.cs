@@ -51,6 +51,10 @@ public sealed record LiveMetricSample(
     double  LogSizeMb       = 0,
     string? LogReuseWait    = null,
 
+    // The oldest open transaction that holds locks or log (#252); null when there is none. Not
+    // kept in the history.
+    OpenTransaction? OldestTransaction = null,
+
     // Azure SQL Database's resource figures (#234), as shares of its service tier's limits; null
     // where the server doesn't report them (not 0 %). DTU % only on a DTU tier. Not kept in the
     // history, and neither is whether the server is Azure SQL Database.
@@ -110,6 +114,7 @@ public sealed record LiveMetricSample(
             BufferPoolMb:          current.BufferPoolPages * 8 / 1024.0,
             LogSizeMb:             current.LogSizeMb,
             LogReuseWait:          current.LogReuseWait,
+            OldestTransaction:     current.OldestTransaction,
             DataIoPct:             current.AzureDataIoPct,
             LogWritePct:           current.AzureLogWritePct,
             DtuPct:                Dtu(current.SqlCpuUtilizationPct, current.AzureDataIoPct, current.AzureLogWritePct, current.AzureDtuLimit),
@@ -142,6 +147,7 @@ public enum HealthLevel
 /// <param name="FreeGb">Disk free: that volume's free space.</param>
 /// <param name="Names">Backups past RPO and failed Agent jobs (#174): the databases or jobs, in the order read.</param>
 /// <param name="AzureIoResource">Azure IO (#234): which is nearer the tier's limit, "log write" or "data IO".</param>
+/// <param name="Transaction">Open transaction (#252): the oldest one, its session and its database; null with none.</param>
 public sealed record HealthFacts(
     double                       BufferPoolGb    = 0,
     double                       LogSizeMb       = 0,
@@ -152,14 +158,16 @@ public sealed record HealthFacts(
     string?                      Volume          = null,
     double                       FreeGb          = 0,
     IReadOnlyList<string>?       Names           = null,
-    string?                      AzureIoResource = null)
+    string?                      AzureIoResource = null,
+    OpenTransaction?             Transaction     = null)
 {
     public static HealthFacts None { get; } = new();
 
     public static HealthFacts Of(LiveMetricSample sample) => new(
         sample.BufferPoolMb / 1024, sample.LogSizeMb, sample.LogReuseWait, sample.LogUsedDatabase, sample.BlockedSessions,
         AzureIoResource: sample.DataIoPct is null && sample.LogWritePct is null ? null
-                       : (sample.LogWritePct ?? 0) >= (sample.DataIoPct ?? 0) ? "log write" : "data IO");
+                       : (sample.LogWritePct ?? 0) >= (sample.DataIoPct ?? 0) ? "log write" : "data IO",
+        Transaction: sample.OldestTransaction);
 }
 
 /// <summary>
@@ -236,6 +244,8 @@ public static class HealthRules
             Read(HealthIndicator.Cpu, sample.SqlCpuPct, measured: true, facts, thresholds),
             // Nothing blocked is a figure, 0 s: a wait time without a blocked request is ignored.
             Read(HealthIndicator.Blocking, sample.BlockedSessions > 0 ? sample.LongestBlockSec : 0, measured: true, facts, thresholds),
+            // In minutes; no open transaction is a figure, 0 min (#252).
+            Read(HealthIndicator.OpenTransaction, (sample.OldestTransaction?.Seconds ?? 0) / 60, measured: true, facts, thresholds),
             // Zero means the counter wasn't reported (some Azure SQL tiers), not an empty buffer pool.
             Read(HealthIndicator.PageLifeExpectancy, sample.PageLifeExpectancySec, measured: sample.PageLifeExpectancySec > 0, facts, thresholds),
             Read(HealthIndicator.MemoryGrantsPending, sample.MemoryGrantsPending, measured: true, facts, thresholds),
@@ -368,6 +378,8 @@ public static class HealthRules
         {
             HealthIndicator.Cpu                 => string.Format(culture, "CPU at {0:0} %", v),
             HealthIndicator.Blocking            => "blocking for " + FormatSeconds(v),
+            HealthIndicator.OpenTransaction     => "transaction open " + FormatMinutes(v) +
+                                                   (facts.Transaction is { } open ? $" in session {open.SessionId}" : string.Empty),
             HealthIndicator.PageLifeExpectancy  => string.Format(culture, "page life expectancy {0:N0} s", v),
             HealthIndicator.MemoryGrantsPending => v == 1 ? "1 memory grant pending" : string.Format(culture, "{0:N0} memory grants pending", v),
             HealthIndicator.LogSpace            => string.Format(culture, "log {0:0} % full", v) +
@@ -392,6 +404,7 @@ public static class HealthRules
     {
         HealthIndicator.Cpu                 => $"CPU {value:0}%",
         HealthIndicator.Blocking            => $"Blocking {FormatSeconds(value)} ({facts.BlockedSessions:0} blocked)",
+        HealthIndicator.OpenTransaction     => $"Transaction open {FormatMinutes(value)}" + TransactionDetail(facts),
         HealthIndicator.PageLifeExpectancy  => $"PLE {value:0}s",
         HealthIndicator.MemoryGrantsPending => $"{value:0} memory grant(s) pending",
         HealthIndicator.LogSpace            => $"Log {value:0}% full" + LogDetail(facts),
@@ -412,6 +425,30 @@ public static class HealthRules
         var more = names.Count > Shown ? $" +{names.Count - Shown}" : string.Empty;
         return $" ({string.Join(", ", names.Take(Shown))}{more})";
     }
+
+    /// <summary>
+    /// " (session 87 sleeping, sales_app, OrderService on WEB01, Sales log waiting on ACTIVE_TRANSACTION)":
+    /// who holds the oldest open transaction (#252), and what it stops the log from reusing. No query
+    /// text (#175): Processes shows it. <see cref="Alerts.AlertText.TransactionSession"/> reads the session back.
+    /// </summary>
+    private static string TransactionDetail(HealthFacts facts)
+    {
+        if (facts.Transaction is not { } t)
+            return string.Empty;
+
+        static bool Has(string? s) => !string.IsNullOrWhiteSpace(s);
+        var parts = new List<string>(4) { $"{TransactionSessionPrefix}{t.SessionId}" + (Has(t.Status) ? $" {t.Status!.Trim()}" : string.Empty) };
+        if (Has(t.Login))
+            parts.Add(t.Login!.Trim());
+        if (Has(t.Program) || Has(t.Host))
+            parts.Add(Has(t.Program) && Has(t.Host) ? $"{t.Program!.Trim()} on {t.Host!.Trim()}" : (Has(t.Program) ? t.Program : t.Host)!.Trim());
+        if (Has(t.Database))
+            parts.Add(t.Database + (Has(t.LogReuseWait) ? $" log waiting on {t.LogReuseWait}" : string.Empty));
+        return $" ({string.Join(", ", parts)})";
+    }
+
+    /// <summary>Where an open transaction's detail names its session: "(session 87".</summary>
+    internal const string TransactionSessionPrefix = "session ";
 
     // " (Sales, waiting on LOG_BACKUP)", " (Sales)", or nothing.
     private static string LogDetail(HealthFacts facts)
@@ -441,6 +478,9 @@ public static class HealthRules
 
     private static string FormatSeconds(double seconds) =>
         seconds < 60 ? $"{seconds:0}s" : $"{seconds / 60:0.#} min";
+
+    // "23 min", "1.5 h": an open transaction's age (#252), as AlertText words it.
+    private static string FormatMinutes(double minutes) => Alerts.AlertText.Value(HealthIndicator.OpenTransaction, minutes);
 
     /// <summary>
     /// Delay before the next collection. Doubles per consecutive failure, capped at five minutes,
