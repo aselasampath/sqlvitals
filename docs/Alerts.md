@@ -58,6 +58,7 @@ From 0.61.0 every alert has an **evidence route**: the page that shows why, alre
 | Alert or check | Opens | Filtered to | A past alert's history |
 |---|---|---|---|
 | Blocking | 🔗 Processes | the head blocker's chain: the one whose blocked session has waited longest | Live charts (lock waits) |
+| Open transaction (from 0.88.0) | 🔗 Processes, on the map or the grid | the session holding it, selected, with its details open; every session stays shown, as one sleeping with a transaction often blocks nobody yet. *Blocking chains only* is unticked if it would hide it. If that session no longer holds a transaction, the one holding the oldest open now is selected instead, and the banner says so. An alert that has ended shows every session | Live charts (lock waits) |
 | CPU | 🔥 Resource Queries, **By CPU** tab | the queries last run since 15 min before the alert started | Live charts (CPU) |
 | Page life expectancy | 🧠 Memory | (the whole page: memory clerks and grants) | Live charts (memory) |
 | Memory grants pending | 🧠 Memory | the grants still waiting for memory | Live charts (memory) |

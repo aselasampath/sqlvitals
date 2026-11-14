@@ -110,7 +110,7 @@ public sealed class OverviewViewModelTests : IDisposable
         Assert.False(model.ShowsActive);
         Assert.Empty(model.Costs);
         Assert.Equal("Nothing: every check is within its thresholds.", model.NoCostsText);
-        Assert.Equal(9, model.Passing.Count);
+        Assert.Equal(10, model.Passing.Count);
         Assert.Empty(model.AlertsShown);
         Assert.Null(model.WorstSeverity);
         Assert.True(model.ShowsNoAlerts);

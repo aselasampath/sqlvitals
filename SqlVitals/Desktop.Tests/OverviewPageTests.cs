@@ -200,11 +200,11 @@ public sealed class OverviewPageTests : IDisposable
         Assert.Equal(Visibility.Collapsed, page.OutageRow.Visibility);
         Assert.Equal(Visibility.Visible, page.HealthRow.Visibility);
 
-        // Nothing costs points; the nine checks pass, each with its figure.
+        // Nothing costs points; the ten checks pass, each with its figure.
         Assert.Empty(Rows<CostRow>(page.CostsList));
         Assert.Equal("Nothing: every check is within its thresholds.", page.TxtNoCosts.Text);
         var passing = Rows<string>(page.PassingList);
-        Assert.Equal(9, passing.Count);
+        Assert.Equal(10, passing.Count);
         Assert.Contains("Blocking · Nothing blocked", passing);
 
         // No alerts.
@@ -301,7 +301,7 @@ public sealed class OverviewPageTests : IDisposable
         Assert.Equal(("CPU", "−16", "Top CPU queries →"), (cost.Name, cost.Points, cost.LinkText));
         Assert.StartsWith("Now 99", cost.Why);
         Assert.EndsWith("all 16 of its points.", cost.Why);
-        Assert.Equal(8, Rows<string>(page.PassingList).Count);
+        Assert.Equal(9, Rows<string>(page.PassingList).Count);
 
         // As the server is now, without a window (#145).
         Click(Assert.Single(Links(page.CostsList)));
@@ -429,7 +429,7 @@ public sealed class OverviewPageTests : IDisposable
         GetLiveMetricsAsync = () => Task.FromResult(new LiveMetricSnapshot(DateTime.Now, 100, 0, 0, 10, 0, 0, SqlCpuUtilizationPct: 12,
                                                                            PageLifeExpectancy: 5_000, MemoryGrantsPending: 0, BufferCacheHitRatio: 99,
                                                                            0, 0, 0, 0, 0, 0, 0, WaitingTasks: 4,
-                                                                           // It reports its log and TempDB, so all six checks pass (#173).
+                                                                           // It reports its log and TempDB, so all seven checks pass (#173).
                                                                            LogUsedPct: 5, LogUsedDatabase: "Sales", TempDbUsedPct: 10)),
         // And its disk, backups and jobs, so all nine do (#174).
         GetServerChecksAsync = FakeRepository.HealthyChecks,

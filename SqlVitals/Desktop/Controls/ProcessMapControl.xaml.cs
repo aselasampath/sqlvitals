@@ -121,6 +121,57 @@ namespace SqlVitals.Desktop.Controls
         /// <summary>Selects a session and shows its details, as its head blocker chip does: the verdict's "Go to session".</summary>
         public void ShowSession(int sessionId) => GoToSession(sessionId);
 
+        // The session an open transaction alert named, waiting for the first snapshot (#252).
+        private int? _pendingTransaction;
+
+        /// <summary>
+        /// What <see cref="RevealTransaction"/> found (#252): the session the alert named, and the one
+        /// selected for it, holding a transaction now; null holder when none holds one. Null until the
+        /// first snapshot after it was asked.
+        /// </summary>
+        public (int Named, int? Holder)? RevealedTransaction { get; private set; }
+
+        /// <summary>
+        /// Selects the session an open transaction alert names, with its details (#252): once the
+        /// first snapshot is drawn if none is yet. When it no longer holds a transaction, the one
+        /// holding the oldest open now (<see cref="SessionDetails.TransactionHolder"/>).
+        /// </summary>
+        public void RevealTransaction(int named)
+        {
+            RevealedTransaction = null;
+            if (!_hasSnapshot)
+            {
+                _pendingTransaction = named;
+                return;
+            }
+            var holder = SessionDetails.TransactionHolder(_allNodes, named)?.SessionId;
+            RevealedTransaction = (named, holder);
+            RevealSession(holder ?? named);
+            FocusChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Selects a session and shows its details, even when Blocking chains only hides it: a
+        /// session holding a transaction often blocks nobody. One that has gone says so in the
+        /// drawer, and nothing else stays selected.
+        /// </summary>
+        public void RevealSession(int sessionId)
+        {
+            if (_allNodes.All(n => n.SessionId != sessionId))
+            {
+                _selected = sessionId;
+                MarkSelected();
+                _restoringSelection = true;
+                try { ProcessGrid.SelectedItems.Clear(); }
+                finally { _restoringSelection = false; }
+                SessionSelected?.Invoke(sessionId, null, true);
+                return;
+            }
+            if (_chainsOnly && BlockingChains.Visible(_allNodes, chainsOnly: true, null).All(n => n.SessionId != sessionId))
+                ChkChainsOnly.IsChecked = false;   // renders again
+            GoToSession(sessionId);
+        }
+
         /// <summary>Ticks Blocking chains only: the verdict's action.</summary>
         public void ShowChainsOnly() => ChkChainsOnly.IsChecked = true;
 
@@ -183,6 +234,12 @@ namespace SqlVitals.Desktop.Controls
             // The selected session as it is now, or gone.
             if (_selected is { } id)
                 SessionSelected?.Invoke(id, _allNodes.FirstOrDefault(n => n.SessionId == id), false);
+
+            if (_pendingTransaction is { } named)
+            {
+                _pendingTransaction = null;
+                RevealTransaction(named);
+            }
         }
 
         /// <summary>The grid rather than the map (#116). Both show the same snapshot: switching doesn't query the server.</summary>

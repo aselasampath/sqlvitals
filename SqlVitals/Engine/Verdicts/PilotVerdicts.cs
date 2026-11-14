@@ -15,18 +15,26 @@ public static class ProcessesVerdict
     /// <summary>Shows only the sessions in a chain.</summary>
     public const string ChainsOnly = "chains-only";
 
+    /// <summary>Selects the session sleeping with a transaction open (#252) and shows its details.</summary>
+    public const string GoToSession = "go-to-session";
+
     /// <param name="nodes">The snapshot, as <see cref="BlockingChains.Classify"/> leaves it.</param>
     /// <param name="blocking">The connection's blocking threshold, which colours a chain; the default when null.</param>
-    public static PageVerdict From(IReadOnlyList<ProcessNode> nodes, HealthThreshold? blocking = null)
+    /// <param name="openTransaction">The connection's open transaction threshold, in minutes (#252); the default when null.</param>
+    public static PageVerdict From(IReadOnlyList<ProcessNode> nodes, HealthThreshold? blocking = null, HealthThreshold? openTransaction = null)
     {
         var chains = BlockingChains.Find(nodes);
         if (chains.Count == 0)
-            return new PageVerdict(VerdictLevel.Ok, "No blocking", nodes.Count switch
+        {
+            var sessions = nodes.Count switch
             {
                 0     => "No user session is connected.",
                 1     => "1 session, not waiting on another.",
                 var n => string.Format(CultureInfo.CurrentCulture, "{0:N0} sessions, none waiting on another.", n),
-            });
+            };
+            return Forgotten(nodes, openTransaction ?? HealthThresholds.Info(HealthIndicator.OpenTransaction).Default, sessions)
+                ?? new PageVerdict(VerdictLevel.Ok, "No blocking", sessions);
+        }
 
         var limits  = blocking ?? HealthThresholds.Info(HealthIndicator.Blocking).Default;
         var longest = chains.OrderByDescending(c => c.LongestWaitMs).ThenBy(c => c.HeadSessionId).First();
@@ -55,6 +63,39 @@ public static class ProcessesVerdict
             new(GoToHead, $"Go to session {longest.HeadSessionId}", longest.HeadSessionId),
             new(ChainsOnly, "Blocking chains only"),
         ]);
+    }
+
+    /// <summary>
+    /// Nothing blocked, but a session sleeping with a transaction open past the open transaction
+    /// threshold (#252): it blocks nobody yet, but holds its locks and its database's log. A
+    /// sleeping session runs nothing, so any transaction it holds is one it opened and didn't
+    /// end. The oldest is named; null when there is none past the threshold.
+    /// </summary>
+    private static PageVerdict? Forgotten(IReadOnlyList<ProcessNode> nodes, HealthThreshold limits, string sessions)
+    {
+        if ((limits.Warning ?? limits.Critical) is not { } from)
+            return null;
+
+        var oldest = nodes
+            .Where(n => string.Equals(n.Status?.Trim(), "sleeping", StringComparison.OrdinalIgnoreCase))
+            .Select(n => (Node: n, Age: SessionDetails.TransactionAge(n)))
+            .Where(s => s.Age is { } age && age.TotalMinutes >= from)
+            .OrderByDescending(s => s.Age)
+            .ThenBy(s => s.Node.SessionId)
+            .FirstOrDefault();
+        if (oldest.Node is not { } node)
+            return null;
+
+        var minutes = oldest.Age!.Value.TotalMinutes;
+        var level   = limits.Critical is { } critical && minutes >= critical ? VerdictLevel.Critical : VerdictLevel.Warning;
+        var who     = string.Join(", ", new[] { node.ProgramName, node.UserName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var holder  = who.Length == 0 ? "" : $" ({who})";
+        var db      = string.IsNullOrWhiteSpace(node.DatabaseName) ? "its database" : node.DatabaseName;
+        return new PageVerdict(level,
+            $"No blocking, but session {node.SessionId} has held a transaction open for {AlertText.Value(HealthIndicator.OpenTransaction, minutes)}",
+            $"Session {node.SessionId}{holder} is sleeping with it open: the application most likely didn't commit. " +
+            $"It holds its locks, and if it has written anything, {db}'s log can't be reused past it. {sessions}",
+            [new(GoToSession, $"Go to session {node.SessionId}", node.SessionId)]);
     }
 
     // What the head is doing: a sleeping session holding a transaction is the classic forgotten commit.

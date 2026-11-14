@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows.Data;
 using System.Windows.Media;
 using SqlVitals.Desktop.Helpers;
+using SqlVitals.Engine.Alerts;
 using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
@@ -62,6 +63,9 @@ internal sealed class ProcessGridRow
         HeadOfChain     = head != node.SessionId || blocking > 0 ? head : null;
         BlockedByIsLink = node.ParentId > 0 && blockerVisible;
         QueryFirstLine  = FirstLine(node.CommandText);
+        var age         = SessionDetails.TransactionAge(node);
+        TransactionAge    = age is { } a ? AlertText.Duration(a) : null;
+        TransactionAgeSec = age?.TotalSeconds;
         QueryTooltip    = string.IsNullOrWhiteSpace(node.CommandText) ? null
                         : node.CommandText.Length > MaxTooltipChars ? node.CommandText[..MaxTooltipChars] + "…"
                         : node.CommandText;
@@ -100,6 +104,12 @@ internal sealed class ProcessGridRow
     /// <summary>8-KB pages, as memusage in Session Details.</summary>
     public long    Memory       => Node.MemoryUsage;
     public int     OpenTran     => Node.OpenTran;
+
+    /// <summary>How long its oldest transaction has been open (#252): "23 min", as the drawer words it; empty with none.</summary>
+    public string? TransactionAge { get; }
+
+    /// <summary>The same in seconds, which the Tran age column sorts on; null with none.</summary>
+    public double? TransactionAgeSec { get; }
     public DateTime? LoginTime  => Node.LoginTime == DateTime.MinValue ? null : Node.LoginTime;
     public DateTime? LastBatch  => Node.LastBatch == DateTime.MinValue ? null : Node.LastBatch;
 

@@ -27,10 +27,11 @@ public sealed record HealthScoreCheck(HealthReading Reading, int Weight, int Poi
         ? "No data"
         : Reading.Value <= 0 && Indicator switch
           {
-              HealthIndicator.Blocking       => "Nothing blocked",
-              HealthIndicator.BackupsPastRpo => "None past",
-              HealthIndicator.FailedJobs     => "None failed",
-              _                              => null,
+              HealthIndicator.Blocking        => "Nothing blocked",
+              HealthIndicator.OpenTransaction => "None open",
+              HealthIndicator.BackupsPastRpo  => "None past",
+              HealthIndicator.FailedJobs      => "None failed",
+              _                               => null,
           } is { } none
             ? none
             : AlertText.Value(Indicator, Reading.Value);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using SqlVitals.Engine.Models;
 using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Engine.Tests.Monitoring;
@@ -11,11 +12,12 @@ public class HealthScoreTests
     private static LiveMetricSample Sample(
         double cpuPct = 10, double ple = 5000, double grants = 0,
         double blocked = 0, double blockSec = 0,
-        double logPct = 5, string? logDb = "Sales", double tempDbPct = 10) =>
+        double logPct = 5, string? logDb = "Sales", double tempDbPct = 10, double openTranMin = 0) =>
         new(T0, 0, 0, 0, 0, 0, 0, cpuPct, 0, 0, 0, 0, 0, 0, ple, grants, 99.9,
-            blocked, blockSec, logPct, logDb, tempDbPct);
+            blocked, blockSec, logPct, logDb, tempDbPct,
+            OldestTransaction: openTranMin > 0 ? new OpenTransaction(openTranMin * 60, 87, "app", "WEB01", "OrderService", "sleeping", "Sales", "ACTIVE_TRANSACTION") : null);
 
-    // Graded as a collector does: the sample's six checks and the slow three (#174), healthy.
+    // Graded as a collector does: the sample's seven checks and the slow three (#174), healthy.
     private static HealthScore Score(LiveMetricSample sample, HealthThresholds? thresholds = null) =>
         HealthScore.From(TestChecks.All(sample, thresholds), T0);
 
@@ -85,7 +87,8 @@ public class HealthScoreTests
         // Blocking critical (−16), PLE warning (−5), TempDB warning (−4).
         var score = Score(Sample(blocked: 3, blockSec: 200, ple: 120, tempDbPct: 85));
 
-        Assert.Equal(75, score.Value);
+        // Blocking critical −12, PLE warning −4, TempDB warning −3.
+        Assert.Equal(81, score.Value);
         Assert.Equal(HealthLevel.Critical, score.Level);
     }
 
@@ -109,11 +112,12 @@ public class HealthScoreTests
         var slow = TestChecks.Readings(new ServerCheckFigures([new VolumeSpace(@"D:\", 100, 1)], null, ["Sales"], null, ["Nightly"], null),
                                        thresholds with { FailedJobs = new HealthThreshold(null, 1) });
 
-        var score = HealthScore.From(TestChecks.All(Sample(cpuPct: 99, ple: 100, grants: 5, blocked: 2, blockSec: 600, logPct: 99, tempDbPct: 99),
+        var score = HealthScore.From(TestChecks.All(Sample(cpuPct: 99, ple: 100, grants: 5, blocked: 2, blockSec: 600, logPct: 99, tempDbPct: 99,
+                                                           openTranMin: 45),
                                                     thresholds, slow), T0);
 
         Assert.Equal(0, score.Value);
-        Assert.Equal(9, score.Checks.Count);
+        Assert.Equal(10, score.Checks.Count);
         Assert.All(score.Checks, c => Assert.Equal(c.Weight, c.PointsLost));
     }
 
@@ -140,19 +144,19 @@ public class HealthScoreTests
         Assert.Equal("Nothing blocked", score.Checks.Single(c => c.Indicator == HealthIndicator.Blocking).ValueText);
         Assert.Equal([HealthIndicator.PageLifeExpectancy, HealthIndicator.TempDbSpace], score.LeftOut.Select(c => c.Indicator));
         Assert.Equal("2 checks left out of the score, no data: Page life expectancy, TempDB space used", score.LeftOutText);
-        Assert.Equal("Healthy: 7 of 9 checks pass, 2 have no data", score.Verdict);
+        Assert.Equal("Healthy: 8 of 10 checks pass, 2 have no data", score.Verdict);
     }
 
     [Fact]
     public void TheScore_IsScaledOverTheChecksThatReported()
     {
-        // TempDB not reported: the other eight share 100 points among their 92 of weight, so CPU
-        // past warning loses half of its 18 (16 × 100 ÷ 92, rounded).
+        // TempDB not reported: the other nine share 100 points among their 94 of weight, so CPU
+        // past warning loses half of its 17 (16 × 100 ÷ 94, rounded), rounded down.
         var score = Score(Sample(cpuPct: 80, tempDbPct: 0));
 
         var cpu = score.Checks.Single(c => c.Indicator == HealthIndicator.Cpu);
-        Assert.Equal((16, 18, 9), (cpu.Weight, cpu.Worth, cpu.PointsLost));
-        Assert.Equal(91, score.Value);
+        Assert.Equal((16, 17, 8), (cpu.Weight, cpu.Worth, cpu.PointsLost));
+        Assert.Equal(92, score.Value);
         Assert.Equal(HealthScore.Max - score.Checks.Sum(c => c.PointsLost), score.Value);
     }
 
@@ -173,7 +177,7 @@ public class HealthScoreTests
     {
         var score = Score(Sample(tempDbPct: 0));
 
-        Assert.Equal([18, 17, 11, 9, 15, 0, 15, 11, 4], score.Checks.Select(c => c.Worth));
+        Assert.Equal([17, 13, 9, 8, 8, 15, 0, 15, 11, 4], score.Checks.Select(c => c.Worth));
     }
 
     [Fact]
@@ -182,8 +186,8 @@ public class HealthScoreTests
         // Blocking critical, PLE and TempDB unreported: 0 of blocking's share.
         var score = Score(Sample(blocked: 2, blockSec: 600, ple: 0, tempDbPct: 0));
 
-        // 16 of 82 reported weight is 19 points.
-        Assert.Equal(81, score.Value);
+        // 12 of 86 reported weight is 14 points.
+        Assert.Equal(86, score.Value);
     }
 
     // ── Custom weights (#173) ─────────────────────────────────────────────────
@@ -205,14 +209,14 @@ public class HealthScoreTests
     [Fact]
     public void CustomWeights_AreRelative_AndTheScoreStaysOutOf100()
     {
-        // Every check weighs 10: each is worth 11 of the 100 (10 × 100 ÷ 90), and the point left
-        // over goes to the first, so CPU critical loses 12.
-        var weights = new HealthWeights(10, 10, 10, 10, 10, 10, 10, 10, 10);
+        // Every check weighs 10 (Azure IO's isn't scored here): each of the ten is worth 10 of
+        // the 100, so CPU critical loses 10.
+        var weights = new HealthWeights(10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10);
 
         var score = HealthScore.From(TestChecks.All(Sample(cpuPct: 95)), T0, weights);
 
-        Assert.Equal(88, score.Value);
-        Assert.Equal(12, score.Checks.Single(c => c.Indicator == HealthIndicator.Cpu).Worth);
+        Assert.Equal(90, score.Value);
+        Assert.Equal(10, score.Checks.Single(c => c.Indicator == HealthIndicator.Cpu).Worth);
     }
 
     [Fact]
@@ -222,7 +226,8 @@ public class HealthScoreTests
 
         Assert.Equal(Score(sample).Value,
                      HealthScore.From(TestChecks.All(sample), T0, HealthThresholds.Default.Weights).Value);
-        Assert.Equal(69, Score(sample).Value);
+        // Blocking critical −12, CPU and log warning −8 and −7.
+        Assert.Equal(73, Score(sample).Value);
     }
 
     // ── Verdict: the worst state first (#173) ─────────────────────────────────
@@ -285,7 +290,7 @@ public class HealthScoreTests
     {
         var summary = InCulture("en-US", () => Score(Sample(cpuPct: 80, blocked: 1, blockSec: 150)).Summary());
 
-        Assert.Equal("Critical: blocking for 2.5 min (+1 more) · health score 76/100, lowered by Blocking −16 · CPU −8", summary);
+        Assert.Equal("Critical: blocking for 2.5 min (+1 more) · health score 80/100, lowered by Blocking −12 · CPU −8", summary);
     }
 
     [Fact]
@@ -294,7 +299,7 @@ public class HealthScoreTests
         Assert.Equal("Healthy: every check passes · health score 100/100", Score(Sample()).Summary());
         Assert.Equal("Unreachable · health score 0/100: the server couldn't be reached or read",
                      HealthScore.Unavailable("x", T0).Summary());
-        Assert.Equal("Healthy: 8 of 9 checks pass, 1 has no data · health score 100/100 · 1 check left out of the score, no data: TempDB space used",
+        Assert.Equal("Healthy: 9 of 10 checks pass, 1 has no data · health score 100/100 · 1 check left out of the score, no data: TempDB space used",
                      Score(Sample(tempDbPct: 0)).Summary());
     }
 

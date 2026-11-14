@@ -3,7 +3,7 @@ using System.Globalization;
 namespace SqlVitals.Engine.Monitoring;
 
 /// <summary>
-/// The figures the health dot is graded on. The first seven are read with every sample (Azure IO
+/// The figures the health dot is graded on. The first eight are read with every sample (Azure IO
 /// only on Azure SQL Database, #234); the last three change slowly and are read every few minutes
 /// (#174, <see cref="ServerChecks"/>). Stored by name, so a new one can go anywhere.
 /// </summary>
@@ -11,6 +11,8 @@ public enum HealthIndicator
 {
     Cpu,
     Blocking,
+    /// <summary>How long the oldest open transaction holding locks or log has been open (#252).</summary>
+    OpenTransaction,
     PageLifeExpectancy,
     MemoryGrantsPending,
     LogSpace,
@@ -54,7 +56,8 @@ public sealed record HealthWeights(
     int? DiskFree            = null,
     int? BackupsPastRpo      = null,
     int? FailedJobs          = null,
-    int? AzureIo             = null)
+    int? AzureIo             = null,
+    int? OpenTransaction     = null)
 {
     public const int MaxWeight = 100;
 
@@ -62,26 +65,29 @@ public sealed record HealthWeights(
         DefaultOf(HealthIndicator.Cpu), DefaultOf(HealthIndicator.Blocking), DefaultOf(HealthIndicator.PageLifeExpectancy),
         DefaultOf(HealthIndicator.MemoryGrantsPending), DefaultOf(HealthIndicator.LogSpace), DefaultOf(HealthIndicator.TempDbSpace),
         DefaultOf(HealthIndicator.DiskFree), DefaultOf(HealthIndicator.BackupsPastRpo), DefaultOf(HealthIndicator.FailedJobs),
-        DefaultOf(HealthIndicator.AzureIo));
+        DefaultOf(HealthIndicator.AzureIo), DefaultOf(HealthIndicator.OpenTransaction));
 
     /// <summary>
-    /// The default points of a check; the checks every server has add up to 100. CPU and blocking
-    /// stop users' work outright, and so do a full log and a full disk; memory pressure slows
-    /// everything and a database past its backup RPO risks data; queued memory grants and a full
-    /// TempDB hit fewer queries; a failed job is one task. Azure IO (#234), on Azure SQL Database
-    /// only, is worth a full log's: at the tier's limit Azure throttles every query that reads or writes.
+    /// The default points of a check; the checks every server has add up to 100. CPU stops users'
+    /// work outright, and so do a full log and a full disk; blocking does too, and a transaction
+    /// left open (#252) is most often what causes it, so the two share what blocking alone was
+    /// worth with some from memory and TempDB; memory pressure slows everything and a database
+    /// past its backup RPO risks data; queued memory grants and a full TempDB hit fewer queries;
+    /// a failed job is one task. Azure IO (#234), on Azure SQL Database only, is worth a full
+    /// log's: at the tier's limit Azure throttles every query that reads or writes.
     /// </summary>
     public static int DefaultOf(HealthIndicator indicator) => indicator switch
     {
         HealthIndicator.Cpu                 => 16,
-        HealthIndicator.Blocking            => 16,
         HealthIndicator.LogSpace            => 14,
         HealthIndicator.DiskFree            => 14,
         HealthIndicator.AzureIo             => 14,
-        HealthIndicator.PageLifeExpectancy  => 10,
+        HealthIndicator.Blocking            => 12,
         HealthIndicator.BackupsPastRpo      => 10,
+        HealthIndicator.OpenTransaction     => 8,
+        HealthIndicator.PageLifeExpectancy  => 8,
         HealthIndicator.MemoryGrantsPending => 8,
-        HealthIndicator.TempDbSpace         => 8,
+        HealthIndicator.TempDbSpace         => 6,
         HealthIndicator.FailedJobs          => 4,
         _                                   => 0,
     };
@@ -91,6 +97,13 @@ public sealed record HealthWeights(
     /// these and none of the new checks' weights was never changed, and takes today's defaults.
     /// </summary>
     internal static HealthWeights Before174 { get; } = new(20, 20, 16, 12, 20, 12);
+
+    /// <summary>
+    /// The defaults before #252 added the open transaction: like <see cref="Before174"/>, a file
+    /// saved with exactly these was never changed, and takes today's defaults. So does one saved
+    /// with them before #234 added Azure IO, which holds none for it.
+    /// </summary>
+    internal static HealthWeights Before252 { get; } = new(16, 16, 10, 8, 14, 8, 14, 10, 4, 14);
 
     /// <summary>One check's weight; the default when it is missing.</summary>
     public int Get(HealthIndicator indicator) => indicator switch
@@ -105,6 +118,7 @@ public sealed record HealthWeights(
         HealthIndicator.BackupsPastRpo      => BackupsPastRpo,
         HealthIndicator.FailedJobs          => FailedJobs,
         HealthIndicator.AzureIo             => AzureIo,
+        HealthIndicator.OpenTransaction     => OpenTransaction,
         _                                   => null,
     } ?? DefaultOf(indicator);
 
@@ -120,17 +134,19 @@ public sealed record HealthWeights(
         HealthIndicator.BackupsPastRpo      => this with { BackupsPastRpo      = weight },
         HealthIndicator.FailedJobs          => this with { FailedJobs          = weight },
         HealthIndicator.AzureIo             => this with { AzureIo             = weight },
+        HealthIndicator.OpenTransaction     => this with { OpenTransaction     = weight },
         _                                   => this,
     };
 
     /// <summary>
     /// Saved weights made safe to use: one missing or out of range gets its default, and all of
     /// them 0, which would leave nothing to score, gives <see cref="Default"/>. So do the defaults
-    /// as they were before #174 (<see cref="Before174"/>): weights nobody changed follow the defaults.
+    /// as they were before #174 (<see cref="Before174"/>) and before #252 (<see cref="Before252"/>):
+    /// weights nobody changed follow the defaults.
     /// </summary>
     public static HealthWeights Normalize(HealthWeights? saved)
     {
-        if (saved is null || saved == Before174)
+        if (saved is null || saved == Before174 || saved == Before252 || saved == Before252 with { AzureIo = null })
             return Default;
 
         var result = Default;
@@ -185,7 +201,8 @@ public sealed record HealthThresholds(
     HealthThreshold? DiskFreeGb              = null,
     HealthThreshold? BackupsPastRpo          = null,
     HealthThreshold? FailedJobs              = null,
-    HealthThreshold? AzureIoPct              = null)
+    HealthThreshold? AzureIoPct              = null,
+    HealthThreshold? OpenTransactionMin      = null)
 {
     /// <summary>The buffer pool size a scaled page life expectancy threshold is given for: 300 s per 4 GB.</summary>
     public const double PageLifeExpectancyPerGb = 4;
@@ -198,6 +215,11 @@ public sealed record HealthThresholds(
         new(HealthIndicator.Blocking, "Blocking", "s",
             "How long the longest-blocked request has been waiting on another session.",
             LowerIsWorse: false, WholeNumber: false, Min: 1, Max: 86_400, new(30, 120)),
+        new(HealthIndicator.OpenTransaction, "Open transaction", "min",
+            "How long the oldest open transaction that holds locks or log has been open: an explicit one, or " +
+            "one that has written to the log. A session sleeping with one open is most often an application " +
+            "that didn't commit: it blocks others and stops its database's log from being reused.",
+            LowerIsWorse: false, WholeNumber: false, Min: 1, Max: 10_080, new(5, 20)),
         new(HealthIndicator.PageLifeExpectancy, "Page life expectancy", "s",
             "Flags a value below the threshold: pages leaving the buffer pool quickly mean memory pressure. " +
             "By default the threshold is per 4 GB of buffer pool, so a large server needs a longer one.",
@@ -250,7 +272,8 @@ public sealed record HealthThresholds(
         DiskFreeGbInfo.Default,
         Info(HealthIndicator.BackupsPastRpo).Default,
         Info(HealthIndicator.FailedJobs).Default,
-        Info(HealthIndicator.AzureIo).Default);
+        Info(HealthIndicator.AzureIo).Default,
+        Info(HealthIndicator.OpenTransaction).Default);
 
     public static HealthIndicatorInfo Info(HealthIndicator indicator) =>
         Indicators.First(i => i.Indicator == indicator);
@@ -293,6 +316,7 @@ public sealed record HealthThresholds(
         HealthIndicator.BackupsPastRpo      => BackupsPastRpo,
         HealthIndicator.FailedJobs          => FailedJobs,
         HealthIndicator.AzureIo             => AzureIoPct,
+        HealthIndicator.OpenTransaction     => OpenTransactionMin,
         _                                   => null,
     } ?? Info(indicator).Default;
 
@@ -308,6 +332,7 @@ public sealed record HealthThresholds(
         HealthIndicator.BackupsPastRpo      => this with { BackupsPastRpo        = threshold },
         HealthIndicator.FailedJobs          => this with { FailedJobs            = threshold },
         HealthIndicator.AzureIo             => this with { AzureIoPct            = threshold },
+        HealthIndicator.OpenTransaction     => this with { OpenTransactionMin    = threshold },
         _                                   => this,
     };
 
@@ -382,7 +407,14 @@ public sealed record HealthThresholds(
         var trimmed = (text ?? string.Empty).Trim();
         if (trimmed.EndsWith("GB", StringComparison.OrdinalIgnoreCase))
             trimmed = trimmed[..^2];
-        trimmed = trimmed.TrimEnd('%', 's').Trim();
+        // A check in minutes (#252) takes "min" or "mins", and nothing in seconds: "300 s" isn't 300 minutes.
+        if (info.Unit == "min")
+            trimmed = trimmed.EndsWith("mins", StringComparison.OrdinalIgnoreCase) ? trimmed[..^4]
+                    : trimmed.EndsWith("min", StringComparison.OrdinalIgnoreCase)  ? trimmed[..^3]
+                    : trimmed;
+        else
+            trimmed = trimmed.TrimEnd('%', 's');
+        trimmed = trimmed.Trim();
         if (trimmed.Length == 0)
             return true;
 

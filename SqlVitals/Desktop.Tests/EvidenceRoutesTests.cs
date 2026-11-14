@@ -65,6 +65,7 @@ public sealed class EvidenceRoutesTests
 
     [Theory]
     [InlineData(HealthIndicator.Blocking,            "Blocking chain",  "Processes",       FocusKind.BlockingChain, "LiveMetrics")]
+    [InlineData(HealthIndicator.OpenTransaction,     "Open transaction", "Processes",      FocusKind.Transaction,   "LiveMetrics")]
     [InlineData(HealthIndicator.Cpu,                 "Top CPU queries", "ResourceQueries", FocusKind.TopCpu,        "LiveMetrics")]
     [InlineData(HealthIndicator.PageLifeExpectancy,  "Memory",          "Memory",          FocusKind.None,          "LiveMetrics")]
     [InlineData(HealthIndicator.MemoryGrantsPending, "Memory grants",   "Memory",          FocusKind.PendingGrants, "LiveMetrics")]
@@ -122,6 +123,30 @@ public sealed class EvidenceRoutesTests
         Assert.Equal(active.Focus.Filter, past.Focus!.Filter);
         // Without a database named, every database.
         Assert.True(EvidenceRoutes.ForAlert(AlertOf(HealthIndicator.LogSpace, detail: "Log 93% full")).Focus!.Filter.IsNone);
+    }
+
+    [Fact]
+    public void AnOpenTransactionAlert_SelectsItsSession_WhileActive_AndOffersLiveChartsOnceEnded()
+    {
+        const string detail = "Transaction open 23 min (session 87 sleeping, sales_app, OrderService on WEB01, Sales log waiting on ACTIVE_TRANSACTION)";
+
+        var active = EvidenceRoutes.ForAlert(AlertOf(HealthIndicator.OpenTransaction, detail: detail));
+        Assert.Equal("Processes", active.Tag);
+        Assert.Null(active.View);   // the map or the grid: a sleeping session waits on nothing
+        Assert.Equal(new FocusFilter(FocusKind.Transaction, 87), active.Focus!.Filter);
+        var banner = Invariant(() => FocusBanner.For(active.Focus, "session 87 selected, with its details", false, "Live charts", DateTime.Today));
+        Assert.Equal("Opened from alert", banner.Title);
+        Assert.StartsWith("Open transaction · critical", banner.What);
+        Assert.Contains("session 87 selected, with its details", banner.What);
+
+        // Once ended, the session has likely gone: every session, and Live charts for the window.
+        var past = EvidenceRoutes.ForAlert(AlertOf(HealthIndicator.OpenTransaction, ended: End, detail: detail));
+        Assert.True(past.Focus!.Filter.IsNone);
+        Assert.Equal("LiveMetrics", EvidenceRoutes.History(past)?.Tag);
+
+        // A health check names its session too; without one, every session.
+        Assert.Equal(new FocusFilter(FocusKind.Transaction, 87), EvidenceRoutes.ForCheck(HealthIndicator.OpenTransaction, Server, detail).Focus!.Filter);
+        Assert.True(EvidenceRoutes.ForCheck(HealthIndicator.OpenTransaction, Server, "Transaction open 6 min").Focus!.Filter.IsNone);
     }
 
     // ── The history page, for a past alert on a page that shows now ─────

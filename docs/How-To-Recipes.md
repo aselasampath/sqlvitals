@@ -6,6 +6,7 @@ Step-by-step guides for common situations. You don't need to know which screen t
 - [Is this server OK?](#is-this-server-ok)
 - [The server is slow right now](#the-server-is-slow-right-now)
 - [Users say the application is hanging](#users-say-the-application-is-hanging)
+- [A transaction has been left open](#a-transaction-has-been-left-open)
 - [Find which login has the most sessions](#find-which-login-has-the-most-sessions)
 - [Spot a connection-pool leak](#spot-a-connection-pool-leak)
 - [Users get deadlock errors (1205)](#users-get-deadlock-errors-1205)
@@ -85,6 +86,17 @@ This is usually **blocking**.
 4. **Sleeping with an open transaction** = an application opened a transaction and didn't commit. Give the statement and program name to the application team.
 5. If it must be stopped now, **KILL script (review)** in the drawer gives the statement to copy into SSMS, with what it blocks and what to check first. The transaction will roll back, which can take a while. SqlVitals never runs it.
 6. When the blocked sessions and the head belong to different applications, switch to **Grid**: the group headers show which login holds the head blocker, and clicking **Head of chain** on a blocked row jumps to it.
+
+## A transaction has been left open
+
+The **Open transaction** check (from 0.88.0) warns when one has been open 5 minutes, and is critical at 20, before it blocks anyone or fills the log.
+
+1. Click the **Windows notification**, or **Investigate** on the alert. **🔗 Processes** opens with the session holding it selected and its details open at the right.
+2. Read **Status** and **Transaction open** in the drawer. **Sleeping** means no request is running: the application opened a transaction and didn't commit. **Running** means a long statement, often planned maintenance.
+3. Its **program**, **host**, **login** and **last statement** say which application, and which part of it, left it open. Give them to the application team.
+4. The alert's line says what the database's log is waiting on. *ACTIVE_TRANSACTION* means the log can't be reused past this transaction, so it will grow until it ends.
+5. If it must end now, **KILL script (review)** gives the statement to run yourself. The transaction rolls back, which can take as long as the work did. SqlVitals never runs it.
+6. Without an alert, press **Grid** and sort **Tran age**, longest first.
 
 ## Find which login has the most sessions
 
@@ -274,7 +286,7 @@ An application that opens connections and doesn't close them fills its pool with
 ## TempDB or the log is filling up
 
 - **TempDB:** **🗄️ TempDB → Top Sessions by TempDB Allocation**. *Internal KB* = sorts and hashes from big queries; *User Obj KB* = temp tables. Find the session and its query.
-- **Log:** hover the **health dot**. The *Log space used* tooltip names the database. Then check **📦 DB Storage → Database Files** for its recovery model and log size. A full log in *FULL* recovery usually means log backups aren't running.
+- **Log:** hover the **health dot**. The *Log space used* tooltip names the database and what its log is waiting on. Then check **📦 DB Storage → Database Files** for its recovery model and log size. A full log in *FULL* recovery usually means log backups aren't running. Waiting on *ACTIVE_TRANSACTION* means a transaction is holding it: the *Open transaction* check names its session, see [A transaction has been left open](#a-transaction-has-been-left-open).
 
 ## Find out what an application is calling
 

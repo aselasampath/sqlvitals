@@ -31,6 +31,12 @@ public enum FocusKind
 
     /// <summary>Table Statistics (#244): one table, and its statistics object when known.</summary>
     Table,
+
+    /// <summary>
+    /// Processes (#252): the session holding the oldest open transaction, selected on the map or
+    /// the grid with its details open. Every session stays shown: a sleeping one waits on nothing.
+    /// </summary>
+    Transaction,
 }
 
 /// <summary>A page's filter (#145).</summary>
@@ -101,6 +107,8 @@ public static class EvidenceRoutes
         // the blocked sessions themselves, log and TempDB space aren't kept.
         HealthIndicator.Cpu                 => new("Top CPU queries", "ResourceQueries", FocusKind.TopCpu, "LiveMetrics"),
         HealthIndicator.Blocking            => new("Blocking chain", "Processes", FocusKind.BlockingChain, "LiveMetrics", NowOnly: true),
+        // The session holding it (#252); its age isn't kept, so the past is Live charts' lock waits.
+        HealthIndicator.OpenTransaction     => new("Open transaction", "Processes", FocusKind.Transaction, "LiveMetrics", NowOnly: true),
         HealthIndicator.PageLifeExpectancy  => new("Memory", "Memory", FocusKind.None, "LiveMetrics"),
         HealthIndicator.MemoryGrantsPending => new("Memory grants", "Memory", FocusKind.PendingGrants, "LiveMetrics", NowOnly: true),
         HealthIndicator.LogSpace            => new("Log space", "DbStorage", FocusKind.Database, null),
@@ -171,13 +179,15 @@ public static class EvidenceRoutes
     {
         // "Log 93% full (Sales)": the fullest log's database. Without one, every database.
         FocusKind.Database => AlertText.LogDatabase(detail) is { } name ? new FocusFilter(kind, Name: name) : FocusFilter.None,
+        // "Transaction open 23 min (session 87 sleeping, …)": that session. Without one, every session.
+        FocusKind.Transaction => AlertText.TransactionSession(detail) is { } session ? new FocusFilter(kind, session) : FocusFilter.None,
         // The head isn't known until the page reads the sessions: the chain waiting longest.
         _ => new FocusFilter(kind),
     };
 
     private static string Describe(FocusFilter filter) => filter.Kind switch
     {
-        FocusKind.Session  => $"session {filter.Id}",
+        FocusKind.Session or FocusKind.Transaction => $"session {filter.Id}",
         FocusKind.Query    => $"query {filter.Id}",
         FocusKind.Database => filter.Name ?? "a database",
         FocusKind.Table    => filter.Table?.FullName ?? "a table",

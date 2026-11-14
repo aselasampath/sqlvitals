@@ -21,6 +21,19 @@ public static class SessionDetails
     public static TimeSpan? TransactionAge(ProcessNode node) =>
         node.TransactionBegin is { } begin && node.ServerNow is { } now && now >= begin ? now - begin : null;
 
+    /// <summary>
+    /// The session an open transaction alert is looked into on (#252): the one it named while that
+    /// one still holds a transaction, else the one holding the oldest open transaction now, as the
+    /// alert stays open while any is past its threshold. A session's number can be reused once it
+    /// ends: one holding no transaction isn't taken for the one named. Null when none holds one.
+    /// </summary>
+    public static ProcessNode? TransactionHolder(IReadOnlyList<ProcessNode> snapshot, int named) =>
+        snapshot.FirstOrDefault(n => n.SessionId == named && n.OpenTran > 0)
+        ?? snapshot.Where(n => n.OpenTran > 0 && TransactionAge(n) is not null)
+                   .OrderByDescending(n => TransactionAge(n))
+                   .ThenBy(n => n.SessionId)
+                   .FirstOrDefault();
+
     /// <param name="snapshot">Every session read with it, as <see cref="BlockingChains.Classify"/> leaves them.</param>
     public static IReadOnlyList<DetailRow> Rows(ProcessNode node, IReadOnlyList<ProcessNode> snapshot)
     {

@@ -23,6 +23,7 @@ The dot shows the state **now**. When an indicator stays past a threshold for a 
 |---|---|---|---|
 | **CPU** | How busy SQL Server's processors were over the last minute | ≥ 75 % | ≥ 90 % |
 | **Blocking** | How long the longest-blocked query has been stuck waiting for another | ≥ 30 s | ≥ 120 s |
+| **Open transaction** (from 0.88.0) | How long the oldest open transaction that holds locks or log has been open. The tooltip names its session, whether it is sleeping or running, its login, application and host, and what its database's log is waiting on | ≥ 5 min | ≥ 20 min |
 | **Page life expectancy** | How long data stays in memory before it's pushed out. *Lower is worse.* | < 300 s per 4 GB of buffer pool | off |
 | **Memory grants pending** | Queries queued because there isn't enough memory to start them | ≥ 1 | off |
 | **Log space used** | The fullest transaction log on the server. The tooltip names the database and what the log is waiting on. | ≥ 80 % | ≥ 90 % |
@@ -41,7 +42,14 @@ These are the defaults. **off** means that level isn't checked.
 - **Failed Agent jobs** counts the jobs whose outcome was *failed* (not *cancelled*) since the last read, from msdb's job history. The first read looks back one interval. A failure counts until the next read, or longer when an [alert](Alerts.md) needs more samples than that to start (*Raise an alert after* × the sample interval), so every failure can raise one. The alert keeps the record. The job history row last seen is remembered per server: after a failover to another replica, the next read starts again as a first one.
 - **Where a check can't be read it is Unknown, never passing:** on **Azure SQL Database** all three (no msdb jobs or backups, no volumes), a login that can't read msdb's history or the volumes (the tooltip says which permission), or a read that failed. SQL Server Express has no Agent, so its jobs check passes with nothing to fail.
 
-**Page life expectancy scales with the server (from 0.75.0).** A fixed 300 s fires on a small VM during CHECKDB or an index rebuild, and stays green on a large server that is short of memory. So by default the threshold is **300 s per 4 GB of buffer pool**, the usual guide: a server with 64 GB of buffer pool is warned below 300 × 64 ÷ 4 = **4,800 s**, one with 2 GB below **150 s**. The panel's tooltip says what it was scaled to. If the server doesn't report its buffer pool, the threshold is used as it is. To use a fixed number of seconds instead, turn off **Per 4 GB of buffer pool** under page life expectancy in [Settings](#change-the-thresholds).
+**An open transaction is caught before it blocks or fills the log (from 0.88.0).** An application that opens a transaction and never commits it is the most common cause of both a Blocking alert (it holds its locks) and a Log space alert (its database's log can't be reused past it). Both fire only once the damage is done; this check fires on the transaction itself. It is read with every sample, from `sys.dm_tran_active_transactions`, `sys.dm_tran_session_transactions` and `sys.dm_tran_database_transactions`.
+
+- **Which transactions count:** user sessions' transactions that were opened explicitly (`BEGIN TRAN`, or `IMPLICIT_TRANSACTIONS`) or have written to the log. A plain `SELECT` runs in a transaction of its own too, but holds no log and releases its locks as it goes, so it is left out. So are SqlVitals's own session and system sessions.
+- **Sleeping or running:** the tooltip says whether the session is **sleeping**, with no request running, so the application has most likely not committed, or **running**, a long statement such as an index rebuild or a big `UPDATE` in a maintenance window. Both are graded the same way; raise the thresholds on a server where long batches are normal.
+- **What it names:** *Transaction open 23 min (session 87 sleeping, sales_app, OrderService on WEB01, Sales log waiting on ACTIVE_TRANSACTION)*. The database is the one it has written most log in, else the session's. What that log is waiting on is named only when the transaction has written to it: one that has only read holds its locks, not the log. No query text: the details drawer on Processes shows it.
+- **No open transaction is a figure**, *None open*, so the check passes; on Azure SQL Database it sees that database's transactions only.
+
+**Page life expectancy scales with the server (from 0.75.0). A fixed 300 s fires on a small VM during CHECKDB or an index rebuild, and stays green on a large server that is short of memory. So by default the threshold is **300 s per 4 GB of buffer pool**, the usual guide: a server with 64 GB of buffer pool is warned below 300 × 64 ÷ 4 = **4,800 s**, one with 2 GB below **150 s**. The panel's tooltip says what it was scaled to. If the server doesn't report its buffer pool, the threshold is used as it is. To use a fixed number of seconds instead, turn off **Per 4 GB of buffer pool** under page life expectancy in [Settings](#change-the-thresholds).
 
 **A small log that is full but reusable isn't a warning (from 0.75.0).** A log at 85 % is only a problem if SQL Server can't reuse it. Log space looks at the fullest log's `log_reuse_wait_desc` and size: a log **under 1 GB** whose reuse waits on **nothing** or only the next **checkpoint** is simply sized tight, and will wrap around rather than grow, so it stays green. Any other log is graded as before, and its tooltip says what it's waiting on (*Log 92% full (Sales, waiting on LOG_BACKUP)*). When one log is small and reusable and another is filling up for a reason, the second is the one checked.
 
@@ -55,12 +63,12 @@ Wherever the score is shown, it comes **second**. First comes the worst state an
 
 | Where | What it says |
 |---|---|
-| A tile on **All servers** | **Critical: blocking for 4 min**, then *Score 84 / 100* |
+| A tile on **All servers** | **Critical: blocking for 4 min**, then *Score 88 / 100* |
 | The server's **Overview** | the same line above the number |
 | The sidebar's server header | the same line under the server's name |
-| **Settings → Connections** | *Critical: blocking for 4 min · score 84* on the connection's card |
+| **Settings → Connections** | *Critical: blocking for 4 min · score 88* on the connection's card |
 
-When several checks are past a threshold, it names the worst and costliest, and how many more: *Warning: CPU at 82 % (+1 more)*. A healthy server says *Healthy: every check passes*, or *Healthy: 8 of 9 checks pass, 1 has no data* when a check isn't reported. So a score of 84 never sits beside a 🔴 without the reason.
+When several checks are past a threshold, it names the worst and costliest, and how many more: *Warning: CPU at 82 % (+1 more)*. A healthy server says *Healthy: every check passes*, or *Healthy: 9 of 10 checks pass, 1 has no data* when a check isn't reported. So a score of 88 never sits beside a 🔴 without the reason.
 
 **Click the score** to see which checks lowered it. The panel leads with the same line, then lists every check with its current figure, its warning and critical thresholds, its worth and the points it cost. The checks that cost points are in bold. A check with no data is greyed, with a dash for its points, and a line under the table says how many were left out. On **All servers**, a tile's **⋯ → Why this score…** opens the panel for that server without opening it.
 
@@ -71,22 +79,23 @@ The score uses the same checks and thresholds as the dot (the table above), so t
 | Check | Weight | Why |
 |---|---|---|
 | **CPU** | 16 | A server out of CPU slows every query |
-| **Blocking** | 16 | Blocked queries stop users' work |
 | **Log space used** | 14 | A full transaction log stops all writes to that database |
 | **Disk free** | 14 | A full disk stops the files on it from growing: writes fail |
-| **Page life expectancy** | 10 | Memory pressure slows things down broadly |
+| **Blocking** | 12 | Blocked queries stop users' work |
 | **Backups past RPO** | 10 | A restore would lose more than the RPO allows |
+| **Open transaction** | 8 | A transaction left open holds its locks and its database's log; it is most often what causes blocking |
+| **Page life expectancy** | 8 | Memory pressure slows things down broadly |
 | **Memory grants pending** | 8 | Queries are waiting for memory to start |
-| **TempDB space used** | 8 | A full TempDB fails the queries that need it |
+| **TempDB space used** | 6 | A full TempDB fails the queries that need it |
 | **Failed Agent jobs** | 4 | One scheduled task didn't do its work |
 | **Azure IO** (Azure SQL Database only) | 14 | At the tier's IO limit Azure throttles every query that reads or writes, like a full log |
 
-From 0.76.0 there are nine checks, and the defaults were shared out again so they still add up to 100 (before, the six were 20, 20, 20, 16, 12 and 12). **Azure IO** (from 0.82.0) is a tenth, on Azure SQL Database only: elsewhere it isn't checked at all, so a SQL Server's nine still add up to 100 and score as before. It has no bar on a tile until the server's first sample says it applies.
+From 0.76.0 there are nine checks, and the defaults were shared out again so they still add up to 100 (before, the six were 20, 20, 20, 16, 12 and 12). From 0.88.0 **Open transaction** makes ten: it shares what Blocking alone was worth, as the two so often have one cause, with two points each from page life expectancy and TempDB (before, Blocking was 16, page life expectancy 10 and TempDB 8). **Azure IO** (from 0.82.0) is one more, on Azure SQL Database only: elsewhere it isn't checked at all, so a SQL Server's ten still add up to 100. It has no bar on a tile until the server's first sample says it applies.
 
 - A check inside its thresholds keeps all its points.
 - Past its **warning** threshold, it loses **half** of them.
 - Past its **critical** threshold, it loses **all** of them.
-- **A check with no data is Unknown, never passing** (from 0.75.0). A counter the server doesn't report (page life expectancy or TempDB on some Azure SQL tiers) shows grey, with no tick, and is **left out** of the score. The score is then shared out over the checks that did report, so it is still out of 100: with TempDB missing, the other eight share the 100 points among their 92 of weight, and CPU is worth 16 × 100 ÷ 92 = 17.4, **18** once the shares are rounded to whole points that add up to 100. Missing data can't make a server look healthier than its checks say. Before 0.75.0 a missing check kept its points and was listed under *Passing*.
+- **A check with no data is Unknown, never passing** (from 0.75.0). A counter the server doesn't report (page life expectancy or TempDB on some Azure SQL tiers) shows grey, with no tick, and is **left out** of the score. The score is then shared out over the checks that did report, so it is still out of 100: with TempDB missing, the other nine share the 100 points among their 94 of weight, and CPU is worth 16 × 100 ÷ 94 = 17.0, **17** once the shares are rounded to whole points that add up to 100. Missing data can't make a server look healthier than its checks say. Before 0.75.0 a missing check kept its points and was listed under *Passing*.
 - A server that **can't be reached** scores **0**. The panel shows the error instead of the checks.
 
 The panel calls each check's share its **worth**. With every check reporting and the default weights, the worth is the weight.
@@ -97,10 +106,11 @@ The panel calls each check's share its **worth**. With every check reporting and
 |---|---|
 | Everything within its thresholds | **100** |
 | CPU at 80 % (warning) | 100 − 8 = **92** |
-| Blocking for 3 minutes (critical) and CPU at 80 % (warning) | 100 − 16 − 8 = **76** |
-| Blocking critical, page life expectancy low (warning), TempDB 85 % full (warning) | 100 − 16 − 5 − 4 = **75** |
+| Blocking for 3 minutes (critical) and CPU at 80 % (warning) | 100 − 12 − 8 = **80** |
+| Blocking critical, page life expectancy low (warning), TempDB 85 % full (warning) | 100 − 12 − 4 − 3 = **81** |
+| A transaction left open for 25 minutes (critical) that has blocked others for 3 minutes (critical) | 100 − 8 − 12 = **80** |
 | A database past its backup RPO (critical) and a failed job (warning) | 100 − 10 − 2 = **88** |
-| CPU at 99 % (critical), TempDB not reported | CPU is worth 18 of 100 among the eight that reported: 100 − 18 = **82** |
+| CPU at 99 % (critical), TempDB not reported | CPU is worth 17 of 100 among the nine that reported: 100 − 17 = **83** |
 
 The score's **colour is the dot's colour**, not a banding of the number. A single critical check can leave a score of 80 or more, but it still shows 🔴, because something is critical.
 
@@ -133,9 +143,9 @@ The **Weight** column of the same table sets how much each check counts, from **
 - Weights are **relative**: the score is always out of 100, shared out over the checks that reported. Doubling every weight changes nothing.
 - **0 leaves a check out of the score.** Its thresholds still colour the dot and raise alerts, so a server can show 🔴 with a score of 100; the line before the score then says why (*Critical: CPU at 99 %*). To stop checking something at all, leave its threshold boxes blank instead.
 - At least one check needs a weight above 0.
-- While you type, the page previews every monitored connection on these thresholds: *On the latest sample, UAT would score 76 → 84*.
+- While you type, the page previews every monitored connection on these thresholds: *On the latest sample, UAT would score 80 → 88*.
 
-The defaults are in the table above. Weights you never changed follow the defaults: a file from 0.75.0 with the six default weights takes the nine new ones. Weights you did change are kept, and the three new checks get their defaults beside them. Changes are logged in the [activity log](Settings.md#activity-log) like the thresholds: *Health weight: CPU* 20 → 0, and *Health threshold: Page life expectancy scaling*.
+The defaults are in the table above. Weights you never changed follow the defaults: a file from 0.75.0 with the six default weights takes today's, and so does one from 0.76.0 to 0.87.0 with the defaults of then. Weights you did change are kept, and a check added since gets its default beside them: the three of 0.76.0, and Open transaction from 0.88.0. Changes are logged in the [activity log](Settings.md#activity-log) like the thresholds: *Health weight: CPU* 20 → 0, and *Health threshold: Page life expectancy scaling*.
 
 ### Per-connection thresholds
 

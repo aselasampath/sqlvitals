@@ -326,12 +326,12 @@ public sealed class HomePageTests : IDisposable
         UiThread.Wait(page.ViewModel.RefreshAsync());
         UiThread.Layout(page, 1100, 900);
 
-        // CPU at 99 % is critical; TempDB isn't reported, so CPU is 18 of the 100 among the eight
-        // checks that reported (16 × 100 ÷ 92, rounded), and all of it is lost.
+        // CPU at 99 % is critical; TempDB isn't reported, so CPU is 17 of the 100 among the nine
+        // checks that reported (16 × 100 ÷ 94, rounded), and all of it is lost.
         var hot = page.TilesShown.Single(t => t.Tile.Id == _hot.Id);
         Assert.Equal("Critical: CPU at 99 %", hot.Tile.Headline);
-        Assert.Equal("82", hot.Tile.ScoreText);
-        Assert.Equal("Lowered by CPU −18. 1 check has no data.", hot.Tile.Reason);
+        Assert.Equal("83", hot.Tile.ScoreText);
+        Assert.Equal("Lowered by CPU −17. 1 check has no data.", hot.Tile.Reason);
         Assert.Equal(HealthLevel.Unknown, hot.Tile.Bars.Single(b => b.Indicator == HealthIndicator.TempDbSpace).Level);
         Assert.Equal(HealthLevel.Unknown, hot.Bars.Single(b => b.Label == "Temp").Level);
 
@@ -349,9 +349,9 @@ public sealed class HomePageTests : IDisposable
         UiThread.Layout(breakdown, 560, 700);
         Assert.Equal("Critical: CPU at 99 %", breakdown.TxtVerdict.Text);
         Assert.Equal(Visibility.Visible, breakdown.TxtLeftOut.Visibility);
-        Assert.Equal("1 check left out of the score, no data: TempDB space used. The score is out of the 8 checks that reported.",
+        Assert.Equal("1 check left out of the score, no data: TempDB space used. The score is out of the 9 checks that reported.",
                      breakdown.TxtLeftOut.Text);
-        var cells = breakdown.GridChecks.Children.OfType<TextBlock>().Where(c => Grid.GetRow(c) == 6).OrderBy(Grid.GetColumn)
+        var cells = breakdown.GridChecks.Children.OfType<TextBlock>().Where(c => Grid.GetRow(c) == 7).OrderBy(Grid.GetColumn)
                              .Select(c => c.Text).ToList();
         Assert.Contains("TempDB space used", cells[0]);
         Assert.Equal(["No data", "≥ 80 %", "≥ 90 %", "—", "—"], cells.Skip(1));

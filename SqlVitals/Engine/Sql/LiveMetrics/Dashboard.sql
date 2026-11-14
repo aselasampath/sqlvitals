@@ -30,6 +30,15 @@
         lg.LogUsedDatabase,
         lg.LogSizeMb,
         lg.LogReuseWait,
+        -- The oldest open transaction that holds locks or log (#252): who holds it and what it stops the log from reusing
+        ot.OldestTranSec,
+        ot.OldestTranSession,
+        ot.OldestTranLogin,
+        ot.OldestTranHost,
+        ot.OldestTranProgram,
+        ot.OldestTranStatus,
+        ot.OldestTranDatabase,
+        ot.OldestTranLogReuseWait,
         (SELECT TOP (1) CAST(100.0 - f.cntr_value * 100.0 / NULLIF(s.cntr_value,0) AS DECIMAL(10,2))
          FROM sys.dm_os_performance_counters f
          CROSS JOIN sys.dm_os_performance_counters s
@@ -72,4 +81,37 @@
                       WHEN d.name IS NULL THEN 1 ELSE 0 END,
                  u.cntr_value DESC, u.instance_name
     ) AS lg
+    -- The oldest open user transaction that matters (#252): an explicit one (BEGIN TRAN, or
+    -- IMPLICIT_TRANSACTIONS), or one that has written to the log. An autocommit SELECT is a
+    -- transaction too, but holds no log and few locks: it is left out. SqlVitals's own session
+    -- and system sessions are too. Its database is the one it has written most log in, else the
+    -- session's; that log's log_reuse_wait_desc only when it has written to it, as a log it
+    -- hasn't written to doesn't wait on it. The databases' rows are numbered once, not read once
+    -- per transaction. On Azure SQL Database the views show this database's transactions only.
+    OUTER APPLY (
+        SELECT TOP (1)
+            CASE WHEN at.transaction_begin_time > GETDATE() THEN 0
+                 ELSE DATEDIFF_BIG(SECOND, at.transaction_begin_time, GETDATE()) END AS OldestTranSec,
+            s.session_id          AS OldestTranSession,
+            s.login_name          AS OldestTranLogin,
+            s.host_name           AS OldestTranHost,
+            s.program_name        AS OldestTranProgram,
+            s.status              AS OldestTranStatus,
+            d.name                AS OldestTranDatabase,
+            CASE WHEN w.database_id IS NOT NULL THEN d.log_reuse_wait_desc END AS OldestTranLogReuseWait
+        FROM sys.dm_tran_active_transactions at
+        JOIN sys.dm_tran_session_transactions st ON st.transaction_id = at.transaction_id
+        JOIN sys.dm_exec_sessions s ON s.session_id = st.session_id
+        LEFT JOIN (SELECT dt.transaction_id, dt.database_id,
+                          ROW_NUMBER() OVER (PARTITION BY dt.transaction_id
+                                             ORDER BY dt.database_transaction_log_bytes_used DESC, dt.database_id) AS n
+                   FROM sys.dm_tran_database_transactions dt
+                   WHERE dt.database_transaction_log_bytes_used > 0) w
+          ON w.transaction_id = at.transaction_id AND w.n = 1
+        LEFT JOIN sys.databases d ON d.database_id = ISNULL(w.database_id, s.database_id)
+        WHERE s.is_user_process = 1
+          AND s.session_id <> @@SPID
+          AND (st.is_user_transaction = 1 OR w.database_id IS NOT NULL)
+        ORDER BY at.transaction_begin_time, s.session_id
+    ) AS ot
     /*AZURE_APPLY*/

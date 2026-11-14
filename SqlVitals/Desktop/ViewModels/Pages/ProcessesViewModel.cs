@@ -40,6 +40,9 @@ public sealed partial class ProcessesViewModel : PageViewModel
     // The active connection's blocking threshold, which colours the verdict as it does the health dot.
     private readonly HealthThreshold? _blocking;
 
+    // Its open transaction threshold (#252): a session sleeping with one open past it is named when nothing is blocked.
+    private readonly HealthThreshold? _openTransaction;
+
     // No saving while the saved choices are applied, or once the page is left.
     private bool _restoring = true;
 
@@ -52,7 +55,9 @@ public sealed partial class ProcessesViewModel : PageViewModel
         _navigator = navigator;
 
         var store = settings.Load();
-        _blocking = (store.Active is { } active ? store.ThresholdsFor(active) : store.HealthThresholds).Get(HealthIndicator.Blocking);
+        var thresholds   = store.Active is { } active ? store.ThresholdsFor(active) : store.HealthThresholds;
+        _blocking        = thresholds.Get(HealthIndicator.Blocking);
+        _openTransaction = thresholds.Get(HealthIndicator.OpenTransaction);
 
         // The interval and the Start/Stop choice are remembered (#37); stopped until it starts.
         SetPaused(true);
@@ -231,7 +236,7 @@ public sealed partial class ProcessesViewModel : PageViewModel
         }
         else if (SessionsRead is { } sessions)
         {
-            Verdict = ProcessesVerdict.From(sessions, _blocking);
+            Verdict = ProcessesVerdict.From(sessions, _blocking, _openTransaction);
         }
     }
 
@@ -302,6 +307,7 @@ public sealed partial class ProcessesViewModel : PageViewModel
         switch (action.Key)
         {
             case ProcessesVerdict.GoToHead when action.Id is { } id:    GoToSession?.Invoke((int)id); break;
+            case ProcessesVerdict.GoToSession when action.Id is { } id: GoToSession?.Invoke((int)id); break;
             case ProcessesVerdict.ChainsOnly:                            ChainsOnly?.Invoke();         break;
             case ActiveWaitsVerdict.Processes when action.Id is { } id: ShowChainOnMap((int)id);      break;
         }

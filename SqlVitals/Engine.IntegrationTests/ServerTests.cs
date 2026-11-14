@@ -92,6 +92,28 @@ public class ServerTests(SqlServerFixture server)
 
     [SqlServerFact]
     [Covers(nameof(ILiveMetricsRepository.GetLiveMetricsAsync))]
+    public async Task LiveMetrics_NameTheOldestOpenTransaction_TheSleepingBlockers()
+    {
+        // The blocker sleeps with its UPDATE uncommitted (#252): the oldest open transaction that
+        // holds log. The waiter's SELECT is a transaction too, but autocommit and without log: never it.
+        var metrics = await _repo.GetLiveMetricsAsync();
+
+        var open = metrics.OldestTransaction;
+        Assert.True(open is not null, "No open transaction. " + await server.DescribeAsync(
+            "SELECT st.session_id, st.is_user_transaction, at.transaction_begin_time, at.transaction_type FROM sys.dm_tran_session_transactions st " +
+            "JOIN sys.dm_tran_active_transactions at ON at.transaction_id = st.transaction_id"));
+        Assert.Equal(server.BlockerSessionId, open!.SessionId);
+        Assert.NotEqual(server.WaiterSessionId, open.SessionId);
+        Assert.Equal("sleeping", open.Status?.Trim(), ignoreCase: true);
+        Assert.Equal(SqlServerFixture.Database, open.Database);
+        Assert.Equal("SqlVitals integration tests", open.Program);
+        Assert.False(string.IsNullOrEmpty(open.Login));
+        Assert.False(string.IsNullOrEmpty(open.LogReuseWait));
+        Assert.InRange(open.Seconds, 0, 24 * 3600);
+    }
+
+    [SqlServerFact]
+    [Covers(nameof(ILiveMetricsRepository.GetLiveMetricsAsync))]
     public async Task LiveMetrics_OnSqlServer_HaveNoAzureResourceFigures()
     {
         // sys.dm_db_resource_stats is Azure SQL Database's (#234): elsewhere they are NULL, not 0 %.

@@ -89,6 +89,13 @@ public static class AlertText
                 < 3_600 => string.Format(culture, "{0:0.#} min", value / 60),
                 _       => string.Format(culture, "{0:0.#} h", value / 3_600),
             },
+            // An open transaction's age, in minutes (#252): "< 1 min", "23 min", "1.5 h".
+            HealthIndicator.OpenTransaction => value switch
+            {
+                < 1  => "< 1 min",
+                < 60 => string.Format(culture, "{0:0} min", value),
+                _    => string.Format(culture, "{0:0.#} h", value / 60),
+            },
             _ => HealthThresholds.Info(indicator).Unit switch
             {
                 "%" => string.Format(culture, "{0:0} %", value),
@@ -144,7 +151,7 @@ public static class AlertText
     /// which database's log is full. Null for the indicators whose detail only repeats the figure.
     /// </summary>
     public static string? Context(Alert alert) =>
-        alert.Indicator is HealthIndicator.Blocking or HealthIndicator.LogSpace or HealthIndicator.DiskFree
+        alert.Indicator is HealthIndicator.Blocking or HealthIndicator.OpenTransaction or HealthIndicator.LogSpace or HealthIndicator.DiskFree
                         or HealthIndicator.BackupsPastRpo or HealthIndicator.FailedJobs && !string.IsNullOrWhiteSpace(alert.Detail)
             ? alert.Detail
             : null;
@@ -162,6 +169,10 @@ public static class AlertText
         {
             HealthIndicator.Cpu                 => $"SQL Server's CPU reached {value}{limit}.",
             HealthIndicator.Blocking            => $"Requests are blocked: the longest has waited {value}{limit}." + Also(alert.Detail),
+            HealthIndicator.OpenTransaction     => $"A transaction has been open for {value}{limit}: it holds its locks" +
+                                                   (alert.Detail.Contains("log waiting on ACTIVE_TRANSACTION", StringComparison.Ordinal)
+                                                       ? ", and its database's log can't be reused past it."
+                                                       : ".") + Also(alert.Detail),
             HealthIndicator.PageLifeExpectancy  => $"Pages leave the buffer pool after only {value}{limit}: memory pressure.",
             HealthIndicator.MemoryGrantsPending => alert.Value == 1
                                                        ? $"1 query is waiting for memory to start running{limit}."
@@ -208,6 +219,28 @@ public static class AlertText
         // A database's own name can hold brackets: everything up to the last one.
         var name = detail[start..^1];
         return name.Trim().Length == 0 ? null : name;
+    }
+
+    /// <summary>
+    /// The session an open transaction alert or check names (#252): 87 from "Transaction open 23 min
+    /// (session 87 sleeping, …)", as <see cref="HealthRules"/> words it. Null when it names none.
+    /// </summary>
+    public static int? TransactionSession(string? detail)
+    {
+        const string Open = "Transaction open ";
+        const string Session = "(" + HealthRules.TransactionSessionPrefix;
+        if (string.IsNullOrEmpty(detail) || !detail.StartsWith(Open, StringComparison.Ordinal))
+            return null;
+        var start = detail.IndexOf(Session, StringComparison.Ordinal);
+        if (start < 0)
+            return null;
+        start += Session.Length;
+        var end = start;
+        while (end < detail.Length && char.IsAsciiDigit(detail[end]))
+            end++;
+        return end > start && int.TryParse(detail.AsSpan(start, end - start), NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0
+            ? id
+            : null;
     }
 
     public static string EndReason(AlertEndReason? reason) => reason switch
