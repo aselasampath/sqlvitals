@@ -101,7 +101,7 @@ The window's logic is `ViewModels/Shell/ShellViewModel`, the window's `DataConte
 |---|---|---|
 | `ShellViewModel` | The saved servers and the active one with its repositories, the page on screen (from the page factory), Back and Forward, the breadcrumb, what the page reports (`IShellStatus` goes here), the server workspace and the pages Azure lacks, focus mode, the alerts for the tray, and monitoring, the chat channels and the collector service, started and stopped with the window | `MainWindow` |
 | `TopBarViewModel` | Back and Forward with where they go, the breadcrumb, the page's kind, freshness and database, Pause and Refresh, the message, ☰'s words, Focus and the details button, as commands | `Controls/TopBar` |
-| `SidebarViewModel` | Pinned, collapsed or hidden (`SidebarLayout`), slid in over the page, the open group, the server header, the page highlighted, the alerts' count and the pages the server hasn't got | `Controls/WorkspaceShell` |
+| `SidebarViewModel` | Pinned, collapsed or hidden (`SidebarLayout`), slid in over the page, the server header, its finding dots (`SidebarFindings`), Recent row and saved servers' menu (#254), the page highlighted, the alerts' count and the pages the server hasn't got | `Controls/WorkspaceShell` |
 | `QuickSwitcherViewModel` | What is typed, the results in groups, the one selected, and opening it | `Controls/QuickSwitcherOverlay` |
 | `LoadingBarViewModel` | What SqlVitals is waiting on (#117): when the bar shows and what it says (the rules are `Engine/Loading/LoadingIndicator`, asked again on the app's clock), Stop, the page dimmed during a Refresh, and what a screen reader hears | `Controls/LoadingBar`, over the top of the frame |
 

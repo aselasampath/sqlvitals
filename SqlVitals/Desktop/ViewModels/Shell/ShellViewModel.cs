@@ -78,6 +78,8 @@ public sealed partial class ShellViewModel : ObservableObject
         // A page opened as a new visit from the sidebar: on the server whose pages are shown, switching to it if need be.
         Sidebar.PageRequested          += async tag => await Reported(NavigateTo(tag, serverId: WorkspaceServer, switchSource: ActivitySources.Sidebar), "open the page");
         Sidebar.MonitorToggleRequested += ToggleWorkspaceMonitoring;
+        // The server card's menu (#254): the same screen on another server, as the breadcrumb's does.
+        Sidebar.ServerRequested        += async id => await Reported(SwitchServerAsync(id), "switch server");
         Sidebar.ModeChosen             += SaveSidebarMode;
         // ☰ says what it does next.
         Sidebar.PropertyChanged += (_, e) =>
@@ -495,6 +497,7 @@ public sealed partial class ShellViewModel : ObservableObject
             .ToList();
         foreach (var item in _servers)
             item.UpdateHealth(_monitoring);
+        Sidebar.Servers = _servers;
         ShowWorkspace();
     }
 
@@ -506,10 +509,13 @@ public sealed partial class ShellViewModel : ObservableObject
     /// </summary>
     public Guid? WorkspaceServer => _history.Current is { } route ? Workspace.ServerOf(route) : null;
 
-    // The sidebar's server part follows the page: its server's header and pages, or how to open one.
+    // The sidebar's server part follows the page: its server's header, pages and Recent row (#254),
+    // or how to open one.
     private void ShowWorkspace()
     {
         Sidebar.ShowServer(Item(WorkspaceServer));
+        // Only routes still available, as the quick switcher lists them.
+        Sidebar.Recent = SidebarFindings.Recent(_recent.Items.Where(Availability()).ToList(), WorkspaceServer, _history.Current?.Tag);
         ApplyPagesAzureSqlLacks();
     }
 
@@ -1354,7 +1360,7 @@ public sealed partial class ShellViewModel : ObservableObject
         ShowWorkspace();
         RememberPage(shown);
 
-        // Highlight the page's button, and open its group.
+        // Highlight the page's button.
         System.Diagnostics.Debug.Assert(NavMenu.AllPages.Any(p => p.Tag == tag), $"No sidebar button for \"{tag}\": add it to NavMenu.");
         Sidebar.Current = tag;
 

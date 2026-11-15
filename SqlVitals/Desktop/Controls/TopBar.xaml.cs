@@ -241,33 +241,12 @@ public partial class TopBar : UserControl
     // Every saved server with its health, the open one ticked, then All servers.
     private void OpenServerMenu(FrameworkElement anchor, Guid current)
     {
-        var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
-        foreach (var server in _model.Servers)
-        {
-            var id   = server.Settings.Id;
-            var dot  = new Ellipse { Width = 8, Height = 8, StrokeThickness = 1.5, Fill = server.HealthFill, Stroke = server.HealthStroke, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
-            var name = new TextBlock { Text = server.DisplayName, VerticalAlignment = VerticalAlignment.Center };
-            var score = new TextBlock { Text = server.ScoreText, Foreground = server.ScoreBrush, FontWeight = FontWeights.Bold, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            var header = new DockPanel();
-            DockPanel.SetDock(dot, Dock.Left);
-            DockPanel.SetDock(score, Dock.Right);
-            header.Children.Add(dot);
-            header.Children.Add(score);
-            header.Children.Add(name);
-
-            var item = new MenuItem { Header = header, IsCheckable = false, IsChecked = id == current, ToolTip = server.ToolTipText };
-            AutomationProperties.SetName(item, server.Score is { } s ? $"{server.DisplayName}, health score {s.Value}" : server.DisplayName);
-            item.Click += (_, _) => _model.SwitchServer(id, current);
-            menu.Items.Add(item);
-        }
-        menu.Items.Add(new Separator());
-        var all = new MenuItem { Header = Breadcrumb.AllServers };
-        all.Click += (_, _) => _model.OpenCrumb(new Route("Home"));
-        menu.Items.Add(all);
-
-        menu.Closed += (_, _) => ServerMenu = null;
-        ServerMenu = menu;
-        menu.IsOpen = true;
+        ServerMenu = null;
+        var menu = ServerMenus.Open(anchor, _model.Servers, current,
+                                    id => _model.SwitchServer(id, current), () => _model.OpenCrumb(new Route("Home")),
+                                    closed: () => ServerMenu = null);
+        if (menu.IsOpen)
+            ServerMenu = menu;
     }
 
     // ── Page context ─────────────────────────────────────────────────────────

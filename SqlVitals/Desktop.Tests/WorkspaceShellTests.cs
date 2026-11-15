@@ -29,12 +29,16 @@ public sealed class WorkspaceShellTests
     private const double WindowHeight = 820;
 
     [Theory, MemberData(nameof(Themes))]
-    public void Pinned_Is232Wide_WithLabelsAndTheOpenGroupsPages(string theme) => OnSta(theme, (shell, host, bar, page) =>
+    public void Pinned_Is232Wide_WithLabelsAndEveryScreen(string theme) => OnSta(theme, (shell, host, bar, page) =>
     {
         Assert.Equal(SidebarMode.Pinned, shell.ViewModel.Shown);
         Assert.Equal(232, shell.ColumnDefinitions[0].ActualWidth);
         Assert.Equal(1088, page.ActualWidth);
         Assert.True(shell.Menu.Button("Processes").ActualHeight > 0);
+        // Every screen, with no group to open first (#254); the filter box under the app's name.
+        Assert.All(NavMenu.Groups.SelectMany(g => g.Pages), p => Assert.True(shell.Menu.Button(p.Tag).ActualHeight > 0, p.Tag));
+        Assert.True(shell.Menu.FilterBar.ActualHeight > 0);
+        Assert.True(shell.Menu.FilterBar.TranslatePoint(new Point(0, 0), shell).Y < shell.Menu.Button("Home").TranslatePoint(new Point(0, 0), shell).Y);
         Assert.Equal(Visibility.Collapsed, Rail(shell).Visibility);
 
         // The pin beside the name collapses it.
@@ -380,7 +384,123 @@ public sealed class WorkspaceShellTests
         Assert.Equal(SidebarMode.Hidden, shell.ViewModel.Shown);
     });
 
+    // ── Findings, Recent and the server menu (#254) ──────────────────────
+
+    [Theory, MemberData(nameof(Themes))]
+    public void Findings_ShowOnThePinnedRows_TheRailsGroupIcons_AndAnOpenFlyoutsRows(string theme) => OnSta(theme, (shell, host, _, _) =>
+    {
+        shell.ViewModel.ShowServer(Server(
+            (HealthIndicator.Blocking, HealthLevel.Warning, 240),
+            (HealthIndicator.Cpu, HealthLevel.Critical, 97),
+            (HealthIndicator.BackupsPastRpo, HealthLevel.Warning, 2)));
+        Layout(host);
+
+        Assert.Equal("blocking", shell.Menu.Mark("Processes").NameText.Text);
+        Assert.Equal("CPU", shell.Menu.Mark("ResourceQueries").NameText.Text);
+        Render(host, theme, "6-pinned-findings");
+
+        shell.ViewModel.Choose(SidebarMode.Collapsed);
+        Layout(host);
+
+        // A group's icon carries the worst dot of its screens.
+        Assert.Equal(Visibility.Visible, shell.Rail.Dot("Activity").Visibility);
+        Assert.Equal(Color(host, "HealthWarning"), ((SolidColorBrush)shell.Rail.Dot("Activity").Fill).Color);
+        Assert.Equal(Color(host, "HealthCritical"), ((SolidColorBrush)shell.Rail.Dot("Queries").Fill).Color);
+        Assert.Equal(Color(host, "HealthWarning"), ((SolidColorBrush)shell.Rail.Dot("Maintenance").Fill).Color);
+        Assert.All(["Overview", "Waits", "Resources", "Configuration"], id => Assert.Equal(Visibility.Collapsed, shell.Rail.Dot(id).Visibility));
+        Assert.Equal("Activity now, blocking, warning", AutomationProperties.GetName(shell.Rail.Group("Activity")));
+        Assert.Contains("Processes · Warning: ", (string)shell.Rail.Group("Activity").ToolTip);
+        Assert.Equal("Waits", AutomationProperties.GetName(shell.Rail.Group("Waits")));
+
+        // Its fly-out's rows show the same dot and name, and say the same.
+        Click(shell.Rail.Group("Activity"));
+        Layout(host);
+        var flyout = shell.Flyout!;
+        Assert.Equal("blocking", flyout.Mark("Processes").NameText.Text);
+        Assert.Equal(Visibility.Visible, flyout.Mark("Processes").Visibility);
+        Assert.Equal(Visibility.Collapsed, flyout.Mark("Deadlocks").Visibility);
+        var processes = flyout.Pages.Single(p => (string)p.Tag == "Processes");
+        Assert.Equal("Processes, blocking, warning", AutomationProperties.GetName(processes));
+        Assert.Equal(shell.Menu.Button("Processes").ToolTip, processes.ToolTip);
+        Render(host, theme, "7-flyout-findings");
+
+        // The next sample: blocking has cleared, while the fly-out is open.
+        shell.ViewModel.ShowServer(Server((HealthIndicator.Cpu, HealthLevel.Critical, 97)));
+        Assert.Equal(Visibility.Collapsed, flyout.Mark("Processes").Visibility);
+        Assert.Equal("Processes", AutomationProperties.GetName(processes));
+        Assert.Equal(Visibility.Collapsed, shell.Rail.Dot("Activity").Visibility);
+
+        // No server open: no dots.
+        shell.ViewModel.ShowServer(null);
+        Assert.All(NavMenu.Groups, g => Assert.Equal(Visibility.Collapsed, shell.Rail.Dot(g.Id).Visibility));
+    });
+
+    [Theory, MemberData(nameof(Themes))]
+    public void TheServerCardsName_ListsTheSavedServers_AndPickingOneAsksForIt(string theme) => OnSta(theme, (shell, host, _, _) =>
+    {
+        var other = new ConnectionSelectorItem(new ConnectionSettings { Server = "dev", Name = "DEV-SQL02" });
+        var open  = shell.ViewModel.Server!;
+        shell.ViewModel.Servers = [other, open];
+        var asked = new List<Guid>();
+        var pages = new List<string>();
+        shell.ViewModel.ServerRequested += asked.Add;
+        shell.ViewModel.PageRequested   += pages.Add;
+
+        Click(shell.Menu.ServerNameButton);
+        var menu = shell.ServerMenu!;
+        var items = menu.Items.OfType<MenuItem>().ToList();
+        Assert.Equal(["DEV-SQL02", "PROD-SQL01, health score 84", "All servers"], items.Select(AutomationProperties.GetName).Select(n => n.Length == 0 ? "All servers" : n));
+        Assert.True(items[1].IsChecked);
+        Assert.False(items[0].IsChecked);
+
+        items[0].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Equal([other.Settings.Id], asked);
+        items[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));   // the open one: nothing
+        Assert.Single(asked);
+        items[2].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Equal(["Home"], pages);
+        menu.IsOpen = false;
+    });
+
+    [Theory, MemberData(nameof(Themes))]
+    public void TheRecentRow_FollowsTheViewModel(string theme) => OnSta(theme, (shell, host, _, _) =>
+    {
+        Assert.Equal(Visibility.Collapsed, shell.Menu.RecentRow.Visibility);
+        shell.ViewModel.Recent = ["Waits", "Backups"];
+        Layout(host);
+        Assert.Equal(["Waits", "Backups"], shell.Menu.RecentChips.Select(c => (string)c.Tag));
+        Assert.Equal(Visibility.Visible, shell.Menu.RecentRow.Visibility);
+        Render(host, theme, "8-recent");
+    });
+
+    [Theory, MemberData(nameof(Themes))]
+    public void Hidden_EscInTheFilterBox_ClearsItFirst_ThenClosesTheSlidInMenu(string theme) => OnSta(theme, (shell, host, _, _) =>
+    {
+        shell.ViewModel.Choose(SidebarMode.Hidden);
+        shell.ViewModel.ToggleFromBar();
+        Assert.True(shell.ViewModel.IsSlidOver);
+
+        shell.Menu.Filter.Text = "wait";
+        Assert.True(PressKey(shell.Menu.Filter, Key.Escape, preview: true));
+        Assert.Equal(string.Empty, shell.Menu.Filter.Text);
+        Assert.True(shell.ViewModel.IsSlidOver);
+
+        PressKey(shell.Menu.Filter, Key.Escape, preview: true);
+        Assert.False(shell.ViewModel.IsSlidOver);
+    });
+
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private static Color Color(FrameworkElement element, string key) => ((SolidColorBrush)element.FindResource(key)).Color;
+
+    // PROD-SQL01 with the score of these checks.
+    private static ConnectionSelectorItem Server(params (HealthIndicator Indicator, HealthLevel Level, double Value)[] checks)
+    {
+        var item  = Server();
+        var score = HealthScore.From(checks.Select(c => new HealthReading(c.Indicator, c.Level, c.Value, new HealthThreshold(1, 2), null)).ToList(), DateTime.Now);
+        typeof(ConnectionSelectorItem).GetProperty(nameof(ConnectionSelectorItem.Score))!.SetValue(item, score);
+        return item;
+    }
 
     private static Border Pinned(WorkspaceShell shell) => (Border)shell.Children[0];
     private static Border Rail(WorkspaceShell shell)   => (Border)shell.Children[1];
@@ -506,7 +626,7 @@ public sealed class WorkspaceShellTests
                 shell.ViewModel.ShowServer(server);
                 shell.ViewModel.Current = "Processes";
                 shell.SetCount("Alerts", 3, "3 active alerts");
-                shell.VersionText.Text = "v0.58.0";
+                shell.VersionText.Text = "v0.89.0";
                 Layout(host);
 
                 test(shell, host, bar, page);

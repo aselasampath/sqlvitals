@@ -65,7 +65,7 @@ Wherever the score is shown, it comes **second**. First comes the worst state an
 |---|---|
 | A tile on **All servers** | **Critical: blocking for 4 min**, then *Score 88 / 100* |
 | The server's **Overview** | the same line above the number |
-| The sidebar's server header | the same line under the server's name |
+| The sidebar's server header | the same line under the server's name, on one line from 0.89.0 (hover it for all of it) |
 | **Settings → Connections** | *Critical: blocking for 4 min · score 88* on the connection's card |
 
 When several checks are past a threshold, it names the worst and costliest, and how many more: *Warning: CPU at 82 % (+1 more)*. A healthy server says *Healthy: every check passes*, or *Healthy: 9 of 10 checks pass, 1 has no data* when a check isn't reported. So a score of 88 never sits beside a 🔴 without the reason.
@@ -113,6 +113,30 @@ The panel calls each check's share its **worth**. With every check reporting and
 | CPU at 99 % (critical), TempDB not reported | CPU is worth 17 of 100 among the nine that reported: 100 − 17 = **83** |
 
 The score's **colour is the dot's colour**, not a banding of the number. A single critical check can leave a score of 80 or more, but it still shows 🔴, because something is critical.
+
+### The sidebar's finding dots
+
+From 0.89.0 the sidebar also points at **where to look**. For the server you've opened, each check past its warning or critical threshold puts a **●** in its colour at the right of the screen that explains it, with the check's short name before it: *Processes · blocking*. It is the screen the check's link opens on the Overview and in the score's panel, and the one an alert's evidence opens:
+
+| Check | Screen marked | Short name |
+|---|---|---|
+| CPU | Resource Queries | CPU |
+| Blocking | Processes | blocking |
+| Open transaction | Processes | open transaction |
+| Page life expectancy | Memory | PLE low |
+| Memory grants pending | Memory | grants pending |
+| Log space used | DB Storage | log full |
+| TempDB space used | TempDB | space |
+| Azure IO | Live charts | Azure IO |
+| Disk free | File I/O | disk low |
+| Backups past RPO | Backups | RPO missed |
+| Failed Agent jobs | Agent Jobs | job failed |
+
+- **Two checks on one screen** (Blocking and Open transaction on Processes, say) show the worse one; hover the row to see both, with their figures: *Critical: transaction open 45 min*, *Warning: blocking for 4 min*.
+- **They move with the score**: every sample (10 seconds by default) they are drawn again, and a check back within its thresholds loses its dot. A connection that isn't monitored (or is paused), or can't be reached, has none, and so does a screen the server hasn't got (TempDB on Azure SQL Database, say).
+- **Collapsed**, a group's icon carries the worst dot of its screens, and its fly-out's rows show the same dots and names.
+- **A screen reader** announces a marked row with its check and level: *Processes, blocking, warning*.
+- **On the light theme** the short name is a darker shade of the check's colour, so small text stays readable; the dot is the check's own colour.
 
 ### Good to know
 

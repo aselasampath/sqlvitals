@@ -53,11 +53,14 @@ From 0.56.0 one **top bar** across the screen says which server, which database 
 
 | Part | What it does |
 |---|---|
+| **Find a screen** | From 0.89.0, at the top of the sidebar, under *SqlVitals*: type a few letters and the sidebar keeps only the screens whose name or description matches (*blocking* keeps Processes), as **Ctrl+K** matches them. **Enter** opens the best match (a screen whose name starts with what you typed before one that only matches by its description), **↓** goes to the first one kept, **Esc** clears the box. Picking a screen empties it. The **Ctrl K** at its right is a reminder that Ctrl+K also finds servers, tables and settings. |
 | **The sidebar's global part** | From 0.57.0, at the top: **All servers** (every server at a glance, see [Your Servers](Your-Servers.md)), **Alerts** with the number of active alerts, and **Export / AI**. **Settings** is at the foot. |
-| **The server part** | From 0.57.0, under it: the server you've opened, its **health dot**, **health score** and **▶ / ■** to start or stop monitoring it, then its screens in groups. Open a server from its tile on **All servers**, or switch with the breadcrumb's server menu. On All servers, Alerts and Settings it says *Open a server from All servers*. See [The server workspace](#the-server-workspace). |
+| **The server part** | From 0.57.0, under it: the server you've opened, its **health dot**, **health score** and **▶ / ■** to start or stop monitoring it, then every one of its screens. From 0.89.0 the server's name is a menu of your saved servers, with their health and score: pick one to see the same screen on it, as from the breadcrumb. Open a server from its tile on **All servers**. On All servers, Alerts and Settings it says *Open a server from All servers*. See [The server workspace](#the-server-workspace). |
+| **Recent** | From 0.89.0, under the server: the last three screens of this server you opened, other than the one you're on, as small chips after a 🕘. Click one to go back to it. It appears once there is one. |
 | **Health dot** | 🟢 healthy, 🟠 warning, 🔴 critical or unreachable, ◯ not monitored. Hover it to see why. See [Health Dot](Health-Dot-and-Background-Monitoring.md). |
 | **Health score** | The number beside the dot: 100 is healthy, lower needs attention, 0 is unreachable. Click it, or Tab to it and press Enter, to see which checks lowered it. See [Health score](Health-Dot-and-Background-Monitoring.md#health-score). |
-| **Groups** | The server's screens, grouped by the question you're asking (see the table below). One group is open at a time: the one holding the screen you're on. Click another group's name, or Tab to it and press Enter or Space, to open it instead; hover it for the question it answers. A closed group holding the screen you're on is shown in the accent colour with a **●**. |
+| **Groups** | The server's screens, under small grey captions naming the question you're asking (see the table below); hover a caption for the question. From 0.89.0 every screen is always shown, so any screen is one click away: there is nothing to open first (before, a group had to be opened, and one stayed open at a time). The screen you're on is highlighted. In a window under about 1000 px tall the list scrolls between the filter box and Settings. |
+| **Finding dots** | From 0.89.0, a screen that explains a health check past its threshold right now has a **●** at the right of its row in the check's colour, with the check's short name before it: *Processes · blocking*, *Backups · RPO missed*. Two checks on one screen show the worse; hover the row to see them all. The dots follow the server's score, every 10 seconds. See [Which screen each check marks](Health-Dot-and-Background-Monitoring.md#the-sidebars-finding-dots). |
 | **Buttons** | One per screen, with an icon in the global part. A dimmed button marked **N/A** is a screen the server doesn't have (on Azure SQL Database: TempDB, Agent Jobs, Backups and Security Audit); hover it to see why. |
 | **☰ Menu** | From 0.58.0, at the far left of the top bar: collapses the sidebar to icons, then hides it, and while it is hidden shows it over the screen. **Ctrl+B** does the same from anywhere. With the sidebar hidden, ☰ carries the number of active alerts. See [Pin, collapse or hide the sidebar](#pin-collapse-or-hide-the-sidebar). |
 | **← Back / → Forward** | From 0.55.0, at the left of the top bar: back to the screens you came from, and forward again, as in a browser. Also **Alt+←** / **Alt+→** and the mouse's back and forward buttons. Hover a button to see where it goes. Going back to another server's screen switches to that server. |
@@ -78,18 +81,18 @@ A server's groups (from 0.48.0; from 0.57.0 Alerts is in the global part; from 0
 | **Waits** | Waits | What is the server waiting on, and how has that changed over time? |
 | **Queries** | Resource Queries, Query Store, Query Regressions, Plan Cache Health (with Implicit Conversions), SP Trace | Which queries cost the most, which got slower, and why? |
 | **Resources** | Memory, TempDB, File I/O, DB Storage, Perfmon | Is memory, TempDB, disk or storage the bottleneck? |
-| **Maintenance** | Index Health, Stale Stats, Backups, Agent Jobs | Are indexes, statistics, backups and jobs looked after? |
+| **Maintenance** | Index Health, Stale Stats, Table Statistics, Backups, Agent Jobs | Are indexes, statistics, backups and jobs looked after? |
 | **Configuration** | Config Checks, Security Audit | Is the server set up correctly and securely? |
 
 ### The server workspace
 
 From 0.57.0 you open a server and work inside it, instead of picking one in a box at the top of the sidebar:
 
-![The sidebar with Production open: All servers, Alerts and Export / AI, the server's header with its health and Start, and its groups with Activity now open](images/sidebar/server.png) ![With no server open, the server part says how to open one](images/sidebar/no-server.png)
+![The sidebar with PROD-SQL01 open: the filter box, All servers, Alerts and Export / AI, the server's card with its score and verdict, the Recent chips, and every screen under its group's caption, with dots on Processes, Resource Queries and Backups](images/sidebar/server.png) ![With no server open, the server part says how to open one](images/sidebar/no-server.png) ![The filter box with "stat" typed: only Deadlocks, Stale Stats and Table Statistics are left, under their captions](images/sidebar/filter.png)
 
 - **Open a server** from its tile on **All servers** (**Open**, or **⋯ → Open**). It opens on its **[Overview](Your-Servers.md#a-servers-overview)**: its active alerts with the evidence for each, what is costing its score points, its headline numbers, what happened since you last looked, and its charts. A Windows notification for an alert opens it too.
 - **Its screens** are in the sidebar under its name. Opening one makes that server the one SqlVitals queries (the *active connection*); a server whose password isn't saved opens Settings to ask for it first.
-- **Switch server** with the breadcrumb's server menu (*Production ▾*): the same screen opens on the other server, or its Overview if it hasn't got that screen (Azure SQL Database has no Agent Jobs, for one).
+- **Switch server** with the server's name in the sidebar (from 0.89.0) or the breadcrumb's server menu (*Production ▾*): the same screen opens on the other server, or its Overview if it hasn't got that screen (Azure SQL Database has no Agent Jobs, for one).
 - **Start or stop monitoring** with **▶ / ■** in the server's header, or in its tile's **⋯** menu on All servers, which also has **Why this score…** and **Edit connection…** for every server.
 - **Next time**, SqlVitals opens on the screen and server you were on when you closed it (not Settings). Until it has one, it opens on All servers with two or more connections, the server's Overview with one.
 
@@ -99,20 +102,20 @@ From 0.58.0 the sidebar has three states, so a wide grid can have the screen and
 
 | State | Width | What you see |
 |---|---|---|
-| **Pinned** (the default) | 232 px | The sidebar as above: names, the server's header, and the open group's screens. **Unpin** (the pin beside *SqlVitals*) collapses it. |
-| **Collapsed** | 56 px | An icon for each global screen and each group, with its name as a tooltip, and the server's health dot and score. Point at a group's icon (for a moment) or click it to see its screens beside it, with the group's question and **Pin the menu open**. That closes on **Esc**, a click elsewhere, picking a screen, or, if pointing opened it, moving the pointer away. The pin at the foot pins it again. |
+| **Pinned** (the default) | 232 px | The sidebar as above: the filter box, names, the server's card, the Recent row and every screen under its caption, with the finding dots. **Unpin** (the pin beside *SqlVitals*) collapses it. |
+| **Collapsed** | 56 px | An icon for each global screen and each group, with its name as a tooltip, and the server's health dot and score. From 0.89.0 a group's icon carries the worst finding dot of its screens, and its tooltip names them. Point at a group's icon (for a moment) or click it to see its screens beside it, with the group's question and **Pin the menu open**. That closes on **Esc**, a click elsewhere, picking a screen, or, if pointing opened it, moving the pointer away. The pin at the foot pins it again. |
 | **Hidden** | 0 px | Nothing: the screen has the whole width. Click **☰**, or rest the pointer on the window's left edge, and the sidebar slides in over the screen; it goes again when you pick a screen, click elsewhere or press **Esc**. Its pin (**Pin the menu open**) pins it, as does **Ctrl+B**. |
 
-![Pinned: the sidebar with names and the open group's screens, beside Processes](images/sidebar/pinned.png)
+![Pinned: the sidebar with the filter box, names and every screen, beside Processes; in this 820 px window the list scrolls](images/sidebar/pinned.png)
 
-![Collapsed: icons only, the server's dot and score, and the Maintenance group's screens beside its icon](images/sidebar/collapsed.png)
+![Collapsed: icons only, the server's dot and score, dots on the Activity now, Queries and Maintenance icons, and Activity now's screens beside its icon with Processes · blocking](images/sidebar/collapsed.png)
 
 ![Hidden: the screen takes the whole width, and ☰ shows 3 active alerts](images/sidebar/hidden.png) ![Hidden, slid in over the screen after clicking ☰](images/sidebar/slid-over.png)
 
 - **The alert count and the server's score** stay in sight: on the Alerts icon and under the server's dot when collapsed, on **☰** when hidden (the breadcrumb has the server's score).
 - **In a window narrower than 1280 px** a pinned sidebar shows collapsed, and widening the window pins it again; your choice isn't changed. Pin it in the narrow window and it stays pinned.
 - **The state is saved** and used at the next start. It isn't recorded in the [activity log](Settings.md#activity-log): it's a layout preference.
-- **With the keyboard alone:** **Ctrl+B** changes the state. Collapsed, **Tab** or **↑ / ↓** reach the icons; **Enter** or **→** on a group opens its screens with the first (or the one you're on) selected, **↑ / ↓** move between them, and **Esc** or **←** goes back to the icon. Hidden, **Tab** to **☰** and press **Enter**: the sidebar slides in with *All servers* selected, **Tab** stays inside it until it closes, and **Esc** closes it and goes back to **☰**.
+- **With the keyboard alone:** **Ctrl+B** changes the state. Pinned, **Tab** or **↑ / ↓** go from screen to screen; the captions are not stops, and a screen reader announces each as the heading of the screens under it, and a screen with a dot with its check (*Processes, blocking, warning*). Collapsed, **Tab** or **↑ / ↓** reach the icons; **Enter** or **→** on a group opens its screens with the first (or the one you're on) selected, **↑ / ↓** move between them, and **Esc** or **←** goes back to the icon. Hidden, **Tab** to **☰** and press **Enter**: the sidebar slides in with *All servers* selected, **Tab** stays inside it until it closes, and **Esc** closes it and goes back to **☰**.
 
 ### Jump to a server, screen or setting
 
@@ -158,7 +161,7 @@ Together with **Compact** [grid density](Working-with-Grids.md#grid-density) it 
 | **F11** | [Focus mode](#focus-mode) on or off: full screen, without the sidebar (from 0.64.0) |
 | **F5** | Refresh the screen |
 | **Alt+←** / **Alt+→** | Back and Forward; the mouse's back and forward buttons too |
-| **Esc** | Close the quick switcher, a group's screens beside the collapsed sidebar, the sidebar slid in over the screen, or a floating details drawer; then leave focus mode |
+| **Esc** | Clear the sidebar's filter box, close the quick switcher, a group's screens beside the collapsed sidebar, the sidebar slid in over the screen, or a floating details drawer; then leave focus mode |
 
 ### Verdict first, then the detail
 

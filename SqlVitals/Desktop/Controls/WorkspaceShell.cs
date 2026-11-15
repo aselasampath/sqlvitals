@@ -48,9 +48,6 @@ public sealed class WorkspaceShell : Grid
     // Set while the pointer resting slides the sidebar in, for the slide to know.
     private bool _slidingByHover;
 
-    // The pages' buttons' own tooltips, put back when the open server has them again.
-    private readonly Dictionary<string, object?> _ownToolTips = new();
-
     // The keyboard was sent into the fly-out: Esc takes it back to the group's icon.
     private bool _flyoutHasKeyboard;
 
@@ -89,6 +86,7 @@ public sealed class WorkspaceShell : Grid
         Menu.PageRequested          += PickPage;
         Menu.ScoreRequested         += () => ScoreRequested?.Invoke(Menu.ScoreButton);
         Menu.MonitorToggleRequested += () => _model.ToggleMonitoring();
+        Menu.ServerMenuRequested    += OpenServerMenu;
         Rail.PageRequested  += PickPage;
         Rail.ScoreRequested += () => ScoreRequested?.Invoke(Rail.ServerMark);
         Rail.PinRequested   += () => _model.Choose(SidebarMode.Pinned);
@@ -107,15 +105,6 @@ public sealed class WorkspaceShell : Grid
                 CancelHover();
                 if (Flyout is not null && _flyoutByHover)
                     Leave(() => CloseFlyout(focusIcon: false));
-            };
-
-            // One group open at a time, as the view model has it.
-            var expander = Menu.Group(group.Id);
-            expander.Expanded  += (_, e) => { if (ReferenceEquals(e.OriginalSource, expander)) _model.OpenGroup = group.Id; };
-            expander.Collapsed += (_, e) =>
-            {
-                if (ReferenceEquals(e.OriginalSource, expander) && _model.OpenGroup == group.Id)
-                    _model.OpenGroup = null;
             };
         }
 
@@ -136,9 +125,10 @@ public sealed class WorkspaceShell : Grid
             ShowServer();
             Menu.Highlight(value.Current);
             Rail.Highlight(value.Current);
-            ShowOpenGroup();
             ShowAlertCount();
             ShowUnavailable();
+            ShowFindings();
+            Menu.ShowRecent(value.Recent);
             if (value.IsSlidOver) ShowSlidIn();
             else                  ApplyMode();
         }
@@ -159,9 +149,10 @@ public sealed class WorkspaceShell : Grid
                 Menu.Highlight(_model.Current);
                 Rail.Highlight(_model.Current);
                 break;
-            case nameof(SidebarViewModel.OpenGroup):   ShowOpenGroup(); break;
             case nameof(SidebarViewModel.AlertsToolTip): ShowAlertCount(); break;
             case nameof(SidebarViewModel.Unavailable): ShowUnavailable(); break;
+            case nameof(SidebarViewModel.Findings):    ShowFindings(); break;
+            case nameof(SidebarViewModel.Recent):      Menu.ShowRecent(_model.Recent); break;
         }
     }
 
@@ -171,8 +162,14 @@ public sealed class WorkspaceShell : Grid
     /// <summary>The collapsed sidebar.</summary>
     internal NavRail Rail { get; private set; } = null!;
 
-    /// <summary>The app's version under its name.</summary>
+    /// <summary>The app's version beside its name.</summary>
     internal TextBlock VersionText { get; private set; } = null!;
+
+    /// <summary>The pinned sidebar's scrolling middle, between the filter box and Settings.</summary>
+    internal ScrollViewer MenuScroll { get; private set; } = null!;
+
+    /// <summary>The server card's menu of saved servers (#254), while it is open; for tests.</summary>
+    internal ContextMenu? ServerMenu { get; private set; }
 
     /// <summary>Beside the app's name: collapse the pinned sidebar, or pin the slid-in one.</summary>
     internal Button PinButton { get; private set; } = null!;
@@ -238,11 +235,25 @@ public sealed class WorkspaceShell : Grid
             CloseFlyout(focusIcon: false);
     }
 
-    // The pinned sidebar's groups: the one the view model has open.
-    private void ShowOpenGroup()
+    // The finding dots (#254): on the pinned sidebar's rows, the rail's group icons and an open fly-out's rows.
+    private void ShowFindings()
     {
-        foreach (var group in NavMenu.Groups)
-            Menu.Group(group.Id).IsExpanded = group.Id == _model.OpenGroup;
+        Menu.ShowFindings(_model.Findings);
+        Rail.ShowFindings(_model.Findings);
+        Flyout?.ShowFindings(_model.Findings);
+    }
+
+    // The server card's name: the saved servers, as the breadcrumb's server part lists them.
+    private void OpenServerMenu()
+    {
+        if (_model.Server is not { } server)
+            return;
+        var menu = ServerMenus.Open(Menu.ServerNameButton, _model.Servers, server.Settings.Id,
+                                    id => { CloseSlideOver(returnFocus: false); _model.SwitchServer(id); },
+                                    () => PickPage("Home"),
+                                    closed: () => ServerMenu = null);
+        if (menu.IsOpen)
+            ServerMenu = menu;
     }
 
     /// <summary>A count on a page's button and icon, e.g. Alerts'; 0 hides it.</summary>
@@ -255,19 +266,7 @@ public sealed class WorkspaceShell : Grid
     private void ShowAlertCount() => SetCount("Alerts", _model.AlertCount, _model.AlertsToolTip);
 
     // The pages the open server hasn't got: disabled, saying why; the others as they were.
-    private void ShowUnavailable()
-    {
-        foreach (var tag in _ownToolTips.Keys.Union(_model.Unavailable.Keys).ToList())
-        {
-            var button = Menu.Button(tag);
-            if (!_ownToolTips.ContainsKey(tag))
-                _ownToolTips[tag] = button.ToolTip;
-            var disabled = _model.Unavailable.TryGetValue(tag, out var reason);
-            button.IsEnabled = !disabled;
-            button.ToolTip   = disabled ? reason : _ownToolTips[tag];
-            ToolTipService.SetShowOnDisabled(button, true);
-        }
-    }
+    private void ShowUnavailable() => Menu.SetUnavailable(_model.Unavailable);
 
     // A page picked anywhere closes a fly-out or the slid-in sidebar it was picked in.
     private void PickPage(string tag)
@@ -309,7 +308,7 @@ public sealed class WorkspaceShell : Grid
 
         CloseFlyout(focusIcon: false);
         var group  = NavMenu.Groups.First(g => g.Id == groupId);
-        var flyout = new NavFlyout(group, _model.Current, Menu.Button);
+        var flyout = new NavFlyout(group, _model.Current, Menu.Button, _model.Findings);
         flyout.PageRequested  += PickPage;
         flyout.PinRequested   += () => _model.Choose(SidebarMode.Pinned);
         flyout.CloseRequested += () => CloseFlyout(focusIcon: true);
@@ -463,6 +462,9 @@ public sealed class WorkspaceShell : Grid
         base.OnPreviewKeyDown(e);
         if (e.Key != Key.Escape || e.Handled)
             return;
+        // Esc in the filter box clears it first (#254); pressed again, it closes the menu.
+        if (IsWithin(e.OriginalSource as DependencyObject, Menu.Filter) && Menu.Filter.Text.Length > 0)
+            return;
         if (Flyout is { } flyout)
         {
             CloseFlyout(focusIcon: _flyoutHasKeyboard || flyout.IsKeyboardFocusWithin);
@@ -537,31 +539,36 @@ public sealed class WorkspaceShell : Grid
 
     private Border BuildPinned()
     {
-        var name = new TextBlock { Text = "SqlVitals", FontFamily = new FontFamily("Segoe UI"), FontSize = 18, FontWeight = FontWeights.Bold };
+        // The name and version on one line (#254), so every screen fits a 1000 px window.
+        var name = new TextBlock { Text = "SqlVitals", FontFamily = new FontFamily("Segoe UI"), FontSize = 17, FontWeight = FontWeights.Bold };
         name.SetResourceReference(TextBlock.ForegroundProperty, "Accent");
-        VersionText = new TextBlock { FontFamily = new FontFamily("Segoe UI"), FontSize = 10, Margin = new Thickness(0, 2, 0, 0) };
+        VersionText = new TextBlock { FontFamily = new FontFamily("Segoe UI"), FontSize = 10, Margin = new Thickness(8, 0, 0, 0) };
         VersionText.SetResourceReference(TextBlock.ForegroundProperty, "TextMuted");
-        var logo = new StackPanel();
-        logo.Children.Add(name);
-        logo.Children.Add(VersionText);
+        var logo = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        logo.Inlines.Add(new System.Windows.Documents.InlineUIContainer(name) { BaselineAlignment = BaselineAlignment.Baseline });
+        logo.Inlines.Add(new System.Windows.Documents.InlineUIContainer(VersionText) { BaselineAlignment = BaselineAlignment.Baseline });
 
-        PinButton = new Button { Width = 32, Height = 32, FontSize = 14, VerticalAlignment = VerticalAlignment.Top };
+        PinButton = new Button { Width = 28, Height = 28, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
         PinButton.SetResourceReference(StyleProperty, "NavRailButton");
         PinButton.Click += PinButton_Click;
 
-        var header = new DockPanel { Margin = new Thickness(16, 18, 8, 4) };
+        var title = new DockPanel { Margin = new Thickness(16, 6, 8, 2) };
         DockPanel.SetDock(PinButton, Dock.Right);
-        header.Children.Add(PinButton);
-        header.Children.Add(logo);
+        title.Children.Add(PinButton);
+        title.Children.Add(logo);
+
+        // Under the name: the filter box (#254), never scrolled away.
+        var header = new StackPanel();
+        header.Children.Add(title);
         DockPanel.SetDock(header, Dock.Top);
 
         // Settings, at the foot.
-        var footer = new StackPanel { Margin = new Thickness(0, 4, 0, 10) };
+        var footer = new StackPanel { Margin = new Thickness(0, 2, 0, 4) };
         DockPanel.SetDock(footer, Dock.Bottom);
 
         // The global pages, then the open server's (#141).
         var panel  = new StackPanel();
-        var scroll = new ScrollViewer
+        MenuScroll = new ScrollViewer
         {
             Content = panel, Background = Brushes.Transparent,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
@@ -570,8 +577,9 @@ public sealed class WorkspaceShell : Grid
         var dock = new DockPanel();
         dock.Children.Add(header);
         dock.Children.Add(footer);
-        dock.Children.Add(scroll);
+        dock.Children.Add(MenuScroll);
         Menu = new NavSidebar(panel, footer);
+        header.Children.Add(Menu.FilterBar);
 
         var border = new Border { Child = dock, BorderThickness = new Thickness(0, 0, 1, 0), RenderTransform = _slide };
         border.SetResourceReference(Border.BackgroundProperty, "BgSidebar");

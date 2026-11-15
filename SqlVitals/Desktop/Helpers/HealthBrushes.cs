@@ -15,13 +15,16 @@ public static class HealthBrushes
     public static Brush Red   => ThemeResources.BrushOf("HealthCritical");
     public static Brush Grey  => ThemeResources.BrushOf("HealthNone");
 
-    public static Brush For(HealthLevel level) => level switch
+    public static Brush For(HealthLevel level) => ThemeResources.BrushOf(KeyFor(level));
+
+    /// <summary>A level's theme key, for an element that follows the theme by resource reference (#254).</summary>
+    public static string KeyFor(HealthLevel level) => level switch
     {
-        HealthLevel.Healthy     => Green,
-        HealthLevel.Warning     => Amber,
-        HealthLevel.Critical    => Red,
-        HealthLevel.Unavailable => Red,
-        _                       => Grey,
+        HealthLevel.Healthy     => "HealthGood",
+        HealthLevel.Warning     => "HealthWarning",
+        HealthLevel.Critical    => "HealthCritical",
+        HealthLevel.Unavailable => "HealthCritical",
+        _                       => "HealthNone",
     };
 
     /// <summary>A Home tile's status (#130), as the dot's colour for its level; grey while off or waiting.</summary>

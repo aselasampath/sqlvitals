@@ -1,5 +1,6 @@
 using SqlVitals.Desktop.Services;
 using SqlVitals.Desktop.ViewModels.Shell;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Tests;
 
@@ -78,19 +79,98 @@ public sealed class ShellPartsViewModelTests
     }
 
     [Fact]
-    public void ThePageOnScreen_OpensItsGroup_AndTheAlertsSayHowMany()
+    public void TheAlertsSayHowMany()
     {
         var sidebar = new SidebarViewModel { Current = "TempDb" };
-
-        Assert.Equal("Resources", sidebar.OpenGroup);
-        sidebar.Current = "Alerts";
-        Assert.Equal("Resources", sidebar.OpenGroup);   // a page about every server leaves it as it is
 
         Assert.Equal(NavMenu.AlertsToolTip, sidebar.AlertsToolTip);
         sidebar.AlertCount = 1;
         Assert.Equal("1 active alert", sidebar.AlertsToolTip);
         sidebar.AlertCount = 3;
         Assert.Equal("3 active alerts", sidebar.AlertsToolTip);
+    }
+
+    [Fact]
+    public void TheOpenServersScore_GivesTheFindingDots_AndNoServerNone()
+    {
+        var sidebar = new SidebarViewModel();
+        var changed = new List<string?>();
+        sidebar.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        Assert.Empty(sidebar.Findings);
+
+        var server = Monitored((HealthIndicator.Blocking, HealthLevel.Warning, 240), (HealthIndicator.TempDbSpace, HealthLevel.Critical, 95));
+        sidebar.ShowServer(server);
+        Assert.Equal(["Processes", "TempDb"], sidebar.Findings.Keys.Order());
+        Assert.Contains(nameof(SidebarViewModel.Findings), changed);
+
+        sidebar.ShowServer(null);
+        Assert.Empty(sidebar.Findings);
+    }
+
+    [Fact]
+    public void ANewSample_WithTheSameFindings_DoesNotRedrawThem()
+    {
+        var sidebar = new SidebarViewModel();
+        sidebar.ShowServer(Monitored((HealthIndicator.Blocking, HealthLevel.Warning, 240)));
+        var changed = new List<string?>();
+        sidebar.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        sidebar.ShowServer(Monitored((HealthIndicator.Blocking, HealthLevel.Warning, 240)));
+        Assert.DoesNotContain(nameof(SidebarViewModel.Findings), changed);
+
+        sidebar.ShowServer(Monitored((HealthIndicator.Blocking, HealthLevel.Critical, 400)));
+        Assert.Contains(nameof(SidebarViewModel.Findings), changed);
+    }
+
+    [Fact]
+    public void AServerNotMonitored_OrPaused_HasNoDots_ItsLastScoreIsNoLongerMeasured()
+    {
+        var sidebar = new SidebarViewModel();
+        var stopped = Monitored((HealthIndicator.Blocking, HealthLevel.Critical, 400));
+        typeof(ConnectionSelectorItem).GetProperty(nameof(ConnectionSelectorItem.IsMonitoring))!.SetValue(stopped, false);
+
+        sidebar.ShowServer(stopped);
+        Assert.Empty(sidebar.Findings);
+    }
+
+    [Fact]
+    public void AScreenTheServerLacks_HasNoDot()
+    {
+        // Azure SQL Database: TempDB space can be graded, but its screen can't be opened.
+        var sidebar = new SidebarViewModel();
+        sidebar.ShowServer(Monitored((HealthIndicator.TempDbSpace, HealthLevel.Critical, 95), (HealthIndicator.Cpu, HealthLevel.Warning, 85)));
+        Assert.Equal(["ResourceQueries", "TempDb"], sidebar.Findings.Keys.Order());
+
+        sidebar.Unavailable = new Dictionary<string, string> { ["TempDb"] = "Not available on Azure SQL Database" };
+        Assert.Equal(["ResourceQueries"], sidebar.Findings.Keys);
+        sidebar.Unavailable = new Dictionary<string, string>();
+        Assert.Equal(["ResourceQueries", "TempDb"], sidebar.Findings.Keys.Order());
+    }
+
+    private static ConnectionSelectorItem Monitored(params (HealthIndicator Indicator, HealthLevel Level, double Value)[] checks)
+    {
+        var server = new ConnectionSelectorItem(new ConnectionSettings { Server = "prod", Name = "PROD-SQL01" });
+        void Set(string name, object value) => typeof(ConnectionSelectorItem).GetProperty(name)!.SetValue(server, value);
+        Set(nameof(ConnectionSelectorItem.Score), HealthScore.From(
+            checks.Select(c => new HealthReading(c.Indicator, c.Level, c.Value, new HealthThreshold(1, 2), null)).ToList(), DateTime.Now));
+        Set(nameof(ConnectionSelectorItem.IsMonitoring), true);
+        return server;
+    }
+
+    [Fact]
+    public void TheServerMenu_AsksForAnotherServer_NotTheOpenOne()
+    {
+        var sidebar = new SidebarViewModel();
+        var asked = new List<Guid>();
+        sidebar.ServerRequested += asked.Add;
+        var open  = new ConnectionSelectorItem(new ConnectionSettings { Server = "a", Name = "A" });
+        var other = new ConnectionSelectorItem(new ConnectionSettings { Server = "b", Name = "B" });
+        sidebar.Servers = [open, other];
+        sidebar.ShowServer(open);
+
+        sidebar.SwitchServer(open.Settings.Id);
+        sidebar.SwitchServer(other.Settings.Id);
+        Assert.Equal([other.Settings.Id], asked);
     }
 
     // ── The top bar ──────────────────────────────────────────────────────
