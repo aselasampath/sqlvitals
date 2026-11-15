@@ -17,13 +17,18 @@ internal sealed class NavFlyout : Border
     public const double FlyoutWidth = 240;
 
     private readonly List<Button> _pages = new();
+    private readonly Dictionary<string, FindingMark> _marks = new();
+    private readonly Func<string, Button> _sidebarButton;
     private readonly string? _current;
 
     /// <param name="current">The page on screen, highlighted if it is in the group.</param>
     /// <param name="sidebarButton">The pinned sidebar's button for a page: a page this server
-    /// lacks is disabled there, with the reason as its tooltip, and is the same here.</param>
-    public NavFlyout(NavGroup group, string? current, Func<string, Button> sidebarButton)
+    /// lacks is disabled there, with the reason as its tooltip, and is the same here; so are a
+    /// finding's tooltip and spoken name (#254).</param>
+    /// <param name="findings">The open server's finding dots, shown on the same rows as in the pinned sidebar.</param>
+    public NavFlyout(NavGroup group, string? current, Func<string, Button> sidebarButton, IReadOnlyDictionary<string, PageFinding> findings)
     {
+        _sidebarButton = sidebarButton;
         GroupId  = group.Id;
         _current = current;
         Width = FlyoutWidth;
@@ -48,9 +53,8 @@ internal sealed class NavFlyout : Border
         foreach (var page in group.Pages)
         {
             var source = sidebarButton(page.Tag);
-            var button = PageButton(page, page.Tag == current);
+            var button = PageButton(page, page.Tag == current, _marks);
             button.IsEnabled = source.IsEnabled;
-            button.ToolTip   = source.ToolTip;
             ToolTipService.SetShowOnDisabled(button, true);
             button.Click += (_, _) => PageRequested?.Invoke(page.Tag);
             _pages.Add(button);
@@ -61,12 +65,13 @@ internal sealed class NavFlyout : Border
         line.SetResourceReference(BackgroundProperty, "Border");
         body.Children.Add(line);
 
-        PinButton = PageButton(new NavPage("Pin", "\uE718", "Pin the menu open"), active: false);
+        PinButton = PageButton(new NavPage("Pin", "\uE718", "Pin the menu open"), active: false, marks: null);
         PinButton.ToolTip = "Show the sidebar with its labels again";
         PinButton.Click += (_, _) => PinRequested?.Invoke();
         body.Children.Add(PinButton);
 
         Child = body;
+        ShowFindings(findings);
         AutomationProperties.SetName(this, $"{group.Name} pages");
         PreviewKeyDown += Flyout_PreviewKeyDown;
     }
@@ -92,6 +97,25 @@ internal sealed class NavFlyout : Border
         _pages.FirstOrDefault(p => p.IsEnabled && (string)p.Tag == _current)
         ?? _pages.FirstOrDefault(p => p.IsEnabled) ?? PinButton;
 
+    /// <summary>The dot and short name on a page's row.</summary>
+    internal FindingMark Mark(string tag) => _marks[tag];
+
+    /// <summary>
+    /// The finding dots (#254), again after each sample while it is open: each row's mark, and its
+    /// tooltip and spoken name as the pinned sidebar's row has them.
+    /// </summary>
+    public void ShowFindings(IReadOnlyDictionary<string, PageFinding> findings)
+    {
+        foreach (var button in _pages)
+        {
+            var tag    = (string)button.Tag;
+            var source = _sidebarButton(tag);
+            _marks[tag].Show(findings.GetValueOrDefault(tag));
+            button.ToolTip = source.ToolTip;
+            AutomationProperties.SetName(button, AutomationProperties.GetName(source));
+        }
+    }
+
     private void Flyout_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key is not (Key.Escape or Key.Left))
@@ -100,9 +124,16 @@ internal sealed class NavFlyout : Border
         CloseRequested?.Invoke();
     }
 
-    private static Button PageButton(NavPage page, bool active)
+    private static Button PageButton(NavPage page, bool active, Dictionary<string, FindingMark>? marks)
     {
         var content = new DockPanel { LastChildFill = true };
+        if (marks is not null)
+        {
+            var mark = new FindingMark();
+            DockPanel.SetDock(mark, Dock.Right);
+            content.Children.Add(mark);
+            marks[page.Tag] = mark;
+        }
         var icon = new TextBlock { Text = page.Icon, FontFamily = new FontFamily(NavMenu.IconFont), FontSize = 16, Width = 20, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
         DockPanel.SetDock(icon, Dock.Left);
         content.Children.Add(icon);

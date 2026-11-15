@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using SqlVitals.Desktop.Helpers;
 using SqlVitals.Desktop.Services;
 
 namespace SqlVitals.Desktop.Controls;
@@ -19,6 +20,7 @@ internal sealed class NavRail
     private readonly Dictionary<string, Button> _pages = new();
     private readonly Dictionary<string, Button> _groups = new();
     private readonly Dictionary<string, (Border Badge, TextBlock Text)> _counts = new();
+    private readonly Dictionary<string, Ellipse> _dots = new();
 
     public NavRail(Panel panel, Panel footer)
     {
@@ -34,7 +36,15 @@ internal sealed class NavRail
 
         foreach (var group in NavMenu.Groups)
         {
-            var button = new Button { Content = group.Icon, Tag = group.Id, ToolTip = $"{group.Name}: {group.Question}" };
+            // Its icon, and the worst finding dot of its screens at the top right (#254).
+            var dot = new Ellipse { Width = FindingMark.DotSize, Height = FindingMark.DotSize, Visibility = Visibility.Collapsed,
+                                    HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 6, 6, 0) };
+            var face = new Grid { Width = 38, Height = 38 };
+            face.Children.Add(new TextBlock { Text = group.Icon, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            face.Children.Add(dot);
+            _dots[group.Id] = dot;
+
+            var button = new Button { Content = face, Tag = group.Id, ToolTip = $"{group.Name}: {group.Question}" };
             button.SetResourceReference(FrameworkElement.StyleProperty, "NavRailButton");
             AutomationProperties.SetName(button, group.Name);
             AutomationProperties.SetHelpText(button, group.Question);
@@ -135,6 +145,33 @@ internal sealed class NavRail
             Style(button, pageTag == tag);
         foreach (var (id, button) in _groups)
             Style(button, id == groupId);
+    }
+
+    /// <summary>A group icon's finding dot (#254), the worst of its screens'.</summary>
+    internal Ellipse Dot(string groupId) => _dots[groupId];
+
+    /// <summary>
+    /// The finding dots (#254): each group's icon carries the worst of its screens', in that
+    /// check's colour, and its tooltip and help text name the screens and what they found.
+    /// </summary>
+    public void ShowFindings(IReadOnlyDictionary<string, PageFinding> findings)
+    {
+        foreach (var group in NavMenu.Groups)
+        {
+            var found = group.Pages.Where(p => findings.ContainsKey(p.Tag)).Select(p => (Page: p, Finding: findings[p.Tag])).ToList();
+            var worst = SidebarFindings.Worst(found.Select(f => (PageFinding?)f.Finding));
+            var dot   = _dots[group.Id];
+            dot.Visibility = worst is null ? Visibility.Collapsed : Visibility.Visible;
+            if (worst is not null)
+                dot.SetResourceReference(Shape.FillProperty, HealthBrushes.KeyFor(worst.Level));
+
+            // "Processes · Warning: blocking for 4 min", a line per check.
+            var lines  = found.SelectMany(f => f.Finding.Lines.Select(line => $"{f.Page.Label} · {line}")).ToList();
+            var button = _groups[group.Id];
+            button.ToolTip = lines.Count == 0 ? $"{group.Name}: {group.Question}" : $"{group.Name}: {group.Question}\n{string.Join("\n", lines)}";
+            AutomationProperties.SetName(button, worst is null ? group.Name : $"{group.Name}, {worst.Spoken}");
+            AutomationProperties.SetHelpText(button, lines.Count == 0 ? group.Question : $"{group.Question} {string.Join(". ", lines)}");
+        }
     }
 
     /// <summary>A count on a page's icon, e.g. Alerts' active alerts; 0 hides it.</summary>

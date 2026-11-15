@@ -5,8 +5,8 @@ namespace SqlVitals.Desktop.ViewModels.Shell;
 
 /// <summary>
 /// The sidebar (#142, #191): pinned, collapsed or hidden as <see cref="SidebarLayout"/> decides, the
-/// hidden one slid in over the page, the open group, and what it shows: the open server's header,
-/// the page on screen, the active alerts' count and the pages the active server hasn't got.
+/// hidden one slid in over the page, and what it shows: the open server's header, its finding dots
+/// and Recent row (#254), the page on screen, the active alerts' count and the pages the active server hasn't got.
 /// <c>WorkspaceShell</c> draws it; the pointer resting, the animation and the keyboard focus are its own.
 /// </summary>
 public sealed partial class SidebarViewModel : ObservableObject
@@ -142,19 +142,53 @@ public sealed partial class SidebarViewModel : ObservableObject
     [ObservableProperty]
     private string _version = string.Empty;
 
-    /// <summary>The server whose pages are shown, as its selector row; null for none, which hides the groups.</summary>
+    /// <summary>The server whose pages are shown, as its selector row; null for none, which hides its screens.</summary>
     public ConnectionSelectorItem? Server { get; private set; }
 
-    /// <summary>Shows a server's header, or none; again for the same server when its health changed.</summary>
+    /// <summary>
+    /// Shows a server's header, or none; again for the same server when its health changed, which
+    /// is when its finding dots change too (#254).
+    /// </summary>
     public void ShowServer(ConnectionSelectorItem? server)
     {
         Server = server;
         OnPropertyChanged(nameof(Server));
+        ShowFindings();
     }
+
+    // The open server's findings while it is monitored (a paused or stopped session keeps its last
+    // score, which is no longer measured), less the screens it hasn't got; raised only when they change.
+    private void ShowFindings()
+    {
+        var found = Server is { IsMonitoring: true } server
+            ? SidebarFindings.Without(SidebarFindings.From(server.Score), Unavailable.Keys)
+            : SidebarFindings.None;
+        if (!SidebarFindings.Same(found, Findings))
+            Findings = found;
+    }
+
+    partial void OnUnavailableChanged(IReadOnlyDictionary<string, string> value) => ShowFindings();
+
+    /// <summary>
+    /// The open server's screens with a check past a threshold (#254), by tag: a dot beside each,
+    /// and on its group's icon when collapsed. None with no server open.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyDictionary<string, PageFinding> _findings = SidebarFindings.None;
+
+    /// <summary>The Recent row's screens (#254): the open server's last few, other than the one on show.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<string> _recent = [];
+
+    /// <summary>The saved servers, for the server card's menu (#254), as the breadcrumb's lists them.</summary>
+    public IReadOnlyList<ConnectionSelectorItem> Servers { get; set; } = [];
+
+    /// <summary>Another server picked from the server card's menu: the same screen on it.</summary>
+    public event Action<Guid>? ServerRequested;
 
     private string? _current;
 
-    /// <summary>The page on screen, highlighted; its group opens.</summary>
+    /// <summary>The page on screen, highlighted. Every screen is shown (#254): no group opens or closes.</summary>
     public string? Current
     {
         get => _current;
@@ -162,14 +196,8 @@ public sealed partial class SidebarViewModel : ObservableObject
         {
             _current = value;
             OnPropertyChanged();
-            if (value is not null && NavMenu.GroupOf(value) is { } group)
-                OpenGroup = group.Id;
         }
     }
-
-    /// <summary>The pinned sidebar's open group: one at a time; null for none.</summary>
-    [ObservableProperty]
-    private string? _openGroup;
 
     /// <summary>The active alerts of every monitored connection, on Alerts' button, and on ☰ while hidden.</summary>
     [ObservableProperty]
@@ -198,4 +226,11 @@ public sealed partial class SidebarViewModel : ObservableObject
 
     /// <summary>Start or Stop in the server header.</summary>
     public void ToggleMonitoring() => MonitorToggleRequested?.Invoke();
+
+    /// <summary>A server picked from the server card's menu; the open one does nothing.</summary>
+    public void SwitchServer(Guid server)
+    {
+        if (server != Server?.Settings.Id)
+            ServerRequested?.Invoke(server);
+    }
 }

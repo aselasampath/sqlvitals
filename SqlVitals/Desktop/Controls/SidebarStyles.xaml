@@ -26,6 +26,58 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- The open server's name in the sidebar's server card (#254): opens the menu of saved servers.
+         Plain text with a chevron; outlined while the pointer is on it or it has the keyboard. -->
+    <Style x:Key="ServerNameButton" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="3" Padding="2,0"
+                            BorderBrush="Transparent" BorderThickness="1">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- A screen in the sidebar's Recent row (#254): a small chip with its name. -->
+    <Style x:Key="RecentChip" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="Margin" Value="0,2,3,2" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{DynamicResource BgCard}" CornerRadius="9" Padding="5,1,5,2"
+                            BorderBrush="{DynamicResource Border}" BorderThickness="1">
+                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentLight}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
     <!-- Start / stop monitoring the open server from the sidebar's server header (#115, #141). -->
     <Style x:Key="MonitorToggleButton" TargetType="Button">
         <Setter Property="Cursor" Value="Hand" />

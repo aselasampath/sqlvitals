@@ -122,7 +122,6 @@ public sealed class ShellViewModelTests : IDisposable
         Assert.Equal(_b.Id, shell.WorkspaceServer);
         Assert.Same(shell.Servers.Single(s => s.Settings.Id == _b.Id), shell.Sidebar.Server);
         Assert.Equal("Processes", shell.Sidebar.Current);
-        Assert.Equal("Activity", shell.Sidebar.OpenGroup);
         Assert.Contains("PROD-B", Breadcrumb, StringComparison.Ordinal);
         // The page reads PROD-B: the repository was built for it.
         Assert.Equal(_b.Id, _pages.Made[^1].ConnectionId);
@@ -143,6 +142,48 @@ public sealed class ShellViewModelTests : IDisposable
         UiThread.Wait(shell.GoAsync(back: true));
         Assert.Equal(_a.Id, shell.ActiveConnectionId);
         Assert.Equal(new Route("Waits", ConnectionId: _a.Id), shell.Current);
+    });
+
+    [Fact]
+    public void TheSidebarsServerMenu_OpensTheSamePageOnAnotherServer_AsTheBreadcrumbsDoes() => OnDispatcher.Run(() =>
+    {
+        var shell = Started(_a, _b);
+        UiThread.Wait(shell.OpenPageAsync("Waits", _a.Id));
+        Assert.Equal(shell.Servers, shell.Sidebar.Servers);
+
+        shell.Sidebar.SwitchServer(_b.Id);
+        UiThread.WaitUntil(() => shell.ActiveConnectionId == _b.Id && shell.Current?.ConnectionId == _b.Id);
+        Assert.Equal("Waits", shell.Current!.Tag);
+        Assert.Equal(_b.Id, shell.Sidebar.Server!.Settings.Id);
+    });
+
+    [Fact]
+    public void TheRecentRow_IsTheOpenServersLastScreens_OtherThanTheOneOnShow() => OnDispatcher.Run(() =>
+    {
+        var shell = Started(_a, _b);
+        UiThread.Wait(shell.OpenPageAsync("Processes", _a.Id));
+        Assert.Empty(shell.Sidebar.Recent);
+
+        UiThread.Wait(shell.OpenPageAsync("Waits", _a.Id));
+        UiThread.Wait(shell.OpenPageAsync("Memory", _a.Id));
+        UiThread.Wait(shell.OpenPageAsync("Backups", _a.Id));
+        UiThread.Wait(shell.OpenPageAsync("IndexHealth", _a.Id));
+        Assert.Equal(["Backups", "Memory", "Waits"], shell.Sidebar.Recent);
+
+        // Code review: only screens the server still has, as the quick switcher lists them. PROD-A
+        // turns out to be an Azure SQL Database on its next switch: no Backups chip.
+        _repositories.Azure.Add("prod-a");
+        UiThread.Wait(shell.OpenPageAsync("Processes", _b.Id));
+        UiThread.Wait(shell.OpenPageAsync("Waits", _a.Id));
+        Assert.Contains("Backups", shell.Sidebar.Unavailable.Keys);
+        Assert.Equal(["IndexHealth", "Memory", "Processes"], shell.Sidebar.Recent);
+        _repositories.Azure.Remove("prod-a");
+
+        // Another server's workspace has its own; a page about every server has none.
+        UiThread.Wait(shell.OpenPageAsync("TempDb", _b.Id));
+        Assert.Equal(["Processes"], shell.Sidebar.Recent);
+        UiThread.Wait(shell.OpenPageAsync("Alerts"));
+        Assert.Empty(shell.Sidebar.Recent);
     });
 
     // ── Back and Forward ─────────────────────────────────────────────────

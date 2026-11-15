@@ -1,14 +1,24 @@
 using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using SqlVitals.Desktop.Controls;
 using SqlVitals.Desktop.Services;
 using SqlVitals.Engine.Activity;
+using SqlVitals.Engine.Monitoring;
 
 namespace SqlVitals.Desktop.Tests;
 
 /// <summary>
 /// The sidebar pinned, collapsed or hidden (#142): Ctrl+B's cycle, the pin, collapsing in a narrow
 /// window and coming back, and the state saved for the next start but kept out of the activity log.
+/// And the flat pinned sidebar's height (#254): every screen fits a 1000 px window.
 /// </summary>
+[Collection(PresentationSourceCollection.Name)]
 public sealed class SidebarLayoutTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", Guid.NewGuid().ToString("N"));
@@ -167,6 +177,128 @@ public sealed class SidebarLayoutTests : IDisposable
         Assert.DoesNotContain(snapshot.Settings, s => s.Name.Contains("sidebar", StringComparison.OrdinalIgnoreCase)
                                                    || s.Name.Contains("menu", StringComparison.OrdinalIgnoreCase)
                                                    || s.Value == nameof(SidebarMode.Hidden));
+    }
+
+    [Fact]
+    public void NothingAboutTheSidebarsGroups_IsSaved()
+    {
+        // The groups don't fold any more (#254): no open group is read or written.
+        var saved = typeof(ConnectionStore).GetProperties().Select(p => p.Name).ToList();
+        Assert.DoesNotContain(saved, n => n.Contains("Group", StringComparison.Ordinal) && !n.StartsWith("Processes", StringComparison.Ordinal));
+        var service = Create();
+        service.SetSidebarMode(SidebarMode.Collapsed);
+        Assert.DoesNotContain("group", File.ReadAllText(Path.Combine(_dir, "settings.dat")).Replace("GroupByLogin", "", StringComparison.Ordinal),
+                              StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── The flat sidebar's height (#254) ──────────────────────────────────
+
+    public static TheoryData<string> Themes => new() { "DarkTheme", "LightTheme" };
+
+    [Theory, MemberData(nameof(Themes))]
+    public void EveryScreen_FitsA1000PxWindow_WithoutAScrollbar(string theme) => OnSta(theme, 1000, (shell, host) =>
+    {
+        var scroll = shell.MenuScroll;
+        Assert.True(scroll.ExtentHeight <= scroll.ViewportHeight,
+                    $"the sidebar needs {scroll.ExtentHeight} px and has {scroll.ViewportHeight} " +
+                    $"(panel {((FrameworkElement)scroll.Content).ActualHeight}/{((FrameworkElement)scroll.Content).DesiredSize.Height}, scroll {scroll.ActualHeight}, bar {scroll.ComputedVerticalScrollBarVisibility}): " +
+                    $"server card {shell.Menu.ServerHeader.ActualHeight}, Recent {shell.Menu.RecentRow.ActualHeight}, " +
+                    $"Alerts {shell.Menu.Button("Alerts").ActualHeight}, filter {shell.Menu.FilterBar.ActualHeight}; " +
+                    string.Join(" ", ((Panel)scroll.Content).Children.OfType<FrameworkElement>()
+                        .Where(c => c.Visibility == Visibility.Visible)
+                        .Select(c => $"{c.GetType().Name}:{c.ActualHeight + c.Margin.Top + c.Margin.Bottom:0}")));
+        Assert.Equal(Visibility.Collapsed, scroll.ComputedVerticalScrollBarVisibility);
+        Assert.Equal(SidebarLayout.PinnedWidth, shell.ColumnDefinitions[0].ActualWidth);
+        // Every screen, the captions and the full server card are laid out, the Recent row too.
+        Assert.All(NavMenu.Groups.SelectMany(g => g.Pages), p => Assert.Equal(NavSidebar.RowHeight, shell.Menu.Button(p.Tag).ActualHeight));
+        Assert.Equal(3, shell.Menu.RecentChips.Count());
+        Assert.True(shell.Menu.ServerVerdict.ActualHeight > 0);
+        Render(host, theme, 1000);
+    });
+
+    [Theory, MemberData(nameof(Themes))]
+    public void InAShorterWindow_TheMiddleScrolls_AndSettingsStaysAtTheFoot(string theme) => OnSta(theme, 800, (shell, host) =>
+    {
+        var scroll = shell.MenuScroll;
+        Assert.True(scroll.ExtentHeight > scroll.ViewportHeight);
+        Assert.Equal(Visibility.Visible, scroll.ComputedVerticalScrollBarVisibility);
+
+        var settings = shell.Menu.Button("Settings");
+        var top = settings.TranslatePoint(new Point(0, 0), host).Y;
+        Assert.InRange(top + settings.ActualHeight, 800 - 20, 800);
+        Assert.True(scroll.TranslatePoint(new Point(0, scroll.ActualHeight), host).Y <= top);
+        // The filter box stays at the top, not scrolled away.
+        Assert.True(shell.Menu.FilterBar.TranslatePoint(new Point(0, 0), host).Y < scroll.TranslatePoint(new Point(0, 0), host).Y);
+        Render(host, theme, 800);
+    });
+
+    // The shell pinned at 1320 × height, PROD-SQL01 open on Query Store with its card at its
+    // fullest (a two-line verdict), three findings and three Recent chips.
+    private static void OnSta(string theme, double height, Action<WorkspaceShell, FrameworkElement> test)
+    {
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var resources = (ResourceDictionary)Application.LoadComponent(
+                    new Uri($"/SqlVitals.Desktop;component/Styles/{theme}.xaml", UriKind.Relative));
+                var shell = new WorkspaceShell { Animate = false };
+                var page  = new Border { Background = (Brush)resources["BgDeep"] };
+                Grid.SetColumn(page, 1);
+                shell.Children.Add(page);
+                var host = new Border { Resources = resources, Child = shell, Background = (Brush)resources["BgDeep"] };
+
+                var server = new ConnectionSelectorItem(new ConnectionSettings { Server = "prod-sql01.corp.example", Name = "PROD-SQL01", Database = "SalesDb" });
+                var score  = HealthScore.From(
+                [
+                    new HealthReading(HealthIndicator.Blocking, HealthLevel.Critical, 600, new HealthThreshold(30, 300), null),
+                    new HealthReading(HealthIndicator.Cpu, HealthLevel.Warning, 85, new HealthThreshold(75, 90), null),
+                    new HealthReading(HealthIndicator.BackupsPastRpo, HealthLevel.Warning, 3, new HealthThreshold(1, 5), null),
+                ], DateTime.Now);
+                typeof(ConnectionSelectorItem).GetProperty(nameof(ConnectionSelectorItem.Score))!.SetValue(server, score);
+                typeof(ConnectionSelectorItem).GetProperty(nameof(ConnectionSelectorItem.IsMonitoring))!.SetValue(server, true);
+
+                shell.ViewModel.Restore(SidebarMode.Pinned, 1320);
+                shell.ViewModel.ShowServer(server);
+                shell.ViewModel.Current = "QueryStore";
+                shell.ViewModel.Recent  = ["Processes", "Waits", "Backups"];
+                shell.SetCount("Alerts", 3, "3 active alerts");
+                shell.VersionText.Text = "v0.89.0";
+                host.Measure(new Size(1320, height));
+                host.Arrange(new Rect(0, 0, 1320, height));
+                host.UpdateLayout();
+
+                test(shell, host);
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            finally
+            {
+                Dispatcher.CurrentDispatcher.InvokeShutdown();
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (error is not null)
+            ExceptionDispatchInfo.Capture(error).Throw();
+    }
+
+    // The sidebar alone, to look at, under %TEMP%\SqlVitalsTests\sidebar.
+    private static void Render(FrameworkElement host, string theme, double height)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "SqlVitalsTests", "sidebar");
+        Directory.CreateDirectory(dir);
+        var bitmap = new RenderTargetBitmap((int)SidebarLayout.PinnedWidth, (int)height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(host);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(Path.Combine(dir, $"pinned-{height}-{theme}.png"));
+        encoder.Save(file);
     }
 
     public void Dispose()
